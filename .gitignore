@@ -1,0 +1,30 @@
+# ===============================
+# Secrets & environment
+# ===============================
+.env
+
+# ===============================
+# Runtime / state
+# ===============================
+logs/
+bot_state.json
+universe_snapshot.json
+
+# ===============================
+# Python
+# ===============================
+__pycache__/
+*.pyc
+
+# ===============================
+# Virtual environments
+# ===============================
+venv/
+.venv/
+env/
+
+# ===============================
+# Local / experimental tools
+# ===============================
+universe_selector.py
+universe_selector_testnet.py
