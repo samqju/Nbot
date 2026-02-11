@@ -49,6 +49,12 @@ GLOBAL_KILL_SWITCH = False
 ENTRY_ORDER_TYPE = "LIMIT"
 ENTRY_SLIPPAGE_PCT = 1.0
 
+# ------------------------------------------------
+# STEP 6.7 — Spread / Illiquidity Guard
+# ------------------------------------------------
+# Maximum allowed bid-ask spread (percent)
+MAX_SPREAD_PCT = 0.25
+
 # Exit orders
 EXIT_NORMAL_ORDER_TYPE = "LIMIT"
 EXIT_EMERGENCY_ORDER_TYPE = "MARKET"

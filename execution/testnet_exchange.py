@@ -23,7 +23,7 @@ import requests
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import List
-
+from config import LEVERAGE, MAX_SPREAD_PCT
 from execution.exceptions import OperationalExchangeError, StopAlreadyBreached
 
 # ============================================================
@@ -45,7 +45,8 @@ TIMEOUT = 5  # seconds
 class EntryAck:
     filled_qty: float
     avg_price: float
-
+    requested_qty: float
+    fully_filled: bool
 
 @dataclass(frozen=True)
 class PriceTick:
@@ -185,6 +186,35 @@ class TestnetExchange:
             {"timestamp": int(time.time() * 1000)},
         )
 
+    # ========================================================
+    # LEVERAGE ENFORCEMENT (STEP 6.4)
+    # ========================================================
+
+    def set_leverage(self, *, symbol: str, leverage: int):
+        """
+        Explicitly set leverage for a symbol.
+        """
+        try:
+            self._post(
+                "/fapi/v1/leverage",
+                {
+                    "symbol": symbol,
+                    "leverage": leverage,
+                    "timestamp": int(time.time() * 1000),
+                },
+            )
+        except Exception as e:
+            raise OperationalExchangeError(
+                f"LEVERAGE_SET_FAILED | symbol={symbol} | {e}"
+            )
+
+    def enforce_leverage_for_universe(self, symbols: List[str]):
+        """
+        Enforce configured leverage across tradable universe.
+        """
+        for symbol in symbols:
+            self.set_leverage(symbol=symbol, leverage=LEVERAGE)
+
     def disconnect(self):
         """
         REST-based adapter — nothing to close.
@@ -239,6 +269,33 @@ class TestnetExchange:
             for c in data
         ]
 
+    # --------------------------------------------------------
+    # STEP 6.7 — Spread / Illiquidity Guard
+    # --------------------------------------------------------
+
+    def get_current_spread_pct(self, *, symbol: str) -> float:
+        """
+        Return current bid-ask spread percentage.
+        """
+        data = self._get(
+            "/fapi/v1/ticker/bookTicker",
+            {
+                "symbol": symbol,
+                "timestamp": int(time.time() * 1000),
+            },
+        )
+
+        bid = float(data["bidPrice"])
+        ask = float(data["askPrice"])
+
+        if bid <= 0 or ask <= 0:
+            return 999.0
+
+        mid = (bid + ask) / 2.0
+        spread_pct = ((ask - bid) / mid) * 100.0
+
+        return spread_pct
+
     # ========================================================
     # POSITION TRUTH
     # ========================================================
@@ -261,6 +318,8 @@ class TestnetExchange:
             qty = float(pos["positionAmt"])
             if abs(qty) > 0.0:
                 symbol = pos["symbol"]
+
+                liquidation_price = float(pos.get("liquidationPrice", 0.0))
 
                 # Fetch open stop-loss order for this symbol
                 orders = self._get(
@@ -286,6 +345,7 @@ class TestnetExchange:
                     entry_price=float(pos["entryPrice"]),
                     symbol=symbol,
                     stop_loss=stop_loss_price,
+                    liquidation_price=liquidation_price,
                 )
 
         return None
@@ -392,15 +452,15 @@ class TestnetExchange:
             )
 
         raw_qty = notional_usd / price
-        qty = self._quantize_qty(raw_qty, filters["stepSize"])
+        requested_qty = self._quantize_qty(raw_qty, filters["stepSize"])
 
-        if qty <= 0:
+        if requested_qty <= 0:
             raise OperationalExchangeError("QTY_ROUNDED_TO_ZERO")
 
-        if qty < filters["marketMinQty"]:
+        if requested_qty < filters["marketMinQty"]:
             raise OperationalExchangeError("QTY_BELOW_MIN")
 
-        if qty > filters["marketMaxQty"]:
+        if requested_qty > filters["marketMaxQty"]:
             raise OperationalExchangeError("QTY_ABOVE_MAX")
 
         data = self._post(
@@ -409,7 +469,7 @@ class TestnetExchange:
                 "symbol": symbol,
                 "side": order_side,
                 "type": "MARKET",
-                "quantity": qty,
+                "quantity": requested_qty,
                 "timestamp": int(time.time() * 1000),
             },
         )
@@ -420,7 +480,15 @@ class TestnetExchange:
             raise OperationalExchangeError("ENTRY_NOT_FILLED")
 
         avg_price = float(data.get("avgPrice") or price)
-        return EntryAck(filled_qty, avg_price)
+
+        fully_filled = abs(filled_qty - requested_qty) < 1e-12
+
+        return EntryAck(
+            filled_qty=filled_qty,
+            avg_price=avg_price,
+            requested_qty=requested_qty,
+            fully_filled=fully_filled,
+        )
 
     def place_initial_sl(self, *, symbol: str, side: str, qty: float, stop_price: float):
 

@@ -24,7 +24,14 @@ from config import (
     NOTIONAL_TOLERANCE_PCT,
     RISK_PER_TRADE_USD,
     RISK_TOLERANCE_PCT,
+    ENTRY_SLIPPAGE_PCT,
+    MAX_SPREAD_PCT,
 )
+
+# --------------------------------------------------
+# STEP 6.3 — SL Timing Guard Policy
+# --------------------------------------------------
+MAX_SL_PLACEMENT_SECONDS = 2.0
 
 # ==========================================================
 # Market Data State
@@ -131,6 +138,42 @@ class TradingEngine:
             "risk_usd": RISK_PER_TRADE_USD,
             "highest_profit_usd": 0.0,
         }
+
+    # --------------------------------------------------
+    # Verified Emergency Exit (ONLY for risk breach)
+    # --------------------------------------------------
+    def _verified_emergency_exit(self, reason: str):
+        self.system_log.critical(
+            f"EMERGENCY_EXIT_TRIGGERED | reason={reason}"
+        )
+
+        for attempt in range(2):
+            try:
+                self.exchange.emergency_exit()
+            except Exception as e:
+                self.system_log.critical(
+                    f"EMERGENCY_EXIT_SEND_FAILED | attempt={attempt+1} | error={e}"
+                )
+
+            time.sleep(0.5)
+
+            try:
+                pos = self.exchange.get_position()
+            except Exception:
+                continue
+
+            if pos is None:
+                self.system_log.info("EMERGENCY_EXIT_CONFIRMED_FLAT")
+                return
+
+        # If still not flat → hard halt
+        self.system_log.critical("EMERGENCY_EXIT_FAILED_NOT_FLAT")
+        self.state.set_engine_state(
+            engine_state=self.FATAL_HALT,
+            reason="EMERGENCY_EXIT_FAILED",
+        )
+        self.state.save()
+        self.safety.halt("EMERGENCY_EXIT_FAILED")
 
     # ------------------------------------------------------
     # Initialization
@@ -255,6 +298,28 @@ class TradingEngine:
 
         # --- Load universe snapshot ---
         self.load_universe()
+
+        # --------------------------------------------------
+        # STEP 6.4 — Explicit leverage enforcement
+        # --------------------------------------------------
+        try:
+            self.exchange.enforce_leverage_for_universe(
+                self.universe_symbols
+            )
+            self.system_log.info(
+                f"LEVERAGE_ENFORCED | leverage={LEVERAGE}"
+            )
+        except Exception as e:
+            self.system_log.critical(
+                f"LEVERAGE_ENFORCEMENT_FAILED | {e}"
+            )
+            self.state.set_engine_state(
+                engine_state=self.INVARIANT_HALT,
+                reason="LEVERAGE_ENFORCEMENT_FAILED",
+            )
+            self.state.save()
+            self.safety.halt("LEVERAGE_ENFORCEMENT_FAILED")
+            return
 
         # --- Strategy warmup ---
         self.warmup_strategy()
@@ -594,6 +659,29 @@ class TradingEngine:
 
         entry_price = self.market_state.get_price(intent.symbol)
 
+        # --------------------------------------------------
+        # STEP 6.7 — Spread / Illiquidity guard
+        # --------------------------------------------------
+        try:
+            spread_pct = self.exchange.get_current_spread_pct(
+                symbol=intent.symbol
+            )
+        except Exception as e:
+            self.system_log.critical(
+                f"SPREAD_FETCH_FAILED | {e}"
+            )
+            self._entry_in_progress = False
+            return
+
+        if spread_pct > MAX_SPREAD_PCT:
+            self.system_log.info(
+                f"ENTRY_BLOCKED_SPREAD | "
+                f"spread={spread_pct:.4f}% "
+                f"max={MAX_SPREAD_PCT:.4f}%"
+            )
+            self._entry_in_progress = False
+            return
+
         # --- Build entry plan (risk math only) ---
         entry_plan = self.risk.build_entry_plan(
             direction=intent.direction,
@@ -623,6 +711,39 @@ class TradingEngine:
             self._entry_in_progress = False
             return
 
+        # --------------------------------------------------
+        # STEP 6.6 — Partial fill reconciliation
+        # --------------------------------------------------
+        if not ack.fully_filled:
+            self.system_log.critical(
+                f"PARTIAL_FILL_DETECTED | "
+                f"requested={ack.requested_qty} "
+                f"filled={ack.filled_qty}"
+            )
+
+            # Cancel any remaining open entry orders
+            try:
+                self.exchange.cancel_pending_entries()
+            except Exception as e:
+                self.system_log.critical(
+                    f"CANCEL_PENDING_FAILED | {e}"
+                )
+
+            # Abort trade — flatten to eliminate distorted risk
+            self._verified_emergency_exit(
+                reason="PARTIAL_FILL_ABORT"
+            )
+
+            self.state.set_engine_state(
+                engine_state=self.RISK_HALT,
+                reason="PARTIAL_FILL_ABORT",
+            )
+            self.safety.halt("PARTIAL_FILL_ABORT")
+            self.state.save()
+            self._entry_in_progress = False
+            self._accepted_intent = None
+            return
+
         # --- Post-fill notional invariant ---
         executed_notional = ack.filled_qty * ack.avg_price
         max_allowed = MAX_NOTIONAL_USD * (
@@ -645,13 +766,156 @@ class TradingEngine:
             datetime.now(timezone.utc).timestamp() * 1000
         )
 
-        # --- Place initial protective SL (MANDATORY) ---
-        self.exchange.place_initial_sl(
-            symbol=intent.symbol,
-            side=intent.direction,
-            qty=ack.filled_qty,
-            stop_price=entry_plan.initial_sl,
+        # --------------------------------------------------
+        # Post-fill risk recalculation
+        # --------------------------------------------------
+        actual_risk_usd = abs(
+            (ack.avg_price - entry_plan.initial_sl)
+            * ack.filled_qty
         )
+
+        max_allowed_risk = RISK_PER_TRADE_USD * (
+            1 + RISK_TOLERANCE_PCT / 100
+        )
+
+        if actual_risk_usd > max_allowed_risk:
+            self.system_log.critical(
+                f"POST_FILL_RISK_BREACH | "
+                f"actual={actual_risk_usd:.4f} "
+                f"allowed={max_allowed_risk:.4f}"
+            )
+
+            # Flatten immediately
+            self.exchange.emergency_exit()
+
+            self.state.set_engine_state(
+                engine_state=self.RISK_HALT,
+                reason="POST_FILL_RISK_BREACH",
+            )
+            self.safety.halt("POST_FILL_RISK_BREACH")
+            self.state.save()
+            self._entry_in_progress = False
+            self._accepted_intent = None
+            return
+
+        # --------------------------------------------------
+        # Slippage guard
+        # --------------------------------------------------
+        slippage_pct = abs(
+            (ack.avg_price - entry_price) / entry_price
+        ) * 100.0
+
+        if slippage_pct > ENTRY_SLIPPAGE_PCT:
+            self.system_log.critical(
+                f"SLIPPAGE_BREACH | "
+                f"slippage={slippage_pct:.4f}% "
+                f"allowed={ENTRY_SLIPPAGE_PCT:.4f}%"
+            )
+
+            self.exchange.emergency_exit()
+
+            self.state.set_engine_state(
+                engine_state=self.RISK_HALT,
+                reason="SLIPPAGE_BREACH",
+            )
+            self.safety.halt("SLIPPAGE_BREACH")
+            self.state.save()
+            self._entry_in_progress = False
+            self._accepted_intent = None
+            return
+
+        # --- Place initial protective SL (MANDATORY) ---
+        sl_placed = False
+        sl_start_time = time.time()
+
+        for attempt in range(2):
+            try:
+                self.exchange.place_initial_sl(
+                    symbol=intent.symbol,
+                    side=intent.direction,
+                    qty=ack.filled_qty,
+                    stop_price=entry_plan.initial_sl,
+                )
+                sl_placed = True
+                break
+            except Exception as e:
+                self.system_log.critical(
+                    f"SL_PLACEMENT_FAILED | attempt={attempt+1} | error={e}"
+                )
+                time.sleep(0.5)
+
+        if not sl_placed:
+            send_message(
+                "⚠️ <b>SL PLACEMENT FAILED</b>\n"
+                "Retry attempts exhausted.\n"
+                "Monitoring risk boundary."
+            )
+
+        # --------------------------------------------------
+        # STEP 6.3 — SL timing guard
+        # --------------------------------------------------
+        sl_elapsed = time.time() - sl_start_time
+
+        if sl_elapsed > MAX_SL_PLACEMENT_SECONDS:
+            self.system_log.critical(
+                f"SL_TIMING_BREACH | "
+                f"elapsed={sl_elapsed:.4f}s "
+                f"max={MAX_SL_PLACEMENT_SECONDS:.4f}s"
+            )
+
+            self._verified_emergency_exit(
+                reason="SL_TIMING_BREACH"
+            )
+
+            self.state.set_engine_state(
+                engine_state=self.RISK_HALT,
+                reason="SL_TIMING_BREACH",
+            )
+            self.safety.halt("SL_TIMING_BREACH")
+            self.state.save()
+            self._entry_in_progress = False
+            self._accepted_intent = None
+            return
+
+        # --------------------------------------------------
+        # STEP 6.5 — Liquidation distance guard
+        # --------------------------------------------------
+        exchange_position = self.exchange.get_position()
+
+        if (
+            exchange_position is not None
+            and exchange_position.stop_loss is not None
+            and exchange_position.liquidation_price is not None
+            and exchange_position.liquidation_price > 0.0
+        ):
+            entry_price = exchange_position.entry_price
+            stop_price = exchange_position.stop_loss
+            liq_price = exchange_position.liquidation_price
+
+            sl_distance = abs(entry_price - stop_price)
+            liq_distance = abs(entry_price - liq_price)
+
+            # Require liquidation to be meaningfully beyond SL
+            if liq_distance <= sl_distance * 1.2:
+                self.system_log.critical(
+                    "LIQUIDATION_BUFFER_TOO_CLOSE | "
+                    f"liq_distance={liq_distance:.6f} "
+                    f"sl_distance={sl_distance:.6f}"
+                )
+
+                self._verified_emergency_exit(
+                    reason="LIQUIDATION_BUFFER_TOO_CLOSE"
+                )
+
+                self.state.set_engine_state(
+                    engine_state=self.RISK_HALT,
+                    reason="LIQUIDATION_BUFFER_TOO_CLOSE",
+                )
+                self.safety.halt("LIQUIDATION_BUFFER_TOO_CLOSE")
+                self.state.save()
+                self._entry_in_progress = False
+                self._accepted_intent = None
+                return
 
         self.state.update_after_trade(
             balance=balance,
@@ -733,6 +997,13 @@ class TradingEngine:
                 realized = trade_data["pnl"]
                 exit_price = trade_data["exit_price"]
 
+                # --------------------------------------------------
+                # CATEGORY 5 HARDENING — Incremental Daily Realized
+                # --------------------------------------------------
+                # Only update daily PnL here (authoritative close event)
+                self.state.update_daily_realized(realized)
+                self.state.save()
+
                 panel_text = format_trade_panel(
                     symbol=open_position["symbol"],
                     side=open_position["side"],
@@ -781,12 +1052,41 @@ class TradingEngine:
 
         # --- Update trailing SL if required ---
         if position_decision.updated_stop_loss is not None:
-            self.exchange.update_sl(
-                symbol=open_position["symbol"],
-                side=open_position["side"],
-                qty=open_position["qty"],
-                new_stop_price=position_decision.updated_stop_loss,
-            )
+            intended_sl = position_decision.updated_stop_loss
+            update_ok = False
+
+            for attempt in range(2):
+                try:
+                    self.exchange.update_sl(
+                        symbol=open_position["symbol"],
+                        side=open_position["side"],
+                        qty=open_position["qty"],
+                        new_stop_price=intended_sl,
+                    )
+
+                    exchange_position = self.exchange.get_position()
+
+                    if (
+                        exchange_position is not None
+                        and exchange_position.stop_loss is not None
+                        and abs(exchange_position.stop_loss - intended_sl)
+                        < 1e-8
+                    ):
+                        update_ok = True
+                        break
+
+                except Exception as e:
+                    self.system_log.critical(
+                        f"SL_UPDATE_FAILED | attempt={attempt+1} | error={e}"
+                    )
+
+                time.sleep(0.5)
+
+            if not update_ok:
+                send_message(
+                    "⚠️ <b>SL UPDATE VERIFICATION FAILED</b>\n"
+                    "Monitoring risk boundary."
+                )
 
             # --- Verify SL truth via exchange ---
             exchange_position = self.exchange.get_position()
@@ -851,7 +1151,9 @@ class TradingEngine:
             )
 
             # Emergency flatten
-            self.exchange.emergency_exit()
+            self._verified_emergency_exit(
+                reason=position_decision.reason
+            )
 
             # --------------------------------------------
             # TELEGRAM PANEL UPDATE (EMERGENCY CLOSE)
@@ -991,13 +1293,17 @@ class TradingEngine:
                 self._accepted_intent = None
                 self._latest_intent = None
 
-            utc_day = datetime.now(timezone.utc).date()
-            realized = self.exchange.get_realized_pnl(utc_day)
-
-            self.state.state["daily_realized_pnl"] = realized
-
-            if realized > self.state.state.get("daily_peak_pnl", 0.0):
-                self.state.state["daily_peak_pnl"] = realized
+            # --------------------------------------------------
+            # CATEGORY 5 HARDENING — No full-day overwrite
+            # --------------------------------------------------
+            # We DO NOT overwrite daily_realized_pnl from exchange.
+            # Daily PnL is updated incrementally on trade close only.
+            #
+            # Exchange value may be used for diagnostics in future,
+            # but never to overwrite monotonic accounting.
+            #
+            # (Prevents REST lag / partial-history corruption)
+            pass
 
             self.state.save()
 
