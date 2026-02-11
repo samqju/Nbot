@@ -208,11 +208,32 @@ class TestnetExchange:
         for pos in data:
             qty = float(pos["positionAmt"])
             if abs(qty) > 0.0:
+                symbol = pos["symbol"]
+
+                # Fetch open stop-loss order for this symbol
+                orders = self._get(
+                    "/fapi/v1/openOrders",
+                    {
+                        "symbol": symbol,
+                        "timestamp": int(time.time() * 1000),
+                    },
+                )
+
+                stop_loss_price = None
+                for o in orders:
+                    if (
+                        o.get("type") == "STOP_MARKET"
+                        and o.get("reduceOnly") is True
+                    ):
+                        stop_loss_price = float(o.get("stopPrice"))
+                        break
+
                 return SimpleNamespace(
                     qty=abs(qty),
                     side="LONG" if qty > 0 else "SHORT",
                     entry_price=float(pos["entryPrice"]),
-                    symbol=pos["symbol"],
+                    symbol=symbol,
+                    stop_loss=stop_loss_price,
                 )
 
         return None
@@ -299,7 +320,10 @@ class TestnetExchange:
         )
 
         for o in orders:
-            if o["type"] == "STOP_MARKET" and o.get("reduceOnly"):
+            if (
+                o.get("type") == "STOP_MARKET"
+                and o.get("reduceOnly") is True
+            ):
                 self._post(
                     "/fapi/v1/order",
                     {

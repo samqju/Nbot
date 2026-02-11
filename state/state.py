@@ -72,6 +72,12 @@ class StateManager:
         """
         return self.state.get("open_position")
 
+    def update_open_position(self, open_position: dict):
+        self.state["open_position"] = open_position
+
+    def clear_open_position(self):
+        self.state["open_position"] = None
+
     # ----------------------------
     # LOAD STATE FROM DISK
     # ----------------------------

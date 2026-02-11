@@ -1,14 +1,5 @@
 # ==========================================================
-# ENGINE (Phase F-A.1)
-# ==========================================================
-# Purpose:
-# - Preserve old_engine.py behavior
-# - Begin lifecycle separation
-# - Step 1: Market Data lifecycle isolation
-#
-# IMPORTANT:
-# - NO behavior change in this step
-# - Market data becomes explicit and stateful
+# ENGINE
 # ==========================================================
 
 import json
@@ -36,7 +27,7 @@ from config import (
 )
 
 # ==========================================================
-# Market Data State (NEW — Step 1)
+# Market Data State
 # ==========================================================
 
 class MarketState:
@@ -72,13 +63,13 @@ class MarketState:
 
 
 # ==========================================================
-# EntryPlan (UNCHANGED — copied verbatim)
+# EntryPlan
 # ==========================================================
 
 @dataclass
 class EntryPlan:
     symbol: str
-    direction: str          # "LONG" only for now
+    direction: str
     entry_price: float
     quantity: float
     initial_sl: float
@@ -86,14 +77,14 @@ class EntryPlan:
 
 
 # --------------------------------------------------
-# Universe (UNCHANGED)
+# Universe
 # --------------------------------------------------
 
 UNIVERSE_SNAPSHOT_FILE = "universe_snapshot.json"
 EXPECTED_UNIVERSE_SIZE = 15
 
 # --------------------------------------------------
-# TradeIntent validation policy (UNCHANGED)
+# TradeIntent validation policy
 # --------------------------------------------------
 
 MAX_INTENT_AGE_SECONDS = 30
@@ -108,7 +99,7 @@ class TradingEngine:
     Canonical trading engine.
     """
     # ------------------------------------------------------
-    # Halt Types (UNCHANGED)
+    # Halt Types
     # ------------------------------------------------------
 
     DAILY_HALT = "DAILY_HALT"
@@ -117,6 +108,29 @@ class TradingEngine:
     OPERATIONAL_HALT = "OPERATIONAL_HALT"
     MANUAL_HALT = "MANUAL_HALT"
     FATAL_HALT = "FATAL_HALT"
+
+    def _build_open_position(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        entry_price: float,
+        qty: float,
+        stop_loss: Optional[float],
+    ) -> dict:
+        """
+        Build canonical open_position structure.
+        This is the ONLY place where open_position dicts are created.
+        """
+        return {
+            "symbol": symbol,
+            "side": side,
+            "entry_price": entry_price,
+            "qty": qty,
+            "stop_loss": stop_loss,
+            "risk_usd": RISK_PER_TRADE_USD,
+            "highest_profit_usd": 0.0,
+        }
 
     # ------------------------------------------------------
     # Initialization
@@ -142,7 +156,7 @@ class TradingEngine:
             assert hasattr(exchange, m), f"ADAPTER_MISSING_METHOD:{m}"
 
         # --------------------------------------------------
-        # Core components (UNCHANGED)
+        # Core components
         # --------------------------------------------------
 
         self.state = StateManager()
@@ -156,13 +170,13 @@ class TradingEngine:
         self.safety = SafetyManager()
 
         # --------------------------------------------------
-        # Market Data State (NEW)
+        # Market Data State
         # --------------------------------------------------
 
         self.market_state = MarketState()
 
         # --------------------------------------------------
-        # Existing engine state (UNCHANGED)
+        # Existing engine state
         # --------------------------------------------------
 
         self.exit_in_progress = False
@@ -170,7 +184,7 @@ class TradingEngine:
         self._last_utc_day = None
 
         # --------------------------------------------------
-        # Loggers (UNCHANGED)
+        # Loggers
         # --------------------------------------------------
 
         self.system_log = system_logger()
@@ -179,37 +193,37 @@ class TradingEngine:
         self.daily_log = daily_logger()
 
         # --------------------------------------------------
-        # Universe (UNCHANGED)
+        # Universe
         # --------------------------------------------------
 
         self.universe_symbols = []
         self.universe_generated_at = None
 
         # --------------------------------------------------
-        # Pending entry (UNCHANGED)
+        # Pending entry
         # --------------------------------------------------
 
         self._pending_entry_plan = None
 
         # --------------------------------------------------
-        # Strategy intent (STEP 2)
+        # Strategy intent
         # --------------------------------------------------
         self._latest_intent = None
 
         # --------------------------------------------------
-        # Accepted intent (STEP 4)
+        # Accepted intent
         # --------------------------------------------------
         self._accepted_intent = None
 
         # --------------------------------------------------
-        # Entry lifecycle state (STEP 5)
+        # Entry lifecycle state
         # --------------------------------------------------
         self._entry_in_progress = False
 
         self.system_log.info("ENGINE_INITIALIZED")
 
     # --------------------------------------------------
-    # Engine Start (Market Data lifecycle only)
+    # Engine Start (Market Data lifecycle)
     # --------------------------------------------------
 
     def start(self):
@@ -255,7 +269,7 @@ class TradingEngine:
             self.state.save()
 
         # --------------------------------------------------
-        # TELEGRAM — Engine Started (informational only)
+        # TELEGRAM Notification — information only
         # --------------------------------------------------
         send_message(
             "🟢 <b>ENGINE STARTED</b>\n\n"
@@ -382,7 +396,7 @@ class TradingEngine:
 
                 # Heartbeat is engine substrate (already shared)
                 self.state.heartbeat(
-                    datetime.now(timezone.utc).isoformat()
+                    int(datetime.now(timezone.utc).timestamp() * 1000)
                 )
                 self.state.save()
 
@@ -404,7 +418,7 @@ class TradingEngine:
             self.safety.halt("MARKET_DATA_EXHAUSTED")
 
     # --------------------------------------------------
-    # STEP 3 — UTC Day & Daily Risk lifecycle
+    # UTC Day & Daily Risk lifecycle
     # --------------------------------------------------
     def _handle_time_and_daily_risk(self, *, timestamp: int) -> bool:
         """
@@ -417,8 +431,20 @@ class TradingEngine:
         if self._last_utc_day is None:
             self._last_utc_day = utc_day
         elif utc_day != self._last_utc_day:
+            self.system_log.info(
+                f"UTC_DAY_ROLLOVER | from={self._last_utc_day} to={utc_day}"
+            )
+
             self._last_utc_day = utc_day
-            self.reconcile(reason="UTC_DAY_ROLLOVER")
+
+            # Safety first: cancel any pending entry orders
+            self.exchange.cancel_pending_entries()
+
+            # HARD reset daily risk state (explicit, no assumptions)
+            self.state.reset_daily(utc_day)
+
+            # Persist immediately — trading must not continue without this
+            self.state.save()
 
         state_snapshot = self.state.get_state()
 
@@ -435,6 +461,13 @@ class TradingEngine:
             self.system_log.critical(
                 f"DAILY_HALT | reason={daily_decision.reason}"
             )
+
+            # Persist DAILY HALT — must survive restarts
+            self.state.set_engine_state(
+                engine_state=self.DAILY_HALT,
+                reason=daily_decision.reason,
+            )
+            self.state.save()
 
             send_message(
                 "⛔ <b>DAILY HALT</b>\n\n"
@@ -520,7 +553,7 @@ class TradingEngine:
         return True, "OK"
 
     # --------------------------------------------------
-    # Entry lifecycle (STEP 5)
+    # Entry lifecycle
     # --------------------------------------------------
 
     def _handle_entry(self, *, intent: TradeIntent):
@@ -579,13 +612,13 @@ class TradingEngine:
             "ENGINE_NOTIONAL_BREACH"
         )
 
-        open_position = {
-            "side": intent.direction,
-            "entry_price": ack.avg_price,
-            "qty": ack.filled_qty,
-            "stop_loss": entry_plan.initial_sl,
-            "highest_profit_usd": 0.0,
-        }
+        open_position = self._build_open_position(
+            symbol=intent.symbol,
+            side=intent.direction,
+            entry_price=ack.avg_price,
+            qty=ack.filled_qty,
+            stop_loss=entry_plan.initial_sl,
+        )
 
         # --- Place initial protective SL (MANDATORY) ---
         self.exchange.place_initial_sl(
@@ -613,7 +646,7 @@ class TradingEngine:
         self._entry_in_progress = False
 
     # --------------------------------------------------
-    # Open position lifecycle (STEP 6)
+    # Open position lifecycle
     # --------------------------------------------------
 
     def _handle_open_position(self):
@@ -626,6 +659,8 @@ class TradingEngine:
         if open_position is None:
             return
 
+        assert "risk_usd" in open_position, "OPEN_POSITION_RISK_MISSING"
+
         symbol = open_position["symbol"]
 
         if not self.market_state.has_price(symbol):
@@ -633,7 +668,7 @@ class TradingEngine:
 
         price = self.market_state.get_price(symbol)
 
-		        # --- Exchange truth ---
+        # --- Exchange truth ---
         exchange_position = self.exchange.get_position()
 
         # Position fully closed externally
@@ -646,13 +681,7 @@ class TradingEngine:
             return
 
         # --- Position snapshot for RiskManager ---
-        position_snapshot = {
-            "side": open_position["side"],
-            "entry_price": open_position["entry_price"],
-            "qty": open_position["qty"],
-            "stop_loss": open_position["stop_loss"],
-            "highest_profit_usd": open_position.get("highest_profit_usd", 0.0),
-        }
+        position_snapshot = open_position
 
         # --- Position risk evaluation ---
         position_decision = self.risk.evaluate_position(
@@ -665,7 +694,12 @@ class TradingEngine:
             position_decision.highest_profit_usd is not None
             and not self._commitment_reached
         ):
-            self._commitment_reached = True
+            risk_usd = open_position.get("risk_usd", 0.0)
+            if (
+                risk_usd > 0
+                and position_decision.highest_profit_usd >= risk_usd
+            ):
+                self._commitment_reached = True
 
         # --- Update trailing SL if required ---
         if position_decision.updated_stop_loss is not None:
@@ -675,7 +709,24 @@ class TradingEngine:
                 new_stop_price=position_decision.updated_stop_loss,
             )
 
-            open_position["stop_loss"] = position_decision.updated_stop_loss
+            # --- Verify SL truth via exchange ---
+            exchange_position = self.exchange.get_position()
+
+            if exchange_position is None:
+                self.system_log.critical(
+                    "SL_UPDATE_FAILED | POSITION_MISSING_AFTER_SL_UPDATE"
+                )
+                self.safety.halt("SL_VERIFICATION_FAILED")
+                self.state.set_engine_state(
+                    engine_state=self.INVARIANT_HALT,
+                    reason="SL_VERIFICATION_FAILED",
+                )
+                self.state.save()
+                return
+
+            open_position["stop_loss"] = (
+                position_decision.updated_stop_loss
+            )
 
         if position_decision.highest_profit_usd is not None:
             open_position["highest_profit_usd"] = (
@@ -686,25 +737,56 @@ class TradingEngine:
 
         # --- Exit on violation ---
         if position_decision.violation and not self.exit_in_progress:
+            self.exit_in_progress = True
+
             self.system_log.critical(
                 f"POSITION_RISK_VIOLATION | "
                 f"reason={position_decision.reason}"
             )
+
             send_message(
                 "🚨 <b>POSITION RISK VIOLATION</b>\n\n"
                 f"Reason: {position_decision.reason}\n\n"
                 "Emergency exit sent.\n"
-                "Engine halted."
+                "ENGINE HALTED — manual intervention required."
             )
+
+            # Emergency flatten
             self.exchange.emergency_exit()
+
+            # Clear position state
             self.state.clear_open_position()
+
+            # HARD HALT — this is critical
+            self.state.set_engine_state(
+                engine_state=self.RISK_HALT,
+                reason=position_decision.reason,
+            )
+
+            self.safety.halt(position_decision.reason)
+
             self._commitment_reached = False
             self.state.save()
+
+            return
 
     def reconcile(self, reason: str):
         """
         Reconcile engine state with exchange truth.
         """
+
+        engine_state = self.state.get_state().get("engine_state")
+        if engine_state in (
+            self.RISK_HALT,
+            self.INVARIANT_HALT,
+            self.MANUAL_HALT,
+            self.FATAL_HALT,
+        ):
+            self.system_log.critical(
+                f"RECONCILIATION_BLOCKED | engine_state={engine_state}"
+            )
+            return
+
         self.system_log.info(
             f"RECONCILIATION_START | reason={reason}"
         )
@@ -719,13 +801,26 @@ class TradingEngine:
                     last_trade=None,
                 )
             else:
-                self.state.state["open_position"] = {
-                    "side": position.side,
-                    "entry_price": position.entry_price,
-                    "qty": position.qty,
-                    "stop_loss": None,
-                    "highest_profit_usd": 0.0,
-                }
+                self.state.state["open_position"] = self._build_open_position(
+                    symbol=position.symbol,
+                    side=position.side,
+                    entry_price=position.entry_price,
+                    qty=position.qty,
+                    stop_loss=position.stop_loss,
+                )
+
+                # Invariant: position must always have protective SL
+                if position.stop_loss is None:
+                    self.system_log.critical(
+                        "RECONCILIATION_POSITION_WITHOUT_SL"
+                    )
+                    self.state.set_engine_state(
+                        engine_state=self.INVARIANT_HALT,
+                        reason="POSITION_WITHOUT_SL",
+                    )
+                    self.state.save()
+                    self.safety.halt("POSITION_WITHOUT_SL")
+                    return
 
                 # Re-attach to existing position
                 self.exit_in_progress = False
@@ -742,8 +837,19 @@ class TradingEngine:
                 self.state.state["daily_peak_pnl"] = realized
 
             self.state.save()
-            # Restart safety: ensure clean lifecycle state
+
             self.exit_in_progress = False
+
+            # Recompute commitment state from stored profit
+            open_position = self.state.get_open_position()
+            if open_position is not None:
+                highest_profit = open_position.get("highest_profit_usd", 0.0)
+                risk_usd = open_position.get("risk_usd", 1.0)
+                self._commitment_reached = (
+                    highest_profit >= risk_usd
+                )
+            else:
+                self._commitment_reached = False
             self.system_log.info("RECONCILIATION_SUCCESS")
 
         except Exception as e:

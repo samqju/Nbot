@@ -132,6 +132,10 @@ class RiskManager:
         current_sl = position["stop_loss"]
         highest_profit_usd = position.get("highest_profit_usd", 0.0)
 
+        # Canonical risk unit for THIS position
+        risk_usd = position.get("risk_usd")
+        assert risk_usd is not None and risk_usd > 0, "POSITION_RISK_INVALID"
+
         # --- Unrealised PnL ---
         if side == "LONG":
             unrealised_pnl = (price - entry_price) * qty
@@ -139,7 +143,7 @@ class RiskManager:
             unrealised_pnl = (entry_price - price) * qty
 
         highest_profit_usd = max(highest_profit_usd, unrealised_pnl)
-        highest_R = highest_profit_usd / self.MAX_RISK_USD
+        highest_R = highest_profit_usd / risk_usd
 
         updated_stop_loss = None
 
@@ -150,7 +154,7 @@ class RiskManager:
             else:
                 locked_R = highest_R - 2 + 0.1
 
-            locked_profit_usd = locked_R * self.MAX_RISK_USD
+            locked_profit_usd = locked_R * risk_usd
 
             if side == "LONG":
                 candidate_sl = entry_price + (locked_profit_usd / qty)
@@ -162,7 +166,7 @@ class RiskManager:
                     updated_stop_loss = candidate_sl
 
         # --- Post-fill risk contract validation ---
-        max_allowed_loss = self.MAX_RISK_USD * (1 + self.RISK_TOLERANCE)
+        max_allowed_loss = risk_usd * (1 + self.RISK_TOLERANCE)
 
         if unrealised_pnl < -max_allowed_loss:
             return PositionDecision(
