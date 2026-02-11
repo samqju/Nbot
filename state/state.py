@@ -43,7 +43,12 @@ class StateManager:
             # ----------------------------
             # TRADE STATE (SINGLE TRADE ONLY)
             # ----------------------------
-            "open_position": None,          # current open trade (or None)
+            "open_position": None,
+
+            # ----------------------------
+            # TELEGRAM TRADE PANEL
+            # ----------------------------
+            "active_trade_panel_message_id": None,
 
             # ----------------------------
             # DAILY USD STATE (UTC-BASED)

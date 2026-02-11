@@ -127,3 +127,30 @@ def edit_message(message_id: int, text: str) -> None:
     except Exception as e:
         _logger.warning(f"TELEGRAM_EDIT_EXCEPTION | {e}")
         return
+
+# --------------------------------------------------------
+# TRADE PANEL FORMATTER
+# --------------------------------------------------------
+
+def format_trade_panel(
+    *,
+    symbol: str,
+    side: str,
+    entry_price: float,
+    stop_loss: float,
+    qty: float,
+    risk_usd: float,
+    status: str,
+) -> str:
+    """
+    Create a structured Telegram trade panel message.
+    """
+    return (
+        f"📊 <b>TRADE {status}</b>\n\n"
+        f"Symbol: {symbol}\n"
+        f"Side: {side}\n"
+        f"Entry: {entry_price:.4f}\n"
+        f"Stop: {stop_loss:.4f}\n"
+        f"Qty: {qty:.6f}\n"
+        f"Risk: {risk_usd:.2f} USD\n"
+    )

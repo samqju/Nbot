@@ -16,7 +16,7 @@ from safety.safety import SafetyManager
 from state.state import StateManager
 from execution.exceptions import OperationalExchangeError
 from utils.logger import system_logger, trade_logger, risk_logger, daily_logger
-from utils.telegram_notifier import send_message, edit_message
+from utils.telegram_notifier import send_message, edit_message, format_trade_panel
 from config import (
     SIM_START_BALANCE,
     MAX_NOTIONAL_USD,
@@ -259,13 +259,32 @@ class TradingEngine:
         # --- Strategy warmup ---
         self.warmup_strategy()
 
-        # --- Bootstrap balance if empty ---
+        # --- Sync balance from exchange if empty ---
         if self.state.get_state().get("balance", 0.0) == 0.0:
-            self.state.update_after_trade(
-                balance=SIM_START_BALANCE,
-                open_position=None,
-                last_trade=None,
-            )
+            try:
+                balance = self.exchange.get_available_balance()
+
+                self.state.update_after_trade(
+                    balance=balance,
+                    open_position=self.state.get_open_position(),
+                    last_trade=self.state.get_state().get("last_trade"),
+                )
+
+                self.system_log.info(
+                    f"BALANCE_SYNCED | balance={balance}"
+                )
+
+            except OperationalExchangeError as e:
+                self.system_log.critical(
+                    f"BALANCE_SYNC_FAILED | {e}"
+                )
+                self.safety.halt("BALANCE_SYNC_FAILED")
+                self.state.set_engine_state(
+                    engine_state=self.INVARIANT_HALT,
+                    reason="BALANCE_SYNC_FAILED",
+                )
+                self.state.save()
+                return
             self.state.save()
 
         # --------------------------------------------------
@@ -593,6 +612,7 @@ class TradingEngine:
 
         # --- Place entry via adapter ---
         ack = self.exchange.place_entry(
+            symbol=intent.symbol,
             side=intent.direction,
             notional_usd=MAX_NOTIONAL_USD,
             price=entry_price,
@@ -620,8 +640,14 @@ class TradingEngine:
             stop_loss=entry_plan.initial_sl,
         )
 
+        # Persist entry timestamp for trade-level PnL isolation
+        open_position["entry_timestamp"] = int(
+            datetime.now(timezone.utc).timestamp() * 1000
+        )
+
         # --- Place initial protective SL (MANDATORY) ---
         self.exchange.place_initial_sl(
+            symbol=intent.symbol,
             side=intent.direction,
             qty=ack.filled_qty,
             stop_price=entry_plan.initial_sl,
@@ -634,6 +660,25 @@ class TradingEngine:
         )
 
         self.state.save()
+
+        # --------------------------------------------------
+        # TELEGRAM TRADE PANEL (OPEN)
+        # --------------------------------------------------
+        panel_text = format_trade_panel(
+            symbol=open_position["symbol"],
+            side=open_position["side"],
+            entry_price=open_position["entry_price"],
+            stop_loss=open_position["stop_loss"],
+            qty=open_position["qty"],
+            risk_usd=open_position["risk_usd"],
+            status="OPEN",
+        )
+
+        msg_id = send_message(panel_text)
+
+        if msg_id:
+            self.state.state["active_trade_panel_message_id"] = msg_id
+            self.state.save()
 
         self.system_log.info(
             f"POSITION_OPENED | "
@@ -672,8 +717,41 @@ class TradingEngine:
         exchange_position = self.exchange.get_position()
 
         # Position fully closed externally
-        if exchange_position is None:
+        if exchange_position is None and open_position is not None:
             self.system_log.info("POSITION_CLOSED_CONFIRMED")
+
+            # --------------------------------------------
+            # TELEGRAM PANEL UPDATE (CLOSED)
+            # --------------------------------------------
+            msg_id = state.get("active_trade_panel_message_id")
+            if msg_id:
+                trade_data = self.exchange.get_trade_realized_pnl(
+                    symbol=open_position["symbol"],
+                    since_timestamp=open_position["entry_timestamp"],
+                )
+
+                realized = trade_data["pnl"]
+                exit_price = trade_data["exit_price"]
+
+                panel_text = format_trade_panel(
+                    symbol=open_position["symbol"],
+                    side=open_position["side"],
+                    entry_price=open_position["entry_price"],
+                    stop_loss=open_position["stop_loss"],
+                    qty=open_position["qty"],
+                    risk_usd=open_position["risk_usd"],
+                    status="CLOSED",
+                ) + (
+                    f"Exit: {exit_price:.4f}\n"
+                    f"PnL: {realized:.2f} USD\n"
+                )
+
+                edit_message(msg_id, panel_text)
+
+                # Clear panel id
+                self.state.state["active_trade_panel_message_id"] = None
+                self.state.save()
+
             self.state.clear_open_position()
             self.exit_in_progress = False
             self._commitment_reached = False
@@ -704,6 +782,7 @@ class TradingEngine:
         # --- Update trailing SL if required ---
         if position_decision.updated_stop_loss is not None:
             self.exchange.update_sl(
+                symbol=open_position["symbol"],
                 side=open_position["side"],
                 qty=open_position["qty"],
                 new_stop_price=position_decision.updated_stop_loss,
@@ -728,12 +807,32 @@ class TradingEngine:
                 position_decision.updated_stop_loss
             )
 
+            # --------------------------------------------
+            # TELEGRAM PANEL UPDATE (TRAILING SL)
+            # --------------------------------------------
+            msg_id = self.state.get_state().get(
+                "active_trade_panel_message_id"
+            )
+
+            if msg_id:
+                panel_text = format_trade_panel(
+                    symbol=open_position["symbol"],
+                    side=open_position["side"],
+                    entry_price=open_position["entry_price"],
+                    stop_loss=open_position["stop_loss"],
+                    qty=open_position["qty"],
+                    risk_usd=open_position["risk_usd"],
+                    status="OPEN 🔼",
+                )
+                edit_message(msg_id, panel_text)
+
         if position_decision.highest_profit_usd is not None:
             open_position["highest_profit_usd"] = (
                 position_decision.highest_profit_usd
             )
 
         self.state.update_open_position(open_position)
+        self.state.save()
 
         # --- Exit on violation ---
         if position_decision.violation and not self.exit_in_progress:
@@ -753,6 +852,40 @@ class TradingEngine:
 
             # Emergency flatten
             self.exchange.emergency_exit()
+
+            # --------------------------------------------
+            # TELEGRAM PANEL UPDATE (EMERGENCY CLOSE)
+            # --------------------------------------------
+            msg_id = self.state.get_state().get(
+                "active_trade_panel_message_id"
+            )
+            if msg_id:
+                trade_data = self.exchange.get_trade_realized_pnl(
+                    symbol=open_position["symbol"],
+                    since_timestamp=open_position["entry_timestamp"],
+                )
+
+                realized = trade_data["pnl"]
+                exit_price = trade_data["exit_price"]
+
+                panel_text = format_trade_panel(
+                    symbol=open_position["symbol"],
+                    side=open_position["side"],
+                    entry_price=open_position["entry_price"],
+                    stop_loss=open_position["stop_loss"],
+                    qty=open_position["qty"],
+                    risk_usd=open_position["risk_usd"],
+                    status="CLOSED (EMERGENCY)",
+                ) + (
+                    f"Exit: {exit_price:.4f}\n"
+                    f"PnL: {realized:.2f} USD\n"
+                )
+
+                edit_message(msg_id, panel_text)
+
+                self.state.state[
+                    "active_trade_panel_message_id"
+                ] = None
 
             # Clear position state
             self.state.clear_open_position()
@@ -800,6 +933,10 @@ class TradingEngine:
                     open_position=None,
                     last_trade=None,
                 )
+
+                # Clear stale Telegram panel id
+                self.state.state["active_trade_panel_message_id"] = None
+
             else:
                 self.state.state["open_position"] = self._build_open_position(
                     symbol=position.symbol,
@@ -808,6 +945,32 @@ class TradingEngine:
                     qty=position.qty,
                     stop_loss=position.stop_loss,
                 )
+
+                # Rebuilt position (canonical source of truth)
+                rebuilt_position = self.state.state["open_position"]
+
+                # --------------------------------------------------
+                # TELEGRAM PANEL RECOVERY (RESTART SAFETY)
+                # --------------------------------------------------
+                if (
+                    self.state.state.get("active_trade_panel_message_id")
+                    is None
+                ):
+                    recovered_panel = format_trade_panel(
+                        symbol=position.symbol,
+                        side=position.side,
+                        entry_price=position.entry_price,
+                        stop_loss=position.stop_loss,
+                        qty=position.qty,
+                        risk_usd=rebuilt_position["risk_usd"],
+                        status="OPEN (RECOVERED)",
+                    )
+
+                    msg_id = send_message(recovered_panel)
+                    if msg_id:
+                        self.state.state[
+                            "active_trade_panel_message_id"
+                        ] = msg_id
 
                 # Invariant: position must always have protective SL
                 if position.stop_loss is None:
@@ -892,6 +1055,12 @@ class TradingEngine:
         self.system_log.info(
             f"UNIVERSE_LOADED | count={len(symbols)}"
         )
+        send_message(
+            "🟢 <b>UNIVERSE LOADED</b>\n"
+        )
+
+        # Inform strategy about tradable universe
+        self.strategy.set_universe(symbols)
 
     def warmup_strategy(self):
         """
@@ -916,4 +1085,7 @@ class TradingEngine:
 
         self.system_log.info(
             f"STRATEGY_WARMUP_COMPLETE | symbols={len(self.universe_symbols)}"
+        )
+        send_message(
+            "🟢 <b>STRATEGY WARMUP COMPLETE</b>\n"
         )

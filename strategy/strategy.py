@@ -41,6 +41,9 @@ class Strategy:
         # Warmup flag
         self._warmed_up = False
 
+        # Universe symbols (set by engine)
+        self._universe = set()
+
     # ------------------------------------------------------
     # Price fan-in (called by engine)
     # ------------------------------------------------------
@@ -57,8 +60,24 @@ class Strategy:
 
         # Warmup heuristic (simple placeholder)
         if not self._warmed_up:
-            if all(len(v) >= 10 for v in self._price_history.values()):
-                self._warmed_up = True
+            if self._universe:
+                if all(
+                    symbol in self._price_history
+                    and len(self._price_history[symbol]) >= 10
+                    for symbol in self._universe
+                ):
+                    self._warmed_up = True
+
+    # ------------------------------------------------------
+    # Universe injection (called by engine)
+    # ------------------------------------------------------
+
+    def set_universe(self, symbols):
+        """
+        Inform strategy which symbols are tradable.
+        Warmup logic is scoped strictly to this universe.
+        """
+        self._universe = set(symbols)
 
     # ------------------------------------------------------
     # Intent proposal (called by engine)

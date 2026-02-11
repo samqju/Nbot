@@ -24,8 +24,7 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import List
 
-from execution.exceptions import OperationalExchangeError
-
+from execution.exceptions import OperationalExchangeError, StopAlreadyBreached
 
 # ============================================================
 # CONFIG
@@ -78,6 +77,9 @@ class TestnetExchange:
             "X-MBX-APIKEY": API_KEY
         })
 
+        # Cache exchange contract filters
+        self._symbol_filters = self._load_symbol_filters()
+
     # --------------------------------------------------------
     # INTERNAL HELPERS
     # --------------------------------------------------------
@@ -119,6 +121,56 @@ class TestnetExchange:
             raise OperationalExchangeError("REST_TIMEOUT")
         except Exception as e:
             raise OperationalExchangeError(f"REST_ERROR | {e}")
+
+    # --------------------------------------------------------
+    # EXCHANGE CONTRACTS
+    # --------------------------------------------------------
+
+    def _load_symbol_filters(self):
+        data = self._get(
+            "/fapi/v1/exchangeInfo",
+            {"timestamp": int(time.time() * 1000)},
+        )
+
+        filters = {}
+
+        for s in data.get("symbols", []):
+            symbol = s.get("symbol")
+            if not symbol:
+                continue
+
+            lot = next(
+                (f for f in s["filters"] if f["filterType"] == "LOT_SIZE"),
+                None,
+            )
+            market_lot = next(
+                (f for f in s["filters"] if f["filterType"] == "MARKET_LOT_SIZE"),
+                None,
+            )
+            price_filter = next(
+                (f for f in s["filters"] if f["filterType"] == "PRICE_FILTER"),
+                None,
+            )
+
+            if not lot or not market_lot or not price_filter:
+                continue
+
+            filters[symbol] = {
+                "stepSize": float(lot["stepSize"]),
+                "minQty": float(lot["minQty"]),
+                "maxQty": float(lot["maxQty"]),
+                "marketMinQty": float(market_lot["minQty"]),
+                "marketMaxQty": float(market_lot["maxQty"]),
+                "tickSize": float(price_filter["tickSize"]),
+            }
+
+        return filters
+
+    def _quantize_qty(self, qty: float, step: float) -> float:
+        return (qty // step) * step
+
+    def _quantize_price(self, price: float, tick: float) -> float:
+        return round((price // tick) * tick, 10)
 
     # ========================================================
     # LIFECYCLE
@@ -265,20 +317,96 @@ class TestnetExchange:
         return pnl
 
     # ========================================================
+    # TRADE-LEVEL REALIZED PNL (AUTHORITATIVE)
+    # ========================================================
+
+    def get_trade_realized_pnl(
+        self,
+        *,
+        symbol: str,
+        since_timestamp: int,
+    ) -> dict:
+        """
+        Return authoritative trade close data:
+        {
+            "pnl": float,
+            "exit_price": float
+        }
+        """
+
+        trades = self._get(
+            "/fapi/v1/userTrades",
+            {
+                "symbol": symbol,
+                "startTime": since_timestamp,
+                "timestamp": int(time.time() * 1000),
+            },
+        )
+
+        pnl = 0.0
+        total_exit_qty = 0.0
+        weighted_exit_value = 0.0
+
+        for t in trades:
+            realized = float(t.get("realizedPnl", 0.0))
+            qty = float(t.get("qty", 0.0))
+            price = float(t.get("price", 0.0))
+
+            # realizedPnl only non-zero on closing fills
+            if realized != 0.0:
+                pnl += realized
+                total_exit_qty += qty
+                weighted_exit_value += qty * price
+
+        exit_price = (
+            weighted_exit_value / total_exit_qty
+            if total_exit_qty > 0
+            else 0.0
+        )
+
+        return {
+            "pnl": pnl,
+            "exit_price": exit_price,
+        }
+
+    # ========================================================
     # EXECUTION
     # ========================================================
 
-    def place_entry(self, *, side: str, notional_usd: float, price: float) -> EntryAck:
+    def place_entry(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        notional_usd: float,
+        price: float,
+    ) -> EntryAck:
         if side not in ("LONG", "SHORT"):
             raise OperationalExchangeError("INVALID_SIDE")
 
         order_side = "BUY" if side == "LONG" else "SELL"
-        qty = notional_usd / price
+        filters = self._symbol_filters.get(symbol)
+        if not filters:
+            raise OperationalExchangeError(
+                f"SYMBOL_FILTERS_MISSING | symbol={symbol}"
+            )
+
+        raw_qty = notional_usd / price
+        qty = self._quantize_qty(raw_qty, filters["stepSize"])
+
+        if qty <= 0:
+            raise OperationalExchangeError("QTY_ROUNDED_TO_ZERO")
+
+        if qty < filters["marketMinQty"]:
+            raise OperationalExchangeError("QTY_BELOW_MIN")
+
+        if qty > filters["marketMaxQty"]:
+            raise OperationalExchangeError("QTY_ABOVE_MAX")
 
         data = self._post(
             "/fapi/v1/order",
             {
-                "symbol": "BTCUSDT",
+                "symbol": symbol,
                 "side": order_side,
                 "type": "MARKET",
                 "quantity": qty,
@@ -287,34 +415,59 @@ class TestnetExchange:
         )
 
         filled_qty = float(data.get("executedQty", 0.0))
-        avg_price = float(data.get("avgPrice", 0.0))
 
-        if filled_qty <= 0 or avg_price <= 0:
-            raise OperationalExchangeError("ENTRY_FILL_INVALID")
+        if filled_qty <= 0:
+            raise OperationalExchangeError("ENTRY_NOT_FILLED")
 
+        avg_price = float(data.get("avgPrice") or price)
         return EntryAck(filled_qty, avg_price)
 
-    def place_initial_sl(self, *, side: str, qty: float, stop_price: float):
+    def place_initial_sl(self, *, symbol: str, side: str, qty: float, stop_price: float):
+
+        ticker = self._get(
+            "/fapi/v1/ticker/price",
+            {"symbol": symbol},
+        )
+        last_price = float(ticker["price"])
+
+        if side == "LONG" and stop_price >= last_price:
+            raise StopAlreadyBreached("STOP_ALREADY_BREACHED")
+
+        if side == "SHORT" and stop_price <= last_price:
+            raise StopAlreadyBreached("STOP_ALREADY_BREACHED")
         exit_side = "SELL" if side == "LONG" else "BUY"
+
+        filters = self._symbol_filters[symbol]
+        stop_price = self._quantize_price(
+            stop_price,
+            filters["tickSize"],
+        )
 
         self._post(
             "/fapi/v1/order",
             {
-                "symbol": "BTCUSDT",
+                "symbol": symbol,
                 "side": exit_side,
                 "type": "STOP_MARKET",
                 "stopPrice": stop_price,
                 "quantity": qty,
-                "reduceOnly": "true",
+                "reduceOnly": True,
                 "timestamp": int(time.time() * 1000),
             },
         )
 
-    def update_sl(self, *, side: str, qty: float, new_stop_price: float):
+    def update_sl(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        qty: float,
+        new_stop_price: float,
+    ):
         orders = self._get(
             "/fapi/v1/openOrders",
             {
-                "symbol": "BTCUSDT",
+                "symbol": symbol,
                 "timestamp": int(time.time() * 1000),
             },
         )
@@ -327,13 +480,14 @@ class TestnetExchange:
                 self._post(
                     "/fapi/v1/order",
                     {
-                        "symbol": "BTCUSDT",
+                        "symbol": symbol,
                         "orderId": o["orderId"],
                         "timestamp": int(time.time() * 1000),
                     },
                 )
 
         self.place_initial_sl(
+            symbol=symbol,
             side=side,
             qty=qty,
             stop_price=new_stop_price,
@@ -361,6 +515,10 @@ class TestnetExchange:
                     },
                 )
 
+    # ------------------------------------------------------
+    # Emergency Exit
+    # ------------------------------------------------------
+
     def emergency_exit(self):
         """
         Emergency flatten — market reduceOnly.
@@ -378,7 +536,28 @@ class TestnetExchange:
                 "side": side,
                 "type": "MARKET",
                 "quantity": pos.qty,
-                "reduceOnly": "true",
+                "reduceOnly": True,
                 "timestamp": int(time.time() * 1000),
             },
+        )
+
+    # --------------------------------------------------------
+    # ACCOUNT
+    # --------------------------------------------------------
+
+    def get_available_balance(self, *, asset: str = "USDT") -> float:
+        """
+       Fetch available balance from futures account.
+        """
+        data = self._get(
+            "/fapi/v2/balance",
+            {"timestamp": int(time.time() * 1000)},
+        )
+
+        for entry in data:
+            if entry.get("asset") == asset:
+                return float(entry.get("availableBalance", 0.0))
+
+        raise OperationalExchangeError(
+            f"BALANCE_NOT_FOUND | asset={asset}"
         )

@@ -8,3 +8,10 @@ class OperationalExchangeError(RuntimeError):
     - auth / permission
     """
     pass
+
+class StopAlreadyBreached(RuntimeError):
+    """
+    Calculated stop-loss is already breached by current market price.
+    This is a market safety condition, not an exchange failure.
+    """
+    pass
