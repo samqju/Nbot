@@ -254,12 +254,7 @@ class RiskManager:
         if direction not in ("LONG", "SHORT"):
             raise RuntimeError(f"INVALID_DIRECTION: {direction}")
 
-        # Reuse existing SL logic
-        side = "BUY" if direction == "LONG" else "SELL"
-
-        decision = self.evaluate_entry(
-            price=entry_price,
-            side=side,
+            side=direction,   # FIX: use LONG/SHORT semantics
         )
 
         if not decision.allowed or decision.stop_loss is None:
@@ -275,14 +270,14 @@ class RiskManager:
         else:
             risk_per_unit = sl - entry_price
 
-        if risk_per_unit <= 0:
+        if risk_per_unit <= 1e-12:   # FIX: protect against micro float collapse
             raise RuntimeError(
                 f"INVALID_SL_DISTANCE | direction={direction} "
                 f"entry={entry_price} sl={sl}"
             )
 
-        risk_usd = self.MAX_RISK_USD
-        quantity = risk_usd / risk_per_unit
+        # FIX: Align quantity with notional policy (exchange reality)
+        quantity = self.NOTIONAL_TARGET / entry_price
 
         return EntryPlanData(
             quantity=quantity,
