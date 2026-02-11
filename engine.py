@@ -623,14 +623,10 @@ class TradingEngine:
         if intent.symbol not in self.universe_symbols:
             return False, "SYMBOL_NOT_IN_UNIVERSE"
 
-        # 5. Direction enablement
-        if intent.direction == "SHORT":
-            return False, "SHORT_DISABLED"
-
-        if intent.direction != "LONG":
+        if intent.direction not in ("LONG", "SHORT"):
             return False, "INVALID_DIRECTION"
 
-        # 6. Strategy warmup
+        # 5. Strategy warmup
         if not self.strategy.is_warmed_up():
             return False, "STRATEGY_NOT_WARMED"
 
@@ -1373,7 +1369,7 @@ class TradingEngine:
         Warm up strategy with historical candles.
         """
         WARMUP_INTERVAL = "1m"
-        WARMUP_LIMIT = 100
+        WARMUP_LIMIT = 10
 
         for symbol in self.universe_symbols:
             candles = self.exchange.get_historical_candles(

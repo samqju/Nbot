@@ -234,9 +234,8 @@ class RiskManager:
         )
 
     # --------------------------------------------------
-    # Build Entry Plan (NO EXECUTION)
+    # Build Entry Plan
     # --------------------------------------------------
-
     def build_entry_plan(
         self,
         *,
@@ -245,20 +244,22 @@ class RiskManager:
     ) -> EntryPlanData:
         """
         Build sizing + SL for an entry attempt.
-        LONG-only for now.
-
+        Supports LONG and SHORT.
         This does NOT:
         - place orders
         - decide allow/deny
         - modify state
         """
 
-        assert direction == "LONG", "SHORT not enabled yet"
+        if direction not in ("LONG", "SHORT"):
+            raise RuntimeError(f"INVALID_DIRECTION: {direction}")
 
         # Reuse existing SL logic
+        side = "BUY" if direction == "LONG" else "SELL"
+
         decision = self.evaluate_entry(
             price=entry_price,
-            side="BUY",
+            side=side,
         )
 
         if not decision.allowed or decision.stop_loss is None:
@@ -268,13 +269,19 @@ class RiskManager:
 
         sl = decision.stop_loss
 
-        # Risk per unit
-        risk_per_unit = entry_price - sl
-        assert risk_per_unit > 0, "Invalid SL for LONG"
+        # Risk per unit (direction-aware)
+        if direction == "LONG":
+            risk_per_unit = entry_price - sl
+        else:
+            risk_per_unit = sl - entry_price
 
-        # Capital at risk (USD)
+        if risk_per_unit <= 0:
+            raise RuntimeError(
+                f"INVALID_SL_DISTANCE | direction={direction} "
+                f"entry={entry_price} sl={sl}"
+            )
+
         risk_usd = self.MAX_RISK_USD
-
         quantity = risk_usd / risk_per_unit
 
         return EntryPlanData(
