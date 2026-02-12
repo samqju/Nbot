@@ -1148,6 +1148,7 @@ class TradingEngine:
             entry_price=open_position["entry_price"],
             stop_loss=open_position["stop_loss"],
             qty=open_position["qty"],
+            risk_usd=open_position["risk_usd"],
             status="OPEN",
         )
 
@@ -1452,6 +1453,7 @@ class TradingEngine:
                     entry_price=open_position["entry_price"],
                     stop_loss=open_position["stop_loss"],
                     qty=open_position["qty"],
+                    risk_usd=open_position["risk_usd"],
                     status="CLOSED (EMERGENCY)",
                 ) + (
                     f"Exit: {exit_price:.4f}\n"
