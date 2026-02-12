@@ -16,6 +16,9 @@
 # ============================================================
 
 import os
+import json
+import threading
+import websocket
 import time
 import hmac
 import hashlib
@@ -122,6 +125,20 @@ class TestnetExchange:
     def _post(self, path: str, params: dict):
         try:
             resp = self.session.post(
+                f"{BASE_URL}{path}",
+                params=self._sign(params),
+                timeout=TIMEOUT,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except requests.exceptions.Timeout:
+            raise OperationalExchangeError("REST_TIMEOUT")
+        except Exception as e:
+            raise OperationalExchangeError(f"REST_ERROR | {e}")
+
+    def _delete(self, path: str, params: dict):
+        try:
+            resp = self.session.delete(
                 f"{BASE_URL}{path}",
                 params=self._sign(params),
                 timeout=TIMEOUT,
@@ -240,28 +257,72 @@ class TestnetExchange:
 
     def price_stream(self):
         """
-        Poll mark price for all USDT symbols every second.
+        Real-time LAST TRADE price stream via WebSocket.
+        Auto-reconnect + REST fallback.
         """
+        ws_url = "wss://stream.binancefuture.com/ws/!trade@arr"
+
+        last_message_time = time.time()
+
         while True:
-            data = self._get(
-                "/fapi/v1/premiumIndex",
-                {"timestamp": int(time.time() * 1000)},
-            )
+            try:
+                ws = websocket.create_connection(ws_url, timeout=10)
 
-            ts = int(time.time() * 1000)
+                while True:
+                    message = ws.recv()
+                    last_message_time = time.time()
 
-            for row in data:
-                symbol = row.get("symbol")
-                if not symbol or not symbol.endswith("USDT"):
-                    continue
+                    data = json.loads(message)
 
-                yield PriceTick(
-                    symbol=symbol,
-                    price=float(row["markPrice"]),
-                    timestamp=ts,
-                )
+                    if not isinstance(data, list):
+                        continue
 
-            time.sleep(1)
+                    for trade in data:
+                        symbol = trade.get("s")
+                        price = float(trade.get("p", 0))
+                        timestamp = trade.get("T")
+
+                        if not symbol or not symbol.endswith("USDT"):
+                            continue
+
+                        if price <= 0:
+                            continue
+
+                        yield PriceTick(
+                            symbol=symbol,
+                            price=price,
+                            timestamp=timestamp,
+                        )
+
+                    # Heartbeat watchdog
+                    if time.time() - last_message_time > 15:
+                        raise Exception("WS_HEARTBEAT_TIMEOUT")
+
+            except Exception:
+                # WebSocket failed — fallback to REST temporarily
+                try:
+                    data = self._get(
+                        "/fapi/v1/ticker/price",
+                        {"timestamp": int(time.time() * 1000)},
+                    )
+
+                    ts = int(time.time() * 1000)
+
+                    for row in data:
+                        symbol = row.get("symbol")
+                        if not symbol or not symbol.endswith("USDT"):
+                            continue
+
+                        yield PriceTick(
+                            symbol=symbol,
+                            price=float(row["price"]),
+                            timestamp=ts,
+                        )
+
+                except Exception:
+                    pass
+
+                time.sleep(2)
 
     def get_historical_candles(self, *, symbol: str, interval: str, limit: int):
         """
@@ -584,7 +645,7 @@ class TestnetExchange:
                 o.get("type") == "STOP_MARKET"
                 and o.get("reduceOnly") is True
             ):
-                self._post(
+                self._delete(
                     "/fapi/v1/order",
                     {
                         "symbol": symbol,
