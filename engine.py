@@ -369,7 +369,7 @@ class TradingEngine:
         # --- Reconciliation gate ---
         engine_state = self.state.get_state().get("engine_state")
         if engine_state == self.DAILY_HALT:
-           self.reconcile(reason="DAILY_HALT_RESUME")
+            self.reconcile(reason="DAILY_HALT_RESUME")
         else:
             self.reconcile(reason="ENGINE_STARTUP")
 
@@ -905,9 +905,30 @@ class TradingEngine:
         max_allowed = MAX_NOTIONAL_USD * (
             1 + NOTIONAL_TOLERANCE_PCT / 100
         )
-        assert executed_notional <= max_allowed, (
-            "ENGINE_NOTIONAL_BREACH"
-        )
+        if executed_notional > max_allowed:
+            self.system_log.critical(
+                f"ENGINE_NOTIONAL_BREACH | "
+                f"executed={executed_notional:.4f} "
+                f"allowed={max_allowed:.4f}"
+            )
+            send_critical(
+                "ENGINE NOTIONAL BREACH",
+                f"Executed: {executed_notional:.4f}\n"
+                f"Allowed: {max_allowed:.4f}\n"
+                "Emergency exit triggered."
+            )
+
+            self._verified_emergency_exit("ENGINE_NOTIONAL_BREACH")
+
+            self.state.set_engine_state(
+                engine_state=self.RISK_HALT,
+                reason="ENGINE_NOTIONAL_BREACH",
+            )
+            self.safety.halt("ENGINE_NOTIONAL_BREACH")
+            self.state.save()
+            self._entry_in_progress = False
+            self._accepted_intent = None
+            return
 
         # --- Recalculate SL based on actual fill price (0.9R policy) ---
         actual_risk_usd = 0.9 * RISK_PER_TRADE_USD
@@ -1489,11 +1510,20 @@ class TradingEngine:
                         position.symbol
                     )
 
+                    if live_price is None or live_price <= 0:
+                        self.system_log.warning(
+                            "RECOVERY_NO_LIVE_PRICE | skipping SL breach check"
+                        )
+                        live_price = None
+
                     # 3️⃣ If SL already breached → emergency exit
                     if (
-                        position.side == "LONG" and intended_sl >= live_price
-                    ) or (
-                        position.side == "SHORT" and intended_sl <= live_price
+                        live_price is not None
+                        and (
+                            (position.side == "LONG" and intended_sl >= live_price)
+                            or
+                            (position.side == "SHORT" and intended_sl <= live_price)
+                        )
                     ):
                         self.system_log.critical(
                             "RECOVERY_SL_ALREADY_BREACHED | emergency exit"
