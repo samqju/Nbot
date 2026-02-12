@@ -57,6 +57,7 @@ class SafetyManager:
     # HALT BOT MANUALLY
     # ----------------------------
     def halt(self, reason):
+        print("SAFETY HALT:", reason)
         """
         Force bot into unsafe state.
         """

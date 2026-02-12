@@ -23,7 +23,7 @@ RISK_TOLERANCE_PCT = 4.0
 MAX_NOTIONAL_USD = 300.0
 
 # Allowed deviation from notional (percent)
-NOTIONAL_TOLERANCE_PCT = 1.0
+NOTIONAL_TOLERANCE_PCT = 1.5
 
 # -------------------------------
 # LEVERAGE POLICY

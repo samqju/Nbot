@@ -82,6 +82,16 @@ class TestnetExchange:
         self._symbol_filters = self._load_symbol_filters()
 
     # --------------------------------------------------------
+    # SCHEMA VALIDATION
+    # --------------------------------------------------------
+    def _require_fields(self, data: dict, required: list, context: str):
+        missing = [k for k in required if k not in data]
+        if missing:
+            raise OperationalExchangeError(
+                f"SCHEMA_MISMATCH | context={context} | missing={missing}"
+            )
+
+    # --------------------------------------------------------
     # INTERNAL HELPERS
     # --------------------------------------------------------
 
@@ -318,6 +328,12 @@ class TestnetExchange:
         )
 
         for pos in data:
+            self._require_fields(
+                pos,
+                ["positionAmt", "entryPrice", "symbol"],
+                context="get_position"
+            )
+
             qty = float(pos["positionAmt"])
             if abs(qty) > 0.0:
                 symbol = pos["symbol"]
@@ -476,11 +492,17 @@ class TestnetExchange:
             },
         )
 
-        filled_qty = float(data.get("executedQty", 0.0))
+        self._require_fields(
+            data,
+            ["executedQty", "cumQuote", "status"],
+            context="place_entry"
+        )
+
+        filled_qty = float(data["executedQty"])
 
         if filled_qty > 0:
             # Compute true average fill price
-            cum_quote = float(data.get("cumQuote", 0.0))
+            cum_quote = float(data["cumQuote"])
             if cum_quote > 0:
                 avg_price = cum_quote / filled_qty
             else:
@@ -638,7 +660,11 @@ class TestnetExchange:
 
         for entry in data:
             if entry.get("asset") == asset:
-                return float(entry.get("availableBalance", 0.0))
+                if "availableBalance" not in entry:
+                    raise OperationalExchangeError(
+                        "SCHEMA_MISMATCH | context=get_available_balance"
+                    )
+                return float(entry["availableBalance"])
 
         raise OperationalExchangeError(
             f"BALANCE_NOT_FOUND | asset={asset}"
@@ -652,4 +678,5 @@ class TestnetExchange:
                 "timestamp": int(time.time() * 1000),
             },
         )
+        self._require_fields(data, ["price"], context="get_last_price")
         return float(data["price"])
