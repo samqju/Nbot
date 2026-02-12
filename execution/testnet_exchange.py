@@ -643,3 +643,13 @@ class TestnetExchange:
         raise OperationalExchangeError(
             f"BALANCE_NOT_FOUND | asset={asset}"
         )
+
+    def get_last_price(self, symbol: str) -> float:
+        data = self._get(
+            "/fapi/v1/ticker/price",
+            {
+                "symbol": symbol,
+                "timestamp": int(time.time() * 1000),
+            },
+        )
+        return float(data["price"])

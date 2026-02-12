@@ -6,8 +6,6 @@
 # This file defines POLICY ONLY.
 # No sizing logic, no dynamic risk, no derived values.
 
-SIM_START_BALANCE = 10000.0  # fake USD
-
 # ================================
 # RISK & CAPITAL POLICY (PHASE C.0)
 # ================================
@@ -46,7 +44,6 @@ GLOBAL_KILL_SWITCH = False
 # -------------------------------
 
 # Entry orders
-ENTRY_ORDER_TYPE = "LIMIT"
 ENTRY_SLIPPAGE_PCT = 1.0
 
 # ------------------------------------------------
@@ -55,17 +52,9 @@ ENTRY_SLIPPAGE_PCT = 1.0
 # Maximum allowed bid-ask spread (percent)
 MAX_SPREAD_PCT = 0.25
 
-# Exit orders
-EXIT_NORMAL_ORDER_TYPE = "LIMIT"
-EXIT_EMERGENCY_ORDER_TYPE = "MARKET"
-EXIT_SLIPPAGE_PCT = 1.0
-
 # -------------------------------
 # SYSTEM HALT POLICY
 # -------------------------------
 
 # Halt system on risk contract breach
 HALT_ON_RISK_BREACH = True
-
-STOP_REASON_RISK_FAILURE = "RISK_FAILURE"
-STOP_REASON_UNKNOWN_ERROR = "UNKNOWN_ERROR"

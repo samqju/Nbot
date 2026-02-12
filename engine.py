@@ -16,7 +16,7 @@ from safety.safety import SafetyManager
 from state.state import StateManager
 from execution.exceptions import OperationalExchangeError
 from utils.logger import system_logger, trade_logger, risk_logger, daily_logger
-from config import SIM_START_BALANCE, MAX_NOTIONAL_USD, LEVERAGE, NOTIONAL_TOLERANCE_PCT, RISK_PER_TRADE_USD, RISK_TOLERANCE_PCT, ENTRY_SLIPPAGE_PCT, MAX_SPREAD_PCT
+from config import MAX_NOTIONAL_USD, LEVERAGE, NOTIONAL_TOLERANCE_PCT, RISK_PER_TRADE_USD, RISK_TOLERANCE_PCT, ENTRY_SLIPPAGE_PCT, MAX_SPREAD_PCT
 from utils.telegram_notifier import send_info, send_warning, send_critical, edit_message, format_trade_panel, send_trade_panel
 
 # --------------------------------------------------
@@ -134,6 +134,9 @@ class TradingEngine:
     # Verified Emergency Exit (ONLY for risk breach)
     # --------------------------------------------------
     def _verified_emergency_exit(self, reason: str):
+        if self.exit_in_progress:
+            return
+        self.exit_in_progress = True
         self.system_log.critical(
             f"EMERGENCY_EXIT_TRIGGERED | reason={reason}"
         )
@@ -807,7 +810,16 @@ class TradingEngine:
         )
         # --- Margin guard ---
         required_margin = MAX_NOTIONAL_USD / LEVERAGE
-        balance = self.state.get_state().get("balance", 0.0)
+        try:
+            balance = self.exchange.get_available_balance()
+            self.state.state["balance"] = balance
+        except Exception as e:
+            self.system_log.critical(
+                f"BALANCE_FETCH_FAILED | {e}"
+            )
+            self._entry_in_progress = False
+            return
+
         if balance < required_margin:
             self._throttled_log(
                 key="insufficient_margin",
@@ -897,14 +909,25 @@ class TradingEngine:
             "ENGINE_NOTIONAL_BREACH"
         )
 
+        # --- Recalculate SL based on actual fill price (0.9R policy) ---
+        actual_risk_usd = 0.9 * RISK_PER_TRADE_USD
+
+        if intent.direction == "LONG":
+            corrected_sl = ack.avg_price - (
+                actual_risk_usd / ack.filled_qty
+            )
+        else:
+            corrected_sl = ack.avg_price + (
+                actual_risk_usd / ack.filled_qty
+            )
+
         open_position = self._build_open_position(
             symbol=intent.symbol,
             side=intent.direction,
             entry_price=ack.avg_price,
             qty=ack.filled_qty,
-            stop_loss=entry_plan.initial_sl,
+            stop_loss=corrected_sl,
         )
-
         # Persist entry timestamp for trade-level PnL isolation
         open_position["entry_timestamp"] = int(
             datetime.now(timezone.utc).timestamp() * 1000
@@ -914,7 +937,7 @@ class TradingEngine:
         # Post-fill risk recalculation
         # --------------------------------------------------
         actual_risk_usd = abs(
-            (ack.avg_price - entry_plan.initial_sl)
+            (ack.avg_price - corrected_sl)
             * ack.filled_qty
         )
 
@@ -992,7 +1015,7 @@ class TradingEngine:
                     symbol=intent.symbol,
                     side=intent.direction,
                     qty=ack.filled_qty,
-                    stop_price=entry_plan.initial_sl,
+                    stop_price=corrected_sl,
                 )
                 sl_placed = True
                 break
@@ -1172,6 +1195,26 @@ class TradingEngine:
                 # Only update daily PnL here (authoritative close event)
                 self.state.update_daily_realized(realized)
                 self.state.save()
+
+                # --- Sync balance after trade close ---
+                try:
+                    new_balance = self.exchange.get_available_balance()
+                    self.state.update_after_trade(
+                        balance=new_balance,
+                        open_position=None,
+                        last_trade=None,
+                    )
+                except Exception as e:
+                    self.system_log.critical(
+                        f"BALANCE_RESYNC_FAILED | {e}"
+                    )
+                    self.safety.halt("BALANCE_RESYNC_FAILED")
+                    self.state.set_engine_state(
+                        engine_state=self.INVARIANT_HALT,
+                        reason="BALANCE_RESYNC_FAILED",
+                    )
+                    self.state.save()
+                    return
 
                 panel_text = format_trade_panel(
                     symbol=open_position["symbol"],
@@ -1442,14 +1485,9 @@ class TradingEngine:
                     intended_sl = entry_plan.initial_sl
 
                     # 2️⃣ Fetch live price directly from exchange
-                    ticker = self.exchange._get(
-                        "/fapi/v1/ticker/price",
-                        {
-                            "symbol": position.symbol,
-                            "timestamp": int(time.time() * 1000),
-                        },
+                    live_price = self.exchange.get_last_price(
+                        position.symbol
                     )
-                    live_price = float(ticker["price"])
 
                     # 3️⃣ If SL already breached → emergency exit
                     if (
