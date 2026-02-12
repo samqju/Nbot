@@ -413,12 +413,15 @@ class TestnetExchange:
         }
         """
 
+        now = int(time.time() * 1000)
+
         trades = self._get(
             "/fapi/v1/userTrades",
             {
                 "symbol": symbol,
                 "startTime": since_timestamp,
-                "timestamp": int(time.time() * 1000),
+                "endTime": now,
+                "timestamp": now,
             },
         )
 

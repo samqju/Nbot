@@ -20,7 +20,7 @@ load_dotenv()
 from engine import TradingEngine
 from execution.testnet_exchange import TestnetExchange
 from utils.logger import system_logger
-from utils.telegram_notifier import configure, send_mesaage
+from utils.telegram_notifier import configure, send_message
 import os
 
 def main():

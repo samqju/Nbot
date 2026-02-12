@@ -1148,7 +1148,6 @@ class TradingEngine:
             entry_price=open_position["entry_price"],
             stop_loss=open_position["stop_loss"],
             qty=open_position["qty"],
-            risk_usd=open_position["risk_usd"],
             status="OPEN",
         )
 
@@ -1162,6 +1161,19 @@ class TradingEngine:
             f"POSITION_OPENED | "
             f"price={ack.avg_price} "
             f"qty={ack.filled_qty}"
+        )
+
+        # --------------------------------------------
+        # TRADE LOG — OPEN
+        # --------------------------------------------
+        self.trade_log.info(
+            f"TRADE_OPEN | "
+            f"symbol={open_position['symbol']} | "
+            f"side={open_position['side']} | "
+            f"entry={open_position['entry_price']:.4f} | "
+            f"qty={open_position['qty']:.6f} | "
+            f"sl={open_position['stop_loss']:.4f} | "
+            f"risk_usd={open_position['risk_usd']:.2f}"
         )
 
         # Entry complete — clear accepted intent
@@ -1251,6 +1263,19 @@ class TradingEngine:
                 )
 
                 edit_message(msg_id, panel_text)
+
+                # --------------------------------------------
+                # TRADE LOG — CLOSE
+                # --------------------------------------------
+                self.trade_log.info(
+                    f"TRADE_CLOSE | "
+                    f"symbol={open_position['symbol']} | "
+                    f"side={open_position['side']} | "
+                    f"entry={open_position['entry_price']:.4f} | "
+                    f"exit={exit_price:.4f} | "
+                    f"qty={open_position['qty']:.6f} | "
+                    f"pnl={realized:.2f}"
+                )
 
                 # Clear panel id
                 self.state.state["active_trade_panel_message_id"] = None
@@ -1407,13 +1432,26 @@ class TradingEngine:
                 realized = trade_data["pnl"]
                 exit_price = trade_data["exit_price"]
 
+                # --------------------------------------------
+                # TRADE LOG — EMERGENCY CLOSE
+                # --------------------------------------------
+                self.trade_log.info(
+                    f"TRADE_EMERGENCY_CLOSE | "
+                    f"symbol={open_position['symbol']} | "
+                    f"side={open_position['side']} | "
+                    f"entry={open_position['entry_price']:.4f} | "
+                    f"exit={exit_price:.4f} | "
+                    f"qty={open_position['qty']:.6f} | "
+                    f"pnl={realized:.2f} | "
+                    f"reason={position_decision.reason}"
+                )
+
                 panel_text = format_trade_panel(
                     symbol=open_position["symbol"],
                     side=open_position["side"],
                     entry_price=open_position["entry_price"],
                     stop_loss=open_position["stop_loss"],
                     qty=open_position["qty"],
-                    risk_usd=open_position["risk_usd"],
                     status="CLOSED (EMERGENCY)",
                 ) + (
                     f"Exit: {exit_price:.4f}\n"
