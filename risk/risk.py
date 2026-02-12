@@ -277,10 +277,11 @@ class RiskManager:
                 f"entry={entry_price} sl={sl}"
             )
 
+        # Use fixed notional sizing (consistent with evaluate_entry + exchange)
         quantity = self.NOTIONAL_TARGET / entry_price
 
-         return EntryPlanData(
-             quantity=quantity,
-             initial_sl=sl,
-             risk_r=1.0,
-         )
+        return EntryPlanData(
+            quantity=quantity,
+            initial_sl=sl,
+            risk_r=1.0,
+        )

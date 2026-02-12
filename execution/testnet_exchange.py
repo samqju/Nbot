@@ -168,7 +168,10 @@ class TestnetExchange:
         return filters
 
     def _quantize_qty(self, qty: float, step: float) -> float:
-        return (qty // step) * step
+        # Safer quantization to avoid floating precision issues
+        precision = str(step)[::-1].find(".")
+        quantized = (qty // step) * step
+        return round(quantized, precision)
 
     def _quantize_price(self, price: float, tick: float) -> float:
         return round((price // tick) * tick, 10)
@@ -438,7 +441,7 @@ class TestnetExchange:
         *,
         symbol: str,
         side: str,
-        notional_usd: float,
+        quantity: float,
         price: float,
     ) -> EntryAck:
         if side not in ("LONG", "SHORT"):
@@ -451,8 +454,7 @@ class TestnetExchange:
                 f"SYMBOL_FILTERS_MISSING | symbol={symbol}"
             )
 
-        raw_qty = notional_usd / price
-        requested_qty = self._quantize_qty(raw_qty, filters["stepSize"])
+        requested_qty = self._quantize_qty(quantity, filters["stepSize"])
 
         if requested_qty <= 0:
             raise OperationalExchangeError("QTY_ROUNDED_TO_ZERO")
@@ -476,10 +478,22 @@ class TestnetExchange:
 
         filled_qty = float(data.get("executedQty", 0.0))
 
-        if filled_qty <= 0:
-            raise OperationalExchangeError("ENTRY_NOT_FILLED")
-
-        avg_price = float(data.get("avgPrice") or price)
+        if filled_qty > 0:
+            # Compute true average fill price
+            cum_quote = float(data.get("cumQuote", 0.0))
+            if cum_quote > 0:
+                avg_price = cum_quote / filled_qty
+            else:
+                avg_price = price
+        else:
+            # Fallback: wait briefly and fetch position
+            time.sleep(1.0)
+            pos = self.get_position()
+            if pos and pos.symbol == symbol:
+                filled_qty = pos.qty
+                avg_price = pos.entry_price
+            else:
+                raise OperationalExchangeError("ENTRY_NOT_FILLED")
 
         fully_filled = abs(filled_qty - requested_qty) < 1e-12
 

@@ -654,7 +654,12 @@ class TradingEngine:
             return
 
         entry_price = self.market_state.get_price(intent.symbol)
-
+        if entry_price <= 0:
+            self.system_log.info(
+                f"ENTRY_BLOCKED | INVALID_MARKET_PRICE | price={entry_price}"
+            )
+            self._entry_in_progress = False
+            return
         # --------------------------------------------------
         # STEP 6.7 — Spread / Illiquidity guard
         # --------------------------------------------------
@@ -683,7 +688,12 @@ class TradingEngine:
             direction=intent.direction,
             entry_price=entry_price,
         )
-
+        # --- DEBUG: Risk calculation before order placement ---
+        self.system_log.info(
+            f"DEBUG_ENTRY | entry={entry_price} "
+            f"sl={entry_plan.initial_sl} "
+            f"qty={entry_plan.quantity}"
+        )
         # --- Margin guard ---
         required_margin = MAX_NOTIONAL_USD / LEVERAGE
         balance = self.state.get_state().get("balance", 0.0)
@@ -698,8 +708,13 @@ class TradingEngine:
         ack = self.exchange.place_entry(
             symbol=intent.symbol,
             side=intent.direction,
-            notional_usd=MAX_NOTIONAL_USD,
+            quantity=entry_plan.quantity,
             price=entry_price,
+        )
+        # --- DEBUG: Exchange fill details ---
+        self.system_log.info(
+            f"DEBUG_FILL | avg={ack.avg_price} "
+            f"filled_qty={ack.filled_qty}"
         )
 
         if ack.filled_qty <= 0:
@@ -987,9 +1002,8 @@ class TradingEngine:
             if msg_id:
                 trade_data = self.exchange.get_trade_realized_pnl(
                     symbol=open_position["symbol"],
-                    since_timestamp=open_position["entry_timestamp"],
+                    since_timestamp=open_position.get("entry_timestamp"),
                 )
-
                 realized = trade_data["pnl"]
                 exit_price = trade_data["exit_price"]
 
@@ -1248,6 +1262,95 @@ class TradingEngine:
                 rebuilt_position = self.state.state["open_position"]
 
                 # --------------------------------------------------
+                # AUTONOMOUS SL RECOVERY (Position without SL)
+                # --------------------------------------------------
+                if position.stop_loss is None:
+
+                    self.system_log.critical(
+                        "POSITION_WITHOUT_SL | attempting recovery"
+                    )
+
+                    # 1️⃣ Recalculate canonical SL
+                    entry_plan = self.risk.build_entry_plan(
+                        direction=position.side,
+                        entry_price=position.entry_price,
+                    )
+
+                    intended_sl = entry_plan.initial_sl
+
+                    # 2️⃣ Fetch live price directly from exchange
+                    ticker = self.exchange._get(
+                        "/fapi/v1/ticker/price",
+                        {
+                            "symbol": position.symbol,
+                            "timestamp": int(time.time() * 1000),
+                        },
+                    )
+                    live_price = float(ticker["price"])
+
+                    # 3️⃣ If SL already breached → emergency exit
+                    if (
+                        position.side == "LONG" and intended_sl >= live_price
+                    ) or (
+                        position.side == "SHORT" and intended_sl <= live_price
+                    ):
+                        self.system_log.critical(
+                            "RECOVERY_SL_ALREADY_BREACHED | emergency exit"
+                        )
+
+                        self._verified_emergency_exit("RECOVERY_SL_BREACHED")
+
+                        self.state.set_engine_state(
+                            engine_state=self.RISK_HALT,
+                            reason="RECOVERY_SL_BREACHED",
+                        )
+                        self.state.save()
+                        self.safety.halt("RECOVERY_SL_BREACHED")
+                        return
+
+                    # 4️⃣ Attempt SL placement
+                    try:
+                        self.exchange.place_initial_sl(
+                            symbol=position.symbol,
+                            side=position.side,
+                            qty=position.qty,
+                            stop_price=intended_sl,
+                        )
+                    except Exception as e:
+                        self.system_log.critical(
+                            f"RECOVERY_SL_PLACEMENT_FAILED | {e}"
+                        )
+                        self.state.set_engine_state(
+                            engine_state=self.INVARIANT_HALT,
+                            reason="RECOVERY_SL_PLACEMENT_FAILED",
+                        )
+                        self.state.save()
+                        self.safety.halt("RECOVERY_SL_PLACEMENT_FAILED")
+                        return
+
+                    # 5️⃣ Verify SL now exists
+                    verified_position = self.exchange.get_position()
+                    if (
+                        verified_position is None
+                        or verified_position.stop_loss is None
+                    ):
+                        self.system_log.critical(
+                            "RECOVERY_SL_VERIFICATION_FAILED"
+                        )
+                        self.state.set_engine_state(
+                            engine_state=self.INVARIANT_HALT,
+                            reason="RECOVERY_SL_VERIFICATION_FAILED",
+                        )
+                        self.state.save()
+                        self.safety.halt("RECOVERY_SL_VERIFICATION_FAILED")
+                        return
+
+                    self.system_log.info("RECOVERY_SL_SUCCESS")
+
+                    # Rebuild open_position with recovered SL
+                    self.state.state["open_position"]["stop_loss"] = intended_sl
+
+                # --------------------------------------------------
                 # TELEGRAM PANEL RECOVERY (RESTART SAFETY)
                 # --------------------------------------------------
                 if (
@@ -1269,19 +1372,6 @@ class TradingEngine:
                         self.state.state[
                             "active_trade_panel_message_id"
                         ] = msg_id
-
-                # Invariant: position must always have protective SL
-                if position.stop_loss is None:
-                    self.system_log.critical(
-                        "RECONCILIATION_POSITION_WITHOUT_SL"
-                    )
-                    self.state.set_engine_state(
-                        engine_state=self.INVARIANT_HALT,
-                        reason="POSITION_WITHOUT_SL",
-                    )
-                    self.state.save()
-                    self.safety.halt("POSITION_WITHOUT_SL")
-                    return
 
                 # Re-attach to existing position
                 self.exit_in_progress = False
@@ -1357,9 +1447,6 @@ class TradingEngine:
         self.system_log.info(
             f"UNIVERSE_LOADED | count={len(symbols)}"
         )
-        send_message(
-            "🟢 <b>UNIVERSE LOADED</b>\n"
-        )
 
         # Inform strategy about tradable universe
         self.strategy.set_universe(symbols)
@@ -1387,7 +1474,4 @@ class TradingEngine:
 
         self.system_log.info(
             f"STRATEGY_WARMUP_COMPLETE | symbols={len(self.universe_symbols)}"
-        )
-        send_message(
-            "🟢 <b>STRATEGY WARMUP COMPLETE</b>\n"
         )
