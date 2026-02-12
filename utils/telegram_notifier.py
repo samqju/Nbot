@@ -128,6 +128,25 @@ def edit_message(message_id: int, text: str) -> None:
         _logger.warning(f"TELEGRAM_EDIT_EXCEPTION | {e}")
         return
 
+# ==========================================================
+# Structured Alert API
+# ==========================================================
+
+def send_info(title: str, body: str = "") -> Optional[int]:
+    return send_message(
+        f"🟢 <b>{title}</b>\n\n{body}"
+    )
+
+def send_warning(title: str, body: str = "") -> Optional[int]:
+    return send_message(
+        f"🟡 <b>{title}</b>\n\n{body}"
+    )
+
+def send_critical(title: str, body: str = "") -> Optional[int]:
+    return send_message(
+        f"🔴 <b>{title}</b>\n\n{body}"
+    )
+
 # --------------------------------------------------------
 # TRADE PANEL FORMATTER
 # --------------------------------------------------------
@@ -154,3 +173,14 @@ def format_trade_panel(
         f"Qty: {qty:.6f}\n"
         f"Risk: {risk_usd:.2f} USD\n"
     )
+
+# --------------------------------------------------------
+# Trade Panel Sender (Structured)
+# --------------------------------------------------------
+
+def send_trade_panel(text: str) -> Optional[int]:
+    """
+    Explicit trade panel sender.
+    Maintains abstraction boundary.
+    """
+    return send_message(text)

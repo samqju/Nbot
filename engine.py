@@ -16,17 +16,8 @@ from safety.safety import SafetyManager
 from state.state import StateManager
 from execution.exceptions import OperationalExchangeError
 from utils.logger import system_logger, trade_logger, risk_logger, daily_logger
-from utils.telegram_notifier import send_message, edit_message, format_trade_panel
-from config import (
-    SIM_START_BALANCE,
-    MAX_NOTIONAL_USD,
-    LEVERAGE,
-    NOTIONAL_TOLERANCE_PCT,
-    RISK_PER_TRADE_USD,
-    RISK_TOLERANCE_PCT,
-    ENTRY_SLIPPAGE_PCT,
-    MAX_SPREAD_PCT,
-)
+from config import SIM_START_BALANCE, MAX_NOTIONAL_USD, LEVERAGE, NOTIONAL_TOLERANCE_PCT, RISK_PER_TRADE_USD, RISK_TOLERANCE_PCT, ENTRY_SLIPPAGE_PCT, MAX_SPREAD_PCT
+from utils.telegram_notifier import send_info, send_warning, send_critical, edit_message, format_trade_panel, send_trade_panel
 
 # --------------------------------------------------
 # STEP 6.3 — SL Timing Guard Policy
@@ -259,11 +250,95 @@ class TradingEngine:
         self._accepted_intent = None
 
         # --------------------------------------------------
+        # Production Log Throttle
+        # --------------------------------------------------
+        self._log_throttle = {}
+        self._LOG_THROTTLE_SECONDS = 10
+        self._LOG_THROTTLE_MAX_KEYS = 500
+
+        # --------------------------------------------------
         # Entry lifecycle state
         # --------------------------------------------------
         self._entry_in_progress = False
 
         self.system_log.info("ENGINE_INITIALIZED")
+
+    # ==================================================
+    # Production Log Throttle
+    # ==================================================
+    def _throttled_log(self, key: str, level: str, message: str):
+        """
+        Production-grade log throttle.
+
+        - Emits first occurrence immediately
+        - Suppresses repeats within window
+        - Emits summary after window expiry
+        - Auto-cleans stale keys
+        """
+
+        now = time.time()
+        entry = self._log_throttle.get(key)
+
+        # ------------------------------
+        # First occurrence
+        # ------------------------------
+        if entry is None:
+            self._log_throttle[key] = {
+                "last_emit": now,
+                "suppressed": 0,
+                "last_message": message,
+            }
+            self._emit_log(level, message)
+            return
+
+        elapsed = now - entry["last_emit"]
+
+        # ------------------------------
+        # Within throttle window
+        # ------------------------------
+        if elapsed < self._LOG_THROTTLE_SECONDS:
+            entry["suppressed"] += 1
+            entry["last_message"] = message
+            return
+
+        # ------------------------------
+        # Window expired → emit summary
+        # ------------------------------
+        if entry["suppressed"] > 0:
+            summary = (
+                f"{entry['last_message']} "
+                f"(suppressed {entry['suppressed']} repeats)"
+            )
+            self._emit_log(level, summary)
+        else:
+            self._emit_log(level, message)
+
+        # Reset counter
+        entry["last_emit"] = now
+        entry["suppressed"] = 0
+        entry["last_message"] = message
+
+        # ------------------------------
+        # Cleanup (prevent memory growth)
+        # ------------------------------
+        if len(self._log_throttle) > self._LOG_THROTTLE_MAX_KEYS:
+            self._cleanup_throttle(now)
+
+    def _emit_log(self, level: str, message: str):
+        if level == "info":
+            self.system_log.info(message)
+        elif level == "critical":
+            self.system_log.critical(message)
+        else:
+            self.system_log.info(message)
+
+    def _cleanup_throttle(self, now: float):
+        keys_to_delete = []
+        for k, v in self._log_throttle.items():
+            if now - v["last_emit"] > self._LOG_THROTTLE_SECONDS * 5:
+                keys_to_delete.append(k)
+        for k in keys_to_delete:
+            del self._log_throttle[k]
 
     # --------------------------------------------------
     # Engine Start (Market Data lifecycle)
@@ -281,10 +356,9 @@ class TradingEngine:
             self.system_log.critical(
                 f"EXCHANGE_CONNECT_FAILED | error={e}"
             )
-            send_message(
-                "🔴 <b>EXCHANGE CONNECT FAILED</b>\n\n"
-                f"Error: {e}\n\n"
-                "Engine did not start."
+            send_critical(
+                "EXCHANGE CONNECT FAILED",
+                f"Error: {e}\n\nEngine did not start."
             )
             self.safety.halt("EXCHANGE_CONNECT_FAILED")
             return
@@ -312,6 +386,10 @@ class TradingEngine:
         except Exception as e:
             self.system_log.critical(
                 f"LEVERAGE_ENFORCEMENT_FAILED | {e}"
+            )
+            send_critical(
+                "LEVERAGE ENFORCEMENT FAILED",
+                f"{e}\n\nEngine halted."
             )
             self.state.set_engine_state(
                 engine_state=self.INVARIANT_HALT,
@@ -343,6 +421,10 @@ class TradingEngine:
                 self.system_log.critical(
                     f"BALANCE_SYNC_FAILED | {e}"
                 )
+                send_critical(
+                    "BALANCE SYNC FAILED",
+                    f"{e}\n\nEngine halted."
+                )
                 self.safety.halt("BALANCE_SYNC_FAILED")
                 self.state.set_engine_state(
                     engine_state=self.INVARIANT_HALT,
@@ -355,8 +437,8 @@ class TradingEngine:
         # --------------------------------------------------
         # TELEGRAM Notification — information only
         # --------------------------------------------------
-        send_message(
-            "🟢 <b>ENGINE STARTED</b>\n\n"
+        send_info(
+            "ENGINE STARTED",
             f"UTC: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}\n"
             "Status: RUNNING"
         )
@@ -387,9 +469,9 @@ class TradingEngine:
                     timestamp=tick.timestamp,
                 )
 
-                 # --------------------------------------------------
-                 # STEP 3 — Time & Daily Risk lifecycle
-                 # --------------------------------------------------
+                # --------------------------------------------------
+                # STEP 3 — Time & Daily Risk lifecycle
+                # --------------------------------------------------
                 if not self._handle_time_and_daily_risk(
                     timestamp=tick.timestamp
                 ):
@@ -417,8 +499,10 @@ class TradingEngine:
                     intent = self.strategy.propose_intent()
                 if intent is not None:
                     if not self.market_state.has_price(intent.symbol):
-                        self.system_log.info(
-                            f"INTENT_IGNORED | NO_MARKET_PRICE | symbol={intent.symbol}"
+                        self._throttled_log(
+                            key=f"intent_no_price_{intent.symbol}",
+                            level="info",
+                            message=f"INTENT_IGNORED | NO_MARKET_PRICE | symbol={intent.symbol}",
                         )
                         intent = None
 
@@ -439,11 +523,15 @@ class TradingEngine:
                     )
 
                     if not is_valid:
-                        self.system_log.info(
-                            f"INTENT_REJECTED | "
-                            f"symbol={self._latest_intent.symbol} "
-                            f"direction={self._latest_intent.direction} "
-                            f"reason={reason}"
+                        self._throttled_log(
+                            key=f"intent_rejected_{reason}",
+                            level="info",
+                            message=(
+                                f"INTENT_REJECTED | "
+                                f"symbol={self._latest_intent.symbol} "
+                                f"direction={self._latest_intent.direction} "
+                                f"reason={reason}"
+                            ),
                         )
                         self._latest_intent = None
                     else:
@@ -453,7 +541,12 @@ class TradingEngine:
                             f"direction={self._latest_intent.direction} "
                             f"pattern={self._latest_intent.pattern}"
                         )
-
+                        send_info(
+                            "INTENT ACCEPTED",
+                            f"Symbol: {self._latest_intent.symbol}\n"
+                            f"Direction: {self._latest_intent.direction}\n"
+                            f"Pattern: {self._latest_intent.pattern}"
+                        )
                         self._accepted_intent = self._latest_intent
                         self._latest_intent = None
 
@@ -488,8 +581,8 @@ class TradingEngine:
             self.system_log.critical(
                 f"OPERATIONAL_EXCHANGE_ERROR | {e}"
             )
-            send_message(
-                "🔴 <b>OPERATIONAL EXCHANGE ERROR</b>\n\n"
+            send_critical(
+                "OPERATIONAL EXCHANGE ERROR",
                 f"{e}\n\n"
                 "Engine halted.\n"
                 "Existing positions remain protected.\n"
@@ -552,9 +645,8 @@ class TradingEngine:
                 reason=daily_decision.reason,
             )
             self.state.save()
-
-            send_message(
-                "⛔ <b>DAILY HALT</b>\n\n"
+            send_critical(
+                "DAILY HALT",
                 f"Reason: {daily_decision.reason}\n"
                 f"Daily Loss Floor: "
                 f"{daily_decision.daily_loss_floor} USD\n\n"
@@ -647,16 +739,24 @@ class TradingEngine:
         self._entry_in_progress = True
 
         if not self.market_state.has_price(intent.symbol):
-            self.system_log.info(
-                f"ENTRY_BLOCKED | NO_MARKET_PRICE | symbol={intent.symbol}"
+            self._throttled_log(
+                key=f"no_price_{intent.symbol}",
+                level="info",
+                message=f"ENTRY_BLOCKED | NO_MARKET_PRICE | symbol={intent.symbol}",
+            )
+            send_warning(
+                "ENTRY BLOCKED — NO MARKET PRICE",
+                f"Symbol: {intent.symbol}"
             )
             self._entry_in_progress = False
             return
 
         entry_price = self.market_state.get_price(intent.symbol)
         if entry_price <= 0:
-            self.system_log.info(
-                f"ENTRY_BLOCKED | INVALID_MARKET_PRICE | price={entry_price}"
+            self._throttled_log(
+                key=f"invalid_price_{intent.symbol}",
+                level="info",
+                message=f"ENTRY_BLOCKED | INVALID_MARKET_PRICE | price={entry_price}",
             )
             self._entry_in_progress = False
             return
@@ -671,14 +771,25 @@ class TradingEngine:
             self.system_log.critical(
                 f"SPREAD_FETCH_FAILED | {e}"
             )
+            send_warning(
+                "SPREAD FETCH FAILED",
+                f"Symbol: {intent.symbol}\n"
+                f"{e}"
+            )
             self._entry_in_progress = False
             return
 
         if spread_pct > MAX_SPREAD_PCT:
-            self.system_log.info(
-                f"ENTRY_BLOCKED_SPREAD | "
-                f"spread={spread_pct:.4f}% "
-                f"max={MAX_SPREAD_PCT:.4f}%"
+            self._throttled_log(
+                key=f"spread_block_{intent.symbol}",
+                level="info",
+                message=f"ENTRY_BLOCKED_SPREAD | spread={spread_pct:.4f}%",
+            )
+            send_warning(
+                "ENTRY BLOCKED — SPREAD TOO HIGH",
+                f"Symbol: {intent.symbol}\n"
+                f"Spread: {spread_pct:.4f}%\n"
+                f"Max Allowed: {MAX_SPREAD_PCT:.4f}%"
             )
             self._entry_in_progress = False
             return
@@ -698,8 +809,19 @@ class TradingEngine:
         required_margin = MAX_NOTIONAL_USD / LEVERAGE
         balance = self.state.get_state().get("balance", 0.0)
         if balance < required_margin:
-            self.system_log.info(
-                "ENTRY_BLOCKED | INSUFFICIENT_MARGIN"
+            self._throttled_log(
+                key="insufficient_margin",
+                level="info",
+                message=(
+                    f"ENTRY_BLOCKED | INSUFFICIENT_MARGIN "
+                    f"required={required_margin:.2f} "
+                    f"balance={balance:.2f}"
+                ),
+            )
+            send_warning(
+                "ENTRY BLOCKED — INSUFFICIENT MARGIN",
+                f"Required: {required_margin:.2f} USD\n"
+                f"Balance: {balance:.2f} USD"
             )
             self._entry_in_progress = False
             return
@@ -718,7 +840,11 @@ class TradingEngine:
         )
 
         if ack.filled_qty <= 0:
-            self.system_log.info("ENTRY_NO_FILL")
+            self._throttled_log(
+                key=f"entry_no_fill_{intent.symbol}",
+                level="info",
+                message="ENTRY_NO_FILL",
+            )
             self._entry_in_progress = False
             return
 
@@ -730,6 +856,13 @@ class TradingEngine:
                 f"PARTIAL_FILL_DETECTED | "
                 f"requested={ack.requested_qty} "
                 f"filled={ack.filled_qty}"
+            )
+            send_critical(
+                "PARTIAL FILL DETECTED",
+                f"Symbol: {intent.symbol}\n"
+                f"Requested: {ack.requested_qty}\n"
+                f"Filled: {ack.filled_qty}\n"
+                "Trade aborted. Engine halting."
             )
 
             # Cancel any remaining open entry orders
@@ -795,6 +928,13 @@ class TradingEngine:
                 f"actual={actual_risk_usd:.4f} "
                 f"allowed={max_allowed_risk:.4f}"
             )
+            send_critical(
+                "POST-FILL RISK BREACH",
+                f"Symbol: {intent.symbol}\n"
+                f"Actual Risk: {actual_risk_usd:.4f} USD\n"
+                f"Allowed: {max_allowed_risk:.4f} USD\n"
+                "Emergency exit triggered."
+            )
 
             # Flatten immediately
             self.exchange.emergency_exit()
@@ -821,6 +961,13 @@ class TradingEngine:
                 f"SLIPPAGE_BREACH | "
                 f"slippage={slippage_pct:.4f}% "
                 f"allowed={ENTRY_SLIPPAGE_PCT:.4f}%"
+            )
+            send_critical(
+                "SLIPPAGE BREACH",
+                f"Symbol: {intent.symbol}\n"
+                f"Slippage: {slippage_pct:.4f}%\n"
+                f"Allowed: {ENTRY_SLIPPAGE_PCT:.4f}%\n"
+                "Emergency exit triggered."
             )
 
             self.exchange.emergency_exit()
@@ -856,8 +1003,8 @@ class TradingEngine:
                 time.sleep(0.5)
 
         if not sl_placed:
-            send_message(
-                "⚠️ <b>SL PLACEMENT FAILED</b>\n"
+            send_warning(
+                "SL PLACEMENT FAILED",
                 "Retry attempts exhausted.\n"
                 "Monitoring risk boundary."
             )
@@ -873,7 +1020,13 @@ class TradingEngine:
                 f"elapsed={sl_elapsed:.4f}s "
                 f"max={MAX_SL_PLACEMENT_SECONDS:.4f}s"
             )
-
+            send_critical(
+                "SL TIMING BREACH",
+                f"Symbol: {intent.symbol}\n"
+                f"Elapsed: {sl_elapsed:.4f}s\n"
+                f"Max Allowed: {MAX_SL_PLACEMENT_SECONDS:.4f}s\n"
+                "Emergency exit triggered."
+            )
             self._verified_emergency_exit(
                 reason="SL_TIMING_BREACH"
             )
@@ -913,7 +1066,13 @@ class TradingEngine:
                     f"liq_distance={liq_distance:.6f} "
                     f"sl_distance={sl_distance:.6f}"
                 )
-
+                send_critical(
+                    "LIQUIDATION BUFFER TOO CLOSE",
+                    f"Symbol: {intent.symbol}\n"
+                    f"Liq Distance: {liq_distance:.6f}\n"
+                    f"SL Distance: {sl_distance:.6f}\n"
+                    "Emergency exit triggered."
+                )
                 self._verified_emergency_exit(
                     reason="LIQUIDATION_BUFFER_TOO_CLOSE"
                 )
@@ -949,7 +1108,7 @@ class TradingEngine:
             status="OPEN",
         )
 
-        msg_id = send_message(panel_text)
+        msg_id = send_trade_panel(panel_text)
 
         if msg_id:
             self.state.state["active_trade_panel_message_id"] = msg_id
@@ -1093,8 +1252,8 @@ class TradingEngine:
                 time.sleep(0.5)
 
             if not update_ok:
-                send_message(
-                    "⚠️ <b>SL UPDATE VERIFICATION FAILED</b>\n"
+                send_warning(
+                    "SL UPDATE VERIFICATION FAILED",
                     "Monitoring risk boundary."
                 )
 
@@ -1104,6 +1263,10 @@ class TradingEngine:
             if exchange_position is None:
                 self.system_log.critical(
                     "SL_UPDATE_FAILED | POSITION_MISSING_AFTER_SL_UPDATE"
+                )
+                send_critical(
+                    "SL VERIFICATION FAILED",
+                    "Position missing after SL update.\nEngine halting."
                 )
                 self.safety.halt("SL_VERIFICATION_FAILED")
                 self.state.set_engine_state(
@@ -1153,11 +1316,11 @@ class TradingEngine:
                 f"reason={position_decision.reason}"
             )
 
-            send_message(
-                "🚨 <b>POSITION RISK VIOLATION</b>\n\n"
+            send_critical(
+                "POSITION RISK VIOLATION",
                 f"Reason: {position_decision.reason}\n\n"
                 "Emergency exit sent.\n"
-                "ENGINE HALTED — manual intervention required."
+                "Engine halted — manual intervention required."
             )
 
             # Emergency flatten
@@ -1298,7 +1461,21 @@ class TradingEngine:
                             "RECOVERY_SL_ALREADY_BREACHED | emergency exit"
                         )
 
+                        send_critical(
+                            "RECOVERY SL ALREADY BREACHED",
+                            f"Symbol: {position.symbol}\n"
+                            "Emergency exit triggered.\n"
+                            "Engine halting."
+                        )
+
                         self._verified_emergency_exit("RECOVERY_SL_BREACHED")
+
+                        send_critical(
+                            "RECOVERY SL BREACHED",
+                            f"Symbol: {position.symbol}\n"
+                            "Emergency exit confirmed.\n"
+                            "Engine halted."
+                        )
 
                         self.state.set_engine_state(
                             engine_state=self.RISK_HALT,
@@ -1320,6 +1497,10 @@ class TradingEngine:
                         self.system_log.critical(
                             f"RECOVERY_SL_PLACEMENT_FAILED | {e}"
                         )
+                        send_critical(
+                            "RECOVERY SL PLACEMENT FAILED",
+                            f"{e}\n\nEngine halted."
+                        )
                         self.state.set_engine_state(
                             engine_state=self.INVARIANT_HALT,
                             reason="RECOVERY_SL_PLACEMENT_FAILED",
@@ -1336,6 +1517,12 @@ class TradingEngine:
                     ):
                         self.system_log.critical(
                             "RECOVERY_SL_VERIFICATION_FAILED"
+                        )
+                        send_critical(
+                            "RECOVERY SL VERIFICATION FAILED",
+                            f"Symbol: {position.symbol}\n"
+                            "Stop-loss could not be verified.\n"
+                            "Engine halting."
                         )
                         self.state.set_engine_state(
                             engine_state=self.INVARIANT_HALT,
@@ -1367,7 +1554,7 @@ class TradingEngine:
                         status="OPEN (RECOVERED)",
                     )
 
-                    msg_id = send_message(recovered_panel)
+                    msg_id = send_trade_panel(recovered_panel)
                     if msg_id:
                         self.state.state[
                             "active_trade_panel_message_id"
@@ -1411,8 +1598,8 @@ class TradingEngine:
             self.system_log.critical(
                 f"RECONCILIATION_FAILED | error={e}"
             )
-            send_message(
-                "🔴 <b>RECONCILIATION FAILED</b>\n\n"
+            send_critical(
+                "RECONCILIATION FAILED",
                 f"{e}\n\n"
                 "Engine halted.\n"
                 "Existing positions remain protected.\n"

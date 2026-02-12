@@ -10,7 +10,7 @@
 # ================================
 
 from config import GLOBAL_KILL_SWITCH
-
+from utils.telegram_notifier import send_critical
 
 # ================================
 # SAFETY MANAGER CLASS
@@ -62,6 +62,16 @@ class SafetyManager:
         """
         self._halted = True
         self._reason = reason
+
+        # --------------------------------------------------
+        # Unified Operator Alert
+        # --------------------------------------------------
+        send_critical(
+            "ENGINE HALTED",
+            f"Reason: {reason}\n\n"
+            "Trading stopped.\n"
+            "Manual intervention required."
+        )
 
     # ----------------------------
     # GET HALT REASON

@@ -20,7 +20,7 @@ load_dotenv()
 from engine import TradingEngine
 from execution.testnet_exchange import TestnetExchange
 from utils.logger import system_logger
-from utils.telegram_notifier import configure
+from utils.telegram_notifier import configure, send_mesaage
 import os
 
 def main():
@@ -60,6 +60,11 @@ def main():
         engine.start()
     except KeyboardInterrupt:
         log.info("KEYBOARD_INTERRUPT | shutting down")
+        send_message(
+            "🟡 <b>ENGINE STOPPED (MANUAL)</b>\n\n"
+            "Reason: KeyboardInterrupt (Ctrl+C)\n"
+            "Status: STOPPED\n"
+        )
     except Exception as e:
         log.critical(f"FATAL_ENGINE_ERROR | {e}")
         raise
