@@ -12,15 +12,15 @@
 # RISK & CAPITAL POLICY
 # ================================
 
-RISK_PER_TRADE_USD = 6.0
-RISK_TOLERANCE_PCT = 4.0
+RISK_PER_TRADE_USD = 10.0
+RISK_TOLERANCE_PCT = 10.0
 
 # ================================
 # NOTIONAL POLICY
 # ================================
 
-MAX_NOTIONAL_USD = 300.0
-NOTIONAL_TOLERANCE_PCT = 1.5
+MAX_NOTIONAL_USD = 1000.0
+NOTIONAL_TOLERANCE_PCT = 1.0
 
 # ================================
 # LEVERAGE POLICY

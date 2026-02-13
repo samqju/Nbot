@@ -1,59 +1,65 @@
 # ==========================================================
-# Strategy — Alpha Oracle (Ranked Breakout v1, Bi-Directional)
+# Strategy — VEX-LR v2 (Hybrid Professional System)
+# Volatility Expansion + Liquidity Reversal
+# Balanced Mode (2–4 trades/day)
 # ==========================================================
 
 from collections import defaultdict, deque
 from datetime import datetime, timezone
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, Optional
 from strategy.trade_intent import TradeIntent
 
 
 class Strategy:
 
-    def __init__(self, max_history: int = 120):
+    def __init__(self, max_history: int = 200):
 
-        # Current forming 1m candle per symbol
+        # -----------------------------
+        # Candle Storage
+        # -----------------------------
         self._current_candle: Dict[str, dict] = {}
-
-        # Completed candle history per symbol
         self._candle_history: Dict[str, deque] = defaultdict(
             lambda: deque(maxlen=max_history)
         )
 
         self._last_ts: Dict[str, int] = {}
-        self._warmed_up = False
         self._universe = set()
+        self._warmed_up = False
 
         # -----------------------------
-        # Parameters
+        # Trade Governor
         # -----------------------------
-        self.COMPRESSION_LOOKBACK = 8
-        self.COMPRESSION_MAX_PCT = 0.5
-        self.SWEEP_BUFFER_PCT = 0.05
-        self.IMPULSE_BODY_MIN_PCT = 0.25
+        self._daily_trade_count = 0
+        self._last_trade_minute = {}
+        self._current_utc_day = None
+
+        self.MAX_TRADES_PER_DAY = 4
+        self.MIN_TRADE_SPACING_MINUTES = 3
 
         # -----------------------------
-        # Volatility Regime Filter
+        # Regime Parameters
         # -----------------------------
-        self.ATR_SHORT_WINDOW = 6
-        self.ATR_LONG_WINDOW = 30
-        self.ATR_UPPER_CAP = 1.2      # reject extreme volatility
-        self.ATR_PERCENTILE_FLOOR = 0.75  # 60% of long-term ATR
+        self.SHORT_RANGE_WINDOW = 10
+        self.LONG_RANGE_WINDOW = 30
 
-    # ------------------------------------------------------
+        self.EXPANSION_MULTIPLIER = 1.4
+        self.CLIMAX_MULTIPLIER = 3.0
+        self.CLIMAX_MOVE_PCT = 1.5
 
-    def on_price(self, symbol: str, price: float, timestamp: int) -> None:
+        self.WICK_EXHAUSTION_RATIO = 0.35
+
+    # ======================================================
+    # Candle Builder
+    # ======================================================
+
+    def on_price(self, symbol: str, price: float, timestamp: int):
+
         minute = timestamp // 60000
-
         candle = self._current_candle.get(symbol)
 
-        # New candle
         if candle is None or candle["minute"] != minute:
 
-            # Finalize previous candle
             if candle is not None:
-                # Ensure history bucket exists
-                _ = self._candle_history[symbol]
                 self._candle_history[symbol].append(
                     (
                         candle["open"],
@@ -63,7 +69,6 @@ class Strategy:
                     )
                 )
 
-            # Start new candle
             self._current_candle[symbol] = {
                 "minute": minute,
                 "open": price,
@@ -73,125 +78,238 @@ class Strategy:
             }
 
         else:
-            # Update forming candle
             candle["high"] = max(candle["high"], price)
             candle["low"] = min(candle["low"], price)
             candle["close"] = price
 
         self._last_ts[symbol] = timestamp
 
+        # Warmup check
         if (
             self._universe
             and all(
-                len(self._candle_history[s]) >= self.COMPRESSION_LOOKBACK
+                len(self._candle_history[s]) >= self.LONG_RANGE_WINDOW
                 for s in self._universe
             )
         ):
             self._warmed_up = True
 
-    # ------------------------------------------------------
+        # Daily reset
+        utc_day = datetime.fromtimestamp(
+            timestamp / 1000, timezone.utc
+        ).timetuple().tm_yday
+
+        if self._current_utc_day is None:
+            self._current_utc_day = utc_day
+        elif utc_day != self._current_utc_day:
+            self._current_utc_day = utc_day
+            self._daily_trade_count = 0
+            self._last_trade_minute.clear()
+
+    # ======================================================
+    # Universe
+    # ======================================================
 
     def set_universe(self, symbols):
         self._universe = set(symbols)
 
-    # ------------------------------------------------------
-    def _compute_atr_pct(self, candles, window: int):
+    def is_warmed_up(self) -> bool:
+        return self._warmed_up
+
+    # ======================================================
+    # Helpers
+    # ======================================================
+
+    def _avg_range(self, candles, window):
         if len(candles) < window:
             return None
 
         recent = list(candles)[-window:]
-        ranges = []
-
-        for c in recent:
-            high = c[1]
-            low = c[2]
-            close = c[3]
-            if close > 0:
-                ranges.append(((high - low) / close) * 100)
-
-        if not ranges:
-            return None
-
+        ranges = [(c[1] - c[2]) for c in recent]
         return sum(ranges) / len(ranges)
 
+    def _wick_ratio(self, candle):
+        o, h, l, c = candle
+        total_range = h - l
+        if total_range <= 0:
+            return 0
+        body = abs(c - o)
+        wick = total_range - body
+        return wick / total_range
 
+    def _directional_persistence(self, candles):
+        if len(candles) < 3:
+            return None
 
-    # ------------------------------------------------------
+        last3 = list(candles)[-3:]
+        closes = [c[3] for c in last3]
+
+        if closes[2] > closes[1] > closes[0]:
+            return "UP"
+        if closes[2] < closes[1] < closes[0]:
+            return "DOWN"
+
+        return None
+
+    def _three_min_move_pct(self, candles):
+        if len(candles) < 3:
+            return 0.0
+
+        last3 = list(candles)[-3:]
+        first = last3[0][3]
+        last = last3[-1][3]
+
+        if first <= 0:
+            return 0.0
+
+        return ((last - first) / first) * 100.0
+
+    def _trade_spacing_ok(self, symbol, minute):
+        last_min = self._last_trade_minute.get(symbol)
+        if last_min is None:
+            return True
+        return (minute - last_min) >= self.MIN_TRADE_SPACING_MINUTES
+
+    # ======================================================
+    # Regime Detection
+    # ======================================================
+
+    def _classify_regime(self, candles):
+
+        short_avg = self._avg_range(
+            candles, self.SHORT_RANGE_WINDOW
+        )
+        long_avg = self._avg_range(
+            candles, self.LONG_RANGE_WINDOW
+        )
+
+        if short_avg is None or long_avg is None:
+            return None
+
+        current = candles[-1]
+        current_range = current[1] - current[2]
+        wick_ratio = self._wick_ratio(current)
+
+        move_pct = abs(self._three_min_move_pct(candles))
+
+        # CLIMACTIC
+        if (
+            current_range > self.CLIMAX_MULTIPLIER * short_avg
+            or move_pct > self.CLIMAX_MOVE_PCT
+        ):
+            if wick_ratio > self.WICK_EXHAUSTION_RATIO:
+                return "CLIMACTIC"
+
+        # EXPANSION
+        persistence = self._directional_persistence(candles)
+
+        if (
+            short_avg > self.EXPANSION_MULTIPLIER * long_avg
+            and persistence is not None
+            and wick_ratio < self.WICK_EXHAUSTION_RATIO
+        ):
+            return "EXPANSION"
+
+        return "QUIET"
+
+    # ======================================================
+    # Entry Engines
+    # ======================================================
+
+    def _check_expansion_entry(self, symbol, candles):
+
+        persistence = self._directional_persistence(candles)
+        if persistence is None:
+            return None
+
+        last = candles[-1]
+        prev = candles[-2]
+
+        # Pullback logic: last candle smaller than previous
+        last_range = last[1] - last[2]
+        prev_range = prev[1] - prev[2]
+
+        if last_range >= prev_range:
+            return None
+
+        direction = "LONG" if persistence == "UP" else "SHORT"
+
+        return TradeIntent(
+            symbol=symbol,
+            direction=direction,
+            pattern="VEX_EXPANSION",
+            entry_price=None,
+            generated_at=datetime.now(timezone.utc),
+        )
+
+    def _check_reversal_entry(self, symbol, candles):
+
+        if len(candles) < 3:
+            return None
+
+        last = candles[-1]
+        prev = candles[-2]
+
+        wick_ratio = self._wick_ratio(prev)
+
+        if wick_ratio < self.WICK_EXHAUSTION_RATIO:
+            return None
+
+        # Stall condition: small body after exhaustion
+        prev_range = prev[1] - prev[2]
+        last_range = last[1] - last[2]
+
+        if last_range > prev_range * 0.7:
+            return None
+
+        direction = "LONG" if prev[3] < prev[0] else "SHORT"
+
+        return TradeIntent(
+            symbol=symbol,
+            direction=direction,
+            pattern="VEX_REVERSAL",
+            entry_price=None,
+            generated_at=datetime.now(timezone.utc),
+        )
+
+    # ======================================================
+    # Main Proposal Logic
+    # ======================================================
 
     def propose_intent(self) -> Optional[TradeIntent]:
 
         if not self._warmed_up:
             return None
 
+        if self._daily_trade_count >= self.MAX_TRADES_PER_DAY:
+            return None
+
         for symbol in self._universe:
+
             candles = self._candle_history.get(symbol)
-            if not candles or len(candles) < self.COMPRESSION_LOOKBACK + 2:
+            if not candles or len(candles) < self.LONG_RANGE_WINDOW:
                 continue
 
-            # ---------------------------------
-            # Volatility Regime Filter
-            # ---------------------------------
-            atr_short = self._compute_atr_pct(
-                candles, self.ATR_SHORT_WINDOW
-            )
-            atr_long = self._compute_atr_pct(
-                candles, self.ATR_LONG_WINDOW
-            )
+            regime = self._classify_regime(candles)
+            current_minute = candles[-1][0] if isinstance(candles[-1], tuple) else None
 
-            if atr_short is None or atr_long is None:
+            minute = self._current_candle[symbol]["minute"]
+
+            if not self._trade_spacing_ok(symbol, minute):
                 continue
 
-            if atr_short > self.ATR_UPPER_CAP:
-                continue
+            intent = None
 
-            if atr_short < atr_long * self.ATR_PERCENTILE_FLOOR:
-                continue
+            # Priority: CLIMACTIC first
+            if regime == "CLIMACTIC":
+                intent = self._check_reversal_entry(symbol, candles)
 
-            window = list(candles)[-self.COMPRESSION_LOOKBACK-2:-2]
+            elif regime == "EXPANSION":
+                intent = self._check_expansion_entry(symbol, candles)
 
-            highs = [c[1] for c in window]
-            lows = [c[2] for c in window]
-
-            range_high = max(highs)
-            range_low = min(lows)
-
-            current = candles[-1]
-            prev = candles[-2]
-
-            current_close = current[3]
-            prev_close = prev[3]
-
-            range_pct = ((range_high - range_low) / current_close) * 100
-            if range_pct > self.COMPRESSION_MAX_PCT:
-                continue
-
-            # --- LONG Sweep + Reclaim ---
-            if prev_close < range_low and current_close > range_low:
-                body_pct = abs(current_close - prev_close) / prev_close * 100
-                if body_pct >= self.IMPULSE_BODY_MIN_PCT:
-                    return TradeIntent(
-                        symbol=symbol,
-                        direction="LONG",
-                        pattern="IIE_V1_LONG",
-                        entry_price=None,
-                        generated_at=datetime.now(timezone.utc),
-                    )
-
-            # --- SHORT Sweep + Reclaim ---
-            if prev_close > range_high and current_close < range_high:
-                body_pct = abs(current_close - prev_close) / prev_close * 100
-                if body_pct >= self.IMPULSE_BODY_MIN_PCT:
-                    return TradeIntent(
-                        symbol=symbol,
-                        direction="SHORT",
-                        pattern="IIE_V1_SHORT",
-                        entry_price=None,
-                        generated_at=datetime.now(timezone.utc),
-                    )
+            if intent is not None:
+                self._daily_trade_count += 1
+                self._last_trade_minute[symbol] = minute
+                return intent
 
         return None
-
-    # ------------------------------------------------------
-
-    def is_warmed_up(self) -> bool:
-        return self._warmed_up

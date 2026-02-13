@@ -24,12 +24,6 @@ from utils.telegram_notifier import send_info, send_warning, send_critical, edit
 # --------------------------------------------------
 MAX_SL_PLACEMENT_SECONDS = 2.0
 
-# --------------------------------------------------
-# Scalping Time-Stop Policy
-# --------------------------------------------------
-MAX_TRADE_DURATION_SECONDS = 180   # 3 minutes
-MIN_PROGRESS_R = 0.5               # must reach 0.5R early
-
 # ==========================================================
 # Market Data State
 # ==========================================================
@@ -79,13 +73,12 @@ class EntryPlan:
     initial_sl: float
     risk_r: float
 
-
 # --------------------------------------------------
 # Universe
 # --------------------------------------------------
 
 UNIVERSE_SNAPSHOT_FILE = "universe_snapshot.json"
-EXPECTED_UNIVERSE_SIZE = 15
+EXPECTED_UNIVERSE_SIZE = 30
 
 # --------------------------------------------------
 # TradeIntent validation policy
@@ -1282,40 +1275,6 @@ class TradingEngine:
             position=position_snapshot,
             price=price,
         )
-
-        # --------------------------------------------------
-        # Scalping Time-Stop (Pre-Commitment Only)
-        # --------------------------------------------------
-        entry_ts = open_position.get("entry_timestamp")
-        if entry_ts is not None and not self._commitment_reached:
-            now_ts = int(datetime.now(timezone.utc).timestamp() * 1000)
-            elapsed_sec = (now_ts - entry_ts) / 1000.0
-
-            risk_usd = open_position.get("risk_usd", 0.0)
-            if risk_usd > 0:
-                unrealised_usd = position_decision.highest_profit_usd or 0.0
-                current_R = unrealised_usd / risk_usd
-
-                if (
-                    elapsed_sec > MAX_TRADE_DURATION_SECONDS
-                    and current_R < MIN_PROGRESS_R
-                ):
-                    self.system_log.info(
-                        f"TIME_STOP_TRIGGERED | "
-                        f"elapsed={elapsed_sec:.1f}s "
-                        f"R={current_R:.2f}"
-                    )
-
-                    send_warning(
-                        "TIME STOP EXIT",
-                        f"Symbol: {symbol}\n"
-                        f"Elapsed: {elapsed_sec:.1f}s\n"
-                        f"Progress: {current_R:.2f}R\n"
-                        "Position closed."
-                    )
-
-                    self.exchange.emergency_exit()
-                    return
 
         # Commitment reached (+1R)
         if (
