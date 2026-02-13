@@ -1,49 +1,90 @@
-# ================================
+# ==========================================================
 # LOGGER UTILITY
-# ================================
-# Centralized multi-file logging (PASS 5)
-# Provides a single shared logger for the bot.
-# No logic, no side effects.
-
-# ================================
-# IMPORTS
-# ================================
+# ==========================================================
+# Centralized multi-file logging.
+#
+# Structural Guarantees:
+# - Idempotent logger creation
+# - No duplicate handlers
+# - File rotation enabled
+# - No propagation to root logger
+# - Safe directory initialization
+# ==========================================================
 
 import logging
 import os
+from logging.handlers import RotatingFileHandler
 
-# ================================
-# GET LOGGER
-# ================================
+
+# ----------------------------------------------------------
+# Configuration
+# ----------------------------------------------------------
 
 LOG_DIR = "logs"
-
-os.makedirs(LOG_DIR, exist_ok=True)
+MAX_LOG_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
+BACKUP_COUNT = 3
 
 _FORMATTER = logging.Formatter(
-    "[%(asctime)s] [%(levelname)s] %(message)s"
+    "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
 )
 
 
+# ----------------------------------------------------------
+# Directory Initialization
+# ----------------------------------------------------------
+
+def _ensure_log_dir():
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+    except Exception as e:
+        raise RuntimeError(f"LOG_DIRECTORY_INIT_FAILED | {e}")
+
+
+_ensure_log_dir()
+
+
+# ----------------------------------------------------------
+# Handler Factory
+# ----------------------------------------------------------
+
 def _file_handler(filename, level):
-    handler = logging.FileHandler(os.path.join(LOG_DIR, filename))
+
+    handler = RotatingFileHandler(
+        os.path.join(LOG_DIR, filename),
+        maxBytes=MAX_LOG_SIZE_BYTES,
+        backupCount=BACKUP_COUNT,
+    )
+
     handler.setLevel(level)
     handler.setFormatter(_FORMATTER)
+
     return handler
 
 
+# ----------------------------------------------------------
+# Logger Factory (Idempotent)
+# ----------------------------------------------------------
+
 def _get_logger(name, filename, level=logging.INFO):
+
     logger = logging.getLogger(name)
     logger.setLevel(level)
     logger.propagate = False
 
-    if not logger.handlers:
+    # Prevent duplicate handlers
+    if not any(
+        isinstance(h, RotatingFileHandler)
+        and h.baseFilename.endswith(filename)
+        for h in logger.handlers
+    ):
         logger.addHandler(_file_handler(filename, level))
 
     return logger
 
 
-# ---- PUBLIC LOGGERS ----
+# ----------------------------------------------------------
+# Public Loggers
+# ----------------------------------------------------------
 
 def system_logger():
     return _get_logger("system", "system.log", logging.INFO)
@@ -65,11 +106,9 @@ def debug_logger():
     return _get_logger("debug", "debug.log", logging.DEBUG)
 
 
-# ---- BACKWARD COMPATIBILITY ----
+# ----------------------------------------------------------
+# Backward Compatibility
+# ----------------------------------------------------------
 
 def setup_logger(name):
-    """
-    Legacy entrypoint.
-    Defaults to system logger behavior.
-    """
     return system_logger()

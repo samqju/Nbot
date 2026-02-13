@@ -1,33 +1,33 @@
-# ================================
+# ==========================================================
 # STATE MODULE
-# ================================
+# ==========================================================
 # This module stores and retrieves bot state.
-# It does NOT make decisions.
-
-# ================================
-# IMPORTS
-# ================================
+# It does NOT make trading decisions.
+#
+# Structural Guarantees:
+# - State is validated before persistence
+# - Open position must contain required fields
+# - Daily accounting must remain monotonic
+# - Balance cannot be negative
+# ==========================================================
 
 import json
 import os
 
-# ================================
-# STATE MANAGER CLASS
-# ================================
 
 class StateManager:
     """
     StateManager persists bot memory safely.
     """
 
-    # ----------------------------
+    # --------------------------------------------------
     # INITIALIZATION
-    # ----------------------------
+    # --------------------------------------------------
+
     def __init__(self, filename="bot_state.json"):
-        """
-        Initialize state manager.
-        """
+
         self.filename = filename
+
         self.state = {
             # ----------------------------
             # CORE ACCOUNT STATE
@@ -67,14 +67,11 @@ class StateManager:
             "shutdown_requested": False,
         }
 
-    # --------------------------------------------------
-    # Read helpers
-    # --------------------------------------------------
+    # ==================================================
+    # READ HELPERS
+    # ==================================================
 
     def get_open_position(self):
-        """
-        Return cached open position (or None).
-        """
         return self.state.get("open_position")
 
     def update_open_position(self, open_position: dict):
@@ -83,15 +80,22 @@ class StateManager:
     def clear_open_position(self):
         self.state["open_position"] = None
 
-    # ----------------------------
-    # LOAD STATE FROM DISK
-    # ----------------------------
+    def get_state(self):
+        """
+        Return shallow copy of state.
+        """
+        return dict(self.state)
+
+    # ==================================================
+    # LOAD / SAVE
+    # ==================================================
+
     def load(self):
         """
         Load state from disk.
         If file does not exist, keep defaults.
-        If loading fails, raise exception.
         """
+
         if not os.path.exists(self.filename):
             return
 
@@ -101,95 +105,144 @@ class StateManager:
         except Exception as e:
             raise RuntimeError(f"Failed to load state: {e}")
 
-    # ----------------------------
-    # SAVE STATE TO DISK
-    # ----------------------------
     def save(self):
         """
         Save state to disk atomically.
-        If saving fails, raise exception.
+        Validation occurs before persistence.
         """
+
+        self._validate_state()
+
         tmp_file = self.filename + ".tmp"
 
         try:
             with open(tmp_file, "w") as f:
-                    json.dump(self.state, f, indent=2, sort_keys=True)
+                json.dump(self.state, f, indent=2, sort_keys=True)
 
             os.replace(tmp_file, self.filename)
+
         except Exception as e:
             raise RuntimeError(f"Failed to save state: {e}")
 
-    # ----------------------------
-    # GET READ-ONLY STATE SNAPSHOT
-    # ----------------------------
-    def get_state(self):
-        """
-        Return a copy of the current state.
-        Risk manager uses this.
-        """
-        return dict(self.state)
+    # ==================================================
+    # TRADE UPDATE
+    # ==================================================
 
-    # ----------------------------
-    # UPDATE STATE AFTER TRADE
-    # ----------------------------
     def update_after_trade(self, balance, open_position, last_trade):
-        """
-        Update state fields after a trade.
-        """
+
         self.state["balance"] = balance
         self.state["open_position"] = open_position
         self.state["last_trade"] = last_trade
 
-    # ----------------------------
-    # DAILY USD TRACKING
-    # ----------------------------
+    # ==================================================
+    # DAILY TRACKING
+    # ==================================================
+
     def reset_daily(self, utc_day):
+
         self.state["current_utc_day"] = utc_day
         self.state["daily_realized_pnl"] = 0.0
         self.state["daily_peak_pnl"] = 0.0
         self.state["daily_loss_floor_usd"] = None
 
     def update_daily_realized(self, pnl_delta):
+
         self.state["daily_realized_pnl"] += pnl_delta
 
         if self.state["daily_realized_pnl"] > self.state["daily_peak_pnl"]:
             self.state["daily_peak_pnl"] = self.state["daily_realized_pnl"]
 
-    # ----------------------------
+    def update_daily_loss_floor(self, value):
+        self.state["daily_loss_floor_usd"] = value
+
+    # ==================================================
     # STOP LOSS UPDATE
-    # ----------------------------
+    # ==================================================
+
     def update_stop_loss(self, new_sl):
         if self.state["open_position"] is not None:
             self.state["open_position"]["stop_loss"] = new_sl
 
-    def update_daily_loss_floor(self, value):
-        self.state["daily_loss_floor_usd"] = value
+    # ==================================================
+    # HEARTBEAT / SHUTDOWN
+    # ==================================================
 
     def heartbeat(self, utc_ts):
-        """
-        Persist engine heartbeat.
-        PASS 3.4
-        """
+
         self.state["last_heartbeat_utc"] = utc_ts
         self.state["heartbeat_count"] += 1
 
     def request_shutdown(self):
-        """
-        Signal that a graceful shutdown has been requested.
-        PASS 3.5
-        """
+
         self.state["shutdown_requested"] = True
 
-    # ----------------------------
-    # ENGINE LIFECYCLE (MEMORY ONLY)
-    # ----------------------------
+    # ==================================================
+    # ENGINE LIFECYCLE MEMORY
+    # ==================================================
 
     def set_engine_state(self, engine_state, reason=None):
-        """
-        Persist engine lifecycle state.
-        NOTE:
-        - Engine is the sole authority for transitions
-        - StateManager only remembers the last known state
-        """
+
+        if engine_state is None:
+            raise ValueError("ENGINE_STATE_CANNOT_BE_NONE")
+
         self.state["engine_state"] = engine_state
         self.state["engine_halt_reason"] = reason
+
+    # ==================================================
+    # INTERNAL VALIDATION
+    # ==================================================
+
+    def _validate_state(self):
+
+        # ------------------------------------------
+        # Balance
+        # ------------------------------------------
+        if self.state["balance"] < 0:
+            raise ValueError("STATE_INVALID_BALANCE")
+
+        # ------------------------------------------
+        # Open Position Structure
+        # ------------------------------------------
+        open_position = self.state.get("open_position")
+
+        if open_position is not None:
+
+            required_fields = [
+                "symbol",
+                "side",
+                "entry_price",
+                "qty",
+                "stop_loss",
+                "risk_usd",
+            ]
+
+            for field in required_fields:
+                if field not in open_position:
+                    raise ValueError(
+                        f"STATE_OPEN_POSITION_MISSING_{field}"
+                    )
+
+            if open_position["qty"] <= 0:
+                raise ValueError("STATE_INVALID_POSITION_QTY")
+
+            if open_position["risk_usd"] <= 0:
+                raise ValueError("STATE_INVALID_POSITION_RISK")
+
+            if open_position["stop_loss"] is not None:
+                if open_position["stop_loss"] <= 0:
+                    raise ValueError("STATE_INVALID_STOP_LOSS")
+
+        # ------------------------------------------
+        # Daily Accounting Consistency
+        # ------------------------------------------
+        realized = self.state["daily_realized_pnl"]
+        peak = self.state["daily_peak_pnl"]
+
+        if peak < realized:
+            raise ValueError("STATE_DAILY_PEAK_INCONSISTENT")
+
+        # ------------------------------------------
+        # Engine State
+        # ------------------------------------------
+        if not isinstance(self.state["engine_state"], str):
+            raise ValueError("STATE_INVALID_ENGINE_STATE")

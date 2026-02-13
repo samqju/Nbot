@@ -1,60 +1,79 @@
-# ================================
+# ==========================================================
 # CONFIGURATION FILE
-# ================================
-# This file defines global settings.
-# It contains NO logic.
-# This file defines POLICY ONLY.
-# No sizing logic, no dynamic risk, no derived values.
+# ==========================================================
+# POLICY ONLY.
+# No dynamic logic.
+# No derived values.
+#
+# This module self-validates on import.
+# ==========================================================
 
 # ================================
-# RISK & CAPITAL POLICY (PHASE C.0)
+# RISK & CAPITAL POLICY
 # ================================
 
-# Fixed dollar risk per trade (independent of capital)
 RISK_PER_TRADE_USD = 6.0
-
-# Allowed tolerance due to slippage / gaps (percent)
 RISK_TOLERANCE_PCT = 4.0
 
-# -------------------------------
+# ================================
 # NOTIONAL POLICY
-# -------------------------------
-# Target notional exposure per trade (USD)
-MAX_NOTIONAL_USD = 300.0
+# ================================
 
-# Allowed deviation from notional (percent)
+MAX_NOTIONAL_USD = 300.0
 NOTIONAL_TOLERANCE_PCT = 1.5
 
-# -------------------------------
+# ================================
 # LEVERAGE POLICY
-# -------------------------------
+# ================================
 
-# Fixed leverage (no scaling, no overrides)
 LEVERAGE = 5
 
-# -------------------------------
+# ================================
 # SAFETY CONTROLS
-# -------------------------------
-# If True, bot will refuse to trade no matter what
+# ================================
 
 GLOBAL_KILL_SWITCH = False
 
-# -------------------------------
+# ================================
 # ORDER EXECUTION POLICY
-# -------------------------------
+# ================================
 
-# Entry orders
 ENTRY_SLIPPAGE_PCT = 1.0
-
-# ------------------------------------------------
-# STEP 6.7 — Spread / Illiquidity Guard
-# ------------------------------------------------
-# Maximum allowed bid-ask spread (percent)
 MAX_SPREAD_PCT = 0.25
 
-# -------------------------------
+# ================================
 # SYSTEM HALT POLICY
-# -------------------------------
+# ================================
 
-# Halt system on risk contract breach
 HALT_ON_RISK_BREACH = True
+
+
+# ==========================================================
+# CONFIG VALIDATION (IMPORT-TIME GUARD)
+# ==========================================================
+
+def _validate():
+    if RISK_PER_TRADE_USD <= 0:
+        raise ValueError("CONFIG_INVALID: RISK_PER_TRADE_USD")
+
+    if not (0 <= RISK_TOLERANCE_PCT <= 20):
+        raise ValueError("CONFIG_INVALID: RISK_TOLERANCE_PCT")
+
+    if MAX_NOTIONAL_USD <= 0:
+        raise ValueError("CONFIG_INVALID: MAX_NOTIONAL_USD")
+
+    if not (0 <= NOTIONAL_TOLERANCE_PCT <= 5):
+        raise ValueError("CONFIG_INVALID: NOTIONAL_TOLERANCE_PCT")
+
+    if LEVERAGE <= 0:
+        raise ValueError("CONFIG_INVALID: LEVERAGE")
+
+    if not (0 <= ENTRY_SLIPPAGE_PCT <= 10):
+        raise ValueError("CONFIG_INVALID: ENTRY_SLIPPAGE_PCT")
+
+    if not (0 <= MAX_SPREAD_PCT <= 5):
+        raise ValueError("CONFIG_INVALID: MAX_SPREAD_PCT")
+
+
+_validate()
+del _validate

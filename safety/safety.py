@@ -1,72 +1,69 @@
-# ================================
+# ==========================================================
 # SAFETY MODULE
-# ================================
-# This module decides IF the bot is allowed to trade.
-# It does NOT decide how to trade.
-
-
-# ================================
-# IMPORTS
-# ================================
+# ==========================================================
+# Controls whether trading is allowed.
+# Does NOT execute trades.
+# Does NOT contain risk logic.
+#
+# Invariants:
+# - Halt is idempotent
+# - Halt reason is preserved
+# - Alerts are sent only once
+# ==========================================================
 
 from config import GLOBAL_KILL_SWITCH
 from utils.telegram_notifier import send_critical
 
-# ================================
-# SAFETY MANAGER CLASS
-# ================================
 
 class SafetyManager:
     """
-    SafetyManager controls the emergency stop of the bot.
-    If safety is violated, trading must stop immediately.
+    Controls emergency stop of the bot.
     """
 
-    # ----------------------------
-    # INITIALIZATION
-    # ----------------------------
     def __init__(self):
-        """
-        Initialize safety state.
-        """
         self._halted = False
         self._reason = None
 
-    # ----------------------------
-    # CHECK SAFETY STATUS
-    # ----------------------------
-    def is_safe(self):
-        """
-        Returns True if trading is allowed.
-        Returns False if trading must stop.
-        """
+    # --------------------------------------------------
+    # Safety Check
+    # --------------------------------------------------
+    def is_safe(self) -> bool:
 
-        # Global kill switch from config
+        # Global kill switch (config boundary)
         if GLOBAL_KILL_SWITCH:
-            self._halted = True
-            self._reason = "GLOBAL_KILL_SWITCH_ENABLED"
+            self._trigger_halt("GLOBAL_KILL_SWITCH_ENABLED")
             return False
 
-        # Internal halt flag
+        return not self._halted
+
+    # --------------------------------------------------
+    # External Halt
+    # --------------------------------------------------
+    def halt(self, reason: str) -> None:
+        """
+        Public halt entrypoint.
+        Idempotent.
+        """
+        self._trigger_halt(reason)
+
+    # --------------------------------------------------
+    # Internal Halt Logic
+    # --------------------------------------------------
+    def _trigger_halt(self, reason: str) -> None:
+
         if self._halted:
-            return False
+            return  # Idempotent
 
-        return True
+        if not reason:
+            raise ValueError("SAFETY_HALT_REQUIRES_REASON")
 
-    # ----------------------------
-    # HALT BOT MANUALLY
-    # ----------------------------
-    def halt(self, reason):
-        print("SAFETY HALT:", reason)
-        """
-        Force bot into unsafe state.
-        """
         self._halted = True
         self._reason = reason
 
-        # --------------------------------------------------
-        # Unified Operator Alert
-        # --------------------------------------------------
+        # Log to file
+        system_logger().critical(f"ENGINE HALTED | reason={reason}")
+
+        # Notify operator
         send_critical(
             "ENGINE HALTED",
             f"Reason: {reason}\n\n"
@@ -74,11 +71,8 @@ class SafetyManager:
             "Manual intervention required."
         )
 
-    # ----------------------------
-    # GET HALT REASON
-    # ----------------------------
+    # --------------------------------------------------
+    # Read-only access
+    # --------------------------------------------------
     def get_reason(self):
-        """
-        Return the reason why bot was halted.
-        """
         return self._reason

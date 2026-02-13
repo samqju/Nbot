@@ -1,12 +1,17 @@
 # ==========================================================
 # TradeIntent Contract
 # ==========================================================
-# This is the ONLY interface from Strategy → Engine.
+# Strategy → Engine proposal.
 #
+# Properties:
 # - Immutable
 # - Stateless
 # - Disposable
 # - Never persisted
+#
+# Contract:
+# - Engine is sole authority for validation
+# - This object contains NO trading guarantees
 # ==========================================================
 
 from dataclasses import dataclass
@@ -25,6 +30,12 @@ class TradeIntent:
 
     symbol: str                    # e.g. "BTCUSDT"
     direction: str                 # "LONG" or "SHORT"
-    pattern: str                   # e.g. "BREAKOUT_5M"
-    entry_price: Optional[float]   # advisory only
+    pattern: str                   # Strategy identifier
+    entry_price: Optional[float]   # Advisory only (engine uses market truth)
     generated_at: datetime         # UTC timestamp
+
+    def __post_init__(self):
+        if self.direction not in ("LONG", "SHORT"):
+            raise ValueError(
+                f"INVALID_INTENT_DIRECTION: {self.direction}"
+            )
