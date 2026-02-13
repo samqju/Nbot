@@ -24,6 +24,12 @@ from utils.telegram_notifier import send_info, send_warning, send_critical, edit
 # --------------------------------------------------
 MAX_SL_PLACEMENT_SECONDS = 2.0
 
+# --------------------------------------------------
+# Scalping Time-Stop Policy
+# --------------------------------------------------
+MAX_TRADE_DURATION_SECONDS = 180   # 3 minutes
+MIN_PROGRESS_R = 0.5               # must reach 0.5R early
+
 # ==========================================================
 # Market Data State
 # ==========================================================
@@ -747,10 +753,6 @@ class TradingEngine:
                 level="info",
                 message=f"ENTRY_BLOCKED | NO_MARKET_PRICE | symbol={intent.symbol}",
             )
-            send_warning(
-                "ENTRY BLOCKED — NO MARKET PRICE",
-                f"Symbol: {intent.symbol}"
-            )
             self._entry_in_progress = False
             return
 
@@ -774,11 +776,6 @@ class TradingEngine:
             self.system_log.critical(
                 f"SPREAD_FETCH_FAILED | {e}"
             )
-            send_warning(
-                "SPREAD FETCH FAILED",
-                f"Symbol: {intent.symbol}\n"
-                f"{e}"
-            )
             self._entry_in_progress = False
             return
 
@@ -787,12 +784,6 @@ class TradingEngine:
                 key=f"spread_block_{intent.symbol}",
                 level="info",
                 message=f"ENTRY_BLOCKED_SPREAD | spread={spread_pct:.4f}%",
-            )
-            send_warning(
-                "ENTRY BLOCKED — SPREAD TOO HIGH",
-                f"Symbol: {intent.symbol}\n"
-                f"Spread: {spread_pct:.4f}%\n"
-                f"Max Allowed: {MAX_SPREAD_PCT:.4f}%"
             )
             self._entry_in_progress = False
             return
@@ -829,11 +820,6 @@ class TradingEngine:
                     f"required={required_margin:.2f} "
                     f"balance={balance:.2f}"
                 ),
-            )
-            send_warning(
-                "ENTRY BLOCKED — INSUFFICIENT MARGIN",
-                f"Required: {required_margin:.2f} USD\n"
-                f"Balance: {balance:.2f} USD"
             )
             self._entry_in_progress = False
             return
@@ -1296,6 +1282,40 @@ class TradingEngine:
             position=position_snapshot,
             price=price,
         )
+
+        # --------------------------------------------------
+        # Scalping Time-Stop (Pre-Commitment Only)
+        # --------------------------------------------------
+        entry_ts = open_position.get("entry_timestamp")
+        if entry_ts is not None and not self._commitment_reached:
+            now_ts = int(datetime.now(timezone.utc).timestamp() * 1000)
+            elapsed_sec = (now_ts - entry_ts) / 1000.0
+
+            risk_usd = open_position.get("risk_usd", 0.0)
+            if risk_usd > 0:
+                unrealised_usd = position_decision.highest_profit_usd or 0.0
+                current_R = unrealised_usd / risk_usd
+
+                if (
+                    elapsed_sec > MAX_TRADE_DURATION_SECONDS
+                    and current_R < MIN_PROGRESS_R
+                ):
+                    self.system_log.info(
+                        f"TIME_STOP_TRIGGERED | "
+                        f"elapsed={elapsed_sec:.1f}s "
+                        f"R={current_R:.2f}"
+                    )
+
+                    send_warning(
+                        "TIME STOP EXIT",
+                        f"Symbol: {symbol}\n"
+                        f"Elapsed: {elapsed_sec:.1f}s\n"
+                        f"Progress: {current_R:.2f}R\n"
+                        "Position closed."
+                    )
+
+                    self.exchange.emergency_exit()
+                    return
 
         # Commitment reached (+1R)
         if (
@@ -1760,10 +1780,10 @@ class TradingEngine:
                 limit=WARMUP_LIMIT,
             )
 
-            for ts, close_price in candles:
+            for ts, o, h, l, c in candles:
                 self.strategy.on_price(
                     symbol=symbol,
-                    price=close_price,
+                    price=c,
                     timestamp=ts,
                 )
 

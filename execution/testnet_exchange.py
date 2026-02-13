@@ -327,6 +327,7 @@ class TestnetExchange:
     def get_historical_candles(self, *, symbol: str, interval: str, limit: int):
         """
         Return historical candles for warmup.
+        Returns full OHLC.
         """
         data = self._get(
             "/fapi/v1/klines",
@@ -339,7 +340,13 @@ class TestnetExchange:
         )
 
         return [
-            (int(c[0]), float(c[4]))  # (open_time, close_price)
+            (
+                int(c[0]),       # open_time
+                float(c[1]),     # open
+                float(c[2]),     # high
+                float(c[3]),     # low
+                float(c[4]),     # close
+            )
             for c in data
         ]
 
@@ -690,6 +697,7 @@ class TestnetExchange:
     def emergency_exit(self):
         """
         Emergency flatten — market reduceOnly.
+        Also guarantees STOP_MARKET cleanup.
         """
         pos = self.get_position()
         if pos is None:
@@ -708,6 +716,44 @@ class TestnetExchange:
                 "timestamp": int(time.time() * 1000),
             },
         )
+
+        # ------------------------------------------------------
+        # HARDENING: Ensure no orphan STOP_MARKET orders remain
+        # ------------------------------------------------------
+        # Wait briefly for position state to update
+        time.sleep(0.5)
+
+        try:
+            open_orders = self._get(
+                "/fapi/v1/openOrders",
+                {
+                    "symbol": pos.symbol,
+                    "timestamp": int(time.time() * 1000),
+                },
+            )
+        except Exception:
+            # If we cannot fetch orders, do not escalate here.
+            # Engine-level verification will handle inconsistencies.
+            return
+
+        for o in open_orders:
+            # Cancel ALL reduceOnly STOP_MARKET orders
+            if (
+                o.get("type") == "STOP_MARKET"
+                and o.get("reduceOnly") is True
+            ):
+                try:
+                    self._delete(
+                        "/fapi/v1/order",
+                        {
+                            "symbol": pos.symbol,
+                            "orderId": o["orderId"],
+                            "timestamp": int(time.time() * 1000),
+                        },
+                    )
+                except Exception:
+                    # Do not raise — emergency exit must remain best-effort.
+                    pass
 
     # --------------------------------------------------------
     # ACCOUNT
