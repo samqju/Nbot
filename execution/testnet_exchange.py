@@ -129,7 +129,12 @@ class TestnetExchange:
                 params=self._sign(params),
                 timeout=TIMEOUT,
             )
-            resp.raise_for_status()
+            if resp.status_code != 200:
+                error_detail = self._extract_binance_error(resp)
+                raise OperationalExchangeError(
+                    f"REST_GET_FAILED | path={path} | {error_detail}"
+                )
+
             return resp.json()
         except requests.exceptions.Timeout:
             raise OperationalExchangeError("REST_TIMEOUT")
@@ -143,7 +148,13 @@ class TestnetExchange:
                 params=self._sign(params),
                 timeout=TIMEOUT,
             )
-            resp.raise_for_status()
+
+            if resp.status_code != 200:
+                error_detail = self._extract_binance_error(resp)
+                raise OperationalExchangeError(
+                    f"REST_POST_FAILED | path={path} | {error_detail}"
+                )
+
             return resp.json()
         except requests.exceptions.Timeout:
             raise OperationalExchangeError("REST_TIMEOUT")
@@ -163,6 +174,18 @@ class TestnetExchange:
             raise OperationalExchangeError("REST_TIMEOUT")
         except Exception as e:
             raise OperationalExchangeError(f"REST_ERROR | {e}")
+
+    def _extract_binance_error(self, response):
+        """
+        Parse Binance JSON error body safely.
+        """
+        try:
+            data = response.json()
+            code = data.get("code")
+            msg = data.get("msg")
+            return f"BINANCE_ERROR | code={code} | msg={msg}"
+        except Exception:
+            return f"HTTP_{response.status_code}"
 
     # ========================================================
     # SECTION C — EXCHANGE CONTRACTS & QUANTIZATION
@@ -606,6 +629,9 @@ class TestnetExchange:
             stop_price,
             filters["tickSize"],
         )
+
+        if Decimal(str(stop_price)) % Decimal(str(filters["tickSize"])) != 0:
+            raise OperationalExchangeError("STOP_PRICE_TICK_MISALIGNMENT")
 
         if side == "LONG" and stop_price >= last_price:
             raise StopAlreadyBreached("STOP_ALREADY_BREACHED")
