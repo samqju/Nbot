@@ -1,35 +1,41 @@
-# run_testnet.py
 # ==========================================================
-# Phase F.1 — Testnet Engine Runner (READ-ONLY)
+# TESTNET ENGINE RUNNER
 # ==========================================================
-# Purpose:
-# - Wire TradingEngine to TestnetExchange
-# - Validate:
-#   • price stream
-#   • position truth
-#   • reconciliation
-#   • halt semantics
-# - NO trading allowed in this phase
+# Bootstrap boundary for TESTNET execution.
 #
-# Engine remains the sole authority.
+# Responsibilities:
+# - Load environment
+# - Configure notifications
+# - Construct adapter
+# - Construct engine
+# - Start lifecycle
+#
+# No trading logic.
+# No policy logic.
+# No exchange logic.
+# ==========================================================
+
+# ==========================================================
+# SECTION 1 — ENVIRONMENT (MUST LOAD BEFORE OTHER IMPORTS)
 # ==========================================================
 
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv()  # Critical: must execute before adapter import
+
+import os
+import sys
 
 from engine import TradingEngine
 from execution.testnet_exchange import TestnetExchange
 from utils.logger import system_logger
 from utils.telegram_notifier import configure, send_message
-import os
 
-def main():
-    log = system_logger()
-    log.info("BOOTSTRAP_START | environment=TESTNET")
 
-    # ------------------------------------------------------
-    # Optional: Telegram configuration (safe if unset)
-    # ------------------------------------------------------
+# ==========================================================
+# SECTION 2 — TELEGRAM CONFIGURATION
+# ==========================================================
+
+def configure_notifications(log):
     tg_token = os.getenv("TELEGRAM_BOT_TOKEN")
     tg_chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -39,23 +45,32 @@ def main():
     else:
         log.info("TELEGRAM_NOT_CONFIGURED")
 
-    # ------------------------------------------------------
-    # Initialize adapter (READ-ONLY)
-    # ------------------------------------------------------
+
+# ==========================================================
+# SECTION 3 — ADAPTER FACTORY
+# ==========================================================
+
+def build_exchange(log):
     try:
-        exchange = TestnetExchange()
+        return TestnetExchange()
     except Exception as e:
         log.critical(f"TESTNET_EXCHANGE_INIT_FAILED | {e}")
-        return
+        sys.exit(1)
 
-    # ------------------------------------------------------
-    # Initialize engine
-    # ------------------------------------------------------
-    engine = TradingEngine(exchange=exchange)
 
-    # ------------------------------------------------------
-    # Start engine
-    # ------------------------------------------------------
+# ==========================================================
+# SECTION 4 — ENGINE FACTORY
+# ==========================================================
+
+def build_engine(exchange):
+    return TradingEngine(exchange=exchange)
+
+
+# ==========================================================
+# SECTION 5 — EXECUTION LIFECYCLE
+# ==========================================================
+
+def run_engine(engine, log):
     try:
         engine.start()
     except KeyboardInterrupt:
@@ -68,6 +83,23 @@ def main():
     except Exception as e:
         log.critical(f"FATAL_ENGINE_ERROR | {e}")
         raise
+
+
+# ==========================================================
+# ENTRYPOINT
+# ==========================================================
+
+def main():
+    log = system_logger()
+
+    log.info("BOOTSTRAP_START | environment=TESTNET")
+
+    configure_notifications(log)
+
+    exchange = build_exchange(log)
+    engine = build_engine(exchange)
+
+    run_engine(engine, log)
 
 
 if __name__ == "__main__":

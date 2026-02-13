@@ -13,7 +13,7 @@
 
 from config import GLOBAL_KILL_SWITCH
 from utils.telegram_notifier import send_critical
-
+from utils.logger import system_logger
 
 class SafetyManager:
     """

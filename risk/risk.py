@@ -1,5 +1,32 @@
-from risk.decisions import EntryDecision, PositionDecision, DailyDecision
+# ==========================================================
+# RISK MANAGER
+# ==========================================================
+# Canonical risk authority.
+#
+# Responsibilities:
+# - Entry-time risk checks
+# - Position-level profit protection
+# - Daily Loss Floor enforcement
+# - Risk contract breach detection
+#
+# Design Principles:
+# - All trade math expressed in R-units
+# - Unrealised PnL governs trade-level protection
+# - Realised PnL governs daily protection
+# - Risk tolerance applies ONLY post-fill
+#
+# NO exchange interaction.
+# NO state mutation.
+# PURE deterministic decisions.
+# ==========================================================
+
 from dataclasses import dataclass
+from risk.decisions import EntryDecision, PositionDecision, DailyDecision
+
+
+# ==========================================================
+# SECTION 1 — DATA STRUCTURES
+# ==========================================================
 
 @dataclass(frozen=True)
 class EntryPlanData:
@@ -7,25 +34,15 @@ class EntryPlanData:
     initial_sl: float
     risk_r: float
 
+
+# ==========================================================
+# SECTION 2 — INITIALIZATION
+# ==========================================================
+
 class RiskManager:
-    """
-    Canonical Risk Manager.
-
-    Responsibilities:
-    - Entry-time risk checks and initial SL placement
-    - Trade-level profit protection (unrealised PnL)
-    - Daily Loss Floor (DLF) enforcement (realised PnL)
-    - Detection of true risk contract violations
-
-    Design principles:
-    - All core logic is expressed in R-units
-    - Trade-level protection uses unrealised PnL only
-    - Daily protection uses realised PnL only
-    - Risk tolerance applies ONLY post-fill (never to SL placement)
-    """
 
     # ------------------------------------------------------
-    # Initialization
+    # Constructor
     # ------------------------------------------------------
 
     def __init__(
@@ -35,38 +52,50 @@ class RiskManager:
         RISK_PER_TRADE_USD: float,
         RISK_TOLERANCE_PCT: float,
     ):
-        # --- Notional policy ---
+        # -----------------------------
+        # Notional Policy
+        # -----------------------------
         self.NOTIONAL_TARGET = NOTIONAL_TARGET
         self.NOTIONAL_TOLERANCE = NOTIONAL_TOLERANCE_PCT / 100.0
 
-        # --- Risk unit ---
+        # -----------------------------
+        # Risk Unit
+        # -----------------------------
         self.RISK_PER_TRADE_USD = RISK_PER_TRADE_USD
         self.MAX_RISK_USD = RISK_PER_TRADE_USD  # 1R
 
-        # --- Execution tolerance (post-fill only) ---
+        # -----------------------------
+        # Post-Fill Tolerance
+        # -----------------------------
         self.RISK_TOLERANCE = RISK_TOLERANCE_PCT / 100.0
 
-        # --- Sanity checks ---
+        # -----------------------------
+        # Sanity Invariants
+        # -----------------------------
         assert self.NOTIONAL_TARGET > 0, "RISK_NOTIONAL_TARGET_INVALID"
+
         assert 0 <= self.NOTIONAL_TOLERANCE <= 0.02, (
             f"RISK_NOTIONAL_TOLERANCE_INVALID value={self.NOTIONAL_TOLERANCE}"
         )
+
         assert self.MAX_RISK_USD > 0, "RISK_MAX_RISK_USD_INVALID"
+
         assert 0 <= self.RISK_TOLERANCE <= 0.20, (
             f"RISK_TOLERANCE_INVALID value={self.RISK_TOLERANCE}"
         )
 
-    # ------------------------------------------------------
-    # Entry Evaluation
-    # ------------------------------------------------------
+    # ======================================================
+    # SECTION 3 — ENTRY RISK
+    # ======================================================
 
     def evaluate_entry(self, price: float, side: str) -> EntryDecision:
         """
-        Decide whether a new trade may be opened and compute initial SL.
+        Evaluate whether a new trade may be opened.
 
         Policy:
-        - Initial SL is placed at −0.9R (intentional bias).
-        - Risk tolerance does NOT affect SL placement.
+        - Fixed notional sizing
+        - Initial SL at −0.9R
+        - Tolerance does NOT affect SL placement
         """
 
         intended_qty = self.NOTIONAL_TARGET / price
@@ -83,7 +112,7 @@ class RiskManager:
                 daily_loss_floor=0.0,
             )
 
-        # Initial risk = 0.9R (policy)
+        # Initial risk = 0.9R
         initial_risk_usd = 0.9 * self.MAX_RISK_USD
 
         if side == "LONG":
@@ -106,24 +135,13 @@ class RiskManager:
             daily_loss_floor=0.0,
         )
 
-    # ------------------------------------------------------
-    # Trade-Level Risk Evaluation
-    # ------------------------------------------------------
+    # ======================================================
+    # SECTION 4 — POSITION RISK
+    # ======================================================
 
     def evaluate_position(self, position: dict, price: float) -> PositionDecision:
         """
-        Evaluate an open position.
-
-        Trade-Level Profit Protection Staircase (unrealised PnL):
-
-        Initial SL:
-        - −0.9R
-
-        Tight regime (1R → 6R):
-        - SL = highest_R − 0.9R
-
-        Loose regime (≥ 7R):
-        - SL = highest_R − 2R + 0.1R
+        Evaluate open position risk and trailing logic.
         """
 
         side = position["side"]
@@ -132,11 +150,12 @@ class RiskManager:
         current_sl = position["stop_loss"]
         highest_profit_usd = position.get("highest_profit_usd", 0.0)
 
-        # Canonical risk unit for THIS position
         risk_usd = position.get("risk_usd")
         assert risk_usd is not None and risk_usd > 0, "POSITION_RISK_INVALID"
 
-        # --- Unrealised PnL ---
+        # -----------------------------
+        # Unrealised PnL
+        # -----------------------------
         if side == "LONG":
             unrealised_pnl = (price - entry_price) * qty
         else:
@@ -147,8 +166,11 @@ class RiskManager:
 
         updated_stop_loss = None
 
-        # --- Trailing SL logic ---
+        # -----------------------------
+        # Trailing SL Logic
+        # -----------------------------
         if highest_R >= 1:
+
             if highest_R < 7:
                 locked_R = highest_R - 0.9
             else:
@@ -165,7 +187,9 @@ class RiskManager:
                 if candidate_sl < current_sl:
                     updated_stop_loss = candidate_sl
 
-        # --- Post-fill risk contract validation ---
+        # -----------------------------
+        # Risk Contract Validation
+        # -----------------------------
         max_allowed_loss = risk_usd * (1 + self.RISK_TOLERANCE)
 
         if unrealised_pnl < -max_allowed_loss:
@@ -185,9 +209,9 @@ class RiskManager:
             reason=None,
         )
 
-    # ------------------------------------------------------
-    # Daily Risk Evaluation (DLF)
-    # ------------------------------------------------------
+    # ======================================================
+    # SECTION 5 — DAILY RISK
+    # ======================================================
 
     def evaluate_daily(
         self,
@@ -198,15 +222,7 @@ class RiskManager:
         Daily Loss Floor (DLF).
 
         Based on realised PnL only.
-        NO tolerance is applied.
-
-        Early day (peak < 7R):
-        - DLF = daily_peak − 5R
-
-        Strong day (peak ≥ 7R):
-        - DLF = daily_peak − 3R
-
-        Trading halts ONLY if realised PnL breaches DLF.
+        No tolerance applied.
         """
 
         peak_R = daily_peak_pnl / self.MAX_RISK_USD
@@ -233,9 +249,10 @@ class RiskManager:
             daily_loss_floor=dlf_usd,
         )
 
-    # --------------------------------------------------
-    # Build Entry Plan
-    # --------------------------------------------------
+    # ======================================================
+    # SECTION 6 — ENTRY PLAN BUILDER
+    # ======================================================
+
     def build_entry_plan(
         self,
         *,
@@ -243,12 +260,9 @@ class RiskManager:
         entry_price: float,
     ) -> EntryPlanData:
         """
-        Build sizing + SL for an entry attempt.
-        Supports LONG and SHORT.
-        This does NOT:
-        - place orders
-        - decide allow/deny
-        - modify state
+        Build sizing and initial SL.
+        No state mutation.
+        No exchange interaction.
         """
 
         if direction not in ("LONG", "SHORT"):
@@ -277,7 +291,6 @@ class RiskManager:
                 f"entry={entry_price} sl={sl}"
             )
 
-        # Use fixed notional sizing (consistent with evaluate_entry + exchange)
         quantity = self.NOTIONAL_TARGET / entry_price
 
         return EntryPlanData(
