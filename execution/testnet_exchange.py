@@ -615,12 +615,6 @@ class TestnetExchange:
 
         exit_side = "SELL" if side == "LONG" else "BUY"
 
-        filters = self._symbol_filters[symbol]
-        stop_price = self._quantize_price(
-            stop_price,
-            filters["tickSize"],
-        )
-
         self._post(
             "/fapi/v1/order",
             {
