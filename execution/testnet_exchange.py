@@ -35,7 +35,7 @@ import websocket
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import List
-
+from decimal import Decimal, ROUND_DOWN
 from config import LEVERAGE, MAX_SPREAD_PCT
 from execution.exceptions import OperationalExchangeError, StopAlreadyBreached
 from dotenv import load_dotenv
@@ -210,12 +210,24 @@ class TestnetExchange:
         return filters
 
     def _quantize_qty(self, qty: float, step: float) -> float:
-        precision = str(step)[::-1].find(".")
-        quantized = (qty // step) * step
-        return round(quantized, precision)
+        """
+        Quantize quantity DOWN to Binance stepSize safely.
+        Prevents float rounding errors and scientific notation drift.
+        """
+        qty_dec = Decimal(str(qty))
+        step_dec = Decimal(str(step))
+        quantized = (qty_dec // step_dec) * step_dec
+        return float(quantized.quantize(step_dec, rounding=ROUND_DOWN))
 
     def _quantize_price(self, price: float, tick: float) -> float:
-        return round((price // tick) * tick, 10)
+        """
+        Quantize price DOWN to Binance tickSize safely.
+        Guarantees no extra decimals (prevents 400 errors).
+        """
+        price_dec = Decimal(str(price))
+        tick_dec = Decimal(str(tick))
+        quantized = (price_dec // tick_dec) * tick_dec
+        return float(quantized.quantize(tick_dec, rounding=ROUND_DOWN))
 
     # ========================================================
     # SECTION D — LIFECYCLE
@@ -520,6 +532,9 @@ class TestnetExchange:
         if requested_qty <= 0:
             raise OperationalExchangeError("QTY_ROUNDED_TO_ZERO")
 
+        if Decimal(str(requested_qty)) % Decimal(str(filters["stepSize"])) != 0:
+            raise OperationalExchangeError("QTY_STEP_MISALIGNMENT")
+
         if requested_qty < filters["marketMinQty"]:
             raise OperationalExchangeError("QTY_BELOW_MIN")
 
@@ -585,6 +600,12 @@ class TestnetExchange:
         )
 
         last_price = float(ticker["price"])
+
+        filters = self._symbol_filters[symbol]
+        stop_price = self._quantize_price(
+            stop_price,
+            filters["tickSize"],
+        )
 
         if side == "LONG" and stop_price >= last_price:
             raise StopAlreadyBreached("STOP_ALREADY_BREACHED")
@@ -664,7 +685,7 @@ class TestnetExchange:
 
         for o in orders:
             if not o.get("reduceOnly"):
-                self._post(
+                self._delete(
                     "/fapi/v1/order",
                     {
                         "symbol": o["symbol"],
@@ -672,7 +693,6 @@ class TestnetExchange:
                         "timestamp": int(time.time() * 1000),
                     },
                 )
-
 
     # ========================================================
     # SECTION J — EMERGENCY EXIT
@@ -727,6 +747,9 @@ class TestnetExchange:
             )
 
         qty = self._quantize_qty(pos.qty, filters["stepSize"])
+
+        if Decimal(str(qty)) % Decimal(str(filters["stepSize"])) != 0:
+            raise OperationalExchangeError("FLATTEN_STEP_MISALIGNMENT")
 
         if qty <= 0:
             return
