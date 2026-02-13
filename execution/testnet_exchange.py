@@ -693,51 +693,41 @@ class TestnetExchange:
     # ------------------------------------------------------
     # Emergency Exit
     # ------------------------------------------------------
-
     def emergency_exit(self):
         """
-        Emergency flatten — market reduceOnly.
-        Also guarantees STOP_MARKET cleanup.
+        Production-grade idempotent flatten routine.
+        Guarantees:
+        - No reduceOnly STOP_MARKET conflicts
+        - Position flattened if possible
+        - Safe to call multiple times
+        - Raises OperationalExchangeError if invariant fails
         """
+
+        # ------------------------------------------
+        # STEP 1 — Fetch authoritative position
+        # ------------------------------------------
         pos = self.get_position()
         if pos is None:
-            return
+            return  # Already flat (idempotent)
 
-        side = "SELL" if pos.side == "LONG" else "BUY"
+        symbol = pos.symbol
 
-        self._post(
-            "/fapi/v1/order",
-            {
-                "symbol": pos.symbol,
-                "side": side,
-                "type": "MARKET",
-                "quantity": pos.qty,
-                "reduceOnly": True,
-                "timestamp": int(time.time() * 1000),
-            },
-        )
-
-        # ------------------------------------------------------
-        # HARDENING: Ensure no orphan STOP_MARKET orders remain
-        # ------------------------------------------------------
-        # Wait briefly for position state to update
-        time.sleep(0.5)
-
+        # ------------------------------------------
+        # STEP 2 — Cancel ALL reduceOnly STOP_MARKET
+        # (prevents reduceOnly conflict in Cross mode)
+        # ------------------------------------------
         try:
             open_orders = self._get(
                 "/fapi/v1/openOrders",
                 {
-                    "symbol": pos.symbol,
+                    "symbol": symbol,
                     "timestamp": int(time.time() * 1000),
                 },
             )
-        except Exception:
-            # If we cannot fetch orders, do not escalate here.
-            # Engine-level verification will handle inconsistencies.
-            return
+        except Exception as e:
+            raise OperationalExchangeError(f"FLATTEN_FETCH_ORDERS_FAILED | {e}")
 
         for o in open_orders:
-            # Cancel ALL reduceOnly STOP_MARKET orders
             if (
                 o.get("type") == "STOP_MARKET"
                 and o.get("reduceOnly") is True
@@ -746,14 +736,98 @@ class TestnetExchange:
                     self._delete(
                         "/fapi/v1/order",
                         {
-                            "symbol": pos.symbol,
+                            "symbol": symbol,
                             "orderId": o["orderId"],
                             "timestamp": int(time.time() * 1000),
                         },
                     )
                 except Exception:
-                    # Do not raise — emergency exit must remain best-effort.
-                    pass
+                    pass  # best-effort
+
+        time.sleep(0.3)
+
+        # ------------------------------------------
+        # STEP 3 — Re-fetch position (state may change)
+        # ------------------------------------------
+        pos = self.get_position()
+        if pos is None:
+            return  # Flattened by SL during cancellation
+
+        # ------------------------------------------
+        # STEP 4 — Quantize qty safely
+        # ------------------------------------------
+        filters = self._symbol_filters.get(symbol)
+        if not filters:
+            raise OperationalExchangeError(
+                f"SYMBOL_FILTERS_MISSING | symbol={symbol}"
+            )
+
+        qty = self._quantize_qty(pos.qty, filters["stepSize"])
+
+        if qty <= 0:
+            return  # Nothing valid to close
+
+        if qty < filters["marketMinQty"]:
+            raise OperationalExchangeError(
+                f"FLATTEN_QTY_BELOW_MARKET_MIN | qty={qty}"
+            )
+
+        side = "SELL" if pos.side == "LONG" else "BUY"
+
+        # ------------------------------------------
+        # STEP 5 — MARKET reduceOnly flatten
+        # ------------------------------------------
+        self._post(
+            "/fapi/v1/order",
+            {
+                "symbol": symbol,
+                "side": side,
+                "type": "MARKET",
+                "quantity": qty,
+                "reduceOnly": True,
+                "timestamp": int(time.time() * 1000),
+            },
+        )
+
+        # ------------------------------------------
+        # STEP 6 — Verify flat
+        # ------------------------------------------
+        time.sleep(0.5)
+        final_pos = self.get_position()
+
+        if final_pos is not None:
+            raise OperationalExchangeError(
+                f"EMERGENCY_EXIT_FAILED_NOT_FLAT | symbol={symbol}"
+            )
+
+        # ------------------------------------------
+        # STEP 7 — Defensive cleanup (any leftover reduceOnly)
+        # ------------------------------------------
+        try:
+            open_orders = self._get(
+                "/fapi/v1/openOrders",
+                {
+                    "symbol": symbol,
+                    "timestamp": int(time.time() * 1000),
+                },
+            )
+
+            for o in open_orders:
+                if o.get("reduceOnly") is True:
+                    try:
+                        self._delete(
+                            "/fapi/v1/order",
+                            {
+                                "symbol": symbol,
+                                "orderId": o["orderId"],
+                                "timestamp": int(time.time() * 1000),
+                            },
+                        )
+                    except Exception:
+                        pass
+
+        except Exception:
+            pass
 
     # --------------------------------------------------------
     # ACCOUNT
