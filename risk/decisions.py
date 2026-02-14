@@ -45,6 +45,7 @@ class PositionDecision:
     normal_exit: bool
     updated_stop_loss: Optional[float]
     highest_profit_usd: Optional[float]
+    next_integer_R: Optional[int]
     reason: Optional[str]
 
     def __post_init__(self):

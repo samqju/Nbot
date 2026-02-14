@@ -165,27 +165,31 @@ class RiskManager:
         highest_R = highest_profit_usd / risk_usd
 
         updated_stop_loss = None
+        next_integer_R = None
 
         # -----------------------------
         # Trailing SL Logic
         # -----------------------------
         if highest_R >= 1:
 
-            if highest_R < 7:
-                locked_R = highest_R - 0.9
-            else:
-                locked_R = highest_R - 2 + 0.1
+            integer_R = int(highest_R)
+            last_locked_R = position.get("last_locked_R", 0)
 
-            locked_profit_usd = locked_R * risk_usd
+            if integer_R > last_locked_R:
 
-            if side == "LONG":
-                candidate_sl = entry_price + (locked_profit_usd / qty)
-                if candidate_sl > current_sl:
-                    updated_stop_loss = candidate_sl
-            else:
-                candidate_sl = entry_price - (locked_profit_usd / qty)
-                if candidate_sl < current_sl:
-                    updated_stop_loss = candidate_sl
+                locked_R = integer_R - 1
+                locked_profit_usd = locked_R * risk_usd
+
+                if side == "LONG":
+                    candidate_sl = entry_price + (locked_profit_usd / qty)
+                    if candidate_sl > current_sl:
+                        updated_stop_loss = candidate_sl
+                        next_integer_R = integer_R
+                else:
+                    candidate_sl = entry_price - (locked_profit_usd / qty)
+                    if candidate_sl < current_sl:
+                        updated_stop_loss = candidate_sl
+                        next_integer_R = integer_R
 
         # -----------------------------
         # Risk Contract Validation
@@ -198,6 +202,7 @@ class RiskManager:
                 normal_exit=False,
                 updated_stop_loss=None,
                 highest_profit_usd=highest_profit_usd,
+                next_integer_R=None,
                 reason="RISK_CONTRACT_BREACH",
             )
 
@@ -206,6 +211,7 @@ class RiskManager:
             normal_exit=False,
             updated_stop_loss=updated_stop_loss,
             highest_profit_usd=highest_profit_usd,
+            next_integer_R=next_integer_R,
             reason=None,
         )
 

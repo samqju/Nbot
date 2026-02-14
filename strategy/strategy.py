@@ -107,6 +107,44 @@ class Strategy:
             self._last_trade_minute.clear()
 
     # ======================================================
+    # Warmup OHLC Seeder (Used by Engine Only)
+    # ======================================================
+
+    def seed_candle(
+        self,
+        symbol: str,
+        o: float,
+        h: float,
+        l: float,
+        c: float,
+        timestamp: int,
+    ):
+
+        minute = timestamp // 60000
+
+        # Store full historical candle
+        self._candle_history[symbol].append((o, h, l, c))
+
+        # Prepare current candle so live ticks continue cleanly
+        self._current_candle[symbol] = {
+            "minute": minute,
+            "open": c,
+            "high": c,
+            "low": c,
+            "close": c,
+        }
+
+        # Warmup check (self-contained)
+        if (
+            self._universe
+            and all(
+                len(self._candle_history[s]) >= self.LONG_RANGE_WINDOW
+                for s in self._universe
+            )
+        ):
+            self._warmed_up = True
+
+    # ======================================================
     # Universe
     # ======================================================
 
@@ -291,7 +329,6 @@ class Strategy:
                 continue
 
             regime = self._classify_regime(candles)
-            current_minute = candles[-1][0] if isinstance(candles[-1], tuple) else None
 
             minute = self._current_candle[symbol]["minute"]
 

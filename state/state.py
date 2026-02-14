@@ -57,6 +57,7 @@ class StateManager:
             "daily_realized_pnl": 0.0,
             "daily_peak_pnl": 0.0,
             "daily_loss_floor_usd": None,
+            "daily_highest_unrealized_usd": 0.0,
 
             # ----------------------------
             # META
@@ -144,6 +145,7 @@ class StateManager:
         self.state["daily_realized_pnl"] = 0.0
         self.state["daily_peak_pnl"] = 0.0
         self.state["daily_loss_floor_usd"] = None
+        self.state["daily_highest_unrealized_usd"] = 0.0
 
     def update_daily_realized(self, pnl_delta):
 
