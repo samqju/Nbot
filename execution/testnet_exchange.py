@@ -37,6 +37,7 @@ from types import SimpleNamespace
 from typing import List
 from decimal import Decimal, ROUND_DOWN
 from config import LEVERAGE, MAX_SPREAD_PCT
+from utils.logger import system_logger
 from execution.exceptions import OperationalExchangeError, StopAlreadyBreached
 from dotenv import load_dotenv
 load_dotenv()
