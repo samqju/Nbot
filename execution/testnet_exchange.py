@@ -281,6 +281,26 @@ class TestnetExchange:
         quantized = (price_dec // tick_dec) * tick_dec
         return float(quantized.quantize(tick_dec, rounding=ROUND_DOWN))
 
+    # --------------------------------------------------------
+    # Public Quantization Helper (Single Source of Truth)
+    # --------------------------------------------------------
+
+    def quantize_price(self, symbol: str, price: float) -> float:
+        """
+        Public price quantization.
+        Lifecycle MUST use this for SL comparison.
+        """
+        filters = self._symbol_filters.get(symbol)
+        if not filters:
+            raise OperationalExchangeError(
+                f"SYMBOL_FILTERS_MISSING | symbol={symbol}"
+            )
+
+        return self._quantize_price(
+            price,
+            filters["tickSize"],
+        )
+
     # ========================================================
     # SECTION D — LIFECYCLE
     # ========================================================
@@ -322,69 +342,45 @@ class TestnetExchange:
     # ========================================================
 
     def price_stream(self):
-        ws_url = "wss://stream.binancefuture.com/ws/!trade@arr"
-        last_message_time = time.time()
+        """
+        REST-only price stream.
+        Deterministic polling.
+        No WebSocket usage.
+        No silent fallback loops.
+        """
+
+        POLL_INTERVAL_SECONDS = 2
 
         while True:
             try:
-                ws = websocket.create_connection(ws_url, timeout=10)
+                data = self._get(
+                    "/fapi/v1/ticker/price",
+                    {"timestamp": int(time.time() * 1000)},
+                )
 
-                while True:
-                    message = ws.recv()
-                    last_message_time = time.time()
+                ts = int(time.time() * 1000)
 
-                    data = json.loads(message)
-
-                    if not isinstance(data, list):
+                for row in data:
+                    symbol = row.get("symbol")
+                    if not symbol or not symbol.endswith("USDT"):
                         continue
 
-                    for trade in data:
-                        symbol = trade.get("s")
-                        price = float(trade.get("p", 0))
-                        timestamp = trade.get("T")
+                    price = float(row.get("price", 0))
+                    if price <= 0:
+                        continue
 
-                        if not symbol or not symbol.endswith("USDT"):
-                            continue
-
-                        if price <= 0:
-                            continue
-
-                        yield PriceTick(
-                            symbol=symbol,
-                            price=price,
-                            timestamp=timestamp,
-                        )
-
-                    if time.time() - last_message_time > 15:
-                        raise Exception("WS_HEARTBEAT_TIMEOUT")
-
-            except Exception:
-                self.log.warning("WS_STREAM_FAILURE | switching_to_rest_fallback")
-                try:
-                    data = self._get(
-                        "/fapi/v1/ticker/price",
-                        {"timestamp": int(time.time() * 1000)},
+                    yield PriceTick(
+                        symbol=symbol,
+                        price=price,
+                        timestamp=ts,
                     )
 
-                    ts = int(time.time() * 1000)
+            except Exception as e:
+                raise OperationalExchangeError(
+                    f"REST_PRICE_STREAM_FAILED | {e}"
+                )
 
-                    for row in data:
-                        symbol = row.get("symbol")
-                        if not symbol or not symbol.endswith("USDT"):
-                            continue
-
-                        yield PriceTick(
-                            symbol=symbol,
-                            price=float(row["price"]),
-                            timestamp=ts,
-                        )
-
-                except Exception as e:
-                    self.log.critical(
-                        f"REST_FALLBACK_FAILED | error={e}"
-                    )
-
-                time.sleep(2)
+            time.sleep(POLL_INTERVAL_SECONDS)
 
     def get_historical_candles(self, *, symbol: str, interval: str, limit: int):
         data = self._get(

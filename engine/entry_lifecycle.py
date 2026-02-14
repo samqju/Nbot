@@ -47,6 +47,7 @@ class EntryLifecycle:
         emergency,
         system_log,
         trade_log,
+        throttle,
     ):
         self.exchange = exchange
         self.state = state
@@ -55,6 +56,7 @@ class EntryLifecycle:
         self.emergency = emergency
         self.system_log = system_log
         self.trade_log = trade_log
+        self.throttle = throttle
 
         self._entry_in_progress = False
 
@@ -116,11 +118,15 @@ class EntryLifecycle:
         )
 
         if spread_pct > MAX_SPREAD_PCT:
-            self.system_log.info(
-                f"ENTRY_BLOCKED_SPREAD | "
-                f"symbol={symbol} | "
-                f"spread_pct={spread_pct} | "
-                f"max_allowed={MAX_SPREAD_PCT}"
+            self.throttle.log(
+                key=f"spread_block_{symbol}",
+                level="info",
+                message=(
+                    f"ENTRY_BLOCKED_SPREAD | "
+                    f"symbol={symbol} | "
+                    f"spread_pct={spread_pct} | "
+                    f"max_allowed={MAX_SPREAD_PCT}"
+                ),
             )
             return False
 

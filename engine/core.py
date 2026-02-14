@@ -114,6 +114,7 @@ class TradingEngine:
             emergency=self.emergency,
             system_log=self.system_log,
             trade_log=self.trade_log,
+            throttle=self.throttle,
         )
 
         # Lifecycles

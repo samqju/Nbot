@@ -117,6 +117,7 @@ class PositionLifecycle:
             )
 
             update_ok = False
+            expected_sl = None
 
             for attempt in range(2):
                 try:
@@ -135,9 +136,19 @@ class PositionLifecycle:
                             f"symbol={symbol} | "
                             f"intended_sl={intended_sl}"
                         )
-                    elif (
+                        continue
+
+                    # Adapter is SINGLE source of quantization truth
+                    expected_sl = self.exchange.quantize_price(
+                        symbol,
+                        intended_sl,
+                    )
+
+                    if (
                         verified.stop_loss is not None
-                        and abs(verified.stop_loss - intended_sl) < 1e-8
+                        and abs(
+                            verified.stop_loss - expected_sl
+                        ) < 1e-12
                     ):
                         update_ok = True
                         self.system_log.info(
@@ -150,7 +161,7 @@ class PositionLifecycle:
                         self.system_log.warning(
                             f"SL_VERIFICATION_MISMATCH | "
                             f"symbol={symbol} | "
-                            f"expected={intended_sl} | "
+                            f"expected={expected_sl} | "
                             f"actual={getattr(verified, 'stop_loss', None)}"
                         )
 
@@ -165,6 +176,7 @@ class PositionLifecycle:
                     time.sleep(0.5)
 
             if not update_ok:
+
                 send_warning(
                     "SL UPDATE VERIFICATION FAILED",
                     "Monitoring risk boundary."
@@ -184,12 +196,13 @@ class PositionLifecycle:
                 )
 
             else:
-                # Only mutate state AFTER confirmed exchange update
-                open_position["stop_loss"] = intended_sl
+                # Mutate state ONLY after exchange confirmation
+                open_position["stop_loss"] = expected_sl
 
                 if intended_integer_R is not None:
                     open_position["last_locked_R"] = intended_integer_R
 
+            # Update Telegram panel
             msg_id = state_snapshot.get(
                 "active_trade_panel_message_id"
             )
