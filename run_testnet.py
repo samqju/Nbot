@@ -75,6 +75,18 @@ def run_engine(engine, log):
         engine.start()
     except KeyboardInterrupt:
         log.info("KEYBOARD_INTERRUPT | shutting down")
+        try:
+            state_snapshot = engine.state.get_state()
+            open_position = state_snapshot.get("open_position")
+            if open_position:
+                log.warning(
+                    f"ENGINE_STOP_WITH_OPEN_POSITION | "
+                    f"symbol={open_position['symbol']} | "
+                    f"entry={open_position['entry_price']} | "
+                    f"qty={open_position['qty']}"
+                )
+        except Exception:
+            pass
         send_message(
             "🟡 <b>ENGINE STOPPED (MANUAL)</b>\n\n"
             "Reason: KeyboardInterrupt (Ctrl+C)\n"

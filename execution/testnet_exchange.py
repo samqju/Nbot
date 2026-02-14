@@ -94,6 +94,8 @@ class TestnetExchange:
         if not BASE_URL or not API_KEY or not API_SECRET:
             raise RuntimeError("TESTNET_EXCHANGE_CONFIG_MISSING")
 
+        self.log = system_logger()
+
         self.session = requests.Session()
         self.session.headers.update({
             "X-MBX-APIKEY": API_KEY
@@ -131,6 +133,11 @@ class TestnetExchange:
             )
             if resp.status_code != 200:
                 error_detail = self._extract_binance_error(resp)
+                self.log.critical(
+                    f"REST_GET_FAILED | path={path} | "
+                    f"status={resp.status_code} | "
+                    f"error={error_detail}"
+                )
                 raise OperationalExchangeError(
                     f"REST_GET_FAILED | path={path} | {error_detail}"
                 )
@@ -151,6 +158,11 @@ class TestnetExchange:
 
             if resp.status_code != 200:
                 error_detail = self._extract_binance_error(resp)
+                self.log.critical(
+                    f"REST_POST_FAILED | path={path} | "
+                    f"status={resp.status_code} | "
+                    f"error={error_detail}"
+                )
                 raise OperationalExchangeError(
                     f"REST_POST_FAILED | path={path} | {error_detail}"
                 )
@@ -168,12 +180,28 @@ class TestnetExchange:
                 params=self._sign(params),
                 timeout=TIMEOUT,
             )
-            resp.raise_for_status()
+            if resp.status_code != 200:
+                error_detail = self._extract_binance_error(resp)
+                self.log.critical(
+                    f"REST_DELETE_FAILED | path={path} | "
+                    f"status={resp.status_code} | "
+                    f"error={error_detail}"
+                )
+                raise OperationalExchangeError(
+                    f"REST_DELETE_FAILED | path={path} | {error_detail}"
+                )
+
             return resp.json()
         except requests.exceptions.Timeout:
             raise OperationalExchangeError("REST_TIMEOUT")
+
         except Exception as e:
-            raise OperationalExchangeError(f"REST_ERROR | {e}")
+            self.log.critical(
+                f"REST_DELETE_EXCEPTION | path={path} | error={e}"
+            )
+            raise OperationalExchangeError(
+                f"REST_DELETE_EXCEPTION | path={path} | {e}"
+            )
 
     def _extract_binance_error(self, response):
         """
@@ -330,6 +358,7 @@ class TestnetExchange:
                         raise Exception("WS_HEARTBEAT_TIMEOUT")
 
             except Exception:
+                self.log.warning("WS_STREAM_FAILURE | switching_to_rest_fallback")
                 try:
                     data = self._get(
                         "/fapi/v1/ticker/price",
@@ -349,8 +378,10 @@ class TestnetExchange:
                             timestamp=ts,
                         )
 
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.log.critical(
+                        f"REST_FALLBACK_FAILED | error={e}"
+                    )
 
                 time.sleep(2)
 
@@ -629,6 +660,14 @@ class TestnetExchange:
             stop_price,
             filters["tickSize"],
         )
+        self.log.info(
+            f"ADAPTER_PLACE_SL | "
+            f"symbol={symbol} | "
+            f"side={side} | "
+            f"qty={qty} | "
+            f"stop_price={stop_price} | "
+            f"last_price={last_price}"
+        )
 
         if Decimal(str(stop_price)) % Decimal(str(filters["tickSize"])) != 0:
             raise OperationalExchangeError("STOP_PRICE_TICK_MISALIGNMENT")
@@ -664,6 +703,14 @@ class TestnetExchange:
         new_stop_price: float,
     ):
 
+        self.log.info(
+            f"ADAPTER_UPDATE_SL | "
+            f"symbol={symbol} | "
+            f"side={side} | "
+            f"qty={qty} | "
+            f"new_stop_price={new_stop_price}"
+        )
+
         orders = self._get(
             "/fapi/v1/openOrders",
             {
@@ -677,6 +724,11 @@ class TestnetExchange:
                 o.get("type") == "STOP_MARKET"
                 and o.get("reduceOnly") is True
             ):
+                self.log.info(
+                    f"ADAPTER_DELETE_SL | "
+                    f"symbol={symbol} | "
+                    f"orderId={o.get('orderId')}"
+                )
                 self._delete(
                     "/fapi/v1/order",
                     {

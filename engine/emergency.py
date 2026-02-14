@@ -46,6 +46,17 @@ class EmergencyHandler:
         self.system_log.critical(
             f"EMERGENCY_EXIT_TRIGGERED | reason={reason}"
         )
+        try:
+            pos = self.exchange.get_position()
+            if pos:
+                self.system_log.critical(
+                    f"EMERGENCY_POSITION | "
+                    f"symbol={pos.symbol} | "
+                    f"side={pos.side} | "
+                    f"qty={pos.qty}"
+                )
+        except Exception:
+            pass
 
         # Attempt flatten twice
         for attempt in range(2):

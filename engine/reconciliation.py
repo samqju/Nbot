@@ -3,7 +3,7 @@
 # ==========================================================
 
 from utils.telegram_notifier import send_critical, send_trade_panel, format_trade_panel
-
+from utils.logger import trade_logger
 
 class ReconciliationLifecycle:
     """
@@ -29,6 +29,7 @@ class ReconciliationLifecycle:
         self.risk = risk
         self.safety = safety
         self.system_log = system_log
+        self.trade_log = trade_logger()
 
     # --------------------------------------------------
     # Canonical Open Position Builder
@@ -42,6 +43,7 @@ class ReconciliationLifecycle:
         entry_price: float,
         qty: float,
         stop_loss,
+        entry_timestamp=None,
     ):
         return {
             "symbol": symbol,
@@ -52,6 +54,7 @@ class ReconciliationLifecycle:
             "risk_usd": self.risk.RISK_PER_TRADE_USD,
             "highest_profit_usd": 0.0,
             "last_locked_R": 0,
+            "entry_timestamp": entry_timestamp,
         }
 
     # --------------------------------------------------
@@ -85,6 +88,48 @@ class ReconciliationLifecycle:
             # --------------------------------------------------
             if position is None:
 
+                existing = self.state.get_open_position()
+
+                if existing:
+
+                    self.system_log.warning(
+                        f"RECON_CLOSE_DETECTED | "
+                        f"symbol={existing['symbol']}"
+                   )
+
+                    realized = 0.0
+                    exit_price = 0.0
+
+                    try:
+                        trade_data = self.exchange.get_trade_realized_pnl(
+                            symbol=existing["symbol"],
+                            since_timestamp=existing.get("entry_timestamp"),
+                        )
+
+                        realized = trade_data["pnl"]
+                        exit_price = trade_data["exit_price"]
+
+                    except Exception as e:
+                        self.system_log.critical(
+                            f"RECON_CLOSE_FETCH_FAILED | error={e}"
+                        )
+
+                    # Update daily accounting
+                    self.state.update_daily_realized(realized)
+
+                    # Log close in trades.log
+                    self.trade_log.info(
+                        f"TRADE_CLOSE | "
+                        f"symbol={existing['symbol']} | "
+                        f"side={existing['side']} | "
+                        f"entry={existing['entry_price']:.4f} | "
+                        f"exit={exit_price:.4f} | "
+                        f"qty={existing['qty']:.6f} | "
+                        f"pnl={realized:.2f} | "
+                        f"source=RECON"
+                    )
+
+                # Clear state
                 self.state.update_after_trade(
                     balance=self.state.get_state().get("balance", 0.0),
                     open_position=None,
@@ -97,6 +142,10 @@ class ReconciliationLifecycle:
             # Position exists
             # --------------------------------------------------
             else:
+                existing = self.state.get_open_position()
+                restored_ts = None
+                if existing:
+                    restored_ts = existing.get("entry_timestamp")
 
                 rebuilt = self._build_open_position(
                     symbol=position.symbol,
@@ -104,6 +153,7 @@ class ReconciliationLifecycle:
                     entry_price=position.entry_price,
                     qty=position.qty,
                     stop_loss=position.stop_loss,
+                    entry_timestamp=restored_ts,
                 )
 
                 existing = self.state.get_open_position()
@@ -133,6 +183,11 @@ class ReconciliationLifecycle:
                     )
 
                     intended_sl = entry_plan.initial_sl
+                    self.system_log.info(
+                        f"RECOVERY_SL_ATTEMPT | "
+                        f"symbol={position.symbol} | "
+                        f"intended_sl={intended_sl}"
+                    )
 
                     live_price = self.exchange.get_last_price(
                         position.symbol
@@ -205,6 +260,11 @@ class ReconciliationLifecycle:
 
                     self.state.state["open_position"]["stop_loss"] = intended_sl
                     self.system_log.info("RECOVERY_SL_SUCCESS")
+                    self.system_log.info(
+                        f"RECOVERY_SL_CONFIRMED | "
+                        f"symbol={position.symbol} | "
+                        f"stop_loss={verified.stop_loss}"
+                    )
 
                 # --------------------------------------------------
                 # Telegram Recovery

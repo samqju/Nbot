@@ -93,11 +93,18 @@ class EntryLifecycle:
         symbol = intent.symbol
 
         if not market_state.has_price(symbol):
+            self.system_log.info(
+                f"ENTRY_BLOCKED_NO_PRICE | symbol={symbol}"
+            )
             return False
 
         entry_price = market_state.get_price(symbol)
 
         if entry_price <= 0:
+            self.system_log.warning(
+                f"ENTRY_BLOCKED_INVALID_PRICE | "
+                f"symbol={symbol} | price={entry_price}"
+            )
             return False
 
         # --------------------------------------------------
@@ -109,6 +116,12 @@ class EntryLifecycle:
         )
 
         if spread_pct > MAX_SPREAD_PCT:
+            self.system_log.info(
+                f"ENTRY_BLOCKED_SPREAD | "
+                f"symbol={symbol} | "
+                f"spread_pct={spread_pct} | "
+                f"max_allowed={MAX_SPREAD_PCT}"
+            )
             return False
 
         # --------------------------------------------------
@@ -126,6 +139,12 @@ class EntryLifecycle:
         self.state.state["balance"] = balance
 
         if balance < required_margin:
+            self.system_log.warning(
+                f"ENTRY_BLOCKED_MARGIN | "
+                f"symbol={symbol} | "
+                f"balance={balance} | "
+                f"required={required_margin}"
+            )
             return False
 
         # --------------------------------------------------
@@ -140,6 +159,9 @@ class EntryLifecycle:
         )
 
         if ack.filled_qty <= 0:
+            self.system_log.warning(
+                f"ENTRY_NOT_FILLED | symbol={symbol}"
+            )
             return False
 
         # --------------------------------------------------
@@ -147,6 +169,13 @@ class EntryLifecycle:
         # --------------------------------------------------
 
         if not ack.fully_filled:
+
+            self.trade_log.critical(
+                f"PARTIAL_FILL | "
+                f"symbol={symbol} | "
+                f"requested={ack.requested_qty} | "
+                f"filled={ack.filled_qty}"
+            )
 
             send_critical(
                 "PARTIAL FILL DETECTED",
@@ -302,7 +331,11 @@ class EntryLifecycle:
                 )
                 sl_placed = True
                 break
-            except Exception:
+            except Exception as e:
+                self.system_log.warning(
+                    f"INITIAL_SL_PLACEMENT_EXCEPTION | "
+                    f"symbol={symbol} | error={e}"
+                )
                 time.sleep(0.5)
 
         if not sl_placed:

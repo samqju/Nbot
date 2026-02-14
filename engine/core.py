@@ -162,7 +162,14 @@ class TradingEngine:
 
     def start(self):
 
-        self.state.load()
+        try:
+            self.state.load()
+        except Exception as e:
+            self.system_log.critical(
+                f"STATE_LOAD_FAILED | {e}"
+            )
+            self.safety.halt("STATE_LOAD_FAILED")
+            return
 
         try:
             self.exchange.connect()
@@ -179,10 +186,22 @@ class TradingEngine:
 
         engine_state = self.state.get_state().get("engine_state")
 
-        if engine_state == self.DAILY_HALT:
-            self.reconciliation.run(reason="DAILY_HALT_RESUME")
-        else:
-            self.reconciliation.run(reason="ENGINE_STARTUP")
+        try:
+            if engine_state == self.DAILY_HALT:
+                self.reconciliation.run(reason="DAILY_HALT_RESUME")
+            else:
+                self.reconciliation.run(reason="ENGINE_STARTUP")
+        except Exception as e:
+            self.system_log.critical(
+                f"RECONCILIATION_STARTUP_FAILED | {e}"
+            )
+            self.state.set_engine_state(
+                engine_state=self.OPERATIONAL_HALT,
+                reason="RECONCILIATION_STARTUP_FAILED",
+            )
+            self.state.save()
+            self.safety.halt("RECONCILIATION_STARTUP_FAILED")
+            return
 
         self.universe.load()
 
@@ -204,7 +223,19 @@ class TradingEngine:
             self.safety.halt("LEVERAGE_ENFORCEMENT_FAILED")
             return
 
-        self.universe.warmup(self.exchange)
+        try:
+            self.universe.warmup(self.exchange)
+        except Exception as e:
+            self.system_log.critical(
+                f"UNIVERSE_WARMUP_FAILED | {e}"
+            )
+            self.state.set_engine_state(
+                engine_state=self.OPERATIONAL_HALT,
+                reason="UNIVERSE_WARMUP_FAILED",
+            )
+            self.state.save()
+            self.safety.halt("UNIVERSE_WARMUP_FAILED")
+            return
 
         send_info(
             "ENGINE STARTED",
@@ -287,7 +318,14 @@ class TradingEngine:
                     int(datetime.now(timezone.utc).timestamp() * 1000)
                 )
 
-                self.state.save()
+                try:
+                    self.state.save()
+                except Exception as e:
+                    self.system_log.critical(
+                        f"STATE_SAVE_FAILED | {e}"
+                    )
+                    self.safety.halt("STATE_SAVE_FAILED")
+                    return
 
         except OperationalExchangeError as e:
             self.system_log.critical(
@@ -302,3 +340,18 @@ class TradingEngine:
         except StopIteration:
             self.system_log.info("MARKET_DATA_EXHAUSTED")
             self.safety.halt("MARKET_DATA_EXHAUSTED")
+
+        except Exception as e:
+            self.system_log.critical(
+                f"UNEXPECTED_ENGINE_ERROR | {e}"
+            )
+            self.state.set_engine_state(
+                engine_state=self.OPERATIONAL_HALT,
+                reason="UNEXPECTED_ENGINE_ERROR",
+            )
+            self.state.save()
+            send_critical(
+                "UNEXPECTED ENGINE ERROR",
+                f"{e}\n\nEngine halted."
+            )
+            self.safety.halt("UNEXPECTED_ENGINE_ERROR")

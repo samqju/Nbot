@@ -107,9 +107,18 @@ class PositionLifecycle:
             intended_sl = decision.updated_stop_loss
             intended_integer_R = decision.next_integer_R
 
+            self.system_log.info(
+                f"SL_UPDATE_ATTEMPT | "
+                f"symbol={symbol} | "
+                f"current_sl={open_position['stop_loss']} | "
+                f"intended_sl={intended_sl} | "
+                f"price={price} | "
+                f"next_integer_R={intended_integer_R}"
+            )
+
             update_ok = False
 
-            for _ in range(2):
+            for attempt in range(2):
                 try:
                     self.exchange.update_sl(
                         symbol=open_position["symbol"],
@@ -120,15 +129,39 @@ class PositionLifecycle:
 
                     verified = self.exchange.get_position()
 
-                    if (
-                        verified is not None
-                        and verified.stop_loss is not None
+                    if verified is None:
+                        self.system_log.critical(
+                            f"SL_VERIFY_POSITION_NONE | "
+                            f"symbol={symbol} | "
+                            f"intended_sl={intended_sl}"
+                        )
+                    elif (
+                        verified.stop_loss is not None
                         and abs(verified.stop_loss - intended_sl) < 1e-8
                     ):
                         update_ok = True
+                        self.system_log.info(
+                            f"SL_UPDATE_VERIFIED | "
+                            f"symbol={symbol} | "
+                            f"stop_loss={verified.stop_loss}"
+                        )
                         break
+                    else:
+                        self.system_log.warning(
+                            f"SL_VERIFICATION_MISMATCH | "
+                            f"symbol={symbol} | "
+                            f"expected={intended_sl} | "
+                            f"actual={getattr(verified, 'stop_loss', None)}"
+                        )
 
-                except Exception:
+                except Exception as e:
+                    self.system_log.warning(
+                        f"SL_UPDATE_EXCEPTION | "
+                        f"symbol={symbol} | "
+                        f"intended_sl={intended_sl} | "
+                        f"attempt={attempt+1} | "
+                        f"error={type(e).__name__}:{e}"
+                    )
                     time.sleep(0.5)
 
             if not update_ok:
@@ -137,14 +170,25 @@ class PositionLifecycle:
                     "Monitoring risk boundary."
                 )
 
-            else:
-                # Commit integer trailing only AFTER verification
-                if intended_integer_R is not None:
-                    open_position["last_locked_R"] = (
-                        intended_integer_R
-                    )
+                try:
+                    exchange_pos = self.exchange.get_position()
+                    exchange_sl = getattr(exchange_pos, "stop_loss", None)
+                except Exception:
+                    exchange_sl = None
 
-            open_position["stop_loss"] = intended_sl
+                self.system_log.warning(
+                    f"SL_UPDATE_FAILED | "
+                    f"symbol={symbol} | "
+                    f"intended_sl={intended_sl} | "
+                    f"exchange_sl={exchange_sl}"
+                )
+
+            else:
+                # Only mutate state AFTER confirmed exchange update
+                open_position["stop_loss"] = intended_sl
+
+                if intended_integer_R is not None:
+                    open_position["last_locked_R"] = intended_integer_R
 
             msg_id = state_snapshot.get(
                 "active_trade_panel_message_id"
@@ -166,14 +210,6 @@ class PositionLifecycle:
             open_position["highest_profit_usd"] = (
                 decision.highest_profit_usd
             )
-
-        # Persist integer trailing state
-        if "last_locked_R" in open_position:
-            highest_R = (
-                open_position["highest_profit_usd"]
-                / open_position["risk_usd"]
-            )
-            open_position["last_locked_R"] = int(highest_R)
 
         self.state.update_open_position(open_position)
         self.state.save()
@@ -212,13 +248,53 @@ class PositionLifecycle:
 
         self.system_log.info("POSITION_CLOSED_CONFIRMED")
 
-        trade_data = self.exchange.get_trade_realized_pnl(
-            symbol=open_position["symbol"],
-            since_timestamp=open_position.get("entry_timestamp"),
-        )
+        realized = None
+        exit_price = None
 
-        realized = trade_data["pnl"]
-        exit_price = trade_data["exit_price"]
+        for attempt in range(3):
+            try:
+                trade_data = self.exchange.get_trade_realized_pnl(
+                    symbol=open_position["symbol"],
+                    since_timestamp=open_position.get("entry_timestamp"),
+                )
+
+                realized = trade_data["pnl"]
+                exit_price = trade_data["exit_price"]
+
+                self.system_log.info(
+                    f"POSITION_CLOSE_DETAILS | "
+                    f"symbol={open_position['symbol']} | "
+                    f"entry={open_position['entry_price']} | "
+                    f"exit={exit_price} | "
+                    f"pnl={realized}"
+                )
+
+                if exit_price is not None:
+                    break
+
+                self.system_log.warning(
+                    f"CLOSE_DETAILS_DELAYED | "
+                    f"symbol={open_position['symbol']} | "
+                    f"attempt={attempt+1}"
+                )
+
+                time.sleep(0.5)
+
+            except Exception as e:
+                self.system_log.warning(
+                    f"CLOSE_FETCH_EXCEPTION | "
+                    f"symbol={open_position['symbol']} | "
+                    f"attempt={attempt+1} | error={e}"
+                )
+                time.sleep(0.5)
+
+        if exit_price is None:
+            self.system_log.critical(
+                f"CLOSE_DETAILS_UNAVAILABLE | "
+                f"symbol={open_position['symbol']}"
+            )
+            exit_price = 0.0
+            realized = 0.0
 
         self.state.update_daily_realized(realized)
 
