@@ -343,29 +343,26 @@ class TestnetExchange:
 
     def price_stream(self):
         """
-        REST-only price stream.
-        Deterministic polling.
-        No WebSocket usage.
-        No silent fallback loops.
+        WebSocket-driven price stream.
+        Event-driven.
         """
 
-        POLL_INTERVAL_SECONDS = 2
+        stream_url = "wss://fstream.binance.com/ws/!ticker@arr"
 
-        while True:
-            try:
-                data = self._get(
-                    "/fapi/v1/ticker/price",
-                    {"timestamp": int(time.time() * 1000)},
-                )
+        ws = websocket.create_connection(stream_url)
 
+        try:
+            while True:
+                message = ws.recv()
+                data = json.loads(message)
                 ts = int(time.time() * 1000)
 
                 for row in data:
-                    symbol = row.get("symbol")
+                    symbol = row.get("s")
                     if not symbol or not symbol.endswith("USDT"):
                         continue
 
-                    price = float(row.get("price", 0))
+                    price = float(row.get("c", 0))
                     if price <= 0:
                         continue
 
@@ -375,12 +372,15 @@ class TestnetExchange:
                         timestamp=ts,
                     )
 
-            except Exception as e:
-                raise OperationalExchangeError(
-                    f"REST_PRICE_STREAM_FAILED | {e}"
-                )
-
-            time.sleep(POLL_INTERVAL_SECONDS)
+        except Exception as e:
+            raise OperationalExchangeError(
+                f"WS_PRICE_STREAM_FAILED | {e}"
+            )
+        finally:
+            try:
+                ws.close()
+            except Exception:
+                pass
 
     def get_historical_candles(self, *, symbol: str, interval: str, limit: int):
         data = self._get(
@@ -645,12 +645,7 @@ class TestnetExchange:
         stop_price: float,
     ):
 
-        ticker = self._get(
-            "/fapi/v1/ticker/price",
-            {"symbol": symbol},
-        )
-
-        last_price = float(ticker["price"])
+        last_price = self.get_last_price(symbol)
 
         filters = self._symbol_filters[symbol]
         stop_price = self._quantize_price(
