@@ -2,6 +2,8 @@
 # ENGINE CORE (Orchestrator Only)
 # ==========================================================
 
+import json
+import os
 import time
 from datetime import datetime, timezone
 
@@ -19,7 +21,7 @@ from state.state import StateManager
 from strategy.strategy import Strategy
 from execution.exceptions import OperationalExchangeError
 from utils.logger import system_logger, trade_logger, risk_logger, daily_logger
-from utils.telegram_notifier import send_info, send_critical
+from utils.telegram_notifier import send_info, send_critical, start_operator_listener
 
 from engine.market_state import MarketState
 from engine.daily_lifecycle import DailyLifecycle
@@ -31,9 +33,9 @@ from engine.emergency import EmergencyHandler
 from engine.universe import UniverseManager
 from engine.throttle import LogThrottle
 
-
 RUNNING = "RUNNING"
-
+TRADING_DISABLED = "TRADING_DISABLED"
+OPERATOR_COMMAND_FILE = "operator_command.json"
 
 class TradingEngine:
     """
@@ -163,6 +165,11 @@ class TradingEngine:
 
     def start(self):
 
+        # ------------------------------------------
+        # Start Operator Telegram Listener
+        # ------------------------------------------
+        start_operator_listener(self._handle_operator_command)
+
         try:
             self.state.load()
         except Exception as e:
@@ -253,7 +260,14 @@ class TradingEngine:
     def _main_loop(self):
 
         try:
+            last_persist_ms = 0
+
             for tick in self.exchange.price_stream():
+
+                # ------------------------------------------
+                # Operator Command Check
+                # ------------------------------------------
+                self._process_operator_command()
 
                 if not self.safety.is_safe():
                     return
@@ -319,14 +333,19 @@ class TradingEngine:
                     int(datetime.now(timezone.utc).timestamp() * 1000)
                 )
 
-                try:
-                    self.state.save()
-                except Exception as e:
-                    self.system_log.critical(
-                        f"STATE_SAVE_FAILED | {e}"
-                    )
-                    self.safety.halt("STATE_SAVE_FAILED")
-                    return
+                now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+
+                # Persist every 5000 ms instead of every tick
+                if now_ms - last_persist_ms > 5000:
+                    try:
+                        self.state.save()
+                        last_persist_ms = now_ms
+                    except Exception as e:
+                        self.system_log.critical(
+                            f"STATE_SAVE_FAILED | {e}"
+                        )
+                        self.safety.halt("STATE_SAVE_FAILED")
+                        return
 
         except OperationalExchangeError as e:
             self.system_log.critical(
@@ -336,7 +355,9 @@ class TradingEngine:
                 "OPERATIONAL EXCHANGE ERROR",
                 f"{e}\n\nEngine halted."
             )
-            self.safety.halt("OPERATIONAL_EXCHANGE_ERROR")
+            self.state.disable_trading("OPERATIONAL_EXCHANGE_ERROR")
+            self.state.save()
+            self.system_log.critical("TRADING_DISABLED | continuing monitoring")
 
         except StopIteration:
             self.system_log.info("MARKET_DATA_EXHAUSTED")
@@ -346,13 +367,65 @@ class TradingEngine:
             self.system_log.critical(
                 f"UNEXPECTED_ENGINE_ERROR | {e}"
             )
-            self.state.set_engine_state(
-                engine_state=self.OPERATIONAL_HALT,
-                reason="UNEXPECTED_ENGINE_ERROR",
-            )
+            self.state.disable_trading("UNEXPECTED_ENGINE_ERROR")
             self.state.save()
             send_critical(
                 "UNEXPECTED ENGINE ERROR",
-                f"{e}\n\nEngine halted."
+                f"{e}\n\nTrading disabled. Monitoring continues."
             )
-            self.safety.halt("UNEXPECTED_ENGINE_ERROR")
+            self.system_log.critical("TRADING_DISABLED | monitoring continues")
+
+    def _process_operator_command(self):
+
+        if not os.path.exists(OPERATOR_COMMAND_FILE):
+            return
+
+        try:
+            with open(OPERATOR_COMMAND_FILE, "r") as f:
+                cmd = json.load(f)
+
+            action = cmd.get("action")
+
+            if action == "ENABLE_TRADING":
+                self.state.set_engine_state(RUNNING, reason="OPERATOR_ENABLE")
+                self.state.save()
+                self.system_log.info("OPERATOR_COMMAND | ENABLE_TRADING")
+
+            elif action == "DISABLE_TRADING":
+                self.state.disable_trading("OPERATOR_DISABLE")
+                self.state.save()
+                self.system_log.info("OPERATOR_COMMAND | DISABLE_TRADING")
+
+            elif action == "STATUS":
+                self.system_log.info(
+                    f"OPERATOR_STATUS | state={self.state.get_state().get('engine_state')}"
+                )
+
+        except Exception as e:
+            self.system_log.critical(
+                f"OPERATOR_COMMAND_ERROR | {e}"
+            )
+
+        # Remove command after processing
+        try:
+            os.remove(OPERATOR_COMMAND_FILE)
+        except Exception:
+            pass
+
+    def _handle_operator_command(self, text: str):
+
+        if text == "/enable":
+            self.state.set_engine_state("RUNNING", reason="OPERATOR_ENABLE")
+            self.state.save()
+            self.system_log.info("OPERATOR_ENABLE")
+            send_info("TRADING ENABLED", "Operator command accepted.")
+
+        elif text == "/disable":
+            self.state.disable_trading("OPERATOR_DISABLE")
+            self.state.save()
+            self.system_log.info("OPERATOR_DISABLE")
+            send_info("TRADING DISABLED", "Operator command accepted.")
+
+        elif text == "/status":
+            state = self.state.get_state().get("engine_state")
+            send_info("ENGINE STATUS", f"State: {state}")

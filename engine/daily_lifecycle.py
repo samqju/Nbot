@@ -110,7 +110,9 @@ class DailyLifecycle:
                 "No new trades will be taken today."
             )
 
-            self.safety.halt(daily_decision.reason)
+            self.state.disable_trading(daily_decision.reason)
+            self.state.save()
+            self.system_log.critical("TRADING_DISABLED | daily loss floor")
 
             return False
 

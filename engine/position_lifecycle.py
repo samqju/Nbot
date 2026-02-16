@@ -251,7 +251,9 @@ class PositionLifecycle:
 
             self.state.clear_open_position()
             self.state.save()
-            self.safety.halt(decision.reason)
+            self.state.disable_trading(decision.reason)
+            self.state.save()
+            self.system_log.critical("TRADING_DISABLED | risk violation")
 
     # --------------------------------------------------
     # Close Handler

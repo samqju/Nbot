@@ -199,7 +199,9 @@ class EntryLifecycle:
                 reason="PARTIAL_FILL_ABORT",
             )
             self.state.save()
-            self.safety.halt("PARTIAL_FILL_ABORT")
+            self.state.disable_trading("PARTIAL_FILL_ABORT")
+            self.state.save()
+            self.system_log.critical("TRADING_DISABLED | partial fill")
             return
 
         # --------------------------------------------------
@@ -402,7 +404,9 @@ class EntryLifecycle:
                 reason="SL_TIMING_BREACH",
             )
             self.state.save()
-            self.safety.halt("SL_TIMING_BREACH")
+            self.state.disable_trading("SL_TIMING_BREACH")
+            self.state.save()
+            self.system_log.critical("TRADING_DISABLED | SL timing breach")
             return
 
         # --------------------------------------------------

@@ -102,9 +102,27 @@ class StateManager:
 
         try:
             with open(self.filename, "r") as f:
-                self.state = json.load(f)
+                loaded = json.load(f)
+
+            # Basic structural validation
+            if not isinstance(loaded, dict):
+                raise ValueError("STATE_CORRUPTED_NOT_DICT")
+
+            required_keys = [
+                "balance",
+                "engine_state",
+                "open_position",
+                "daily_realized_pnl",
+                "daily_peak_pnl",
+            ]
+
+            for key in required_keys:
+                if key not in loaded:
+                    raise ValueError(f"STATE_CORRUPTED_MISSING_{key}")
+
+            self.state = loaded
         except Exception as e:
-            raise RuntimeError(f"Failed to load state: {e}")
+            raise RuntimeError(f"STATE_LOAD_CORRUPTED | {e}")
 
     def save(self):
         """
@@ -188,6 +206,16 @@ class StateManager:
             raise ValueError("ENGINE_STATE_CANNOT_BE_NONE")
 
         self.state["engine_state"] = engine_state
+        self.state["engine_halt_reason"] = reason
+
+    # --------------------------------------------------
+    # Trading Disable (Non-Halting Mode)
+    # --------------------------------------------------
+    def disable_trading(self, reason: str):
+        if not reason:
+            raise ValueError("DISABLE_TRADING_REQUIRES_REASON")
+
+        self.state["engine_state"] = "TRADING_DISABLED"
         self.state["engine_halt_reason"] = reason
 
     # ==================================================

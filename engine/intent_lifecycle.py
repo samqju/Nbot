@@ -133,7 +133,7 @@ class IntentLifecycle:
         # Engine state
         engine_state = self.state.get_state().get("engine_state")
         if engine_state != RUNNING:
-            return False, f"ENGINE_NOT_RUNNING | {engine_state}"
+            return False, f"TRADING_DISABLED | {engine_state}"
 
         # No open position
         if self.state.get_open_position() is not None:

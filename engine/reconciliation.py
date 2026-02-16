@@ -147,6 +147,10 @@ class ReconciliationLifecycle:
                 if existing:
                     restored_ts = existing.get("entry_timestamp")
 
+                # CRITICAL FIX: If timestamp missing, reconstruct safely
+                if restored_ts is None:
+                    restored_ts = int(time.time() * 1000)
+
                 rebuilt = self._build_open_position(
                     symbol=position.symbol,
                     side=position.side,
@@ -155,6 +159,23 @@ class ReconciliationLifecycle:
                     stop_loss=position.stop_loss,
                     entry_timestamp=restored_ts,
                 )
+
+                # --------------------------------------------------
+                # Preserve trailing state (MONEY FIX)
+                # --------------------------------------------------
+                if existing:
+                    rebuilt["highest_profit_usd"] = existing.get(
+                        "highest_profit_usd", 0.0
+                    )
+                    rebuilt["last_locked_R"] = existing.get(
+                        "last_locked_R", 0
+                    )
+
+                # Ensure stop_loss key always exists
+                if rebuilt.get("stop_loss") is None:
+                    self.system_log.warning(
+                        "RECON_POSITION_WITHOUT_SL | recovery required"
+                    )
 
                 existing = self.state.get_open_position()
 
@@ -213,7 +234,9 @@ class ReconciliationLifecycle:
                             reason="RECOVERY_SL_BREACHED",
                         )
                         self.state.save()
-                        self.safety.halt("RECOVERY_SL_BREACHED")
+                        self.state.disable_trading("RECOVERY_SL_BREACHED")
+                        self.state.save()
+                        self.system_log.critical("TRADING_DISABLED | recovery breach")
                         return
 
                     try:
