@@ -1,5 +1,11 @@
 # ==========================================================
-# ENGINE CORE (Orchestrator Only)
+# ENGINE CORE
+# SINGLE AUTHORITY RULE:
+# Only TradingEngine may:
+# - disable trading
+# - call emergency exit
+# - change engine_state
+# - escalate to critical
 # ==========================================================
 
 import json
@@ -270,7 +276,10 @@ class TradingEngine:
                 self._process_operator_command()
 
                 if not self.safety.is_safe():
-                    return
+                    # Never exit loop
+                    self.state.disable_trading("SAFETY_TRIGGERED")
+                    self.state.save()
+                    continue
 
                 self.market_state.update(
                     symbol=tick.symbol,

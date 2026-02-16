@@ -142,8 +142,7 @@ class EntryLifecycle:
         required_margin = MAX_NOTIONAL_USD / LEVERAGE
 
         balance = self.exchange.get_available_balance()
-        self.state.state["balance"] = balance
-
+        # balance stored via update_after_trade later
         if balance < required_margin:
             self.system_log.warning(
                 f"ENTRY_BLOCKED_MARGIN | "
@@ -236,8 +235,7 @@ class EntryLifecycle:
         # Recalculate SL
         # --------------------------------------------------
 
-        actual_risk_usd = 0.9 * RISK_PER_TRADE_USD
-
+        actual_risk_usd = 0.9 * self.risk.RISK_PER_TRADE_USD
         if intent.direction == "LONG":
             corrected_sl = ack.avg_price - (
                 actual_risk_usd / ack.filled_qty
@@ -434,7 +432,7 @@ class EntryLifecycle:
         msg_id = send_trade_panel(panel_text)
 
         if msg_id:
-            self.state.state["active_trade_panel_message_id"] = msg_id
+            self.state.set_trade_panel_message_id(msg_id)
             self.state.save()
 
         self.trade_log.info(

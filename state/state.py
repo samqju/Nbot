@@ -13,7 +13,7 @@
 
 import json
 import os
-
+import copy
 
 class StateManager:
     """
@@ -85,7 +85,7 @@ class StateManager:
         """
         Return shallow copy of state.
         """
-        return dict(self.state)
+        return copy.deepcopy(self.state)
 
     # ==================================================
     # LOAD / SAVE
@@ -174,6 +174,18 @@ class StateManager:
 
     def update_daily_loss_floor(self, value):
         self.state["daily_loss_floor_usd"] = value
+
+    def update_daily_highest_unrealized(self, value):
+        self.state["daily_highest_unrealized_usd"] = value
+
+    def set_trade_panel_message_id(self, msg_id):
+        self.state["active_trade_panel_message_id"] = msg_id
+
+    def clear_trade_panel_message_id(self):
+        self.state["active_trade_panel_message_id"] = None
+
+    def clear_shutdown_request(self):
+        self.state["shutdown_requested"] = False
 
     # ==================================================
     # STOP LOSS UPDATE

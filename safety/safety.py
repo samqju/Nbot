@@ -4,11 +4,6 @@
 # Controls whether trading is allowed.
 # Does NOT execute trades.
 # Does NOT contain risk logic.
-#
-# Invariants:
-# - Halt is idempotent
-# - Halt reason is preserved
-# - Alerts are sent only once
 # ==========================================================
 
 from config import GLOBAL_KILL_SWITCH
@@ -52,12 +47,13 @@ class SafetyManager:
     def _trigger_halt(self, reason: str) -> None:
 
         if self._halted:
-            return  # Idempotent
+            # Engine should not crash or exit
+            return
 
         if not reason:
             raise ValueError("SAFETY_HALT_REQUIRES_REASON")
 
-        self._halted = True
+        # Halt does NOT stop engine
         self._reason = reason
 
         # Log to file

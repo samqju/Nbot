@@ -94,9 +94,7 @@ class PositionLifecycle:
         if unrealised > self.state.state.get(
             "daily_highest_unrealized_usd", 0.0
         ):
-            self.state.state[
-                "daily_highest_unrealized_usd"
-            ] = unrealised
+            self.state.update_daily_highest_unrealized(unrealised)
 
         # --------------------------------------------------
         # Trailing SL
@@ -197,7 +195,7 @@ class PositionLifecycle:
 
             else:
                 # Mutate state ONLY after exchange confirmation
-                open_position["stop_loss"] = expected_sl
+                self.state.update_stop_loss(expected_sl)
 
                 if intended_integer_R is not None:
                     open_position["last_locked_R"] = intended_integer_R
@@ -341,9 +339,7 @@ class PositionLifecycle:
 
             edit_message(msg_id, panel_text)
 
-            self.state.state[
-                "active_trade_panel_message_id"
-            ] = None
+            self.state.clear_trade_panel_message_id()
 
         self.trade_log.info(
             f"TRADE_CLOSE | "

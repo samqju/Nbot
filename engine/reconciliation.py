@@ -187,7 +187,7 @@ class ReconciliationLifecycle:
                         "last_locked_R", 0
                     )
 
-                self.state.state["open_position"] = rebuilt
+                self.state.update_open_position(rebuilt)
 
                 # --------------------------------------------------
                 # SL Recovery
@@ -307,9 +307,7 @@ class ReconciliationLifecycle:
                     )
                     msg_id = send_trade_panel(panel)
                     if msg_id:
-                        self.state.state[
-                            "active_trade_panel_message_id"
-                        ] = msg_id
+                        self.state.set_trade_panel_message_id(msg_id)
 
             self.state.save()
             self.system_log.info("RECONCILIATION_SUCCESS")
@@ -319,7 +317,7 @@ class ReconciliationLifecycle:
             # so entry/intent lifecycle resumes cleanly.
             try:
                 # Optional — if these attributes exist
-                self.state.state["shutdown_requested"] = False
+                self.state.clear_shutdown_request()
             except Exception:
                 pass
 

@@ -558,6 +558,40 @@ class TestnetExchange:
 
         return None
 
+    # ========================================================
+    # INTERNAL SL QUERY
+    # ========================================================
+
+    def _get_active_stop_loss(self, symbol: str):
+        """
+        Return current active STOP_MARKET reduce-only SL price.
+        Returns float stopPrice or None.
+        """
+
+        try:
+            orders = self._get(
+                "/fapi/v1/openOrders",
+                {
+                    "symbol": symbol,
+                    "timestamp": int(time.time() * 1000),
+                },
+            )
+
+            for o in orders:
+                if (
+                    o.get("type") == "STOP_MARKET"
+                    and o.get("reduceOnly") is True
+                ):
+                    self._active_sl_order_id = o.get("orderId")
+                    return float(o.get("stopPrice"))
+
+            return None
+
+        except Exception as e:
+            raise OperationalExchangeError(
+                f"GET_ACTIVE_SL_FAILED | {e}"
+            )
+
     def _start_user_stream(self):
         """
         Start hardened Binance user data stream with reconnect + keepalive.
