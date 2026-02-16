@@ -327,7 +327,12 @@ class EntryLifecycle:
         sl_placed = False
         sl_start_time = time.time()
 
-        for _ in range(2):
+        expected_sl = self.exchange.quantize_price(
+            symbol,
+            corrected_sl,
+        )
+
+        for attempt in range(2):
             try:
                 self.exchange.place_initial_sl(
                     symbol=symbol,
@@ -335,12 +340,44 @@ class EntryLifecycle:
                     qty=ack.filled_qty,
                     stop_price=corrected_sl,
                 )
-                sl_placed = True
-                break
+
+                verified = self.exchange.get_position()
+
+                if verified is None:
+                    self.system_log.warning(
+                        f"INITIAL_SL_VERIFY_POSITION_NONE | "
+                        f"symbol={symbol} | "
+                        f"attempt={attempt+1}"
+                    )
+                    continue
+
+                if (
+                    verified.stop_loss is not None
+                    and abs(
+                        verified.stop_loss - expected_sl
+                    ) < 1e-12
+                ):
+                    sl_placed = True
+                    self.system_log.info(
+                        f"INITIAL_SL_VERIFIED | "
+                        f"symbol={symbol} | "
+                        f"stop_loss={verified.stop_loss}"
+                    )
+                    break
+                else:
+                    self.system_log.warning(
+                        f"INITIAL_SL_VERIFICATION_MISMATCH | "
+                        f"symbol={symbol} | "
+                        f"expected={expected_sl} | "
+                        f"actual={getattr(verified, 'stop_loss', None)}"
+                    )
+
             except Exception as e:
                 self.system_log.warning(
                     f"INITIAL_SL_PLACEMENT_EXCEPTION | "
-                    f"symbol={symbol} | error={e}"
+                    f"symbol={symbol} | "
+                    f"attempt={attempt+1} | "
+                    f"error={e}"
                 )
                 time.sleep(0.5)
 
