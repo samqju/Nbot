@@ -12,7 +12,7 @@ import json
 import os
 import time
 from datetime import datetime, timezone
-
+from dataclasses import dataclass
 from config import (
     MAX_NOTIONAL_USD,
     LEVERAGE,
@@ -42,6 +42,73 @@ from engine.throttle import LogThrottle
 RUNNING = "RUNNING"
 TRADING_DISABLED = "TRADING_DISABLED"
 OPERATOR_COMMAND_FILE = "operator_command.json"
+
+# ==========================================================
+# Engine Event Contract
+# ==========================================================
+
+@dataclass
+class EngineEvent:
+    severity: str  # INFO | WARNING | CRITICAL
+    category: str  # INFRA | RISK | SL | LOGIC | GOVERNANCE
+    money_at_risk: bool
+    requires_flatten: bool
+    requires_disable: bool
+    retryable: bool
+    reason: str
+     # --------------------------------------------------
+     # Event Authority Handler (Blueprint v1)
+     # --------------------------------------------------
+
+    def _handle_event(self, event: EngineEvent):
+        """
+        Centralized authority decision handler.
+        Only core may:
+        - disable trading
+        - call emergency flatten
+        - escalate alerts
+        """
+
+        if event is None:
+            return
+
+        # --------------------------------------------------
+        # Flatten if required
+        # --------------------------------------------------
+        if event.requires_flatten:
+            self.system_log.critical(
+                f"ENGINE_EVENT_FLATTEN | reason={event.reason}"
+            )
+            try:
+                self.emergency.execute(event.reason)
+            except Exception as e:
+                self.system_log.critical(
+                    f"EMERGENCY_EXECUTION_FAILED | {e}"
+                )
+
+        # --------------------------------------------------
+        # Disable trading if required
+        # --------------------------------------------------
+        if event.requires_disable:
+            self.system_log.critical(
+                f"ENGINE_EVENT_DISABLE | reason={event.reason}"
+            )
+            self.state.disable_trading(event.reason)
+            self.state.save()
+
+        # --------------------------------------------------
+        # Alert escalation
+        # --------------------------------------------------
+        if event.severity == "CRITICAL":
+            send_critical(
+                "ENGINE EVENT",
+                f"Category: {event.category}\nReason: {event.reason}"
+            )
+        elif event.severity == "WARNING":
+            send_info(
+                "ENGINE WARNING",
+                f"Category: {event.category}\nReason: {event.reason}"
+            )
 
 class TradingEngine:
     """
