@@ -529,7 +529,11 @@ class TradingEngine:
                 f"ENGINE_EVENT_FLATTEN | reason={event.reason}"
             )
             try:
-                self.emergency.execute(event.reason)
+                emergency_result = self.emergency.execute(event.reason)
+
+                if isinstance(emergency_result, EngineEvent):
+                    self._handle_event(emergency_result)
+
             except Exception as e:
                 self.system_log.critical(
                     f"EMERGENCY_EXECUTION_FAILED | {e}"

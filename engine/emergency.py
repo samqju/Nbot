@@ -8,7 +8,7 @@
 # ==========================================================
 
 import time
-
+from engine.events import EngineEvent
 
 class EmergencyHandler:
 
@@ -102,5 +102,3 @@ class EmergencyHandler:
             retryable=False,
             reason="EMERGENCY_EXIT_FAILED",
         )
-
-        self._exit_in_progress = False
