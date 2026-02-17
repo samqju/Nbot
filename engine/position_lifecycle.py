@@ -67,6 +67,27 @@ class PositionLifecycle:
         exchange_position = self.exchange.get_position()
 
         # --------------------------------------------------
+        # CRITICAL: Live SL Missing (Runtime Protection)
+        # --------------------------------------------------
+
+        if exchange_position and exchange_position.stop_loss is None:
+
+            self.system_log.critical(
+                f"LIVE_SL_MISSING_DETECTED | "
+                f"symbol={exchange_position.symbol}"
+            )
+
+            return EngineEvent(
+                severity="CRITICAL",
+                category="SL",
+                money_at_risk=True,
+                requires_flatten=False,
+                requires_disable=False,
+                retryable=True,
+                reason="LIVE_SL_MISSING",
+            )
+
+        # --------------------------------------------------
         # External close detected
         # --------------------------------------------------
 
