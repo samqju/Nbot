@@ -395,7 +395,7 @@ class TestnetExchange:
         Event-driven.
         """
 
-        stream_url = "wss://fstream.binance.com/ws/!ticker@arr"
+        stream_url = "wss://stream.binancefuture.com/ws/!ticker@arr"
 
         ws = websocket.create_connection(stream_url)
 
