@@ -3,7 +3,7 @@
 # ==========================================================
 import time
 from engine.events import EngineEvent
-from utils.telegram_notifier import send_critical, send_trade_panel, format_trade_panel
+from utils.telegram_notifier import send_critical, send_trade_panel, format_trade_panel, edit_message
 from utils.logger import trade_logger
 
 class ReconciliationLifecycle:
@@ -81,6 +81,8 @@ class ReconciliationLifecycle:
             f"RECONCILIATION_START | reason={reason}"
         )
 
+        manual_close_event = None
+
         try:
             position = self.exchange.get_position()
 
@@ -130,14 +132,47 @@ class ReconciliationLifecycle:
                         f"source=RECON"
                     )
 
+                    # --------------------------------------------
+                    # Update Telegram Trade Panel (Manual Close)
+                    # --------------------------------------------
+                    msg_id = self.state.get_state().get(
+                        "active_trade_panel_message_id"
+                    )
+
+                    if msg_id:
+                        panel_text = format_trade_panel(
+                            symbol=existing["symbol"],
+                            side=existing["side"],
+                            entry_price=existing["entry_price"],
+                            stop_loss=existing["stop_loss"],
+                            qty=existing["qty"],
+                            risk_usd=existing["risk_usd"],
+                            status="CLOSED (RECON)",
+                        ) + (
+                            f"Exit: {exit_price:.4f}\n"
+                            f"PnL: {realized:.2f} USD\n"
+                        )
+
+                        edit_message(msg_id, panel_text)
+                        self.state.clear_trade_panel_message_id()
+
+                    # Prepare informational event (do NOT return yet)
+                    manual_close_event = EngineEvent(
+                        severity="INFO",
+                        category="GOVERNANCE",
+                        money_at_risk=False,
+                        requires_flatten=False,
+                        requires_disable=False,
+                        retryable=False,
+                        reason="MANUAL_CLOSE_DETECTED",
+                    )
+
                 # Clear state
                 self.state.update_after_trade(
                     balance=self.state.get_state().get("balance", 0.0),
                     open_position=None,
                     last_trade=None,
                 )
-
-                self.state.state["active_trade_panel_message_id"] = None
 
             # --------------------------------------------------
             # Position exists
@@ -300,6 +335,9 @@ class ReconciliationLifecycle:
 
             self.state.save()
             self.system_log.info("RECONCILIATION_SUCCESS")
+
+            if manual_close_event:
+                return manual_close_event
 
             # Reset lifecycle runtime state (original engine behavior)
             # These must be reset on reconciliation
