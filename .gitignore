@@ -22,9 +22,3 @@ __pycache__/
 venv/
 .venv/
 env/
-
-# ===============================
-# Local / experimental tools
-# ===============================
-universe_selector.py
-universe_selector_testnet.py
