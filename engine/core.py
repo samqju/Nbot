@@ -342,11 +342,15 @@ class TradingEngine:
                         self._handle_event(result)
                         continue
 
-                    self.position_lifecycle.manage(
-                        market_state=self.market_state
-                    )
+                result = self.position_lifecycle.manage(
+                    market_state=self.market_state
+                )
 
+                if isinstance(result, EngineEvent):
+                    self._handle_event(result)
                     continue
+
+                continue
 
                 # --------------------------------------------------
                 # MODE B — NO POSITION
@@ -519,27 +523,6 @@ class TradingEngine:
         """
 
         if event is None:
-            return
-
-        # --------------------------------------------------
-        # SL Absence → Trigger Reconciliation
-        # --------------------------------------------------
-
-        if (
-            event.category == "SL"
-            and event.reason == "LIVE_SL_MISSING"
-        ):
-            self.system_log.critical(
-                "LIVE_SL_MISSING → TRIGGER_RECONCILIATION"
-            )
-
-            result = self.reconciliation.run(
-                reason="LIVE_SL_MISSING"
-            )
-
-            if isinstance(result, EngineEvent):
-                self._handle_event(result)
-
             return
 
         # --------------------------------------------------
