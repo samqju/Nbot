@@ -350,8 +350,6 @@ class TradingEngine:
                     self._handle_event(result)
                     continue
 
-                continue
-
                 # --------------------------------------------------
                 # MODE B — NO POSITION
                 # --------------------------------------------------
