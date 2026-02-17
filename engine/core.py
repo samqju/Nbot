@@ -526,6 +526,27 @@ class TradingEngine:
             return
 
         # --------------------------------------------------
+        # SL Absence → Trigger Reconciliation
+        # --------------------------------------------------
+
+        if (
+            event.category == "SL"
+            and event.reason == "LIVE_SL_MISSING"
+        ):
+            self.system_log.critical(
+                "LIVE_SL_MISSING → TRIGGER_RECONCILIATION"
+            )
+
+            result = self.reconciliation.run(
+                reason="LIVE_SL_MISSING"
+            )
+
+            if isinstance(result, EngineEvent):
+                self._handle_event(result)
+
+            return
+
+        # --------------------------------------------------
         # Flatten if required
         # --------------------------------------------------
         if event.requires_flatten:
