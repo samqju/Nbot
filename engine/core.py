@@ -500,6 +500,11 @@ class TradingEngine:
             state = self.state.get_state().get("engine_state")
             send_info("ENGINE STATUS", f"State: {state}")
 
+        elif text == "/pnl":
+            from pnl_report import generate_daily_pnl_summary
+            summary = generate_daily_pnl_summary()
+            send_info("DAILY PNL REPORT", summary)
+
      # --------------------------------------------------
      # Event Authority Handler (Blueprint v1)
      # --------------------------------------------------
