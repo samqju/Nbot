@@ -304,6 +304,15 @@ class TradingEngine:
                 # ------------------------------------------
                 self._process_operator_command()
 
+                # ------------------------------------------
+                # Universe Hot Reload Check
+                # ------------------------------------------
+                self.universe.maybe_reload(
+                    exchange=self.exchange,
+                    state=self.state,
+                    safety=self.safety,
+                )
+
                 if not self.safety.is_safe():
                     self._handle_event(
                         EngineEvent(

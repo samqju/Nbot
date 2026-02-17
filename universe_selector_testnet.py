@@ -31,7 +31,7 @@ EXPECTED_SIZE = 30
 BASE_URL = os.getenv("TESTNET_BASE_URL")
 TIMEOUT = 5
 
-CHANGE_THRESHOLD_PCT = 6.0  # Exclude beyond ±6%
+CHANGE_THRESHOLD_PCT = 7.0  # Exclude beyond ±7%
 
 
 # ============================================================
