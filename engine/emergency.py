@@ -91,13 +91,16 @@ class EmergencyHandler:
             "EMERGENCY_EXIT_FAILED_NOT_FLAT"
         )
 
-        self.state.set_engine_state(
-            engine_state=self.FATAL_HALT,
+        self._exit_in_progress = False
+
+        return EngineEvent(
+            severity="CRITICAL",
+            category="INFRA",
+            money_at_risk=True,
+            requires_flatten=False,
+            requires_disable=True,
+            retryable=False,
             reason="EMERGENCY_EXIT_FAILED",
         )
-
-        self.state.save()
-
-        self.safety.halt("EMERGENCY_EXIT_FAILED")
 
         self._exit_in_progress = False

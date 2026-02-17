@@ -1,74 +1,43 @@
 # ==========================================================
 # SAFETY MODULE
 # ==========================================================
-# Controls whether trading is allowed.
-# Does NOT execute trades.
-# Does NOT contain risk logic.
-# ==========================================================
 
-from config import GLOBAL_KILL_SWITCH
-from utils.telegram_notifier import send_critical
-from utils.logger import system_logger
+"""
+Stabilized Safety Manager
+
+Purpose:
+- Provide is_safe() guard for legacy code.
+- Allow halt() to mark unsafe state.
+- DOES NOT exit engine.
+- DOES NOT disable trading directly.
+- DOES NOT send telegram.
+
+Core remains sole authority.
+"""
+
 
 class SafetyManager:
-    """
-    Controls emergency stop of the bot.
-    """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._halted = False
         self._reason = None
 
-    # --------------------------------------------------
-    # Safety Check
-    # --------------------------------------------------
     def is_safe(self) -> bool:
-
-        # Global kill switch (config boundary)
-        if GLOBAL_KILL_SWITCH:
-            self._trigger_halt("GLOBAL_KILL_SWITCH_ENABLED")
-            return False
-
         return not self._halted
 
-    # --------------------------------------------------
-    # External Halt
-    # --------------------------------------------------
+    def is_halted(self) -> bool:
+        return self._halted
+
+    def get_reason(self):
+        return self._reason
+
     def halt(self, reason: str) -> None:
         """
-        Public halt entrypoint.
-        Idempotent.
+        Mark system unsafe.
+        Does NOT exit engine.
         """
-        self._trigger_halt(reason)
-
-    # --------------------------------------------------
-    # Internal Halt Logic
-    # --------------------------------------------------
-    def _trigger_halt(self, reason: str) -> None:
-
-        if self._halted:
-            # Engine should not crash or exit
-            return
-
         if not reason:
             raise ValueError("SAFETY_HALT_REQUIRES_REASON")
 
-        # Halt does NOT stop engine
+        self._halted = True
         self._reason = reason
-
-        # Log to file
-        system_logger().critical(f"ENGINE HALTED | reason={reason}")
-
-        # Notify operator
-        send_critical(
-            "ENGINE HALTED",
-            f"Reason: {reason}\n\n"
-            "Trading stopped.\n"
-            "Manual intervention required."
-        )
-
-    # --------------------------------------------------
-    # Read-only access
-    # --------------------------------------------------
-    def get_reason(self):
-        return self._reason

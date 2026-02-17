@@ -12,7 +12,7 @@
 
 import time
 from datetime import datetime, timezone
-
+from engine.events import EngineEvent
 from config import (
     MAX_NOTIONAL_USD,
     LEVERAGE,
@@ -25,13 +25,11 @@ from config import (
 
 from utils.telegram_notifier import (
     send_warning,
-    send_critical,
     send_trade_panel,
     format_trade_panel,
 )
 
 MAX_SL_PLACEMENT_SECONDS = 2.0
-
 
 class EntryLifecycle:
 
@@ -182,26 +180,15 @@ class EntryLifecycle:
                 f"filled={ack.filled_qty}"
             )
 
-            send_critical(
-                "PARTIAL FILL DETECTED",
-                f"Symbol: {symbol}\n"
-                f"Requested: {ack.requested_qty}\n"
-                f"Filled: {ack.filled_qty}\n"
-                "Engine halting."
-            )
-
-            self.exchange.cancel_pending_entries()
-            self.emergency.execute("PARTIAL_FILL_ABORT")
-
-            self.state.set_engine_state(
-                engine_state=self.RISK_HALT,
+            return EngineEvent(
+                severity="CRITICAL",
+                category="RISK",
+                money_at_risk=True,
+                requires_flatten=True,
+                requires_disable=True,
+                retryable=False,
                 reason="PARTIAL_FILL_ABORT",
             )
-            self.state.save()
-            self.state.disable_trading("PARTIAL_FILL_ABORT")
-            self.state.save()
-            self.system_log.critical("TRADING_DISABLED | partial fill")
-            return
 
         # --------------------------------------------------
         # Notional invariant
@@ -214,22 +201,15 @@ class EntryLifecycle:
 
         if executed_notional > max_allowed:
 
-            send_critical(
-                "ENGINE NOTIONAL BREACH",
-                f"Executed: {executed_notional:.4f}\n"
-                f"Allowed: {max_allowed:.4f}\n"
-                "Emergency exit triggered."
-            )
-
-            self.emergency.execute("ENGINE_NOTIONAL_BREACH")
-
-            self.state.set_engine_state(
-                engine_state=self.RISK_HALT,
+            return EngineEvent(
+                severity="CRITICAL",
+                category="RISK",
+                money_at_risk=True,
+                requires_flatten=True,
+                requires_disable=True,
+                retryable=False,
                 reason="ENGINE_NOTIONAL_BREACH",
             )
-            self.state.save()
-            self.safety.halt("ENGINE_NOTIONAL_BREACH")
-            return
 
         # --------------------------------------------------
         # Recalculate SL
@@ -274,23 +254,15 @@ class EntryLifecycle:
 
         if actual_risk_usd > max_allowed_risk:
 
-            send_critical(
-                "POST-FILL RISK BREACH",
-                f"Symbol: {symbol}\n"
-                f"Actual Risk: {actual_risk_usd:.4f} USD\n"
-                f"Allowed: {max_allowed_risk:.4f} USD\n"
-                "Emergency exit triggered."
-            )
-
-            self.emergency.execute("POST_FILL_RISK_BREACH")
-
-            self.state.set_engine_state(
-                engine_state=self.RISK_HALT,
+            return EngineEvent(
+                severity="CRITICAL",
+                category="RISK",
+                money_at_risk=True,
+                requires_flatten=True,
+                requires_disable=True,
+                retryable=False,
                 reason="POST_FILL_RISK_BREACH",
             )
-            self.state.save()
-            self.safety.halt("POST_FILL_RISK_BREACH")
-            return
 
         # --------------------------------------------------
         # Slippage guard
@@ -302,23 +274,15 @@ class EntryLifecycle:
 
         if slippage_pct > ENTRY_SLIPPAGE_PCT:
 
-            send_critical(
-                "SLIPPAGE BREACH",
-                f"Symbol: {symbol}\n"
-                f"Slippage: {slippage_pct:.4f}%\n"
-                f"Allowed: {ENTRY_SLIPPAGE_PCT:.4f}%\n"
-                "Emergency exit triggered."
-            )
-
-            self.emergency.execute("SLIPPAGE_BREACH")
-
-            self.state.set_engine_state(
-                engine_state=self.RISK_HALT,
+            return EngineEvent(
+                severity="CRITICAL",
+                category="RISK",
+                money_at_risk=True,
+                requires_flatten=True,
+                requires_disable=True,
+                retryable=False,
                 reason="SLIPPAGE_BREACH",
             )
-            self.state.save()
-            self.safety.halt("SLIPPAGE_BREACH")
-            return
 
         # --------------------------------------------------
         # Place initial SL
@@ -389,23 +353,15 @@ class EntryLifecycle:
 
         if (time.time() - sl_start_time) > MAX_SL_PLACEMENT_SECONDS:
 
-            send_critical(
-                "SL TIMING BREACH",
-                f"Symbol: {symbol}\n"
-                "Emergency exit triggered."
-            )
-
-            self.emergency.execute("SL_TIMING_BREACH")
-
-            self.state.set_engine_state(
-                engine_state=self.RISK_HALT,
+            return EngineEvent(
+                severity="CRITICAL",
+                category="SL",
+                money_at_risk=True,
+                requires_flatten=True,
+                requires_disable=True,
+                retryable=False,
                 reason="SL_TIMING_BREACH",
             )
-            self.state.save()
-            self.state.disable_trading("SL_TIMING_BREACH")
-            self.state.save()
-            self.system_log.critical("TRADING_DISABLED | SL timing breach")
-            return
 
         # --------------------------------------------------
         # Persist position

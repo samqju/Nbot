@@ -141,10 +141,6 @@ class TestnetExchange:
                 params=self._sign(params),
                 timeout=TIMEOUT,
             )
-            latency_ms = (time.perf_counter() - start) * 1000
-            self.log.info(
-                f"REST_GET_LATENCY | path={path} | ms={latency_ms:.2f}"
-            )
 
             if resp.status_code != 200:
                 error_detail = self._extract_binance_error(resp)
@@ -174,10 +170,6 @@ class TestnetExchange:
                 params=self._sign(params),
                 timeout=TIMEOUT,
             )
-            latency_ms = (time.perf_counter() - start) * 1000
-            self.log.info(
-                f"REST_POST_LATENCY | path={path} | ms={latency_ms:.2f}"
-            )
 
             if resp.status_code != 200:
                 error_detail = self._extract_binance_error(resp)
@@ -203,10 +195,6 @@ class TestnetExchange:
                 f"{BASE_URL}{path}",
                 params=self._sign(params),
                 timeout=TIMEOUT,
-            )
-            latency_ms = (time.perf_counter() - start) * 1000
-            self.log.info(
-                f"REST_DELETE_LATENCY | path={path} | ms={latency_ms:.2f}"
             )
 
             if resp.status_code != 200:
@@ -239,10 +227,6 @@ class TestnetExchange:
                 f"{BASE_URL}{path}",
                 params=self._sign(params),
                 timeout=TIMEOUT,
-            )
-            latency_ms = (time.perf_counter() - start) * 1000
-            self.log.info(
-                f"REST_PUT_LATENCY | path={path} | ms={latency_ms:.2f}"
             )
 
             if resp.status_code != 200:

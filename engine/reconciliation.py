@@ -1,7 +1,8 @@
 # ==========================================================
 # RECONCILIATION LIFECYCLE
 # ==========================================================
-
+import time
+from engine.events import EngineEvent
 from utils.telegram_notifier import send_critical, send_trade_panel, format_trade_panel
 from utils.logger import trade_logger
 
@@ -223,21 +224,15 @@ class ReconciliationLifecycle:
                             "RECOVERY_SL_ALREADY_BREACHED"
                         )
 
-                        send_critical(
-                            "RECOVERY SL BREACHED",
-                            f"Symbol: {position.symbol}\n"
-                            "Emergency exit required."
-                        )
-
-                        self.state.set_engine_state(
-                            engine_state=self.RISK_HALT,
+                        return EngineEvent(
+                            severity="CRITICAL",
+                            category="SL",
+                            money_at_risk=True,
+                            requires_flatten=True,
+                            requires_disable=True,
+                            retryable=False,
                             reason="RECOVERY_SL_BREACHED",
                         )
-                        self.state.save()
-                        self.state.disable_trading("RECOVERY_SL_BREACHED")
-                        self.state.save()
-                        self.system_log.critical("TRADING_DISABLED | recovery breach")
-                        return
 
                     try:
                         self.exchange.place_initial_sl(
@@ -250,17 +245,15 @@ class ReconciliationLifecycle:
                         self.system_log.critical(
                             f"RECOVERY_SL_PLACEMENT_FAILED | {e}"
                         )
-                        send_critical(
-                            "RECOVERY SL PLACEMENT FAILED",
-                            f"{e}\n\nEngine halted."
-                        )
-                        self.state.set_engine_state(
-                            engine_state=self.INVARIANT_HALT,
+                        return EngineEvent(
+                            severity="CRITICAL",
+                            category="SL",
+                            money_at_risk=True,
+                            requires_flatten=False,
+                            requires_disable=True,
+                            retryable=False,
                             reason="RECOVERY_SL_PLACEMENT_FAILED",
                         )
-                        self.state.save()
-                        self.safety.halt("RECOVERY_SL_PLACEMENT_FAILED")
-                        return
 
                     verified = self.exchange.get_position()
 
@@ -268,19 +261,15 @@ class ReconciliationLifecycle:
                         self.system_log.critical(
                             "RECOVERY_SL_VERIFICATION_FAILED"
                         )
-                        send_critical(
-                            "RECOVERY SL VERIFICATION FAILED",
-                            f"Symbol: {position.symbol}\n"
-                            "Engine halting."
-                        )
-                        self.state.set_engine_state(
-                            engine_state=self.INVARIANT_HALT,
+                        return EngineEvent(
+                            severity="CRITICAL",
+                            category="SL",
+                            money_at_risk=True,
+                            requires_flatten=False,
+                            requires_disable=True,
+                            retryable=False,
                             reason="RECOVERY_SL_VERIFICATION_FAILED",
                         )
-                        self.state.save()
-                        self.safety.halt("RECOVERY_SL_VERIFICATION_FAILED")
-                        return
-
                     self.state.state["open_position"]["stop_loss"] = intended_sl
                     self.system_log.info("RECOVERY_SL_SUCCESS")
                     self.system_log.info(
@@ -327,9 +316,15 @@ class ReconciliationLifecycle:
             self.system_log.critical(
                 f"RECONCILIATION_FAILED | error={e}"
             )
-            send_critical(
-                "RECONCILIATION FAILED",
-                f"{e}\n\nEngine halted."
+            return EngineEvent(
+                severity="CRITICAL",
+                category="INFRA",
+                money_at_risk=self.state.get_open_position() is not None,
+                requires_flatten=False,
+                requires_disable=True,
+                retryable=False,
+                reason="RECONCILIATION_FAILED",
             )
-            self.safety.halt("RECONCILIATION_FAILED")
-            raise
+
+        # Success path
+        return None

@@ -10,7 +10,7 @@
 import time
 from datetime import datetime, timezone
 from utils.telegram_notifier import send_critical
-
+from engine.events import EngineEvent
 
 class DailyLifecycle:
 
@@ -90,30 +90,14 @@ class DailyLifecycle:
 
         if daily_decision.halt:
 
-            self.system_log.critical(
-                f"DAILY_HALT | reason={daily_decision.reason}"
-            )
-
-            self.state.set_engine_state(
-                engine_state=self.DAILY_HALT,
+            return EngineEvent(
+                severity="CRITICAL",
+                category="GOVERNANCE",
+                money_at_risk=False,
+                requires_flatten=False,
+                requires_disable=True,
+                retryable=False,
                 reason=daily_decision.reason,
             )
-
-            self.state.save()
-
-            send_critical(
-                "DAILY HALT",
-                f"Reason: {daily_decision.reason}\n"
-                f"Daily Loss Floor: "
-                f"{daily_decision.daily_loss_floor} USD\n\n"
-                f"UTC: {datetime.now(timezone.utc).date()}\n\n"
-                "No new trades will be taken today."
-            )
-
-            self.state.disable_trading(daily_decision.reason)
-            self.state.save()
-            self.system_log.critical("TRADING_DISABLED | daily loss floor")
-
-            return False
 
         return True

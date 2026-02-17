@@ -28,7 +28,7 @@ from strategy.strategy import Strategy
 from execution.exceptions import OperationalExchangeError
 from utils.logger import system_logger, trade_logger, risk_logger, daily_logger
 from utils.telegram_notifier import send_info, send_critical, start_operator_listener
-
+from engine.events import EngineEvent
 from engine.market_state import MarketState
 from engine.daily_lifecycle import DailyLifecycle
 from engine.intent_lifecycle import IntentLifecycle
@@ -44,71 +44,8 @@ TRADING_DISABLED = "TRADING_DISABLED"
 OPERATOR_COMMAND_FILE = "operator_command.json"
 
 # ==========================================================
-# Engine Event Contract
+# Trading Engine
 # ==========================================================
-
-@dataclass
-class EngineEvent:
-    severity: str  # INFO | WARNING | CRITICAL
-    category: str  # INFRA | RISK | SL | LOGIC | GOVERNANCE
-    money_at_risk: bool
-    requires_flatten: bool
-    requires_disable: bool
-    retryable: bool
-    reason: str
-     # --------------------------------------------------
-     # Event Authority Handler (Blueprint v1)
-     # --------------------------------------------------
-
-    def _handle_event(self, event: EngineEvent):
-        """
-        Centralized authority decision handler.
-        Only core may:
-        - disable trading
-        - call emergency flatten
-        - escalate alerts
-        """
-
-        if event is None:
-            return
-
-        # --------------------------------------------------
-        # Flatten if required
-        # --------------------------------------------------
-        if event.requires_flatten:
-            self.system_log.critical(
-                f"ENGINE_EVENT_FLATTEN | reason={event.reason}"
-            )
-            try:
-                self.emergency.execute(event.reason)
-            except Exception as e:
-                self.system_log.critical(
-                    f"EMERGENCY_EXECUTION_FAILED | {e}"
-                )
-
-        # --------------------------------------------------
-        # Disable trading if required
-        # --------------------------------------------------
-        if event.requires_disable:
-            self.system_log.critical(
-                f"ENGINE_EVENT_DISABLE | reason={event.reason}"
-            )
-            self.state.disable_trading(event.reason)
-            self.state.save()
-
-        # --------------------------------------------------
-        # Alert escalation
-        # --------------------------------------------------
-        if event.severity == "CRITICAL":
-            send_critical(
-                "ENGINE EVENT",
-                f"Category: {event.category}\nReason: {event.reason}"
-            )
-        elif event.severity == "WARNING":
-            send_info(
-                "ENGINE WARNING",
-                f"Category: {event.category}\nReason: {event.reason}"
-            )
 
 class TradingEngine:
     """
@@ -249,7 +186,17 @@ class TradingEngine:
             self.system_log.critical(
                 f"STATE_LOAD_FAILED | {e}"
             )
-            self.safety.halt("STATE_LOAD_FAILED")
+            self._handle_event(
+                EngineEvent(
+                    severity="CRITICAL",
+                    category="INFRA",
+                    money_at_risk=False,
+                    requires_flatten=False,
+                    requires_disable=True,
+                    retryable=False,
+                    reason="STATE_LOAD_FAILED",
+                )
+            )
             return
 
         try:
@@ -269,20 +216,31 @@ class TradingEngine:
 
         try:
             if engine_state == self.DAILY_HALT:
-                self.reconciliation.run(reason="DAILY_HALT_RESUME")
+                result = self.reconciliation.run(
+                    reason="DAILY_HALT_RESUME"
+                )
             else:
-                self.reconciliation.run(reason="ENGINE_STARTUP")
+                result = self.reconciliation.run(
+                    reason="ENGINE_STARTUP"
+                )
+
+            if isinstance(result, EngineEvent):
+                self._handle_event(result)
         except Exception as e:
             self.system_log.critical(
                 f"RECONCILIATION_STARTUP_FAILED | {e}"
             )
-            self.state.set_engine_state(
-                engine_state=self.OPERATIONAL_HALT,
-                reason="RECONCILIATION_STARTUP_FAILED",
+            self._handle_event(
+                EngineEvent(
+                    severity="CRITICAL",
+                    category="INFRA",
+                    money_at_risk=False,
+                    requires_flatten=False,
+                    requires_disable=True,
+                    retryable=True,
+                    reason="RECONCILIATION_STARTUP_FAILED",
+                )
             )
-            self.state.save()
-            self.safety.halt("RECONCILIATION_STARTUP_FAILED")
-            return
 
         self.universe.load()
 
@@ -310,13 +268,17 @@ class TradingEngine:
             self.system_log.critical(
                 f"UNIVERSE_WARMUP_FAILED | {e}"
             )
-            self.state.set_engine_state(
-                engine_state=self.OPERATIONAL_HALT,
-                reason="UNIVERSE_WARMUP_FAILED",
+            self._handle_event(
+                EngineEvent(
+                    severity="CRITICAL",
+                    category="INFRA",
+                    money_at_risk=False,
+                    requires_flatten=False,
+                    requires_disable=True,
+                    retryable=False,
+                    reason="UNIVERSE_WARMUP_FAILED",
+                )
             )
-            self.state.save()
-            self.safety.halt("UNIVERSE_WARMUP_FAILED")
-            return
 
         send_info(
             "ENGINE STARTED",
@@ -343,9 +305,17 @@ class TradingEngine:
                 self._process_operator_command()
 
                 if not self.safety.is_safe():
-                    # Never exit loop
-                    self.state.disable_trading("SAFETY_TRIGGERED")
-                    self.state.save()
+                    self._handle_event(
+                        EngineEvent(
+                            severity="CRITICAL",
+                            category="INFRA",
+                            money_at_risk=self.state.get_open_position() is not None,
+                            requires_flatten=False,
+                            requires_disable=True,
+                            retryable=False,
+                            reason="SAFETY_TRIGGERED",
+                        )
+                    )
                     continue
 
                 self.market_state.update(
@@ -365,10 +335,12 @@ class TradingEngine:
                     if tick.symbol != open_position["symbol"]:
                         continue
 
-                    if not self.daily_lifecycle.handle(
+                    result = self.daily_lifecycle.handle(
                         timestamp=tick.timestamp
-                    ):
-                        return
+                    )
+                    if isinstance(result, EngineEvent):
+                        self._handle_event(result)
+                        continue
 
                     self.position_lifecycle.manage(
                         market_state=self.market_state
@@ -380,10 +352,12 @@ class TradingEngine:
                 # MODE B — NO POSITION
                 # --------------------------------------------------
 
-                if not self.daily_lifecycle.handle(
+                result = self.daily_lifecycle.handle(
                     timestamp=tick.timestamp
-                ):
-                    return
+                )
+                if isinstance(result, EngineEvent):
+                    self._handle_event(result)
+                    continue
 
                 self.strategy.on_price(
                     symbol=tick.symbol,
@@ -397,12 +371,14 @@ class TradingEngine:
 
                 intent = self.intent_lifecycle.accepted_intent
 
-                executed = self.entry_lifecycle.maybe_execute(
+                result = self.entry_lifecycle.maybe_execute(
                     intent=intent,
                     market_state=self.market_state,
                 )
 
-                if executed:
+                if isinstance(result, EngineEvent):
+                    self._handle_event(result)
+                elif result:
                     self.intent_lifecycle.clear_accepted_intent()
 
                 self.state.heartbeat(
@@ -420,19 +396,32 @@ class TradingEngine:
                         self.system_log.critical(
                             f"STATE_SAVE_FAILED | {e}"
                         )
-                        self.safety.halt("STATE_SAVE_FAILED")
-                        return
+                        self._handle_event(
+                            EngineEvent(
+                                severity="CRITICAL",
+                                category="INFRA",
+                                money_at_risk=self.state.get_open_position() is not None,
+                                requires_flatten=False,
+                                requires_disable=True,
+                                retryable=True,
+                                reason="STATE_SAVE_FAILED",
+                            )
+                        )
+                        continue
 
         except OperationalExchangeError as e:
-            self.system_log.critical(
-                f"OPERATIONAL_EXCHANGE_ERROR | {e}"
+            self._handle_event(
+                EngineEvent(
+                    severity="CRITICAL",
+                    category="INFRA",
+                    money_at_risk=self.state.get_open_position() is not None,
+                    requires_flatten=False,
+                    requires_disable=True,
+                    retryable=True,
+                    reason="OPERATIONAL_EXCHANGE_ERROR",
+                )
             )
-            send_critical(
-                "OPERATIONAL EXCHANGE ERROR",
-                f"{e}\n\nEngine halted."
-            )
-            self.state.disable_trading("OPERATIONAL_EXCHANGE_ERROR")
-            self.state.save()
+
             self.system_log.critical("TRADING_DISABLED | continuing monitoring")
 
         except StopIteration:
@@ -443,11 +432,16 @@ class TradingEngine:
             self.system_log.critical(
                 f"UNEXPECTED_ENGINE_ERROR | {e}"
             )
-            self.state.disable_trading("UNEXPECTED_ENGINE_ERROR")
-            self.state.save()
-            send_critical(
-                "UNEXPECTED ENGINE ERROR",
-                f"{e}\n\nTrading disabled. Monitoring continues."
+            self._handle_event(
+                EngineEvent(
+                    severity="CRITICAL",
+                    category="INFRA",
+                    money_at_risk=self.state.get_open_position() is not None,
+                    requires_flatten=False,
+                    requires_disable=True,
+                    retryable=False,
+                    reason="UNEXPECTED_ENGINE_ERROR",
+                )
             )
             self.system_log.critical("TRADING_DISABLED | monitoring continues")
 
@@ -505,3 +499,58 @@ class TradingEngine:
         elif text == "/status":
             state = self.state.get_state().get("engine_state")
             send_info("ENGINE STATUS", f"State: {state}")
+
+     # --------------------------------------------------
+     # Event Authority Handler (Blueprint v1)
+     # --------------------------------------------------
+
+    def _handle_event(self, event: EngineEvent):
+        """
+        Centralized authority decision handler.
+        Only core may:
+        - disable trading
+        - call emergency flatten
+        - escalate alerts
+        """
+
+        if event is None:
+            return
+
+        # --------------------------------------------------
+        # Flatten if required
+        # --------------------------------------------------
+        if event.requires_flatten:
+            self.system_log.critical(
+                f"ENGINE_EVENT_FLATTEN | reason={event.reason}"
+            )
+            try:
+                self.emergency.execute(event.reason)
+            except Exception as e:
+                self.system_log.critical(
+                    f"EMERGENCY_EXECUTION_FAILED | {e}"
+                )
+
+        # --------------------------------------------------
+        # Disable trading if required
+        # --------------------------------------------------
+        if event.requires_disable:
+            self.system_log.critical(
+                f"ENGINE_EVENT_DISABLE | reason={event.reason}"
+            )
+            self.state.disable_trading(event.reason)
+            self.state.save()
+
+        # --------------------------------------------------
+        # Alert escalation
+        # --------------------------------------------------
+        if event.severity == "CRITICAL":
+            send_critical(
+                "ENGINE EVENT",
+                f"Category: {event.category}\nReason: {event.reason}"
+            )
+        elif event.severity == "WARNING":
+            send_info(
+                "ENGINE WARNING",
+                f"Category: {event.category}\nReason: {event.reason}"
+            )
+

@@ -10,13 +10,13 @@
 # ==========================================================
 
 import time
+from engine.events import EngineEvent
 from utils.telegram_notifier import (
     send_critical,
     send_warning,
     edit_message,
     format_trade_panel,
 )
-
 
 class PositionLifecycle:
 
@@ -233,25 +233,15 @@ class PositionLifecycle:
 
             self.exit_in_progress = True
 
-            send_critical(
-                "POSITION RISK VIOLATION",
-                f"Reason: {decision.reason}\n\n"
-                "Emergency exit sent.\n"
-                "Engine halted."
-            )
-
-            self.emergency.execute(decision.reason)
-
-            self.state.set_engine_state(
-                engine_state=self.RISK_HALT,
+            return EngineEvent(
+                severity="CRITICAL",
+                category="RISK",
+                money_at_risk=True,
+                requires_flatten=True,
+                requires_disable=True,
+                retryable=False,
                 reason=decision.reason,
             )
-
-            self.state.clear_open_position()
-            self.state.save()
-            self.state.disable_trading(decision.reason)
-            self.state.save()
-            self.system_log.critical("TRADING_DISABLED | risk violation")
 
     # --------------------------------------------------
     # Close Handler
