@@ -41,3 +41,12 @@ class SafetyManager:
 
         self._halted = True
         self._reason = reason
+
+    def reset(self) -> None:
+        """
+        Operator-authorized safety reset.
+        Clears halted state and reason.
+        Does NOT exit engine.
+        """
+        self._halted = False
+        self._reason = None

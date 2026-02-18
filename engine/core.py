@@ -468,8 +468,14 @@ class TradingEngine:
             action = cmd.get("action")
 
             if action == "ENABLE_TRADING":
-                self.state.set_engine_state(RUNNING, reason="OPERATOR_ENABLE")
+                self.safety.reset()
+                self.state.set_engine_state(RUNNING, reason=None)
                 self.state.save()
+                result = self.reconciliation.run(
+                    reason="OPERATOR_RESUME"
+                )
+                if isinstance(result, EngineEvent):
+                    self._handle_event(result)
                 self.system_log.info("OPERATOR_COMMAND | ENABLE_TRADING")
 
             elif action == "DISABLE_TRADING":
@@ -496,8 +502,14 @@ class TradingEngine:
     def _handle_operator_command(self, text: str):
 
         if text == "/enable":
-            self.state.set_engine_state("RUNNING", reason="OPERATOR_ENABLE")
+            self.safety.reset()
+            self.state.set_engine_state("RUNNING", reason=None)
             self.state.save()
+            result = self.reconciliation.run(
+                reason="OPERATOR_RESUME"
+            )
+            if isinstance(result, EngineEvent):
+                self._handle_event(result)
             self.system_log.info("OPERATOR_ENABLE")
             send_info("TRADING ENABLED", "Operator command accepted.")
 

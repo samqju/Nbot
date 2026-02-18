@@ -1,13 +1,15 @@
 # ============================================================
-# UNIVERSE SELECTOR — MAINNET
+# UNIVERSE SELECTOR — MAINNET (Universe v3 - Velocity Weighted)
 # ============================================================
 # Policy:
-# - Top 30 symbols by quote_volume
-# - Exclude extreme 24h movers (> +6% or < -6%)
 # - USDT perpetual contracts only
-# - Cron-safe execution
+# - Liquidity × Volatility weighted ranking
+# - Remove dead pairs (< MIN_CHANGE_PCT)
+# - Remove extreme blow-off pairs (> MAX_CHANGE_PCT)
 # - Deterministic output
+# - Cron-safe execution
 # ============================================================
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -20,18 +22,17 @@ from datetime import datetime, timezone
 # CONFIG
 # ============================================================
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UNIVERSE_SNAPSHOT_FILE = os.path.join(
-    BASE_DIR,
-    "universe_snapshot.json"
-)
-
+BASE_DIR = os.path.dirname(os.path.realpath(__file__))
+UNIVERSE_SNAPSHOT_FILE = "/home/ubuntu/nbot/universe_snapshot.json"
 EXPECTED_SIZE = 30
 
 BASE_URL = os.getenv("MAINNET_BASE_URL")
 TIMEOUT = 5
 
-CHANGE_THRESHOLD_PCT = 7.0  # Exclude beyond ±7%
+# --- Velocity Filters ---
+MIN_CHANGE_PCT = 0.8     # Remove dead pairs
+MAX_CHANGE_PCT = 12.0    # Remove extreme parabolic pairs
+VOL_CAP_FOR_SCORING = 10.0  # Cap volatility normalization
 
 
 # ============================================================
@@ -57,7 +58,7 @@ def fetch_24h_tickers():
 
 
 # ============================================================
-# BUILD UNIVERSE
+# BUILD UNIVERSE (Velocity Weighted)
 # ============================================================
 
 def build_universe():
@@ -79,13 +80,10 @@ def build_universe():
         )
     }
 
-    # --------------------------------------------------------
-    # Filter + Collect Candidates
-    # --------------------------------------------------------
-
     candidates = []
 
     for t in tickers:
+
         symbol = t.get("symbol")
 
         if symbol not in supported:
@@ -93,26 +91,43 @@ def build_universe():
 
         try:
             quote_volume = float(t["quoteVolume"])
-            change_pct = float(t["priceChangePercent"])
+            change_pct = abs(float(t["priceChangePercent"]))
         except Exception:
             continue
 
-        # Exclude extreme movers
-        if abs(change_pct) > CHANGE_THRESHOLD_PCT:
+        # --------------------------------------------------------
+        # Velocity Filters
+        # --------------------------------------------------------
+
+        # Remove dead pairs
+        if change_pct < MIN_CHANGE_PCT:
             continue
+
+        # Remove extreme blow-offs
+        if change_pct > MAX_CHANGE_PCT:
+            continue
+
+        # --------------------------------------------------------
+        # Velocity Weighted Score
+        # --------------------------------------------------------
+
+        normalized_vol = min(change_pct, VOL_CAP_FOR_SCORING) / VOL_CAP_FOR_SCORING
+
+        velocity_score = quote_volume * normalized_vol
 
         candidates.append({
             "symbol": symbol,
             "quote_volume": quote_volume,
             "change_pct": change_pct,
+            "score": velocity_score,
         })
 
     # --------------------------------------------------------
-    # Sort by quote volume descending
+    # Sort by Velocity Score
     # --------------------------------------------------------
 
     candidates.sort(
-        key=lambda x: x["quote_volume"],
+        key=lambda x: x["score"],
         reverse=True,
     )
 
@@ -147,7 +162,7 @@ def main():
             json.dump(snapshot, f, indent=2, sort_keys=True)
 
         print(
-            f"[OK] Universe v2 built | "
+            f"[OK] Universe v3 built | "
             f"symbols={len(universe)} | "
             f"time={snapshot['generated_at']}"
         )
