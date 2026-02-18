@@ -234,12 +234,32 @@ class ReconciliationLifecycle:
                         "POSITION_WITHOUT_SL | attempting recovery"
                     )
 
-                    entry_plan = self.risk.build_entry_plan(
-                        direction=position.side,
-                        entry_price=position.entry_price,
-                    )
+                    # --------------------------------------------------
+                    # FIX: Preserve Trailed SL If State Exists
+                    # --------------------------------------------------
+                    existing = self.state.get_open_position()
 
-                    intended_sl = entry_plan.initial_sl
+                    if existing and existing.get("stop_loss") is not None:
+                        intended_sl = existing["stop_loss"]
+                        self.system_log.info(
+                            f"RECOVERY_USING_STATE_SL | "
+                            f"symbol={position.symbol} | "
+                            f"state_sl={intended_sl}"
+                        )
+                    else:
+                        # Fallback only if state missing
+                        entry_plan = self.risk.build_entry_plan(
+                            direction=position.side,
+                            entry_price=position.entry_price,
+                        )
+
+                        intended_sl = entry_plan.initial_sl
+                        self.system_log.warning(
+                            f"RECOVERY_FALLBACK_INITIAL_SL | "
+                            f"symbol={position.symbol} | "
+                            f"initial_sl={intended_sl}"
+                        )
+
                     self.system_log.info(
                         f"RECOVERY_SL_ATTEMPT | "
                         f"symbol={position.symbol} | "
