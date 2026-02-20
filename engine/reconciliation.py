@@ -97,7 +97,7 @@ class ReconciliationLifecycle:
 
                 if existing:
 
-                    self.error_log.error(
+                    self.system_log.info(
                         f"RECON_CLOSE_DETECTED | "
                         f"symbol={existing['symbol']}"
                    )

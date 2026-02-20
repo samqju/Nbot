@@ -50,6 +50,12 @@ class TradingEngine:
     """
     Trading Engine — Orchestrator Only
     """
+    DAILY_HALT = "DAILY_HALT"
+    RISK_HALT = "RISK_HALT"
+    INVARIANT_HALT = "INVARIANT_HALT"
+    OPERATIONAL_HALT = "OPERATIONAL_HALT"
+    MANUAL_HALT = "MANUAL_HALT"
+    FATAL_HALT = "FATAL_HALT"
 
     # ------------------------------------------------------
     # Initialization

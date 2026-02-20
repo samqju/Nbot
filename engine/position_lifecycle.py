@@ -41,7 +41,7 @@ class PositionLifecycle:
         self.emergency = emergency
         self.system_log = system_log
         self.trade_log = trade_log
-        error_log = error_log,
+        self.error_log = error_log
         self.exit_in_progress = False
         self._commitment_reached = False
 
@@ -72,7 +72,7 @@ class PositionLifecycle:
 
         if exchange_position and exchange_position.stop_loss is None:
 
-            error_log.error(
+            self.error_log.error(
                 f"LIVE_SL_MISSING_DETECTED | "
                 f"symbol={exchange_position.symbol}"
             )
@@ -142,7 +142,7 @@ class PositionLifecycle:
                     verified = self.exchange.get_position()
 
                     if verified is None:
-                        error_log.error(
+                        self.error_log.error(
                             f"SL_VERIFY_POSITION_NONE | "
                             f"symbol={symbol} | "
                             f"intended_sl={intended_sl}"
@@ -169,7 +169,7 @@ class PositionLifecycle:
                         )
                         break
                     else:
-                        error_log.error(
+                        self.error_log.error(
                             f"SL_VERIFICATION_MISMATCH | "
                             f"symbol={symbol} | "
                             f"expected={expected_sl} | "
@@ -177,7 +177,7 @@ class PositionLifecycle:
                         )
 
                 except Exception as e:
-                    error_log.error(
+                    self.error_log.error(
                         f"SL_UPDATE_EXCEPTION | "
                         f"symbol={symbol} | "
                         f"intended_sl={intended_sl} | "
@@ -199,7 +199,7 @@ class PositionLifecycle:
                 except Exception:
                     exchange_sl = None
 
-                error_log.error(
+                self.error_log.error(
                     f"SL_UPDATE_FAILED | "
                     f"symbol={symbol} | "
                     f"intended_sl={intended_sl} | "
@@ -280,7 +280,7 @@ class PositionLifecycle:
                 if exit_price is not None:
                     break
 
-                error_log.error(
+                self.error_log.error(
                     f"CLOSE_DETAILS_DELAYED | "
                     f"symbol={open_position['symbol']} | "
                     f"attempt={attempt+1}"
@@ -289,7 +289,7 @@ class PositionLifecycle:
                 time.sleep(0.5)
 
             except Exception as e:
-                error_log.error(
+                self.error_log.error(
                     f"CLOSE_FETCH_EXCEPTION | "
                     f"symbol={open_position['symbol']} | "
                     f"attempt={attempt+1} | error={e}"
@@ -297,7 +297,7 @@ class PositionLifecycle:
                 time.sleep(0.5)
 
         if exit_price is None:
-            error_log.error(
+            self.error_log.error(
                 f"CLOSE_DETAILS_UNAVAILABLE | "
                 f"symbol={open_position['symbol']}"
             )
