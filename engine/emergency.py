@@ -8,7 +8,6 @@
 # ==========================================================
 
 import time
-from engine.events import EngineEvent
 
 class EmergencyHandler:
 
@@ -21,11 +20,15 @@ class EmergencyHandler:
         state,
         safety,
         system_log,
+        trade_log,
+        error_log,
     ):
         self.exchange = exchange
         self.state = state
         self.safety = safety
         self.system_log = system_log
+        self.trade_log = trade_log
+        self.error_log = error_log
 
         self._exit_in_progress = False
 
@@ -43,13 +46,15 @@ class EmergencyHandler:
 
         self._exit_in_progress = True
 
-        self.system_log.critical(
+        # Risk boundary event
+        self.error_log.error(
             f"EMERGENCY_EXIT_TRIGGERED | reason={reason}"
         )
+
         try:
             pos = self.exchange.get_position()
             if pos:
-                self.system_log.critical(
+                self.error_log.error(
                     f"EMERGENCY_POSITION | "
                     f"symbol={pos.symbol} | "
                     f"side={pos.side} | "
@@ -64,7 +69,7 @@ class EmergencyHandler:
             try:
                 self.exchange.emergency_exit()
             except Exception as e:
-                self.system_log.critical(
+                self.error_log.error(
                     f"EMERGENCY_EXIT_SEND_FAILED | "
                     f"attempt={attempt+1} | error={e}"
                 )
@@ -87,18 +92,15 @@ class EmergencyHandler:
         # If still not flat → FATAL HALT
         # --------------------------------------------------
 
-        self.system_log.critical(
+        self.error_log.error(
             "EMERGENCY_EXIT_FAILED_NOT_FLAT"
+        )
+
+        # Capital still exposed (cross-layer logging)
+        self.error_log.error(
+            "EMERGENCY_EXIT_FAILED_NOT_FLAT | CAPITAL_STILL_EXPOSED"
         )
 
         self._exit_in_progress = False
 
-        return EngineEvent(
-            severity="CRITICAL",
-            category="INFRA",
-            money_at_risk=True,
-            requires_flatten=False,
-            requires_disable=True,
-            retryable=False,
-            reason="EMERGENCY_EXIT_FAILED",
-        )
+        raise RuntimeError("EMERGENCY_EXIT_FAILED")

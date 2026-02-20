@@ -10,7 +10,6 @@
 # ==========================================================
 
 import time
-from engine.events import EngineEvent
 from utils.telegram_notifier import (
     send_critical,
     send_warning,
@@ -32,6 +31,7 @@ class PositionLifecycle:
         safety,
         emergency,
         system_log,
+        error_log,
         trade_log,
     ):
         self.exchange = exchange
@@ -41,7 +41,7 @@ class PositionLifecycle:
         self.emergency = emergency
         self.system_log = system_log
         self.trade_log = trade_log
-
+        error_log = error_log,
         self.exit_in_progress = False
         self._commitment_reached = False
 
@@ -72,20 +72,12 @@ class PositionLifecycle:
 
         if exchange_position and exchange_position.stop_loss is None:
 
-            self.system_log.critical(
+            error_log.error(
                 f"LIVE_SL_MISSING_DETECTED | "
                 f"symbol={exchange_position.symbol}"
             )
 
-            return EngineEvent(
-                severity="CRITICAL",
-                category="SL",
-                money_at_risk=True,
-                requires_flatten=False,
-                requires_disable=False,
-                retryable=True,
-                reason="LIVE_SL_MISSING",
-            )
+            raise RuntimeError("LIVE_SL_MISSING")
 
         # --------------------------------------------------
         # External close detected
@@ -150,7 +142,7 @@ class PositionLifecycle:
                     verified = self.exchange.get_position()
 
                     if verified is None:
-                        self.system_log.critical(
+                        error_log.error(
                             f"SL_VERIFY_POSITION_NONE | "
                             f"symbol={symbol} | "
                             f"intended_sl={intended_sl}"
@@ -177,7 +169,7 @@ class PositionLifecycle:
                         )
                         break
                     else:
-                        self.system_log.warning(
+                        error_log.error(
                             f"SL_VERIFICATION_MISMATCH | "
                             f"symbol={symbol} | "
                             f"expected={expected_sl} | "
@@ -185,7 +177,7 @@ class PositionLifecycle:
                         )
 
                 except Exception as e:
-                    self.system_log.warning(
+                    error_log.error(
                         f"SL_UPDATE_EXCEPTION | "
                         f"symbol={symbol} | "
                         f"intended_sl={intended_sl} | "
@@ -207,7 +199,7 @@ class PositionLifecycle:
                 except Exception:
                     exchange_sl = None
 
-                self.system_log.warning(
+                error_log.error(
                     f"SL_UPDATE_FAILED | "
                     f"symbol={symbol} | "
                     f"intended_sl={intended_sl} | "
@@ -254,15 +246,7 @@ class PositionLifecycle:
 
             self.exit_in_progress = True
 
-            return EngineEvent(
-                severity="CRITICAL",
-                category="RISK",
-                money_at_risk=True,
-                requires_flatten=True,
-                requires_disable=True,
-                retryable=False,
-                reason=decision.reason,
-            )
+            raise RuntimeError(decision.reason)
 
     # --------------------------------------------------
     # Close Handler
@@ -296,7 +280,7 @@ class PositionLifecycle:
                 if exit_price is not None:
                     break
 
-                self.system_log.warning(
+                error_log.error(
                     f"CLOSE_DETAILS_DELAYED | "
                     f"symbol={open_position['symbol']} | "
                     f"attempt={attempt+1}"
@@ -305,7 +289,7 @@ class PositionLifecycle:
                 time.sleep(0.5)
 
             except Exception as e:
-                self.system_log.warning(
+                error_log.error(
                     f"CLOSE_FETCH_EXCEPTION | "
                     f"symbol={open_position['symbol']} | "
                     f"attempt={attempt+1} | error={e}"
@@ -313,7 +297,7 @@ class PositionLifecycle:
                 time.sleep(0.5)
 
         if exit_price is None:
-            self.system_log.critical(
+            error_log.error(
                 f"CLOSE_DETAILS_UNAVAILABLE | "
                 f"symbol={open_position['symbol']}"
             )

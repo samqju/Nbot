@@ -12,7 +12,6 @@
 
 import time
 from datetime import datetime, timezone
-from engine.events import EngineEvent
 from config import (
     MAX_NOTIONAL_USD,
     LEVERAGE,
@@ -44,6 +43,7 @@ class EntryLifecycle:
         safety,
         emergency,
         system_log,
+        error_log,
         trade_log,
         throttle,
     ):
@@ -55,7 +55,7 @@ class EntryLifecycle:
         self.system_log = system_log
         self.trade_log = trade_log
         self.throttle = throttle
-
+        self.error_log = error_log
         self._entry_in_progress = False
 
     @property
@@ -101,7 +101,7 @@ class EntryLifecycle:
         entry_price = market_state.get_price(symbol)
 
         if entry_price <= 0:
-            self.system_log.warning(
+            error_log.error(
                 f"ENTRY_BLOCKED_INVALID_PRICE | "
                 f"symbol={symbol} | price={entry_price}"
             )
@@ -142,7 +142,7 @@ class EntryLifecycle:
         balance = self.exchange.get_available_balance()
         # balance stored via update_after_trade later
         if balance < required_margin:
-            self.system_log.warning(
+            error_log.error(
                 f"ENTRY_BLOCKED_MARGIN | "
                 f"symbol={symbol} | "
                 f"balance={balance} | "
@@ -162,7 +162,7 @@ class EntryLifecycle:
         )
 
         if ack.filled_qty <= 0:
-            self.system_log.warning(
+            error_log.error(
                 f"ENTRY_NOT_FILLED | symbol={symbol}"
             )
             return False
@@ -173,22 +173,13 @@ class EntryLifecycle:
 
         if not ack.fully_filled:
 
-            self.trade_log.critical(
+            error_log.error(
                 f"PARTIAL_FILL | "
                 f"symbol={symbol} | "
                 f"requested={ack.requested_qty} | "
                 f"filled={ack.filled_qty}"
             )
-
-            return EngineEvent(
-                severity="CRITICAL",
-                category="RISK",
-                money_at_risk=True,
-                requires_flatten=True,
-                requires_disable=True,
-                retryable=False,
-                reason="PARTIAL_FILL_ABORT",
-            )
+            raise RuntimeError("PARTIAL_FILL_ABORT")
 
         # --------------------------------------------------
         # Notional invariant
@@ -201,16 +192,7 @@ class EntryLifecycle:
 
         if executed_notional > max_allowed:
 
-            return EngineEvent(
-                severity="CRITICAL",
-                category="RISK",
-                money_at_risk=True,
-                requires_flatten=True,
-                requires_disable=True,
-                retryable=False,
-                reason="ENGINE_NOTIONAL_BREACH",
-            )
-
+            raise RuntimeError("ENGINE_NOTIONAL_BREACH")
         # --------------------------------------------------
         # Recalculate SL
         # --------------------------------------------------
@@ -254,16 +236,7 @@ class EntryLifecycle:
 
         if actual_risk_usd > max_allowed_risk:
 
-            return EngineEvent(
-                severity="CRITICAL",
-                category="RISK",
-                money_at_risk=True,
-                requires_flatten=True,
-                requires_disable=True,
-                retryable=False,
-                reason="POST_FILL_RISK_BREACH",
-            )
-
+            raise RuntimeError("POST_FILL_RISK_BREACH")
         # --------------------------------------------------
         # Slippage guard
         # --------------------------------------------------
@@ -274,16 +247,7 @@ class EntryLifecycle:
 
         if slippage_pct > ENTRY_SLIPPAGE_PCT:
 
-            return EngineEvent(
-                severity="CRITICAL",
-                category="RISK",
-                money_at_risk=True,
-                requires_flatten=True,
-                requires_disable=True,
-                retryable=False,
-                reason="SLIPPAGE_BREACH",
-            )
-
+            raise RuntimeError("SLIPPAGE_BREACH")
         # --------------------------------------------------
         # Place initial SL
         # --------------------------------------------------
@@ -308,7 +272,7 @@ class EntryLifecycle:
                 verified = self.exchange.get_position()
 
                 if verified is None:
-                    self.system_log.warning(
+                    error_log.error(
                         f"INITIAL_SL_VERIFY_POSITION_NONE | "
                         f"symbol={symbol} | "
                         f"attempt={attempt+1}"
@@ -329,7 +293,7 @@ class EntryLifecycle:
                     )
                     break
                 else:
-                    self.system_log.warning(
+                    error_log.error(
                         f"INITIAL_SL_VERIFICATION_MISMATCH | "
                         f"symbol={symbol} | "
                         f"expected={expected_sl} | "
@@ -337,7 +301,7 @@ class EntryLifecycle:
                     )
 
             except Exception as e:
-                self.system_log.warning(
+                error_log.error(
                     f"INITIAL_SL_PLACEMENT_EXCEPTION | "
                     f"symbol={symbol} | "
                     f"attempt={attempt+1} | "
@@ -353,16 +317,7 @@ class EntryLifecycle:
 
         if (time.time() - sl_start_time) > MAX_SL_PLACEMENT_SECONDS:
 
-            return EngineEvent(
-                severity="CRITICAL",
-                category="SL",
-                money_at_risk=True,
-                requires_flatten=True,
-                requires_disable=True,
-                retryable=False,
-                reason="SL_TIMING_BREACH",
-            )
-
+            raise RuntimeError("SL_TIMING_BREACH")
         # --------------------------------------------------
         # Persist position
         # --------------------------------------------------

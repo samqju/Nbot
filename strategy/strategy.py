@@ -33,7 +33,7 @@ class Strategy:
         self._last_trade_minute = {}
         self._current_utc_day = None
 
-        self.MAX_TRADES_PER_DAY = 4
+        self.MAX_TRADES_PER_DAY = 30
         self.MIN_TRADE_SPACING_MINUTES = 3
 
         # -----------------------------

@@ -17,12 +17,13 @@ UNIVERSE_SNAPSHOT_FILE = "universe_snapshot.json"
 EXPECTED_UNIVERSE_SIZE = 30
 UNIVERSE_RELOAD_INTERVAL_SEC = 30 * 60  # 30 minutes
 
+
 class UniverseManager:
 
-    def __init__(self, strategy, system_log):
+    def __init__(self, strategy, system_log, error_log):
         self.strategy = strategy
         self.system_log = system_log
-
+        self.error_log = error_log
         self.symbols = []
         self.generated_at = None
         self._last_reload_ts = 0
@@ -53,7 +54,7 @@ class UniverseManager:
         self.generated_at = generated_at
 
         self.system_log.info(
-            f"UNIVERSE_LOADED | count={len(symbols)}"
+            f"UNIVERSE_LOADED | count={len(symbols)} | generated_at={generated_at}"
         )
 
         # Inform strategy
@@ -163,7 +164,9 @@ class UniverseManager:
 
             self.system_log.info(
                 f"UNIVERSE_RELOADED | "
-                f"added={len(added)} | removed={len(removed)}"
+                f"added={len(added)} | removed={len(removed)} | "
+                f"added_symbols={sorted(list(added))} | "
+                f"removed_symbols={sorted(list(removed))}"
             )
 
             send_info(
@@ -172,6 +175,6 @@ class UniverseManager:
             )
 
         except Exception as e:
-            self.system_log.critical(
+            self.error_log.error(
                 f"UNIVERSE_RELOAD_FAILED | {e}"
             )

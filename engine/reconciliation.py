@@ -2,9 +2,7 @@
 # RECONCILIATION LIFECYCLE
 # ==========================================================
 import time
-from engine.events import EngineEvent
 from utils.telegram_notifier import send_critical, send_trade_panel, format_trade_panel, edit_message
-from utils.logger import trade_logger
 
 class ReconciliationLifecycle:
     """
@@ -24,13 +22,17 @@ class ReconciliationLifecycle:
         risk,
         safety,
         system_log,
+        error_log,
+        trade_log,
     ):
         self.exchange = exchange
         self.state = state
         self.risk = risk
         self.safety = safety
         self.system_log = system_log
-        self.trade_log = trade_logger()
+        self.trade_log = trade_log
+        self.error_log = error_log
+
 
     # --------------------------------------------------
     # Canonical Open Position Builder
@@ -72,7 +74,7 @@ class ReconciliationLifecycle:
             self.MANUAL_HALT,
             self.FATAL_HALT,
         ):
-            self.system_log.critical(
+            self.error_log.error(
                 f"RECONCILIATION_BLOCKED | engine_state={engine_state}"
             )
             return
@@ -95,7 +97,7 @@ class ReconciliationLifecycle:
 
                 if existing:
 
-                    self.system_log.warning(
+                    self.error_log.error(
                         f"RECON_CLOSE_DETECTED | "
                         f"symbol={existing['symbol']}"
                    )
@@ -113,7 +115,7 @@ class ReconciliationLifecycle:
                         exit_price = trade_data["exit_price"]
 
                     except Exception as e:
-                        self.system_log.critical(
+                        self.error_log.error(
                             f"RECON_CLOSE_FETCH_FAILED | error={e}"
                         )
 
@@ -157,15 +159,7 @@ class ReconciliationLifecycle:
                         self.state.clear_trade_panel_message_id()
 
                     # Prepare informational event (do NOT return yet)
-                    manual_close_event = EngineEvent(
-                        severity="INFO",
-                        category="GOVERNANCE",
-                        money_at_risk=False,
-                        requires_flatten=False,
-                        requires_disable=False,
-                        retryable=False,
-                        reason="MANUAL_CLOSE_DETECTED",
-                    )
+                    manual_close_event = "MANUAL_CLOSE_DETECTED"
 
                 # Clear state
                 self.state.update_after_trade(
@@ -209,7 +203,7 @@ class ReconciliationLifecycle:
 
                 # Ensure stop_loss key always exists
                 if rebuilt.get("stop_loss") is None:
-                    self.system_log.warning(
+                    self.error_log.error(
                         "RECON_POSITION_WITHOUT_SL | recovery required"
                     )
 
@@ -230,7 +224,7 @@ class ReconciliationLifecycle:
                 # --------------------------------------------------
                 if position.stop_loss is None:
 
-                    self.system_log.critical(
+                    self.error_log.error(
                         "POSITION_WITHOUT_SL | attempting recovery"
                     )
 
@@ -254,7 +248,7 @@ class ReconciliationLifecycle:
                         )
 
                         intended_sl = entry_plan.initial_sl
-                        self.system_log.warning(
+                        self.error_log.error(
                             f"RECOVERY_FALLBACK_INITIAL_SL | "
                             f"symbol={position.symbol} | "
                             f"initial_sl={intended_sl}"
@@ -275,19 +269,11 @@ class ReconciliationLifecycle:
                         or
                         (position.side == "SHORT" and intended_sl <= live_price)
                     ):
-                        self.system_log.critical(
+                        self.error_log.error(
                             "RECOVERY_SL_ALREADY_BREACHED"
                         )
 
-                        return EngineEvent(
-                            severity="CRITICAL",
-                            category="SL",
-                            money_at_risk=True,
-                            requires_flatten=True,
-                            requires_disable=True,
-                            retryable=False,
-                            reason="RECOVERY_SL_BREACHED",
-                        )
+                        raise RuntimeError("REASON")
 
                     try:
                         self.exchange.place_initial_sl(
@@ -297,34 +283,19 @@ class ReconciliationLifecycle:
                             stop_price=intended_sl,
                         )
                     except Exception as e:
-                        self.system_log.critical(
+                        self.error_log.error(
                             f"RECOVERY_SL_PLACEMENT_FAILED | {e}"
                         )
-                        return EngineEvent(
-                            severity="CRITICAL",
-                            category="SL",
-                            money_at_risk=True,
-                            requires_flatten=False,
-                            requires_disable=True,
-                            retryable=False,
-                            reason="RECOVERY_SL_PLACEMENT_FAILED",
-                        )
+                        raise RuntimeError("REASON")
 
                     verified = self.exchange.get_position()
 
                     if verified is None or verified.stop_loss is None:
-                        self.system_log.critical(
+                        self.error_log.error(
                             "RECOVERY_SL_VERIFICATION_FAILED"
                         )
-                        return EngineEvent(
-                            severity="CRITICAL",
-                            category="SL",
-                            money_at_risk=True,
-                            requires_flatten=False,
-                            requires_disable=True,
-                            retryable=False,
-                            reason="RECOVERY_SL_VERIFICATION_FAILED",
-                        )
+                        raise RuntimeError("REASON")
+
                     self.state.state["open_position"]["stop_loss"] = intended_sl
                     self.system_log.info("RECOVERY_SL_SUCCESS")
                     self.system_log.info(
@@ -356,9 +327,6 @@ class ReconciliationLifecycle:
             self.state.save()
             self.system_log.info("RECONCILIATION_SUCCESS")
 
-            if manual_close_event:
-                return manual_close_event
-
             # Reset lifecycle runtime state (original engine behavior)
             # These must be reset on reconciliation
             # so entry/intent lifecycle resumes cleanly.
@@ -371,18 +339,9 @@ class ReconciliationLifecycle:
             # Note: intent & entry lifecycle reset is handled in core
 
         except Exception as e:
-            self.system_log.critical(
+            self.error_log.error(
                 f"RECONCILIATION_FAILED | error={e}"
             )
-            return EngineEvent(
-                severity="CRITICAL",
-                category="INFRA",
-                money_at_risk=self.state.get_open_position() is not None,
-                requires_flatten=False,
-                requires_disable=True,
-                retryable=False,
-                reason="RECONCILIATION_FAILED",
-            )
-
+            raise RuntimeError("REASON")
         # Success path
         return None

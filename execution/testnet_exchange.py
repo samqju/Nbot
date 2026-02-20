@@ -37,8 +37,7 @@ from types import SimpleNamespace
 from typing import List
 from decimal import Decimal, ROUND_DOWN
 from config import LEVERAGE, MAX_SPREAD_PCT
-from utils.logger import system_logger
-from execution.exceptions import OperationalExchangeError, StopAlreadyBreached
+from execution.exceptions import OperationalExchangeError, MarketStateError, StopAlreadyBreached
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -90,19 +89,15 @@ class TestnetExchange:
     # SECTION A — INITIALIZATION
     # ========================================================
 
-    def __init__(self):
+    def __init__(self, system_log, error_log):
+        self.system_log = system_log
+        self.error_log = error_log
+        self.session = requests.Session()
+        self.session.headers.update({"X-MBX-APIKEY": API_KEY})
+        self._symbol_filters = self._load_symbol_filters()
 
         if not BASE_URL or not API_KEY or not API_SECRET:
             raise RuntimeError("TESTNET_EXCHANGE_CONFIG_MISSING")
-
-        self.log = system_logger()
-
-        self.session = requests.Session()
-        self.session.headers.update({
-            "X-MBX-APIKEY": API_KEY
-        })
-
-        self._symbol_filters = self._load_symbol_filters()
 
         # =====================================================
         # HARDENING STATE TRACKERS
@@ -144,7 +139,7 @@ class TestnetExchange:
 
             if resp.status_code != 200:
                 error_detail = self._extract_binance_error(resp)
-                self.log.critical(
+                self.error_log.error(
                     f"REST_GET_FAILED | path={path} | "
                     f"status={resp.status_code} | "
                     f"error={error_detail}"
@@ -173,13 +168,25 @@ class TestnetExchange:
 
             if resp.status_code != 200:
                 error_detail = self._extract_binance_error(resp)
-                self.log.critical(
+                self.error_log.error(
                     f"REST_POST_FAILED | path={path} | "
                     f"status={resp.status_code} | "
                     f"error={error_detail}"
                 )
                 raise OperationalExchangeError(
                     f"REST_POST_FAILED | path={path} | {error_detail}"
+                )
+
+            # Binance percent price filter (-4131) → market condition, not infra
+            try:
+                data = resp.json()
+                code = data.get("code")
+            except Exception:
+                code = None
+
+            if code == -4131:
+                raise MarketStateError(
+                    "PERCENT_PRICE_FILTER_VIOLATION"
                 )
 
             return resp.json()
@@ -199,7 +206,7 @@ class TestnetExchange:
 
             if resp.status_code != 200:
                 error_detail = self._extract_binance_error(resp)
-                self.log.critical(
+                self.error_log.error(
                     f"REST_DELETE_FAILED | path={path} | "
                     f"status={resp.status_code} | "
                     f"error={error_detail}"
@@ -213,7 +220,7 @@ class TestnetExchange:
             raise OperationalExchangeError("REST_TIMEOUT")
 
         except Exception as e:
-            self.log.critical(
+            self.error_log.error(
                 f"REST_DELETE_EXCEPTION | path={path} | error={e}"
             )
             raise OperationalExchangeError(
@@ -259,7 +266,7 @@ class TestnetExchange:
             return False
 
         if (time.time() * 1000) - self._last_user_event_ts > 60000:
-            self.log.critical("USER_STREAM_STALLED")
+            self.error_log.error("USER_STREAM_STALLED")
             return False
 
         return True
@@ -509,7 +516,7 @@ class TestnetExchange:
                 # DO NOT hard-fail if SL missing.
                 # Let reconciliation lifecycle decide recovery.
                 if sl_price is None:
-                    self.log.critical(
+                    self.error_log.error(
                         "POSITION_WITHOUT_ACTIVE_SL_DETECTED"
                     )
                     position.stop_loss = None
@@ -601,7 +608,7 @@ class TestnetExchange:
                     ws.settimeout(60)
 
                     self._user_stream_healthy = True
-                    self.log.info("USER_STREAM_CONNECTED")
+                    self.system_log.info("USER_STREAM_CONNECTED")
 
                     # Start keepalive thread
                     def _keepalive():
@@ -650,7 +657,7 @@ class TestnetExchange:
                         ws.close()
                     except Exception:
                         pass
-                    self.log.critical(
+                    self.error_log.error(
                         f"USER_STREAM_RESTARTING | {e}"
                     )
                     time.sleep(5)
@@ -834,7 +841,7 @@ class TestnetExchange:
             stop_price,
             filters["tickSize"],
         )
-        self.log.info(
+        self.system_log.info(
             f"ADAPTER_PLACE_SL | "
             f"symbol={symbol} | "
             f"side={side} | "
@@ -895,7 +902,7 @@ class TestnetExchange:
         new_stop_price: float,
     ):
 
-        self.log.info(
+        self.system_log.info(
             f"ADAPTER_UPDATE_SL | "
             f"symbol={symbol} | "
             f"side={side} | "

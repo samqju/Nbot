@@ -5,15 +5,19 @@
 # - Strategy observation
 # - TradeIntent validation
 # - Intent acceptance
+#
+# Logging Policy:
+# - INFO only (system.log)
+# - No anomaly / failure routing
+# - No operator notifications
+# - No authority mutation
 # ==========================================================
 
 from datetime import datetime, timezone
 from strategy.trade_intent import TradeIntent
 
-
 MAX_INTENT_AGE_SECONDS = 30
 RUNNING = "RUNNING"
-
 
 class IntentLifecycle:
 
@@ -35,6 +39,7 @@ class IntentLifecycle:
         self.system_log = system_log
         self.throttle = throttle
         self.entry_lifecycle = entry_lifecycle
+
         self._latest_intent = None
         self._accepted_intent = None
 
@@ -49,13 +54,25 @@ class IntentLifecycle:
     def consume_accepted_intent(self):
         """
         Returns and clears accepted intent.
-        (Matches original engine behavior.)
         """
         intent = self._accepted_intent
+        if intent is not None:
+            self.system_log.info(
+                f"INTENT_CONSUMED | "
+                f"symbol={intent.symbol} | "
+                f"direction={intent.direction} | "
+                f"pattern={intent.pattern}"
+            )
         self._accepted_intent = None
         return intent
 
     def clear_accepted_intent(self):
+        if self._accepted_intent is not None:
+            self.system_log.info(
+                f"INTENT_CLEARED | "
+                f"symbol={self._accepted_intent.symbol} | "
+                f"direction={self._accepted_intent.direction}"
+            )
         self._accepted_intent = None
 
     # --------------------------------------------------
@@ -63,9 +80,7 @@ class IntentLifecycle:
     # --------------------------------------------------
 
     def observe(self, *, market_state):
-        """
-        Observe strategy and accept valid intent if possible.
-        """
+
 
         # Engine must be idle
         if not self._engine_is_idle():
@@ -76,15 +91,18 @@ class IntentLifecycle:
         if intent is None:
             return
 
+        self.system_log.info(
+            f"INTENT_PROPOSED | "
+            f"symbol={intent.symbol} | "
+            f"direction={intent.direction} | "
+            f"pattern={intent.pattern}"
+        )
+
         # Market price guard
         if not market_state.has_price(intent.symbol):
-            self.throttle.log(
-                key=f"intent_no_price_{intent.symbol}",
-                level="info",
-                message=(
-                    f"INTENT_IGNORED | NO_MARKET_PRICE | "
-                    f"symbol={intent.symbol}"
-                ),
+            self.system_log.info(
+                f"INTENT_REJECTED_NO_PRICE | "
+                f"symbol={intent.symbol}"
             )
             return
 
@@ -92,23 +110,19 @@ class IntentLifecycle:
         is_valid, reason = self._validate(intent)
 
         if not is_valid:
-            self.throttle.log(
-                key=f"intent_rejected_{reason}",
-                level="info",
-                message=(
-                    f"INTENT_REJECTED | "
-                    f"symbol={intent.symbol} "
-                    f"direction={intent.direction} "
-                    f"reason={reason}"
-                ),
+            self.system_log.info(
+                f"INTENT_VALIDATION_FAILED | "
+                f"symbol={intent.symbol} | "
+                f"direction={intent.direction} | "
+                f"reason={reason}"
             )
             return
 
         # Accept
         self.system_log.info(
             f"INTENT_ACCEPTED | "
-            f"symbol={intent.symbol} "
-            f"direction={intent.direction} "
+            f"symbol={intent.symbol} | "
+            f"direction={intent.direction} | "
             f"pattern={intent.pattern}"
         )
 
@@ -133,7 +147,7 @@ class IntentLifecycle:
         # Engine state
         engine_state = self.state.get_state().get("engine_state")
         if engine_state != RUNNING:
-            return False, f"TRADING_DISABLED | {engine_state}"
+            return False, f"TRADING_DISABLED_{engine_state}"
 
         # No open position
         if self.state.get_open_position() is not None:
@@ -159,19 +173,19 @@ class IntentLifecycle:
     def _engine_is_idle(self) -> bool:
 
         if self.state.get_open_position() is not None:
+            self.system_log.info("INTENT_IDLE_BLOCKED_POSITION_OPEN")
             return False
 
         if not self.safety.is_safe():
+            self.system_log.info("INTENT_IDLE_BLOCKED_SAFETY")
             return False
 
         if self.entry_lifecycle.entry_in_progress:
+            self.system_log.info("INTENT_IDLE_BLOCKED_ENTRY_IN_PROGRESS")
             return False
 
         if self._accepted_intent is not None:
-            return False
-
-        # Entry lifecycle guard (original engine behavior)
-        if self.state.get_open_position() is not None:
+            self.system_log.info("INTENT_IDLE_BLOCKED_PENDING_INTENT")
             return False
 
         return True
