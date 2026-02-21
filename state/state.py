@@ -220,16 +220,6 @@ class StateManager:
         self.state["engine_state"] = engine_state
         self.state["engine_halt_reason"] = reason
 
-    # --------------------------------------------------
-    # Trading Disable (Non-Halting Mode)
-    # --------------------------------------------------
-    def disable_trading(self, reason: str):
-        if not reason:
-            raise ValueError("DISABLE_TRADING_REQUIRES_REASON")
-
-        self.state["engine_state"] = "TRADING_DISABLED"
-        self.state["engine_halt_reason"] = reason
-
     # ==================================================
     # INTERNAL VALIDATION
     # ==================================================
