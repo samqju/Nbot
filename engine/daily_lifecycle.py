@@ -21,16 +21,12 @@ class DailyLifecycle:
         state,
         risk,
         exchange,
-        safety,
         system_log,
-        error_log,
     ):
         self.state = state
         self.risk = risk
         self.exchange = exchange
-        self.safety = safety
         self.system_log = system_log
-        self.error_log = error_log
 
         self._last_utc_day = None
 
@@ -88,7 +84,7 @@ class DailyLifecycle:
         # --------------------------------------------------
 
         if daily_decision.halt:
-            self.error_log.error(
+            self.system_log.error(
                 f"DAILY_HALT_TRIGGERED | "
                 f"reason={daily_decision.reason} | "
                 f"realized={state_snapshot.get('daily_realized_pnl')} | "
@@ -96,7 +92,7 @@ class DailyLifecycle:
                 f"loss_floor={daily_decision.daily_loss_floor}"
             )
 
-            self.system_log.anomaly(
+            self.system_log.error(
                 f"DAILY_HALT | reason={daily_decision.reason}"
             )
             raise RuntimeError(daily_decision.reason)

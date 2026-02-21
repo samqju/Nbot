@@ -89,9 +89,8 @@ class TestnetExchange:
     # SECTION A — INITIALIZATION
     # ========================================================
 
-    def __init__(self, system_log, error_log):
+    def __init__(self, system_log):
         self.system_log = system_log
-        self.error_log = error_log
         self.session = requests.Session()
         self.session.headers.update({"X-MBX-APIKEY": API_KEY})
         self._symbol_filters = self._load_symbol_filters()
@@ -139,7 +138,7 @@ class TestnetExchange:
 
             if resp.status_code != 200:
                 error_detail = self._extract_binance_error(resp)
-                self.error_log.error(
+                self.system_log.error(
                     f"REST_GET_FAILED | path={path} | "
                     f"status={resp.status_code} | "
                     f"error={error_detail}"
@@ -168,7 +167,7 @@ class TestnetExchange:
 
             if resp.status_code != 200:
                 error_detail = self._extract_binance_error(resp)
-                self.error_log.error(
+                self.system_log.error(
                     f"REST_POST_FAILED | path={path} | "
                     f"status={resp.status_code} | "
                     f"error={error_detail}"
@@ -206,7 +205,7 @@ class TestnetExchange:
 
             if resp.status_code != 200:
                 error_detail = self._extract_binance_error(resp)
-                self.error_log.error(
+                self.system_log.error(
                     f"REST_DELETE_FAILED | path={path} | "
                     f"status={resp.status_code} | "
                     f"error={error_detail}"
@@ -220,7 +219,7 @@ class TestnetExchange:
             raise OperationalExchangeError("REST_TIMEOUT")
 
         except Exception as e:
-            self.error_log.error(
+            self.system_log.error(
                 f"REST_DELETE_EXCEPTION | path={path} | error={e}"
             )
             raise OperationalExchangeError(
@@ -266,7 +265,7 @@ class TestnetExchange:
             return False
 
         if (time.time() * 1000) - self._last_user_event_ts > 60000:
-            self.error_log.error("USER_STREAM_STALLED")
+            self.system_log.error("USER_STREAM_STALLED")
             return False
 
         return True
@@ -516,7 +515,7 @@ class TestnetExchange:
                 # DO NOT hard-fail if SL missing.
                 # Let reconciliation lifecycle decide recovery.
                 if sl_price is None:
-                    self.error_log.error(
+                    self.system_log.error(
                         "POSITION_WITHOUT_ACTIVE_SL_DETECTED"
                     )
                     position.stop_loss = None
@@ -657,7 +656,7 @@ class TestnetExchange:
                         ws.close()
                     except Exception:
                         pass
-                    self.error_log.error(
+                    self.system_log.error(
                         f"USER_STREAM_RESTARTING | {e}"
                     )
                     time.sleep(5)

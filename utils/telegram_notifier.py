@@ -30,12 +30,18 @@ MAX_MESSAGE_LENGTH = 4000  # Safety margin under Telegram 4096 limit
 AUTHORIZED_USER_ID = os.getenv("TELEGRAM_OPERATOR_USER_ID")
 
 _system_log = None
-_error_log = None
 
-def inject_loggers(system_log, error_log):
-    global _system_log, _error_log
+def inject_loggers(system_log):
+    global _system_log
     _system_log = system_log
-    _error_log = error_log
+
+def _log_error(msg: str):
+    if _system_log:
+        _system_log.error(msg)
+
+def _log_info(msg: str):
+    if _system_log:
+        _system_log.info(msg)
 
 # ----------------------------------------------------------
 # Spam Protection Controls
@@ -58,7 +64,7 @@ def _should_send(text: str, cooldown: int = DEFAULT_MESSAGE_COOLDOWN) -> bool:
     last_sent = _LAST_SENT_CACHE.get(message_hash)
 
     if last_sent and (now - last_sent) < cooldown:
-        _system_log.info("TELEGRAM_SUPPRESSED_DUPLICATE")
+        _log_info("TELEGRAM_SUPPRESSED_DUPLICATE")
         return False
 
     _LAST_SENT_CACHE[message_hash] = now
@@ -77,11 +83,11 @@ def configure(bot_token: str, chat_id: str) -> None:
     global _TELEGRAM_BOT_TOKEN, _TELEGRAM_CHAT_ID, _CONFIGURED
 
     if _CONFIGURED:
-        _system_log.info("TELEGRAM_ALREADY_CONFIGURED")
+        _log_info("TELEGRAM_ALREADY_CONFIGURED")
         return
 
     if not bot_token or not chat_id:
-        _error_log.error("TELEGRAM_CONFIG_INVALID")
+        _log_error("TELEGRAM_CONFIG_INVALID")
         return
 
     _TELEGRAM_BOT_TOKEN = bot_token
@@ -104,7 +110,7 @@ def _safe_post(url: str, payload: dict) -> Optional[dict]:
         )
 
         if resp.status_code != 200:
-            _error_log.error(
+            _log_error(
                 f"TELEGRAM_HTTP_ERROR | status={resp.status_code}"
             )
             return None
@@ -112,11 +118,11 @@ def _safe_post(url: str, payload: dict) -> Optional[dict]:
         return resp.json()
 
     except requests.exceptions.Timeout:
-        _error_log.error("TELEGRAM_TIMEOUT")
+        _log_error("TELEGRAM_TIMEOUT")
         return None
 
     except Exception as e:
-        _error_log.error(f"TELEGRAM_EXCEPTION | {e}")
+        _log_error(f"TELEGRAM_EXCEPTION | {e}")
         return None
 
 # ----------------------------------------------------------
@@ -250,7 +256,7 @@ def start_operator_listener(command_callback):
         return
 
     if not AUTHORIZED_USER_ID:
-        _error_log.error("AUTHORIZED_USER_ID_NOT_SET")
+        _log_error("AUTHORIZED_USER_ID_NOT_SET")
         return
 
     import threading
@@ -288,7 +294,7 @@ def start_operator_listener(command_callback):
                         command_callback(text.strip())
 
             except Exception as e:
-                _error_log.error(f"OPERATOR_LISTENER_ERROR | {e}")
+                _log_error(f"OPERATOR_LISTENER_ERROR | {e}")
                 time.sleep(5)
 
     threading.Thread(target=_poll, daemon=True).start()

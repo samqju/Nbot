@@ -1,3 +1,4 @@
+
 # ==========================================================
 # ENGINE CORE
 # SINGLE AUTHORITY RULE:
@@ -22,7 +23,6 @@ from config import (
 )
 from execution.exceptions import MarketStateError
 from risk.risk import RiskManager
-from safety.safety import SafetyManager
 from state.state import StateManager
 from strategy.strategy import Strategy
 from execution.exceptions import OperationalExchangeError
@@ -61,7 +61,7 @@ class TradingEngine:
     # Initialization
     # ------------------------------------------------------
 
-    def __init__(self, exchange, system_log, trade_log, error_log):
+    def __init__(self, exchange, system_log, trade_log):
 
         # --- Adapter contract sanity ---
         required_methods = [
@@ -90,12 +90,10 @@ class TradingEngine:
             RISK_PER_TRADE_USD=RISK_PER_TRADE_USD,
             RISK_TOLERANCE_PCT=RISK_TOLERANCE_PCT,
         )
-        self.safety = SafetyManager()
 
         # Loggers
         self.system_log = system_log
         self.trade_log = trade_log
-        self.error_log = error_log
 
         # Market data
         self.market_state = MarketState()
@@ -107,9 +105,7 @@ class TradingEngine:
         self.emergency = EmergencyHandler(
             exchange=self.exchange,
             state=self.state,
-            safety=self.safety,
             system_log=self.system_log,
-            error_log=self.error_log,
             trade_log=self.trade_log,
         )
 
@@ -117,7 +113,6 @@ class TradingEngine:
         self.universe = UniverseManager(
             strategy=self.strategy,
             system_log=self.system_log,
-            error_log=self.error_log,
         )
 
         # Daily Lifecycle
@@ -125,9 +120,7 @@ class TradingEngine:
             state=self.state,
             risk=self.risk,
             exchange=self.exchange,
-            safety=self.safety,
             system_log=self.system_log,
-            error_log=self.error_log,
         )
 
         # Entry lifecycle
@@ -135,10 +128,8 @@ class TradingEngine:
             exchange=self.exchange,
             state=self.state,
             risk=self.risk,
-            safety=self.safety,
             emergency=self.emergency,
             system_log=self.system_log,
-            error_log=self.error_log,
             trade_log=self.trade_log,
             throttle=self.throttle,
         )
@@ -147,7 +138,6 @@ class TradingEngine:
         self.intent_lifecycle = IntentLifecycle(
             state=self.state,
             strategy=self.strategy,
-            safety=self.safety,
             universe=self.universe,
             throttle=self.throttle,
             entry_lifecycle=self.entry_lifecycle,
@@ -159,10 +149,8 @@ class TradingEngine:
             exchange=self.exchange,
             state=self.state,
             risk=self.risk,
-            safety=self.safety,
             emergency=self.emergency,
             system_log=self.system_log,
-            error_log=self.error_log,
             trade_log=self.trade_log,
         )
 
@@ -171,9 +159,7 @@ class TradingEngine:
             exchange=self.exchange,
             state=self.state,
             risk=self.risk,
-            safety=self.safety,
             system_log=self.system_log,
-            error_log=self.error_log,
             trade_log=self.trade_log,
         )
 
@@ -193,7 +179,7 @@ class TradingEngine:
         try:
             self.state.load()
         except Exception as e:
-            self.error_log.error(
+            self.system_log.error(
                 f"STATE_LOAD_FAILED | {e}"
             )
             self.state.disable_trading("STATE_LOAD_FAILED")
@@ -213,7 +199,7 @@ class TradingEngine:
                 )
                 break
             except Exception as e:
-                self.error_log.error(
+                self.system_log.error(
                     f"EXCHANGE_CONNECT_FAILED | "
                     f"attempt={attempt} | error={e}"
                 )
@@ -244,7 +230,7 @@ class TradingEngine:
                 )
 
         except Exception as e:
-            self.error_log.error(
+            self.system_log.error(
                 f"RECONCILIATION_STARTUP_FAILED | {e}"
             )
             self.state.disable_trading("RECONCILIATION_STARTUP_FAILED")
@@ -259,7 +245,6 @@ class TradingEngine:
         self.universe.maybe_reload(
             exchange=self.exchange,
             state=self.state,
-            safety=self.safety,
             force=True
         )
 
@@ -278,7 +263,7 @@ class TradingEngine:
                 )
                 break
             except Exception as e:
-                self.error_log.error(
+                self.system_log.error(
                     f"LEVERAGE_ENFORCEMENT_FAILED | "
                     f"attempt={attempt} | error={e}"
                 )
@@ -307,7 +292,7 @@ class TradingEngine:
                 )
                 break
             except Exception as e:
-                self.error_log.error(
+                self.system_log.error(
                     f"UNIVERSE_WARMUP_FAILED | "
                     f"attempt={attempt} | error={e}"
                 )
@@ -355,16 +340,7 @@ class TradingEngine:
                     self.universe.maybe_reload(
                         exchange=self.exchange,
                         state=self.state,
-                        safety=self.safety,
                     )
-
-                    # ------------------------------------------
-                    # Safety Gate
-                    # ------------------------------------------
-                    if not self.safety.is_safe():
-                        self.state.disable_trading("SAFETY_TRIGGERED")
-                        self.state.save()
-                        continue
 
                     # ------------------------------------------
                     # Update Market State
@@ -410,7 +386,7 @@ class TradingEngine:
                                 self.state.save()
                                 last_persist_ms = now_ms
                             except Exception as e:
-                                self.error_log.error(
+                                self.system_log.error(
                                     f"STATE_SAVE_FAILED | {e}"
                                 )
                                 self.state.disable_trading("STATE_SAVE_FAILED")
@@ -468,7 +444,7 @@ class TradingEngine:
                             self.state.save()
                             last_persist_ms = now_ms
                         except Exception as e:
-                            self.error_log.error(
+                            self.system_log.error(
                                 f"STATE_SAVE_FAILED | {e}"
                             )
                             self.state.disable_trading("STATE_SAVE_FAILED")
@@ -478,7 +454,7 @@ class TradingEngine:
                 # If price stream ends cleanly (should not happen),
                 # restart it without killing engine.
                 # --------------------------------------------------
-                self.error_log.error(
+                self.system_log.error(
                     "PRICE_STREAM_STOPPED_UNEXPECTEDLY | restarting"
                 )
                 time.sleep(2)
@@ -486,21 +462,21 @@ class TradingEngine:
 
             except MarketStateError as e:
                 # Market rejection (e.g. percent price filter)
-                self.error_log.error(
+                self.system_log.error(
                     f"MARKET_STATE_REJECTION | reason={str(e)}"
                 )
                 time.sleep(1)
                 continue
 
             except OperationalExchangeError as e:
-                self.error_log.error(f"EXCHANGE_ERROR | {e}")
+                self.system_log.error(f"EXCHANGE_ERROR | {e}")
                 self.state.disable_trading("EXCHANGE_ERROR")
                 self.state.save()
                 time.sleep(2)
                 continue
 
             except Exception as e:
-                self.error_log.error(f"FATAL_ENGINE_ERROR | {e}")
+                self.system_log.error(f"FATAL_ENGINE_ERROR | {e}")
                 self.state.disable_trading("FATAL_ENGINE_ERROR")
                 self.state.save()
                 time.sleep(2)
@@ -521,7 +497,6 @@ class TradingEngine:
             action = cmd.get("action")
 
             if action == "ENABLE_TRADING":
-                self.safety.reset()
                 self.state.set_engine_state(RUNNING, reason=None)
                 self.state.save()
                 result = self.reconciliation.run(
@@ -540,7 +515,7 @@ class TradingEngine:
                 )
 
         except Exception as e:
-            self.error_log.error(
+            self.system_log.error(
                 f"OPERATOR_COMMAND_ERROR | {e}"
             )
 
@@ -553,7 +528,6 @@ class TradingEngine:
     def _handle_operator_command(self, text: str):
 
         if text == "/enable":
-            self.safety.reset()
             self.state.set_engine_state("RUNNING", reason=None)
             self.state.save()
             result = self.reconciliation.run(

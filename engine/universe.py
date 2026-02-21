@@ -23,10 +23,9 @@ UNIVERSE_RELOAD_INTERVAL_SEC = 30 * 60  # 30 minutes
 
 class UniverseManager:
 
-    def __init__(self, strategy, system_log, error_log):
+    def __init__(self, strategy, system_log):
         self.strategy = strategy
         self.system_log = system_log
-        self.error_log = error_log
         self.symbols = []
         self.generated_at = None
         self._last_reload_ts = 0
@@ -162,7 +161,7 @@ class UniverseManager:
     # ======================================================
     # HOT RELOAD (MEMORY-DRIVEN)
     # ======================================================
-    def maybe_reload(self, *, exchange, state, safety, force=False):
+    def maybe_reload(self, *, exchange, state, force=False):
 
         now = time.time()
 
@@ -179,7 +178,7 @@ class UniverseManager:
         try:
             new_symbols = self._build_universe()
         except Exception as e:
-            self.error_log.error(f"UNIVERSE_BUILD_FAILED | {e}")
+            self.system_log.error(f"UNIVERSE_BUILD_FAILED | {e}")
             return
 
         # No change
@@ -193,9 +192,6 @@ class UniverseManager:
 
         if state.get_open_position() is not None:
             self.system_log.info("UNIVERSE_RELOAD_SKIPPED_POSITION_OPEN")
-            return
-
-        if not safety.is_safe():
             return
 
         engine_state = state.get_state().get("engine_state")

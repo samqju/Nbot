@@ -45,5 +45,3 @@ def trade_logger():
     return _build_logger("trades", "trades.log")
 
 
-def error_logger():
-    return _build_logger("errors", "errors.log")

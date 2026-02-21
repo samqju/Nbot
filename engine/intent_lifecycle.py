@@ -26,7 +26,6 @@ class IntentLifecycle:
         *,
         state,
         strategy,
-        safety,
         universe,
         system_log,
         throttle,
@@ -34,7 +33,6 @@ class IntentLifecycle:
     ):
         self.state = state
         self.strategy = strategy
-        self.safety = safety
         self.universe = universe
         self.system_log = system_log
         self.throttle = throttle
@@ -174,10 +172,6 @@ class IntentLifecycle:
 
         if self.state.get_open_position() is not None:
             self.system_log.info("INTENT_IDLE_BLOCKED_POSITION_OPEN")
-            return False
-
-        if not self.safety.is_safe():
-            self.system_log.info("INTENT_IDLE_BLOCKED_SAFETY")
             return False
 
         if self.entry_lifecycle.entry_in_progress:

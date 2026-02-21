@@ -40,22 +40,18 @@ class EntryLifecycle:
         exchange,
         state,
         risk,
-        safety,
         emergency,
         system_log,
-        error_log,
         trade_log,
         throttle,
     ):
         self.exchange = exchange
         self.state = state
         self.risk = risk
-        self.safety = safety
         self.emergency = emergency
         self.system_log = system_log
         self.trade_log = trade_log
         self.throttle = throttle
-        self.error_log = error_log
         self._entry_in_progress = False
 
     @property
@@ -72,9 +68,6 @@ class EntryLifecycle:
             return False
 
         if self._entry_in_progress:
-            return False
-
-        if not self.safety.is_safe():
             return False
 
         self._entry_in_progress = True
@@ -101,7 +94,7 @@ class EntryLifecycle:
         entry_price = market_state.get_price(symbol)
 
         if entry_price <= 0:
-            error_log.error(
+            self.system_log.error(
                 f"ENTRY_BLOCKED_INVALID_PRICE | "
                 f"symbol={symbol} | price={entry_price}"
             )
@@ -142,7 +135,7 @@ class EntryLifecycle:
         balance = self.exchange.get_available_balance()
         # balance stored via update_after_trade later
         if balance < required_margin:
-            error_log.error(
+            self.system_log.error(
                 f"ENTRY_BLOCKED_MARGIN | "
                 f"symbol={symbol} | "
                 f"balance={balance} | "
@@ -162,7 +155,7 @@ class EntryLifecycle:
         )
 
         if ack.filled_qty <= 0:
-            error_log.error(
+            self.system_log.error(
                 f"ENTRY_NOT_FILLED | symbol={symbol}"
             )
             return False
@@ -173,7 +166,7 @@ class EntryLifecycle:
 
         if not ack.fully_filled:
 
-            error_log.error(
+            self.system_log.error(
                 f"PARTIAL_FILL | "
                 f"symbol={symbol} | "
                 f"requested={ack.requested_qty} | "
@@ -272,7 +265,7 @@ class EntryLifecycle:
                 verified = self.exchange.get_position()
 
                 if verified is None:
-                    error_log.error(
+                    self.system_log.error(
                         f"INITIAL_SL_VERIFY_POSITION_NONE | "
                         f"symbol={symbol} | "
                         f"attempt={attempt+1}"
@@ -293,7 +286,7 @@ class EntryLifecycle:
                     )
                     break
                 else:
-                    error_log.error(
+                    self.system_log.error(
                         f"INITIAL_SL_VERIFICATION_MISMATCH | "
                         f"symbol={symbol} | "
                         f"expected={expected_sl} | "
@@ -301,7 +294,7 @@ class EntryLifecycle:
                     )
 
             except Exception as e:
-                error_log.error(
+                self.system_log.error(
                     f"INITIAL_SL_PLACEMENT_EXCEPTION | "
                     f"symbol={symbol} | "
                     f"attempt={attempt+1} | "
