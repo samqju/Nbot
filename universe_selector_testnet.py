@@ -86,6 +86,20 @@ def build_universe():
 
         symbol = t.get("symbol")
 
+        # Reject non-ascii or weird symbols
+        if not isinstance(symbol, str):
+            continue
+
+        if not symbol.isascii():
+            continue
+
+        if not symbol.endswith("USDT"):
+            continue
+
+        base = symbol.replace("USDT", "")
+        if not base.isalnum():
+            continue
+
         if symbol not in supported:
             continue
 

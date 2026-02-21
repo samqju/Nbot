@@ -200,19 +200,37 @@ class TradingEngine:
             self.state.save()
             return
 
-        try:
-            self.exchange.connect()
-        except Exception as e:
-            self.error_log.error(
-                f"EXCHANGE_CONNECT_FAILED | error={e}"
-            )
-            send_critical(
-                "EXCHANGE CONNECT FAILED",
-                f"{e}\n\nEngine did not start."
-            )
-            self.safety.halt("EXCHANGE_CONNECT_FAILED")
-            return
+        # Connecting to Exchange
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                self.system_log.info(
+                    f"EXCHANGE_CONNECT_ATTEMPT | attempt={attempt}"
+                )
+                self.exchange.connect()
+                self.system_log.info(
+                    "EXCHANGE_CONNECT_SUCCESS"
+                )
+                break
+            except Exception as e:
+                self.error_log.error(
+                    f"EXCHANGE_CONNECT_FAILED | "
+                    f"attempt={attempt} | error={e}"
+                )
+                if attempt < max_attempts:
+                    time.sleep(attempt)
+                else:
+                    send_critical(
+                        "EXCHANGE CONNECT FAILED",
+                        f"{e}\n\nTrading disabled."
+                    )
+                    self.state.disable_trading(
+                        "EXCHANGE_CONNECT_FAILED"
+                    )
+                    self.state.save()
+                    return
 
+        # State Loading
         engine_state = self.state.get_state().get("engine_state")
 
         try:
@@ -235,33 +253,72 @@ class TradingEngine:
 
         self.universe.load()
 
-        try:
-            self.exchange.enforce_leverage_for_universe(
-                self.universe.symbols
-            )
-            self.system_log.info(
-                f"LEVERAGE_ENFORCED | leverage={LEVERAGE}"
-            )
-        except Exception as e:
-            self.error_log.error(
-                f"LEVERAGE_ENFORCEMENT_FAILED | {e}"
-            )
-            send_critical(
-                "LEVERAGE ENFORCEMENT FAILED",
-                f"{e}\n\nEngine halted."
-            )
-            self.safety.halt("LEVERAGE_ENFORCEMENT_FAILED")
-            return
+        # --------------------------------------------------
+        # Force Governance Refresh on Startup
+        # --------------------------------------------------
+        self.universe.maybe_reload(
+            exchange=self.exchange,
+            state=self.state,
+            safety=self.safety,
+            force=True
+        )
 
-        try:
-            self.universe.warmup(self.exchange)
-        except Exception as e:
-            self.error_log.error(
-                f"UNIVERSE_WARMUP_FAILED | {e}"
-            )
-            self.state.disable_trading("UNIVERSE_WARMUP_FAILED")
-            self.state.save()
-            return
+        # Leverage Deployment
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                self.system_log.info(
+                    f"LEVERAGE_ENFORCEMENT_ATTEMPT | attempt={attempt}"
+                )
+                self.exchange.enforce_leverage_for_universe(
+                    self.universe.symbols
+                )
+                self.system_log.info(
+                    f"LEVERAGE_ENFORCED | leverage={LEVERAGE}"
+                )
+                break
+            except Exception as e:
+                self.error_log.error(
+                    f"LEVERAGE_ENFORCEMENT_FAILED | "
+                    f"attempt={attempt} | error={e}"
+                )
+                if attempt < max_attempts:
+                    time.sleep(attempt)
+                else:
+                    send_critical(
+                        "LEVERAGE ENFORCEMENT FAILED",
+                        f"{e}\n\nTrading disabled."
+                    )
+                    self.state.disable_trading(
+                        "LEVERAGE_ENFORCEMENT_FAILED"
+                    )
+                    self.state.save()
+                    return
+
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                self.system_log.info(
+                    f"UNIVERSE_WARMUP_ATTEMPT | attempt={attempt}"
+                )
+                self.universe.warmup(self.exchange)
+                self.system_log.info(
+                    "UNIVERSE_WARMUP_SUCCESS"
+                )
+                break
+            except Exception as e:
+                self.error_log.error(
+                    f"UNIVERSE_WARMUP_FAILED | "
+                    f"attempt={attempt} | error={e}"
+                )
+                if attempt < max_attempts:
+                    time.sleep(attempt)
+                else:
+                    self.state.disable_trading(
+                        "UNIVERSE_WARMUP_FAILED"
+                    )
+                    self.state.save()
+                    return
 
         send_info(
             "ENGINE STARTED",
