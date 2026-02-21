@@ -29,6 +29,7 @@ class PositionLifecycle:
         state,
         risk,
         emergency,
+        reconciliation,
         system_log,
         trade_log,
     ):
@@ -36,6 +37,7 @@ class PositionLifecycle:
         self.state = state
         self.risk = risk
         self.emergency = emergency
+        self.reconciliation = reconciliation
         self.system_log = system_log
         self.trade_log = trade_log
         self.exit_in_progress = False
@@ -67,13 +69,16 @@ class PositionLifecycle:
         # --------------------------------------------------
 
         if exchange_position and exchange_position.stop_loss is None:
-
-            self.system_log.error(
-                f"LIVE_SL_MISSING_DETECTED | "
-                f"symbol={exchange_position.symbol}"
-            )
-
-            raise RuntimeError("LIVE_SL_MISSING")
+            if not getattr(self, "_sl_recovery_in_progress", False):
+                self._sl_recovery_in_progress = True
+                self.system_log.error(
+                    f"LIVE_SL_MISSING_DETECTED | symbol={exchange_position.symbol}"
+                )
+                try:
+                    self.reconciliation.run(reason="LIVE_SL_MISSING")
+                finally:
+                    self._sl_recovery_in_progress = False
+            return
 
         # --------------------------------------------------
         # External close detected

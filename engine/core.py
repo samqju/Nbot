@@ -144,21 +144,22 @@ class TradingEngine:
             system_log=self.system_log,
         )
 
+        # Reconciliation Lifecycle
+        self.reconciliation = ReconciliationLifecycle(
+            exchange=self.exchange,
+            state=self.state,
+            risk=self.risk,
+            system_log=self.system_log,
+            trade_log=self.trade_log,
+        )
+
         # Position Lifecycle
         self.position_lifecycle = PositionLifecycle(
             exchange=self.exchange,
             state=self.state,
             risk=self.risk,
             emergency=self.emergency,
-            system_log=self.system_log,
-            trade_log=self.trade_log,
-        )
-
-        # Reconciliation Lifecycle
-        self.reconciliation = ReconciliationLifecycle(
-            exchange=self.exchange,
-            state=self.state,
-            risk=self.risk,
+            reconciliation=self.reconciliation,
             system_log=self.system_log,
             trade_log=self.trade_log,
         )

@@ -230,8 +230,8 @@ def format_trade_panel(
         f"📊 <b>TRADE {status}</b>\n\n"
         f"Symbol: {symbol}\n"
         f"Side: {side}\n"
-        f"Entry: {entry_price:.4f}\n"
-        f"Stop: {stop_loss:.4f}\n"
+        f"Entry: {entry_price:.8f}\n"
+        f"Stop: {stop_loss:.8f}\n"
         f"Qty: {qty:.6f}\n"
         f"Risk: {risk_usd:.2f} USD\n"
     )

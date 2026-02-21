@@ -194,10 +194,6 @@ class UniverseManager:
             self.system_log.info("UNIVERSE_RELOAD_SKIPPED_POSITION_OPEN")
             return
 
-        engine_state = state.get_state().get("engine_state")
-        if engine_state != "RUNNING":
-            return
-
         # --------------------------------------------------
         # Apply Delta
         # --------------------------------------------------
