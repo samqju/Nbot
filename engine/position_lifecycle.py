@@ -30,6 +30,7 @@ class PositionLifecycle:
         risk,
         emergency,
         reconciliation,
+        universe,
         system_log,
         trade_log,
     ):
@@ -38,6 +39,7 @@ class PositionLifecycle:
         self.risk = risk
         self.emergency = emergency
         self.reconciliation = reconciliation
+        self.universe = universe
         self.system_log = system_log
         self.trade_log = trade_log
         self.exit_in_progress = False
@@ -350,3 +352,17 @@ class PositionLifecycle:
         self.state.save()
         self.exit_in_progress = False
         self._commitment_reached = False
+
+        # --------------------------------------------------
+        # Governance Refresh (Event-Driven)
+        # --------------------------------------------------
+        try:
+            self.universe.maybe_reload(
+                exchange=self.exchange,
+                state=self.state,
+                force=True,
+            )
+        except Exception as e:
+            self.system_log.error(
+                f"UNIVERSE_RELOAD_AFTER_CLOSE_FAILED | {e}"
+            )

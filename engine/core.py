@@ -1,4 +1,3 @@
-
 # ==========================================================
 # ENGINE CORE
 # SINGLE AUTHORITY RULE:
@@ -160,6 +159,7 @@ class TradingEngine:
             risk=self.risk,
             emergency=self.emergency,
             reconciliation=self.reconciliation,
+            universe=self.universe,
             system_log=self.system_log,
             trade_log=self.trade_log,
         )
@@ -346,14 +346,6 @@ class TradingEngine:
                     # Operator Command Check
                     # ------------------------------------------
                     self._process_operator_command()
-
-                    # ------------------------------------------
-                    # Universe Hot Reload Check
-                    # ------------------------------------------
-                    self.universe.maybe_reload(
-                        exchange=self.exchange,
-                        state=self.state,
-                    )
 
                     # ------------------------------------------
                     # Update Market State

@@ -12,14 +12,11 @@
 
 import json
 import os
-import time
 from datetime import datetime, timezone
 from utils.telegram_notifier import send_info
 
 UNIVERSE_SNAPSHOT_FILE = "universe_snapshot.json"
 EXPECTED_UNIVERSE_SIZE = 30
-UNIVERSE_RELOAD_INTERVAL_SEC = 30 * 60  # 30 minutes
-
 
 class UniverseManager:
 
@@ -28,7 +25,6 @@ class UniverseManager:
         self.system_log = system_log
         self.symbols = []
         self.generated_at = None
-        self._last_reload_ts = 0
 
     # ======================================================
     # STARTUP LOAD (RECOVERY FROM SNAPSHOT)
@@ -162,14 +158,6 @@ class UniverseManager:
     # HOT RELOAD (MEMORY-DRIVEN)
     # ======================================================
     def maybe_reload(self, *, exchange, state, force=False):
-
-        now = time.time()
-
-        if not force:
-            if now - self._last_reload_ts < UNIVERSE_RELOAD_INTERVAL_SEC:
-                return
-
-        self._last_reload_ts = now
 
         # --------------------------------------------------
         # Build latest governance state (in memory)
