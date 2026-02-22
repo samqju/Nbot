@@ -43,6 +43,8 @@ class ReconciliationLifecycle:
         qty: float,
         stop_loss,
         entry_timestamp=None,
+        highest_profit_usd: float = 0.0,
+        last_locked_R: int = 0,
     ):
         return {
             "symbol": symbol,
@@ -51,8 +53,8 @@ class ReconciliationLifecycle:
             "qty": qty,
             "stop_loss": stop_loss,
             "risk_usd": self.risk.RISK_PER_TRADE_USD,
-            "highest_profit_usd": 0.0,
-            "last_locked_R": 0,
+            "highest_profit_usd": highest_profit_usd,
+            "last_locked_R": last_locked_R,
             "entry_timestamp": entry_timestamp,
         }
 
@@ -168,10 +170,19 @@ class ReconciliationLifecycle:
             # Position exists
             # --------------------------------------------------
             else:
-                existing = self.state.get_open_position()
+                # Preserve PRE-REBUILD state snapshot
+                previous_state = self.state.get_open_position()
                 restored_ts = None
-                if existing:
-                    restored_ts = existing.get("entry_timestamp")
+                # Preserve trailing state BEFORE rebuild
+                if previous_state:
+                    highest_profit_usd = previous_state.get("highest_profit_usd", 0.0)
+                    last_locked_R = previous_state.get("last_locked_R", 0)
+                else:
+                    highest_profit_usd = 0.0
+                    last_locked_R = 0
+
+                if previous_state:
+                    restored_ts = previous_state.get("entry_timestamp")
 
                 # CRITICAL FIX: If timestamp missing, reconstruct safely
                 if restored_ts is None:
@@ -184,34 +195,16 @@ class ReconciliationLifecycle:
                     qty=position.qty,
                     stop_loss=position.stop_loss,
                     entry_timestamp=restored_ts,
+                    highest_profit_usd=highest_profit_usd,
+                    last_locked_R=last_locked_R,
                 )
 
                 # --------------------------------------------------
-                # Preserve trailing state (MONEY FIX)
+                # Capture PREVIOUS SL before state overwrite
                 # --------------------------------------------------
-                if existing:
-                    rebuilt["highest_profit_usd"] = existing.get(
-                        "highest_profit_usd", 0.0
-                    )
-                    rebuilt["last_locked_R"] = existing.get(
-                        "last_locked_R", 0
-                    )
-
-                # Ensure stop_loss key always exists
-                if rebuilt.get("stop_loss") is None:
-                    self.system_log.error(
-                        "RECON_POSITION_WITHOUT_SL | recovery required"
-                    )
-
-                existing = self.state.get_open_position()
-
-                if existing:
-                    rebuilt["highest_profit_usd"] = existing.get(
-                        "highest_profit_usd", 0.0
-                    )
-                    rebuilt["last_locked_R"] = existing.get(
-                        "last_locked_R", 0
-                    )
+                previous_sl = None
+                if previous_state and previous_state.get("stop_loss") is not None:
+                    previous_sl = previous_state.get("stop_loss")
 
                 self.state.update_open_position(rebuilt)
 
@@ -227,34 +220,63 @@ class ReconciliationLifecycle:
                     # --------------------------------------------------
                     # FIX: Preserve Trailed SL If State Exists
                     # --------------------------------------------------
-                    existing = self.state.get_open_position()
-
-                    if existing and existing.get("stop_loss") is not None:
-                        intended_sl = existing["stop_loss"]
+                    # Use preserved SL from previous state if available
+                    if previous_sl is not None:
+                        intended_sl = previous_sl
                         self.system_log.info(
                             f"RECOVERY_USING_STATE_SL | "
                             f"symbol={position.symbol} | "
                             f"state_sl={intended_sl}"
                         )
                     else:
-                        # Fallback only if state missing
-                        entry_plan = self.risk.build_entry_plan(
-                            direction=position.side,
-                            entry_price=position.entry_price,
-                        )
+                        # --------------------------------------------------
+                        # Deterministic SL reconstruction from R memory
+                        # --------------------------------------------------
 
-                        intended_sl = entry_plan.initial_sl
-                        self.system_log.error(
-                            f"RECOVERY_FALLBACK_INITIAL_SL | "
-                            f"symbol={position.symbol} | "
-                            f"initial_sl={intended_sl}"
-                        )
+                        reconstructed = False
 
-                    self.system_log.info(
-                        f"RECOVERY_SL_ATTEMPT | "
-                        f"symbol={position.symbol} | "
-                        f"intended_sl={intended_sl}"
-                    )
+                        last_locked_R = rebuilt.get("last_locked_R", 0)
+
+                        if last_locked_R and last_locked_R > 0:
+
+                            locked_R = last_locked_R - 1
+
+                            if locked_R >= 0:
+
+                                risk_usd = rebuilt["risk_usd"]
+                                qty = rebuilt["qty"]
+                                entry = rebuilt["entry_price"]
+
+                                locked_profit_usd = locked_R * risk_usd
+
+                                if position.side == "LONG":
+                                    intended_sl = entry + (locked_profit_usd / qty)
+                                else:
+                                    intended_sl = entry - (locked_profit_usd / qty)
+
+                                reconstructed = True
+
+                                self.system_log.info(
+                                    f"RECOVERY_RECONSTRUCTED_SL | "
+                                    f"symbol={position.symbol} | "
+                                    f"last_locked_R={last_locked_R} | "
+                                    f"intended_sl={intended_sl}"
+                                )
+
+                        if not reconstructed:
+
+                            entry_plan = self.risk.build_entry_plan(
+                                direction=position.side,
+                                entry_price=position.entry_price,
+                            )
+
+                            intended_sl = entry_plan.initial_sl
+
+                            self.system_log.error(
+                                f"RECOVERY_FALLBACK_INITIAL_SL | "
+                                f"symbol={position.symbol} | "
+                                f"initial_sl={intended_sl}"
+                            )
 
                     live_price = self.exchange.get_last_price(
                         position.symbol
@@ -269,7 +291,7 @@ class ReconciliationLifecycle:
                             "RECOVERY_SL_ALREADY_BREACHED"
                         )
 
-                        raise RuntimeError("REASON")
+                        raise RuntimeError("RECOVERY_SL_ALREADY_BREACHED")
 
                     try:
                         self.exchange.place_initial_sl(
@@ -282,7 +304,7 @@ class ReconciliationLifecycle:
                         self.system_log.error(
                             f"RECOVERY_SL_PLACEMENT_FAILED | {e}"
                         )
-                        raise RuntimeError("REASON")
+                        raise RuntimeError("RECOVERY_SL_PLACEMENT_FAILED")
 
                     verified = self.exchange.get_position()
 
@@ -290,9 +312,9 @@ class ReconciliationLifecycle:
                         self.system_log.error(
                             "RECOVERY_SL_VERIFICATION_FAILED"
                         )
-                        raise RuntimeError("REASON")
+                        raise RuntimeError("RECOVERY_SL_VERIFICATION_FAILED")
 
-                    self.state.state["open_position"]["stop_loss"] = intended_sl
+                    self.state.update_stop_loss(verified.stop_loss)
                     self.system_log.info("RECOVERY_SL_SUCCESS")
                     self.system_log.info(
                         f"RECOVERY_SL_CONFIRMED | "
@@ -304,14 +326,15 @@ class ReconciliationLifecycle:
                 # Telegram Recovery
                 # --------------------------------------------------
                 if (
-                    self.state.state.get("active_trade_panel_message_id")
+                    self.state.get_state().get("active_trade_panel_message_id")
                     is None
                 ):
+                    current_state = self.state.get_open_position()
                     panel = format_trade_panel(
                         symbol=position.symbol,
                         side=position.side,
                         entry_price=position.entry_price,
-                        stop_loss=position.stop_loss,
+                        stop_loss=current_state["stop_loss"],
                         qty=position.qty,
                         risk_usd=rebuilt["risk_usd"],
                         status="OPEN (RECOVERED)",
@@ -338,6 +361,6 @@ class ReconciliationLifecycle:
             self.system_log.error(
                 f"RECONCILIATION_FAILED | error={e}"
             )
-            raise RuntimeError("REASON")
+            raise RuntimeError("RECONCILIATION_FAILED")
         # Success path
         return None
