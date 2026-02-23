@@ -148,6 +148,7 @@ class TradingEngine:
             exchange=self.exchange,
             state=self.state,
             risk=self.risk,
+            universe=self.universe,
             system_log=self.system_log,
             trade_log=self.trade_log,
         )
@@ -165,7 +166,11 @@ class TradingEngine:
         )
 
         self.system_log.info("ENGINE_INITIALIZED")
-
+        # ------------------------------------------
+        # Startup Tick Barrier
+        # ------------------------------------------
+        self._symbols_seen = set()
+        self._strategy_activated = False
     # --------------------------------------------------
     # Start
     # --------------------------------------------------
@@ -355,6 +360,24 @@ class TradingEngine:
                         price=tick.price,
                         timestamp=tick.timestamp,
                     )
+                    # --------------------------------------------------
+                    # STARTUP TICK BARRIER
+                    # Delay strategy activation until all symbols seen
+                    # --------------------------------------------------
+                    if not self._strategy_activated:
+
+                        if tick.symbol in self.universe.symbols:
+                            self._symbols_seen.add(tick.symbol)
+
+                        if len(self._symbols_seen) == len(self.universe.symbols):
+                            self._strategy_activated = True
+                            self.system_log.info(
+                                "STARTUP_TICK_BARRIER_PASSED | "
+                                f"symbols={len(self._symbols_seen)}"
+                            )
+                        else:
+                            # Still collecting first ticks
+                            continue
 
                     open_position = self.state.get_open_position()
 

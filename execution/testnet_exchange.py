@@ -788,24 +788,39 @@ class TestnetExchange:
 
         filled_qty = float(data["executedQty"])
 
-        if filled_qty > 0:
+        # --------------------------------------------------------
+        # Testnet Quirk Handling:
+        # If executedQty == 0, derive fill from position delta
+        # --------------------------------------------------------
+
+        if filled_qty <= 0:
+
+            # Poll position briefly for update
+            timeout = time.time() + 3
+            delta_qty = 0.0
+
+            while time.time() < timeout:
+
+                current_pos = self.get_position()
+
+                if current_pos and current_pos.symbol == symbol:
+                    delta_qty = current_pos.qty - pre_qty
+
+                    if delta_qty > 0:
+                        filled_qty = delta_qty
+                        avg_price = current_pos.entry_price
+                        break
+
+                time.sleep(0.2)
+
+            if filled_qty <= 0:
+                raise OperationalExchangeError("ENTRY_NOT_FILLED")
+        else:
             cum_quote = float(data["cumQuote"])
             if cum_quote > 0:
                 avg_price = cum_quote / filled_qty
             else:
                 avg_price = price
-        else:
-            # Wait up to 3 seconds for WS update
-            timeout = time.time() + 3
-            while time.time() < timeout:
-                pos = self.get_position()
-                if pos and pos.symbol == symbol:
-                    filled_qty = pos.qty
-                    avg_price = pos.entry_price
-                    break
-                time.sleep(0.2)
-            else:
-                raise OperationalExchangeError("ENTRY_NOT_FILLED")
 
         fully_filled = abs(filled_qty - requested_qty) < 1e-12
 

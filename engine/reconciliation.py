@@ -20,15 +20,16 @@ class ReconciliationLifecycle:
         exchange,
         state,
         risk,
+        universe,
         system_log,
         trade_log,
     ):
         self.exchange = exchange
         self.state = state
         self.risk = risk
+        self.universe = universe
         self.system_log = system_log
         self.trade_log = trade_log
-
 
     # --------------------------------------------------
     # Canonical Open Position Builder
@@ -165,6 +166,22 @@ class ReconciliationLifecycle:
                     open_position=None,
                     last_trade=None,
                 )
+
+                # --------------------------------------------------
+                # Governance Refresh on Flat Transition
+                # Only trigger if reconciliation actually closed a position
+                # --------------------------------------------------
+                if existing:
+                    try:
+                        self.universe.maybe_reload(
+                            exchange=self.exchange,
+                            state=self.state,
+                            force=True,
+                        )
+                    except Exception as e:
+                        self.system_log.error(
+                            f"UNIVERSE_RELOAD_AFTER_RECON_CLOSE_FAILED | {e}"
+                        )
 
             # --------------------------------------------------
             # Position exists
