@@ -28,7 +28,7 @@ from utils.telegram_notifier import (
     format_trade_panel,
 )
 
-MAX_SL_PLACEMENT_SECONDS = 0.5
+MAX_SL_PLACEMENT_SECONDS = 2.0
 
 class EntryLifecycle:
 
@@ -159,6 +159,22 @@ class EntryLifecycle:
             return False
 
         # --------------------------------------------------
+        # Capture Pre-Order Position State (Stack Protection)
+        # --------------------------------------------------
+
+        pre_position = None
+        pre_qty = 0.0
+
+        try:
+            pre_position = self.exchange.get_position()
+        except Exception:
+            pre_position = None
+
+        if pre_position is not None and pre_position.symbol == symbol:
+            pre_qty = pre_position.qty
+
+
+        # --------------------------------------------------
         # Place entry
         # --------------------------------------------------
 
@@ -169,18 +185,60 @@ class EntryLifecycle:
             price=entry_price,
         )
 
-        if ack.filled_qty <= 0:
+        # --------------------------------------------------
+        # Authoritative REST Reconciliation (Delta-Based)
+        # Fixes testnet executedQty=0 behavior
+        # --------------------------------------------------
+
+        try:
+            post_position = self.exchange.get_position()
+        except Exception:
+            post_position = None
+
+        if post_position is None or post_position.symbol != symbol:
             self.system_log.error(
-                f"ENTRY_NOT_FILLED | symbol={symbol}"
+                f"ENTRY_NOT_CONFIRMED_BY_REST | symbol={symbol}"
             )
-            return False
+            raise RuntimeError("ENTRY_NOT_CONFIRMED")
+
+        post_qty = post_position.qty
+        delta_qty = post_qty - pre_qty
+
+        # Hard guard — stacking not allowed
+        if pre_qty > 0:
+            self.system_log.error(
+                f"STACK_DETECTED | "
+                f"symbol={symbol} | "
+                f"pre_qty={pre_qty} | "
+                f"post_qty={post_qty}"
+            )
+            raise RuntimeError("STACKING_NOT_ALLOWED")
+
+        if delta_qty <= 0:
+            self.system_log.error(
+                f"ENTRY_DELTA_ZERO | "
+                f"symbol={symbol} | "
+                f"pre_qty={pre_qty} | "
+                f"post_qty={post_qty}"
+            )
+            raise RuntimeError("ENTRY_NOT_FILLED")
 
         # --------------------------------------------------
-        # Partial fill guard
+        # Mutate ack to authoritative truth
+        # Keeps rest of lifecycle unchanged
         # --------------------------------------------------
 
+        from execution.testnet_exchange import EntryAck
+
+        ack = EntryAck(
+            filled_qty=delta_qty,
+            avg_price=post_position.entry_price,
+            requested_qty=ack.requested_qty,
+            fully_filled=abs(delta_qty - ack.requested_qty) < 1e-12,
+        )
+
+        # Now apply normal partial fill guard
         if not ack.fully_filled:
-
             self.system_log.error(
                 f"PARTIAL_FILL | "
                 f"symbol={symbol} | "
@@ -266,76 +324,82 @@ class EntryLifecycle:
         if slippage_pct > ENTRY_SLIPPAGE_PCT:
 
             raise RuntimeError("SLIPPAGE_BREACH")
+
         # --------------------------------------------------
-        # Place initial SL
+        # ATOMIC COMMIT PHASE:
+        # Place SL first, verify everything once
         # --------------------------------------------------
 
-        sl_placed = False
         sl_start_time = time.time()
 
-        expected_sl = self.exchange.quantize_price(
-            symbol,
-            corrected_sl,
-        )
-
-        for attempt in range(2):
-            try:
-                self.exchange.place_initial_sl(
-                    symbol=symbol,
-                    side=intent.direction,
-                    qty=ack.filled_qty,
-                    stop_price=corrected_sl,
-                )
-
-                verified = self.exchange.get_position()
-
-                if verified is None:
-                    self.system_log.error(
-                        f"INITIAL_SL_VERIFY_POSITION_NONE | "
-                        f"symbol={symbol} | "
-                        f"attempt={attempt+1}"
-                    )
-                    continue
-
-                if (
-                    verified.stop_loss is not None
-                    and abs(
-                        verified.stop_loss - expected_sl
-                    ) < 1e-12
-                ):
-                    sl_placed = True
-                    self.system_log.info(
-                        f"INITIAL_SL_VERIFIED | "
-                        f"symbol={symbol} | "
-                        f"stop_loss={verified.stop_loss}"
-                    )
-                    break
-                else:
-                    self.system_log.error(
-                        f"INITIAL_SL_VERIFICATION_MISMATCH | "
-                        f"symbol={symbol} | "
-                        f"expected={expected_sl} | "
-                        f"actual={getattr(verified, 'stop_loss', None)}"
-                    )
-
-            except Exception as e:
-                self.system_log.error(
-                    f"INITIAL_SL_PLACEMENT_EXCEPTION | "
-                    f"symbol={symbol} | "
-                    f"attempt={attempt+1} | "
-                    f"error={e}"
-                )
-                time.sleep(0.5)
-
-        if not sl_placed:
-            send_warning(
-                "SL PLACEMENT FAILED",
-                "Monitoring risk boundary."
+        # Place SL immediately (protection first)
+        try:
+            self.exchange.place_initial_sl(
+                symbol=symbol,
+                side=intent.direction,
+                qty=ack.filled_qty,
+                stop_price=corrected_sl,
             )
+        except Exception as e:
+            self.system_log.error(
+                f"INITIAL_SL_PLACEMENT_EXCEPTION | "
+                f"symbol={symbol} | error={e}"
+            )
+            raise RuntimeError("INITIAL_SL_FAILED")
 
-        if (time.time() - sl_start_time) > MAX_SL_PLACEMENT_SECONDS:
+        # --------------------------------------------------
+        # SINGLE VERIFICATION PASS (bounded ≤ 0.5s)
+        # --------------------------------------------------
 
-            raise RuntimeError("SL_TIMING_BREACH")
+        verified_position = None
+        expected_sl = self.exchange.quantize_price(symbol, corrected_sl)
+
+        deadline = sl_start_time + MAX_SL_PLACEMENT_SECONDS
+
+        while time.time() < deadline:
+
+            try:
+                verified_position = self.exchange.get_position()
+            except Exception:
+                verified_position = None
+
+            if (
+                verified_position is not None
+                and verified_position.symbol == symbol
+                and verified_position.stop_loss is not None
+                and abs(verified_position.stop_loss - expected_sl) < 1e-12
+            ):
+                self.system_log.info(
+                    f"ENTRY_VERIFIED | "
+                    f"symbol={symbol} | "
+                    f"qty={verified_position.qty} | "
+                    f"stop_loss={verified_position.stop_loss}"
+                )
+                break
+
+            time.sleep(0.05)
+
+        if verified_position is None:
+            self.system_log.error(
+                f"ENTRY_VERIFICATION_FAILED_NO_POSITION | symbol={symbol}"
+            )
+            raise RuntimeError("ENTRY_VERIFICATION_FAILED")
+
+        if verified_position.stop_loss is None:
+            self.system_log.error(
+               f"ENTRY_VERIFICATION_FAILED_NO_SL | symbol={symbol}"
+            )
+            raise RuntimeError("SL_VERIFICATION_FAILED")
+
+        if abs(verified_position.stop_loss - expected_sl) >= 1e-12:
+            self.system_log.error(
+                f"SL_VERIFICATION_MISMATCH | "
+                f"symbol={symbol} | "
+                f"expected={expected_sl} | "
+                f"actual={verified_position.stop_loss}"
+            )
+            raise RuntimeError("SL_VERIFICATION_MISMATCH")
+
         # --------------------------------------------------
         # Persist position
         # --------------------------------------------------

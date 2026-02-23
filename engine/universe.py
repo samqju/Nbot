@@ -13,6 +13,7 @@
 import json
 import os
 from datetime import datetime, timezone
+from config import LEVERAGE
 from utils.telegram_notifier import send_info
 
 UNIVERSE_SNAPSHOT_FILE = "universe_snapshot.json"
@@ -194,7 +195,17 @@ class UniverseManager:
 
         # Enforce leverage only for added symbols
         if added:
-            exchange.enforce_leverage_for_universe(list(added))
+            for symbol in added:
+                try:
+                    exchange.set_leverage(
+                        symbol=symbol,
+                        leverage=LEVERAGE,
+                    )
+                except Exception as e:
+                    self.system_log.error(
+                        f"UNIVERSE_LEVERAGE_SET_FAILED | "
+                        f"symbol={symbol} | error={e}"
+                    )
 
         # Warm only new symbols
         if added:

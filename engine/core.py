@@ -273,9 +273,11 @@ class TradingEngine:
                 self.system_log.info(
                     f"LEVERAGE_ENFORCEMENT_ATTEMPT | attempt={attempt}"
                 )
-                self.exchange.enforce_leverage_for_universe(
-                    self.universe.symbols
-                )
+                for symbol in self.universe.symbols:
+                    self.exchange.set_leverage(
+                        symbol=symbol,
+                        leverage=LEVERAGE,
+                    )
                 self.system_log.info(
                     f"LEVERAGE_ENFORCED | leverage={LEVERAGE}"
                 )
