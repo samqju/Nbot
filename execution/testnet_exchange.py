@@ -796,24 +796,24 @@ class TestnetExchange:
         if filled_qty <= 0:
 
             # Poll position briefly for update
-            timeout = time.time() + 3
-            delta_qty = 0.0
+            timeout = time.time() + 1.0
+            confirmed = None
 
             while time.time() < timeout:
 
-                current_pos = self.get_position()
+                try:
+                    confirmed = self.get_position()
+                except Exception:
+                    confirmed = None
 
-                if current_pos and current_pos.symbol == symbol:
-                    delta_qty = current_pos.qty - pre_qty
+                if confirmed and confirmed.symbol == symbol:
+                    filled_qty = confirmed.qty
+                    avg_price = confirmed.entry_price
+                    break
 
-                    if delta_qty > 0:
-                        filled_qty = delta_qty
-                        avg_price = current_pos.entry_price
-                        break
+                time.sleep(0.1)
 
-                time.sleep(0.2)
-
-            if filled_qty <= 0:
+            if not confirmed or confirmed.symbol != symbol:
                 raise OperationalExchangeError("ENTRY_NOT_FILLED")
         else:
             cum_quote = float(data["cumQuote"])
