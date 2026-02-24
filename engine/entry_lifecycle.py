@@ -28,7 +28,7 @@ from utils.telegram_notifier import (
     format_trade_panel,
 )
 
-MAX_SL_PLACEMENT_SECONDS = 0.5
+MAX_SL_PLACEMENT_SECONDS = 2.0
 
 class EntryLifecycle:
 
@@ -84,21 +84,6 @@ class EntryLifecycle:
     def _execute(self, intent, market_state):
 
         symbol = intent.symbol
-
-        # --------------------------------------------------
-        # HARD SAFETY: Block entry if exchange already has position
-        # --------------------------------------------------
-        try:
-            live_position = self.exchange.get_position()
-        except Exception:
-            live_position = None
-
-        if live_position is not None:
-            self.system_log.error(
-                f"ENTRY_ABORT_LIVE_POSITION_EXISTS | "
-                f"symbol={live_position.symbol} | qty={live_position.qty}"
-            )
-            raise RuntimeError("LIVE_POSITION_EXISTS")
 
         if not market_state.has_price(symbol):
             self.system_log.info(
@@ -198,19 +183,9 @@ class EntryLifecycle:
             1 + NOTIONAL_TOLERANCE_PCT / 100
         )
 
-        # HARD SAFETY: Validate total exchange exposure
-        try:
-            live_position = self.exchange.get_position()
-            if live_position is not None:
-                total_notional = live_position.qty * live_position.entry_price
-                if total_notional > max_allowed:
-                    raise RuntimeError("ENGINE_TOTAL_NOTIONAL_BREACH")
-        except Exception:
-            pass
-
         if executed_notional > max_allowed:
-
             raise RuntimeError("ENGINE_NOTIONAL_BREACH")
+
         # --------------------------------------------------
         # Recalculate SL
         # --------------------------------------------------

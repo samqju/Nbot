@@ -73,7 +73,6 @@ class PositionLifecycle:
         if (
             exchange_position
             and exchange_position.stop_loss is None
-            and not getattr(self.entry_lifecycle, "entry_in_progress", False)
         ):
             if not getattr(self, "_sl_recovery_in_progress", False):
                 self._sl_recovery_in_progress = True

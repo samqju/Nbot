@@ -227,8 +227,3 @@ class UniverseManager:
             f"added_symbols={sorted(list(added))} | "
             f"removed_symbols={sorted(list(removed))}"
         )
-
-        send_info(
-            "UNIVERSE RELOADED",
-            f"Added: {len(added)}\nRemoved: {len(removed)}"
-        )
