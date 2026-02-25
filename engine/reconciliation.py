@@ -101,6 +101,47 @@ class ReconciliationLifecycle:
                         f"symbol={existing['symbol']}"
                    )
 
+                    # --------------------------------------------------
+                    # Orphan SL Cleanup (Manual Close Safety)
+                    # If position was manually closed, ensure no
+                    # reduceOnly STOP_MARKET remains on exchange.
+                    # --------------------------------------------------
+                    try:
+                        orders = self.exchange._get(
+                            "/fapi/v1/openOrders",
+                            {
+                                "symbol": existing["symbol"],
+                               "timestamp": int(time.time() * 1000),
+                            },
+                        )
+
+                        for o in orders:
+                            if (
+                                o.get("type") == "STOP_MARKET"
+                                and o.get("reduceOnly") is True
+                            ):
+                                try:
+                                    self.exchange._delete(
+                                        "/fapi/v1/order",
+                                        {
+                                            "symbol": existing["symbol"],
+                                            "orderId": o["orderId"],
+                                            "timestamp": int(time.time() * 1000),
+                                        },
+                                    )
+                                    self.system_log.info(
+                                        f"RECON_ORPHAN_SL_CANCELLED | "
+                                        f"symbol={existing['symbol']}"
+                                    )
+                                except Exception as e:
+                                    self.system_log.error(
+                                        f"RECON_ORPHAN_SL_CANCEL_FAILED | {e}"
+                                    )
+                    except Exception as e:
+                        self.system_log.error(
+                            f"RECON_SL_CLEANUP_FETCH_FAILED | {e}"
+                        )
+
                     realized = 0.0
                     exit_price = 0.0
 
@@ -159,6 +200,7 @@ class ReconciliationLifecycle:
 
                     # Prepare informational event (do NOT return yet)
                     manual_close_event = "MANUAL_CLOSE_DETECTED"
+
 
                 # Clear state
                 self.state.update_after_trade(

@@ -38,10 +38,10 @@ def _build_logger(name, filename):
 # ==========================================================
 
 def system_logger():
-    return _build_logger("system", "system.log")
+    return _build_logger("system", "system.txt")
 
 
 def trade_logger():
-    return _build_logger("trades", "trades.log")
+    return _build_logger("trades", "trades.txt")
 
 

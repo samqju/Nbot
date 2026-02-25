@@ -363,6 +363,14 @@ class TradingEngine:
                         timestamp=tick.timestamp,
                     )
                     # --------------------------------------------------
+                    # HARD GUARD: Do not execute trading logic
+                    # when engine is not RUNNING
+                    # --------------------------------------------------
+                    engine_state = self.state.get_state().get("engine_state")
+                    if engine_state != RUNNING:
+                        continue
+
+                    # --------------------------------------------------
                     # STARTUP TICK BARRIER
                     # Delay strategy activation until all symbols seen
                     # --------------------------------------------------

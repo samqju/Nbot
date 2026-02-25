@@ -1,7 +1,7 @@
 # ============================================================
-# TESTNET EXCHANGE ADAPTER
+# MAINNET EXCHANGE ADAPTER
 # ============================================================
-# Binance Futures USDT-M Testnet Adapter
+# Binance Futures USDT-M MAINNET Adapter
 #
 # PURPOSE:
 # - Provide truthful exchange state
@@ -45,9 +45,9 @@ load_dotenv()
 # SECTION 2 — CONFIGURATION
 # ============================================================
 
-BASE_URL = os.getenv("TESTNET_BASE_URL")
-API_KEY = os.getenv("TESTNET_API_KEY")
-API_SECRET = os.getenv("TESTNET_API_SECRET")
+BASE_URL = os.getenv("LIVE_BASE_URL")
+API_KEY = os.getenv("LIVE_API_KEY")
+API_SECRET = os.getenv("LIVE_API_SECRET")
 
 TIMEOUT = 5  # seconds
 
@@ -75,9 +75,9 @@ class PriceTick:
 # SECTION 4 — ADAPTER
 # ============================================================
 
-class TestnetExchange:
+class LiveExchange:
     """
-    Binance Futures USDT-M Testnet Adapter.
+    Binance Futures USDT-M LIVE Adapter.
 
     Architecture:
     - Stateless
@@ -96,7 +96,7 @@ class TestnetExchange:
         self._symbol_filters = self._load_symbol_filters()
 
         if not BASE_URL or not API_KEY or not API_SECRET:
-            raise RuntimeError("TESTNET_EXCHANGE_CONFIG_MISSING")
+            raise RuntimeError("LIVE_EXCHANGE_CONFIG_MISSING")
         # =====================================================
         # HARDENING STATE TRACKERS
         # =====================================================
@@ -784,7 +784,7 @@ class TestnetExchange:
         filled_qty = float(data["executedQty"])
 
         # --------------------------------------------------------
-        # Testnet Quirk Handling:
+        # Live Quirk Handling:
         # If executedQty == 0, derive fill from position delta
         # --------------------------------------------------------
 
@@ -851,6 +851,7 @@ class TestnetExchange:
             stop_price,
             filters["tickSize"],
         )
+
         self.system_log.info(
             f"ADAPTER_PLACE_SL | "
             f"symbol={symbol} | "
@@ -860,9 +861,6 @@ class TestnetExchange:
             f"last_price={last_price}"
         )
 
-        if Decimal(str(stop_price)) % Decimal(str(filters["tickSize"])) != 0:
-            raise OperationalExchangeError("STOP_PRICE_TICK_MISALIGNMENT")
-
         if side == "LONG" and stop_price >= last_price:
             raise StopAlreadyBreached("STOP_ALREADY_BREACHED")
 
@@ -871,42 +869,26 @@ class TestnetExchange:
 
         exit_side = "SELL" if side == "LONG" else "BUY"
 
-        # HARDENING: retry SL placement (network/rate limit safety)
-        attempts = 3
-        for attempt in range(attempts):
-            try:
-                payload = {
-                    "symbol": symbol,
-                    "side": exit_side,
-                    "algoType": "STOP",
-                    "quantity": qty,
-                    "stopPrice": stop_price,
-                    "reduceOnly": True,
-                    "priceProtect": True,
-                    "workingType": "CONTRACT_PRICE",
-                    "timestamp": int(time.time() * 1000),
-                }
+        data = self._post(
+            "/fapi/v1/order",
+            {
+                "symbol": symbol,
+                "side": exit_side,
+                "type": "STOP_MARKET",
+                "stopPrice": stop_price,
+                "quantity": qty,
+                "reduceOnly": True,
+                "workingType": "CONTRACT_PRICE",
+                "timestamp": int(time.time() * 1000),
+            },
+        )
 
-                data = self._post(
-                    "/fapi/v1/algoOrder",
-                    payload,
-                )
-                break
-
-            except Exception:
-                if attempt == attempts - 1:
-                    raise
-                time.sleep(0.5 * (attempt + 1))
-
-        # Verify SL exists
-        actual_sl = self._get_active_stop_loss(symbol)
-        if actual_sl is None:
-            raise OperationalExchangeError(
-                "SL_PLACEMENT_NOT_CONFIRMED"
-            )
-        # Track SL order id to avoid openOrders scan
         if isinstance(data, dict) and "orderId" in data:
             self._active_sl_order_id = data["orderId"]
+
+        actual_sl = self._get_active_stop_loss(symbol)
+        if actual_sl is None:
+            raise OperationalExchangeError("SL_PLACEMENT_NOT_CONFIRMED")
 
     def update_sl(
         self,

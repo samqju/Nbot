@@ -60,7 +60,7 @@ class UniverseManager:
     def _build_universe(self):
 
         # Import locally to avoid circular dependency
-        from universe_selector_testnet import build_universe
+        from universe_selector import build_universe
 
         symbols = build_universe()
 
