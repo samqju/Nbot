@@ -26,7 +26,7 @@ BASE_DIR = os.path.dirname(os.path.realpath(__file__))
 UNIVERSE_SNAPSHOT_FILE = "/home/ubuntu/nbot/universe_snapshot.json"
 EXPECTED_SIZE = 30
 
-BASE_URL = os.getenv("LIVE_BASE_URL")
+BASE_URL = os.getenv("TESTNET_BASE_URL")
 TIMEOUT = 5
 
 # --- Velocity Filters ---

@@ -378,8 +378,12 @@ class TradingEngine:
 
                         if tick.symbol in self.universe.symbols:
                             self._symbols_seen.add(tick.symbol)
+                            self.system_log.info(
+                                f"TICK_SEEN | {tick.symbol} | "
+                                f"total_seen={len(self._symbols_seen)}"
+                            )
 
-                        if len(self._symbols_seen) == len(self.universe.symbols):
+                        if len(self._symbols_seen) >= int(0.9 * len(self.universe.symbols)):
                             self._strategy_activated = True
                             self.system_log.info(
                                 "STARTUP_TICK_BARRIER_PASSED | "

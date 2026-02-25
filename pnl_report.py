@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timezone
 import re
 
-TRADES_LOG_PATH = "logs/trades.log"
+TRADES_LOG_PATH = "logs/trades.txt"
 
 
 def _utc_today_string():

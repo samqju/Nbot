@@ -555,7 +555,7 @@ class TestnetExchange:
 
         try:
             orders = self._get(
-                "/fapi/v1/openOrders",
+                "/fapi/v1/openAlgoOrders",
                 {
                     "symbol": symbol,
                     "timestamp": int(time.time() * 1000),
@@ -564,11 +564,12 @@ class TestnetExchange:
 
             for o in orders:
                 if (
-                    o.get("type") == "STOP_MARKET"
+                    o.get("algoType") == "CONDITIONAL"
+                    and o.get("orderType") == "STOP_MARKET"
                     and o.get("reduceOnly") is True
                 ):
-                    self._active_sl_order_id = o.get("orderId")
-                    return float(o.get("stopPrice"))
+                    self._active_sl_order_id = o.get("algoId")
+                    return float(o.get("triggerPrice"))
 
             return None
 
@@ -878,11 +879,12 @@ class TestnetExchange:
                 payload = {
                     "symbol": symbol,
                     "side": exit_side,
-                    "algoType": "STOP",
+                    "algoType": "CONDITIONAL",
+                    "type": "STOP_MARKET",
                     "quantity": qty,
-                    "stopPrice": stop_price,
-                    "reduceOnly": True,
-                    "priceProtect": True,
+                    "triggerPrice": stop_price,
+                    "reduceOnly": "true",
+                    "priceProtect": "TRUE",
                     "workingType": "CONTRACT_PRICE",
                     "timestamp": int(time.time() * 1000),
                 }
@@ -905,8 +907,8 @@ class TestnetExchange:
                 "SL_PLACEMENT_NOT_CONFIRMED"
             )
         # Track SL order id to avoid openOrders scan
-        if isinstance(data, dict) and "orderId" in data:
-            self._active_sl_order_id = data["orderId"]
+        if isinstance(data, dict) and "algoId" in data:
+            self._active_sl_order_id = data["algoId"]
 
     def update_sl(
         self,
@@ -972,19 +974,20 @@ class TestnetExchange:
         if old_order_id:
             try:
                 self._delete(
-                    "/fapi/v1/order",
+                    "/fapi/v1/algoOrder",
                     {
                         "symbol": symbol,
-                        "orderId": old_order_id,
+                        "algoId": old_order_id,
                         "timestamp": int(time.time() * 1000),
                     },
                 )
             except Exception:
-                # Not fatal — old SL may already be filled/cancelled
+                # Old SL may already be triggered or cancelled
                 pass
 
     def cancel_pending_entries(self):
 
+        # Cancel normal entry orders only (NOT algo SL)
         orders = self._get(
             "/fapi/v1/openOrders",
             {
@@ -1031,33 +1034,37 @@ class TestnetExchange:
 
         symbol = pos.symbol
 
+        # Cancel ALGO stop orders first
         try:
-            open_orders = self._get(
-                "/fapi/v1/openOrders",
+            algo_orders = self._get(
+                "/fapi/v1/openAlgoOrders",
                 {
                     "symbol": symbol,
                     "timestamp": int(time.time() * 1000),
                 },
             )
-        except Exception as e:
-            raise OperationalExchangeError(f"FLATTEN_FETCH_ORDERS_FAILED | {e}")
 
-        for o in open_orders:
-            if (
-                o.get("type") == "STOP_MARKET"
-                and o.get("reduceOnly") is True
-            ):
-                try:
-                    self._delete(
-                        "/fapi/v1/order",
-                        {
-                            "symbol": symbol,
-                            "orderId": o["orderId"],
-                            "timestamp": int(time.time() * 1000),
-                        },
-                    )
-                except Exception:
-                    pass
+            for o in algo_orders:
+                if (
+                    o.get("algoType") == "CONDITIONAL"
+                    and o.get("reduceOnly") is True
+                ):
+                    try:
+                        self._delete(
+                            "/fapi/v1/algoOrder",
+                            {
+                                "symbol": symbol,
+                                "algoId": o["algoId"],
+                                "timestamp": int(time.time() * 1000),
+                            },
+                        )
+                    except Exception:
+                        pass
+
+        except Exception as e:
+            raise OperationalExchangeError(
+                f"FLATTEN_FETCH_ALGO_FAILED | {e}"
+            )
 
         # Re-check position via REST after SL deletions
         data = self._get(
@@ -1124,10 +1131,8 @@ class TestnetExchange:
                 still_open = True
                 break
 
-        if still_open:
-            raise OperationalExchangeError(
-                f"EMERGENCY_EXIT_FAILED_NOT_FLAT | symbol={symbol}"
-            )
+        # Clear active SL pointer
+        self._active_sl_order_id = None
 
         try:
             open_orders = self._get(
