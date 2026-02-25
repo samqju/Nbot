@@ -1,11 +1,8 @@
 # ==========================================================
 # ENGINE CORE
-# SINGLE AUTHORITY RULE:
-# Only TradingEngine may:
-# - disable trading
-# - call emergency exit
-# - change engine_state
-# - escalate to critical
+# TradingEngine
+# Orchestrates lifecycle components.
+# Owns trading enable/disable state.
 # ==========================================================
 
 import json
@@ -46,15 +43,7 @@ OPERATOR_COMMAND_FILE = "operator_command.json"
 
 
 class TradingEngine:
-    """
-    Trading Engine — Orchestrator Only
-    """
-    DAILY_HALT = "DAILY_HALT"
-    RISK_HALT = "RISK_HALT"
-    INVARIANT_HALT = "INVARIANT_HALT"
-    OPERATIONAL_HALT = "OPERATIONAL_HALT"
-    MANUAL_HALT = "MANUAL_HALT"
-    FATAL_HALT = "FATAL_HALT"
+    """Trading engine orchestrator."""
 
     # ------------------------------------------------------
     # Initialization
@@ -188,7 +177,7 @@ class TradingEngine:
             self.system_log.error(
                 f"STATE_LOAD_FAILED | {e}"
             )
-            self._disable_trading("STATE_LOAD_FAILED")
+            self._disable_trading(reason="STATE_LOAD_FAILED")
             self.state.save()
             return
 
@@ -229,29 +218,21 @@ class TradingEngine:
                         f"{e}\n\nTrading disabled."
                     )
                     self._disable_trading(
-                        "EXCHANGE_CONNECT_FAILED"
+                        reason="EXCHANGE_CONNECT_FAILED"
                     )
                     self.state.save()
                     return
 
-        # State Loading
-        engine_state = self.state.get_state().get("engine_state")
-
         try:
-            if engine_state == self.DAILY_HALT:
-                result = self.reconciliation.run(
-                    reason="DAILY_HALT_RESUME"
-                )
-            else:
-                result = self.reconciliation.run(
-                    reason="ENGINE_STARTUP"
-                )
+            result = self.reconciliation.run(
+                reason="ENGINE_STARTUP"
+            )
 
         except Exception as e:
             self.system_log.error(
                 f"RECONCILIATION_STARTUP_FAILED | {e}"
             )
-            self._disable_trading("RECONCILIATION_STARTUP_FAILED")
+            self._disable_trading(reason="RECONCILIATION_STARTUP_FAILED")
             self.state.save()
             return
 
@@ -265,40 +246,6 @@ class TradingEngine:
             state=self.state,
             force=True
         )
-
-        # Leverage Deployment
-        max_attempts = 3
-        for attempt in range(1, max_attempts + 1):
-            try:
-                self.system_log.info(
-                    f"LEVERAGE_ENFORCEMENT_ATTEMPT | attempt={attempt}"
-                )
-                for symbol in self.universe.symbols:
-                    self.exchange.set_leverage(
-                        symbol=symbol,
-                        leverage=LEVERAGE,
-                    )
-                self.system_log.info(
-                    f"LEVERAGE_ENFORCED | leverage={LEVERAGE}"
-                )
-                break
-            except Exception as e:
-                self.system_log.error(
-                    f"LEVERAGE_ENFORCEMENT_FAILED | "
-                    f"attempt={attempt} | error={e}"
-                )
-                if attempt < max_attempts:
-                    time.sleep(attempt)
-                else:
-                    send_critical(
-                        "LEVERAGE ENFORCEMENT FAILED",
-                        f"{e}\n\nTrading disabled."
-                    )
-                    self._disable_trading(
-                        "LEVERAGE_ENFORCEMENT_FAILED"
-                    )
-                    self.state.save()
-                    return
 
         max_attempts = 3
         for attempt in range(1, max_attempts + 1):
@@ -320,7 +267,7 @@ class TradingEngine:
                     time.sleep(attempt)
                 else:
                     self._disable_trading(
-                        "UNIVERSE_WARMUP_FAILED"
+                        reason="UNIVERSE_WARMUP_FAILED"
                     )
                     self.state.save()
                     return
@@ -378,10 +325,6 @@ class TradingEngine:
 
                         if tick.symbol in self.universe.symbols:
                             self._symbols_seen.add(tick.symbol)
-                            self.system_log.info(
-                                f"TICK_SEEN | {tick.symbol} | "
-                                f"total_seen={len(self._symbols_seen)}"
-                            )
 
                         if len(self._symbols_seen) >= int(0.9 * len(self.universe.symbols)):
                             self._strategy_activated = True
@@ -431,7 +374,7 @@ class TradingEngine:
                                 self.system_log.error(
                                     f"STATE_SAVE_FAILED | {e}"
                                 )
-                                self._disable_trading("STATE_SAVE_FAILED")
+                                self._disable_trading(reason="STATE_SAVE_FAILED")
                                 self.state.save()
 
                         continue
@@ -489,7 +432,7 @@ class TradingEngine:
                             self.system_log.error(
                                 f"STATE_SAVE_FAILED | {e}"
                             )
-                            self._disable_trading("STATE_SAVE_FAILED")
+                            self._disable_trading(reason="STATE_SAVE_FAILED")
                             self.state.save()
 
                 # --------------------------------------------------
@@ -503,23 +446,28 @@ class TradingEngine:
                 continue
 
             except MarketStateError as e:
-                # Market rejection (e.g. percent price filter)
-                self.system_log.error(
+                # Market-level rejection (non-infrastructure)
+                self.system_log.info(
                     f"MARKET_STATE_REJECTION | reason={str(e)}"
                 )
                 time.sleep(1)
                 continue
 
             except OperationalExchangeError as e:
-                self.system_log.error(f"EXCHANGE_ERROR | {e}")
-                self._disable_trading("EXCHANGE_ERROR")
+                self.system_log.error(
+                    f"EXCHANGE_OPERATIONAL_FAILURE | error={e}"
+                )
+                self._disable_trading(
+                    reason="EXCHANGE_OPERATIONAL_FAILURE"
+                )
                 self.state.save()
                 time.sleep(2)
                 continue
 
             except Exception as e:
-                self.system_log.error(f"FATAL_ENGINE_ERROR | {e}")
-                self._disable_trading("FATAL_ENGINE_ERROR")
+                error_str = str(e)
+                self.system_log.error(f"ENGINE_EXCEPTION | error={error_str}")
+                self._disable_trading(reason=error_str)
                 self.state.save()
                 time.sleep(2)
                 continue
@@ -527,7 +475,7 @@ class TradingEngine:
     # ==========================================================
     # Trading Disable Notification
     # ==========================================================
-    def _disable_trading(self, reason: str):
+    def _disable_trading(self, *, reason: str):
 
         if not reason:
             raise ValueError("DISABLE_TRADING_REQUIRES_REASON")
@@ -536,18 +484,20 @@ class TradingEngine:
 
         if current_state == TRADING_DISABLED:
             return
+        timestamp = datetime.now(timezone.utc).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
 
         self.system_log.error(
-            f"TRADING_DISABLED | reason={reason}"
+            f"TRADING_DISABLED | "
+            f"reason={reason} | "
+            f"utc={timestamp}"
         )
 
         self.state.set_engine_state(TRADING_DISABLED, reason)
         self.state.save()
 
-        send_critical(
-            "TRADING DISABLED",
-            f"Reason: {reason}"
-        )
+        send_critical("TRADING DISABLED", f"Reason: {reason}")
 
     #----------------------------------
     # Operator Commands
@@ -572,7 +522,7 @@ class TradingEngine:
                 self.system_log.info("OPERATOR_COMMAND | ENABLE_TRADING")
 
             elif action == "DISABLE_TRADING":
-                self._disable_trading("OPERATOR_DISABLE")
+                self._disable_trading(reason="OPERATOR_DISABLE")
                 self.state.save()
                 self.system_log.info("OPERATOR_COMMAND | DISABLE_TRADING")
 
@@ -604,7 +554,7 @@ class TradingEngine:
             send_info("TRADING ENABLED", "Operator command accepted.")
 
         elif text == "/disable":
-            self._disable_trading("OPERATOR_DISABLE")
+            self._disable_trading(reason="OPERATOR_DISABLE")
             self.state.save()
             self.system_log.info("OPERATOR_DISABLE")
             send_info("TRADING DISABLED", "Operator command accepted.")

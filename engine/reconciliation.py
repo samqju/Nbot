@@ -1,18 +1,12 @@
 # ==========================================================
 # RECONCILIATION LIFECYCLE
+# Synchronizes engine state with exchange truth
 # ==========================================================
 import time
-from utils.telegram_notifier import send_critical, send_trade_panel, format_trade_panel, edit_message
+from utils.telegram_notifier import send_trade_panel, format_trade_panel, edit_message
 
 class ReconciliationLifecycle:
-    """
-    Reconcile engine state with exchange truth.
-    """
-
-    RISK_HALT = "RISK_HALT"
-    INVARIANT_HALT = "INVARIANT_HALT"
-    MANUAL_HALT = "MANUAL_HALT"
-    FATAL_HALT = "FATAL_HALT"
+    """Reconcile engine memory with exchange position state."""
 
     def __init__(
         self,
@@ -66,24 +60,14 @@ class ReconciliationLifecycle:
     def run(self, reason: str):
 
         engine_state = self.state.get_state().get("engine_state")
-
-        if engine_state in (
-            self.RISK_HALT,
-            self.INVARIANT_HALT,
-            self.MANUAL_HALT,
-            self.FATAL_HALT,
-        ):
-            self.system_log.error(
-                f"RECONCILIATION_BLOCKED | engine_state={engine_state}"
+        if engine_state != "RUNNING":
+            self.system_log.info(
+                f"RECONCILIATION_SKIPPED | engine_state={engine_state}"
             )
-            return
-
+            return None
         self.system_log.info(
             f"RECONCILIATION_START | reason={reason}"
         )
-
-        manual_close_event = None
-
         try:
             position = self.exchange.get_position()
 
@@ -99,12 +83,10 @@ class ReconciliationLifecycle:
                     self.system_log.info(
                         f"RECON_CLOSE_DETECTED | "
                         f"symbol={existing['symbol']}"
-                   )
+                    )
 
                     # --------------------------------------------------
-                    # Orphan SL Cleanup (Manual Close Safety)
-                    # If position was manually closed, ensure no
-                    # reduceOnly STOP_MARKET remains on exchange.
+                    # Orphan SL Cleanup
                     # --------------------------------------------------
                     try:
                         orders = self.exchange._get(
@@ -139,7 +121,7 @@ class ReconciliationLifecycle:
                                     )
                     except Exception as e:
                         self.system_log.error(
-                            f"RECON_SL_CLEANUP_FETCH_FAILED | {e}"
+                            f"RECON_SL_CLEANUP_FETCH_FAILED | error={e}"
                         )
 
                     realized = 0.0
@@ -156,7 +138,7 @@ class ReconciliationLifecycle:
 
                     except Exception as e:
                         self.system_log.error(
-                            f"RECON_CLOSE_FETCH_FAILED | error={e}"
+                            f"RECON_CLOSE_PNL_FETCH_FAILED | error={e}"
                         )
 
                     # Update daily accounting
@@ -229,7 +211,6 @@ class ReconciliationLifecycle:
             # Position exists
             # --------------------------------------------------
             else:
-                # Preserve PRE-REBUILD state snapshot
                 previous_state = self.state.get_open_position()
                 restored_ts = None
                 # Preserve trailing state BEFORE rebuild
@@ -361,7 +342,7 @@ class ReconciliationLifecycle:
                         )
                     except Exception as e:
                         self.system_log.error(
-                            f"RECOVERY_SL_PLACEMENT_FAILED | {e}"
+                            f"RECOVERY_SL_PLACEMENT_FAILED | error={e}"
                         )
                         raise RuntimeError("RECOVERY_SL_PLACEMENT_FAILED")
 
@@ -377,8 +358,7 @@ class ReconciliationLifecycle:
                     self.system_log.info("RECOVERY_SL_SUCCESS")
                     self.system_log.info(
                         f"RECOVERY_SL_CONFIRMED | "
-                        f"symbol={position.symbol} | "
-                        f"stop_loss={verified.stop_loss}"
+                        f"symbol={position.symbol} | stop_loss={verified.stop_loss}"
                     )
 
                 # --------------------------------------------------
@@ -405,9 +385,6 @@ class ReconciliationLifecycle:
             self.state.save()
             self.system_log.info("RECONCILIATION_SUCCESS")
 
-            # Reset lifecycle runtime state (original engine behavior)
-            # These must be reset on reconciliation
-            # so entry/intent lifecycle resumes cleanly.
             try:
                 # Optional — if these attributes exist
                 self.state.clear_shutdown_request()
@@ -418,7 +395,9 @@ class ReconciliationLifecycle:
 
         except Exception as e:
             self.system_log.error(
-                f"RECONCILIATION_FAILED | error={e}"
+                f"RECONCILIATION_FAILED | "
+                f"reason={reason} | "
+                f"error={e}"
             )
             raise RuntimeError("RECONCILIATION_FAILED")
         # Success path

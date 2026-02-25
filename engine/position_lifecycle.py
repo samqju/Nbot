@@ -19,9 +19,6 @@ from utils.telegram_notifier import (
 
 class PositionLifecycle:
 
-    RISK_HALT = "RISK_HALT"
-    INVARIANT_HALT = "INVARIANT_HALT"
-
     def __init__(
         self,
         *,
@@ -43,7 +40,6 @@ class PositionLifecycle:
         self.system_log = system_log
         self.trade_log = trade_log
         self.exit_in_progress = False
-        self._commitment_reached = False
 
     # --------------------------------------------------
     # Public
@@ -67,7 +63,7 @@ class PositionLifecycle:
         exchange_position = self.exchange.get_position()
 
         # --------------------------------------------------
-        # CRITICAL: Live SL Missing (Runtime Protection)
+        # Live SL Missing → reconciliation recovery
         # --------------------------------------------------
 
         if (
@@ -127,7 +123,7 @@ class PositionLifecycle:
             self.system_log.info(
                 f"SL_UPDATE_ATTEMPT | "
                 f"symbol={symbol} | "
-                f"current_sl={open_position['stop_loss']} | "
+                f"current_sl={open_position['stop_loss']:.8f} | "
                 f"intended_sl={intended_sl} | "
                 f"price={price} | "
                 f"next_integer_R={intended_integer_R}"
@@ -151,7 +147,7 @@ class PositionLifecycle:
                         self.system_log.error(
                             f"SL_VERIFY_POSITION_NONE | "
                             f"symbol={symbol} | "
-                            f"intended_sl={intended_sl}"
+                            f"intended_sl={intended_sl:.8f}"
                         )
                         continue
 
@@ -249,10 +245,16 @@ class PositionLifecycle:
         # --------------------------------------------------
 
         if decision.violation and not self.exit_in_progress:
-
             self.exit_in_progress = True
+            self.system_log.error(
+                f"POSITION_RISK_VIOLATION | "
+                f"symbol={open_position['symbol']} | "
+                f"reason={decision.reason}"
+            )
 
-            raise RuntimeError(decision.reason)
+            raise RuntimeError(
+                f"POSITION_RISK_VIOLATION | {decision.reason}"
+            )
 
     # --------------------------------------------------
     # Close Handler
@@ -354,10 +356,9 @@ class PositionLifecycle:
 
         self.state.save()
         self.exit_in_progress = False
-        self._commitment_reached = False
 
         # --------------------------------------------------
-        # Governance Refresh (Event-Driven)
+        # Governance Refresh after close
         # --------------------------------------------------
         try:
             self.universe.maybe_reload(

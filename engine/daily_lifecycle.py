@@ -13,8 +13,6 @@ from utils.telegram_notifier import send_critical
 
 class DailyLifecycle:
 
-    DAILY_HALT = "DAILY_HALT"
-
     def __init__(
         self,
         *,
@@ -85,16 +83,13 @@ class DailyLifecycle:
 
         if daily_decision.halt:
             self.system_log.error(
-                f"DAILY_HALT_TRIGGERED | "
+                f"DAILY_HALT | "
                 f"reason={daily_decision.reason} | "
                 f"realized={state_snapshot.get('daily_realized_pnl')} | "
                 f"peak={state_snapshot.get('daily_peak_pnl')} | "
                 f"loss_floor={daily_decision.daily_loss_floor}"
             )
-
-            self.system_log.error(
-                f"DAILY_HALT | reason={daily_decision.reason}"
-            )
-            raise RuntimeError(daily_decision.reason)
+            raise RuntimeError(
+                f"DAILY_RISK_HALT | reason={daily_decision.reason}")
 
         return True

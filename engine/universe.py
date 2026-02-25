@@ -193,20 +193,6 @@ class UniverseManager:
         added = new_set - old_symbols
         removed = old_symbols - new_set
 
-        # Enforce leverage only for added symbols
-        if added:
-            for symbol in added:
-                try:
-                    exchange.set_leverage(
-                        symbol=symbol,
-                        leverage=LEVERAGE,
-                    )
-                except Exception as e:
-                    self.system_log.error(
-                        f"UNIVERSE_LEVERAGE_SET_FAILED | "
-                        f"symbol={symbol} | error={e}"
-                    )
-
         # Warm only new symbols
         if added:
             self._warm_symbols(list(added), exchange)

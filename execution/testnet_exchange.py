@@ -190,7 +190,11 @@ class TestnetExchange:
         except requests.exceptions.Timeout:
             raise OperationalExchangeError("REST_TIMEOUT")
         except Exception as e:
-            raise OperationalExchangeError(f"REST_ERROR | {e}")
+            raise OperationalExchangeError(
+                f"REST_POST_EXCEPTION | "
+                f"path={path} | "
+                f"error={type(e).__name__}:{e}"
+            )
 
     def _delete(self, path: str, params: dict):
         try:

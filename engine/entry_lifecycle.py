@@ -32,8 +32,6 @@ MAX_SL_PLACEMENT_SECONDS = 2.0
 
 class EntryLifecycle:
 
-    RISK_HALT = "RISK_HALT"
-
     def __init__(
         self,
         *,
@@ -92,6 +90,44 @@ class EntryLifecycle:
             return False
 
         entry_price = market_state.get_price(symbol)
+
+        # --------------------------------------------------
+        # Leverage Enforcement (Per-Symbol, Pre-Entry)
+        # --------------------------------------------------
+
+        leverage_set = False
+
+        for attempt in range(1, 3):
+            try:
+                self.system_log.info(
+                    f"LEVERAGE_SET_ATTEMPT | "
+                    f"symbol={symbol} | "
+                    f"leverage={LEVERAGE} | "
+                    f"attempt={attempt}"
+                )
+
+                self.exchange.set_leverage(
+                    symbol=symbol,
+                    leverage=LEVERAGE,
+                )
+
+                leverage_set = True
+                break
+
+            except Exception as e:
+                self.system_log.error(
+                    f"LEVERAGE_SET_FAILED | "
+                    f"symbol={symbol} | "
+                    f"attempt={attempt} | "
+                    f"error={type(e).__name__}:{e}"
+                )
+                time.sleep(0.5 * attempt)
+
+        if not leverage_set:
+            self.system_log.error(
+                f"ENTRY_BLOCKED_LEVERAGE_FAILURE | symbol={symbol}"
+            )
+            return False
 
         if entry_price <= 0:
             self.system_log.error(
@@ -172,7 +208,12 @@ class EntryLifecycle:
                 f"requested={ack.requested_qty} | "
                 f"filled={ack.filled_qty}"
             )
-            raise RuntimeError("PARTIAL_FILL_ABORT")
+            raise RuntimeError(
+                f"ENTRY_PARTIAL_FILL_ABORT | "
+                f"symbol={symbol} | "
+                f"requested={ack.requested_qty} | "
+                f"filled={ack.filled_qty}"
+            )
 
         # --------------------------------------------------
         # Notional invariant
@@ -184,7 +225,15 @@ class EntryLifecycle:
         )
 
         if executed_notional > max_allowed:
-            raise RuntimeError("ENGINE_NOTIONAL_BREACH")
+            self.system_log.error(
+                f"ENTRY_NOTIONAL_BREACH | "
+                f"symbol={symbol} | "
+                f"executed_notional={executed_notional} | "
+                f"max_allowed={max_allowed}"
+            )
+            raise RuntimeError(
+                f"ENTRY_NOTIONAL_BREACH | symbol={symbol}"
+            )
 
         # --------------------------------------------------
         # Recalculate SL
@@ -229,7 +278,15 @@ class EntryLifecycle:
 
         if actual_risk_usd > max_allowed_risk:
 
-            raise RuntimeError("POST_FILL_RISK_BREACH")
+            self.system_log.error(
+                f"ENTRY_POST_FILL_RISK_BREACH | "
+                f"symbol={symbol} | "
+                f"actual_risk={actual_risk_usd} | "
+                f"max_allowed={max_allowed_risk}"
+            )
+            raise RuntimeError(
+                f"ENTRY_POST_FILL_RISK_BREACH | symbol={symbol}"
+            )
         # --------------------------------------------------
         # Slippage guard
         # --------------------------------------------------
@@ -239,8 +296,16 @@ class EntryLifecycle:
         ) * 100.0
 
         if slippage_pct > ENTRY_SLIPPAGE_PCT:
+            self.system_log.error(
+                f"ENTRY_SLIPPAGE_BREACH | "
+                f"symbol={symbol} | "
+                f"slippage_pct={slippage_pct} | "
+                f"max_allowed={ENTRY_SLIPPAGE_PCT}"
+            )
+            raise RuntimeError(
+                f"ENTRY_SLIPPAGE_BREACH | symbol={symbol}"
+            )
 
-            raise RuntimeError("SLIPPAGE_BREACH")
         # --------------------------------------------------
         # Place initial SL
         # --------------------------------------------------
@@ -309,8 +374,15 @@ class EntryLifecycle:
             )
 
         if (time.time() - sl_start_time) > MAX_SL_PLACEMENT_SECONDS:
+            self.system_log.error(
+                f"ENTRY_SL_TIMING_BREACH | "
+                f"symbol={symbol} | "
+                f"max_seconds={MAX_SL_PLACEMENT_SECONDS}"
+            )
+            raise RuntimeError(
+                f"ENTRY_SL_TIMING_BREACH | symbol={symbol}"
+            )
 
-            raise RuntimeError("SL_TIMING_BREACH")
         # --------------------------------------------------
         # Persist position
         # --------------------------------------------------
