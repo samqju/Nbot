@@ -147,7 +147,7 @@ class PositionLifecycle:
                         self.system_log.error(
                             f"SL_VERIFY_POSITION_NONE | "
                             f"symbol={symbol} | "
-                            f"intended_sl={intended_sl:.8f}"
+                            f"intended_sl={intended_sl}"
                         )
                         continue
 

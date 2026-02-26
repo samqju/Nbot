@@ -30,8 +30,8 @@ BASE_URL = os.getenv("TESTNET_BASE_URL")
 TIMEOUT = 5
 
 # --- Velocity Filters ---
-MIN_CHANGE_PCT = 0.8     # Remove dead pairs
-MAX_CHANGE_PCT = 12.0    # Remove extreme parabolic pairs
+MIN_CHANGE_PCT = 1.0     # Remove dead pairs
+MAX_CHANGE_PCT = 15.0    # Remove extreme parabolic pairs
 VOL_CAP_FOR_SCORING = 10.0  # Cap volatility normalization
 
 
