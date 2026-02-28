@@ -94,7 +94,7 @@ class RiskManager:
 
         Policy:
         - Fixed notional sizing
-        - Initial SL at −0.9R
+        - Initial SL at −0.5R
         - Tolerance does NOT affect SL placement
         """
 
@@ -112,8 +112,8 @@ class RiskManager:
                 daily_loss_floor=0.0,
             )
 
-        # Initial risk = 0.9R
-        initial_risk_usd = 0.9 * self.MAX_RISK_USD
+        # Initial risk = 0.5R
+        initial_risk_usd = 0.5 * self.MAX_RISK_USD
 
         if side == "LONG":
             stop_loss = price - (initial_risk_usd / intended_qty)
@@ -131,7 +131,7 @@ class RiskManager:
         return EntryDecision(
             allowed=True,
             stop_loss=stop_loss,
-            reason="OK",
+            reason=None,
             daily_loss_floor=0.0,
         )
 
@@ -169,27 +169,33 @@ class RiskManager:
 
         # -----------------------------
         # Trailing SL Logic
-        # -----------------------------
-        if highest_R >= 1:
+        # --------------------------------
+        step = 0.5
 
-            integer_R = int(highest_R)
-            last_locked_R = position.get("last_locked_R", 0)
+        if highest_R >= step:
 
-            if integer_R > last_locked_R:
+            # Number of 0.5R milestones achieved
+            step_count = int(highest_R / step)
 
-                locked_R = integer_R - 1
+            last_locked_step = position.get("last_locked_R", 0)
+
+            if step_count > last_locked_step:
+
+                # Lock one step behind current milestone
+                locked_R = (step_count - 1) * step
                 locked_profit_usd = locked_R * risk_usd
 
                 if side == "LONG":
                     candidate_sl = entry_price + (locked_profit_usd / qty)
                     if candidate_sl > current_sl:
                         updated_stop_loss = candidate_sl
-                        next_integer_R = integer_R
+                        next_integer_R = step_count
+
                 else:
                     candidate_sl = entry_price - (locked_profit_usd / qty)
                     if candidate_sl < current_sl:
                         updated_stop_loss = candidate_sl
-                        next_integer_R = integer_R
+                        next_integer_R = step_count
 
         # -----------------------------
         # Risk Contract Validation

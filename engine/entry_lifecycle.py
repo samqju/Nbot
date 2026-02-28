@@ -239,7 +239,7 @@ class EntryLifecycle:
         # Recalculate SL
         # --------------------------------------------------
 
-        actual_risk_usd = 0.9 * self.risk.RISK_PER_TRADE_USD
+        actual_risk_usd = 0.5 * self.risk.RISK_PER_TRADE_USD
         if intent.direction == "LONG":
             corrected_sl = ack.avg_price - (
                 actual_risk_usd / ack.filled_qty
@@ -375,12 +375,9 @@ class EntryLifecycle:
 
         if (time.time() - sl_start_time) > MAX_SL_PLACEMENT_SECONDS:
             self.system_log.error(
-                f"ENTRY_SL_TIMING_BREACH | "
+                f"ENTRY_SL_TIMING_WARNING | "
                 f"symbol={symbol} | "
-                f"max_seconds={MAX_SL_PLACEMENT_SECONDS}"
-            )
-            raise RuntimeError(
-                f"ENTRY_SL_TIMING_BREACH | symbol={symbol}"
+                f"elapsed_seconds={time.time() - sl_start_time}"
             )
 
         # --------------------------------------------------

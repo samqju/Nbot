@@ -215,12 +215,24 @@ class PositionLifecycle:
                 if intended_integer_R is not None:
                     open_position["last_locked_R"] = intended_integer_R
 
-            # Update Telegram panel
+            # --------------------------------------------
+            # Update Telegram panel (Locked R emphasis)
+            # --------------------------------------------
+
             msg_id = state_snapshot.get(
                 "active_trade_panel_message_id"
             )
 
             if msg_id:
+
+                last_step = open_position.get("last_locked_R", 0)
+                step = 0.5
+
+                if last_step > 0:
+                    locked_R = (last_step - 1) * step
+                else:
+                    locked_R = 0.0
+
                 panel_text = format_trade_panel(
                     symbol=open_position["symbol"],
                     side=open_position["side"],
@@ -229,7 +241,10 @@ class PositionLifecycle:
                     qty=open_position["qty"],
                     risk_usd=open_position["risk_usd"],
                     status="OPEN 🔼",
+                ) + (
+                    f"\n<b>Locked:</b> +{locked_R:.1f}R\n"
                 )
+
                 edit_message(msg_id, panel_text)
 
         if decision.highest_profit_usd is not None:

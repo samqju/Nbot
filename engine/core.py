@@ -454,9 +454,16 @@ class TradingEngine:
                 continue
 
             except OperationalExchangeError as e:
+                error_str = str(e)
                 self.system_log.error(
-                    f"EXCHANGE_OPERATIONAL_FAILURE | error={e}"
+                    f"EXCHANGE_OPERATIONAL_FAILURE | error={error_str}"
                 )
+
+                # WebSocket failures are recoverable
+                if "WS_PRICE_STREAM_FAILED" in error_str:
+                    time.sleep(2)
+                    continue
+                # Other operational failures → disable trading
                 self._disable_trading(
                     reason="EXCHANGE_OPERATIONAL_FAILURE"
                 )

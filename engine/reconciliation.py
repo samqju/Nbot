@@ -164,6 +164,14 @@ class ReconciliationLifecycle:
                     )
 
                     if msg_id:
+                        last_step = existing.get("last_locked_R", 0)
+                        step = 0.5
+
+                        if last_step > 0:
+                            locked_R = (last_step - 1) * step
+                        else:
+                            locked_R = 0.0
+
                         panel_text = format_trade_panel(
                             symbol=existing["symbol"],
                             side=existing["side"],
@@ -173,6 +181,7 @@ class ReconciliationLifecycle:
                             risk_usd=existing["risk_usd"],
                             status="CLOSED (RECON)",
                         ) + (
+                            f"Locked: +{locked_R:.1f}R\n"
                             f"Exit: {exit_price:.4f}\n"
                             f"PnL: {realized:.2f} USD\n"
                         )

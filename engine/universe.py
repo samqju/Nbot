@@ -141,8 +141,8 @@ class UniverseManager:
 
             candles = exchange.get_historical_candles(
                 symbol=symbol,
-                interval="1m",
-                limit=50,
+                interval="5m",
+                limit=60,
             )
 
             for ts, o, h, l, c in candles:
