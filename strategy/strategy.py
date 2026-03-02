@@ -1,4 +1,3 @@
-
 # ==========================================================
 # Strategy — 5M Structured Conservative (Engine Compatible)
 # ==========================================================
@@ -7,7 +6,12 @@ from collections import defaultdict, deque
 from datetime import datetime, timezone
 from typing import Dict, Optional
 from strategy.trade_intent import TradeIntent
-
+import os
+import pickle
+import numpy as np
+import json
+import threading
+from config import RISK_PER_TRADE_USD, MAX_NOTIONAL_USD
 
 class Strategy:
 
@@ -25,15 +29,30 @@ class Strategy:
         self._universe = set()
         self._warmed_up = False
 
+        # ------------------------------------
+        # ML Edge Model (Optional)
+        # ------------------------------------
+        self._ml_model = None
+        self._ml_threshold = 0.60  # minimum probability required
+
+        model_path = "models/edge_model.pkl"
+        if os.path.exists(model_path):
+            with open(model_path, "rb") as f:
+                self._scaler, self._ml_model = pickle.load(f)
+
+        # ------------------------------------
+        # ML Forward Simulation Dataset
+        # ------------------------------------
+        self._ml_dataset_path = "ml_dataset.jsonl"
+        self._pending_simulations = []
+        self._ml_lock = threading.Lock()
+        self.MAX_FORWARD_CANDLES = 36  # 3 hours on 5m
+
         # -----------------------------
         # Trade Governor (UNCHANGED)
         # -----------------------------
-        self._daily_trade_count = 0
-        self._last_trade_minute = {}
-        self._current_utc_day = None
-
-        self.MAX_TRADES_PER_DAY = 30
-        self.MIN_TRADE_SPACING_MINUTES = 6
+        self._last_trade_info = {}  # {symbol: (bucket, direction)}
+        self.COUNTER_TRADE_SPACING_BUCKETS = 6
 
         # -----------------------------
         # 5M Windows
@@ -64,6 +83,9 @@ class Strategy:
                     )
                 )
 
+                # Update forward simulations
+                self._update_simulations(symbol)
+
             self._current_candle[symbol] = {
                 "bucket": bucket,
                 "open": price,
@@ -88,18 +110,6 @@ class Strategy:
             )
         ):
             self._warmed_up = True
-
-        # Daily reset (UNCHANGED)
-        utc_day = datetime.fromtimestamp(
-            timestamp / 1000, timezone.utc
-        ).timetuple().tm_yday
-
-        if self._current_utc_day is None:
-            self._current_utc_day = utc_day
-        elif utc_day != self._current_utc_day:
-            self._current_utc_day = utc_day
-            self._daily_trade_count = 0
-            self._last_trade_minute.clear()
 
     # ======================================================
     # Warmup Seeder (UNCHANGED CONTRACT)
@@ -150,11 +160,25 @@ class Strategy:
     # Helpers
     # ======================================================
 
-    def _trade_spacing_ok(self, symbol, bucket):
-        last_bucket = self._last_trade_minute.get(symbol)
-        if last_bucket is None:
+    def _counter_trade_spacing_ok(self, symbol, bucket, direction):
+        """
+        Prevent immediate counter-trade.
+        Allow same-direction continuation.
+        """
+        last = self._last_trade_info.get(symbol)
+
+        if last is None:
             return True
-        return (bucket - last_bucket) >= self.MIN_TRADE_SPACING_MINUTES
+
+        last_bucket, last_direction = last
+
+        # Only block opposite direction
+        if last_direction != direction:
+            return (
+                bucket - last_bucket
+            ) >= self.COUNTER_TRADE_SPACING_BUCKETS
+
+        return True
 
     def _avg_range(self, candles, window):
         if len(candles) < window:
@@ -248,6 +272,170 @@ class Strategy:
 
         return max(up_moves, down_moves) >= 6
 
+    # ==========================================================
+    # Machine Learning
+    # ==========================================================
+    def _build_ml_features(self, candles):
+        """
+        Expanded structural feature vector.
+        Designed for early adverse-move learning.
+        """
+
+        c = list(candles)
+        last_close = c[-1][3]
+
+        short_range = self._avg_range(candles, self.SHORT_WINDOW)
+        long_range = self._avg_range(candles, self.LONG_WINDOW)
+        trend_score = self._trend_score(candles)
+
+        # --------------------------------------------------
+        # Wick ratio (last 5 candles)
+        # --------------------------------------------------
+        recent = c[-5:]
+        wick_ratios = []
+        body_ratios = []
+
+        for o, h, l, cl in recent:
+            total = h - l
+            if total <= 0:
+                continue
+            body = abs(cl - o)
+            wick = total - body
+            wick_ratios.append(wick / total)
+            body_ratios.append(body / total)
+
+        wick_ratio_recent = sum(wick_ratios) / len(wick_ratios) if wick_ratios else 0
+        body_ratio_recent = sum(body_ratios) / len(body_ratios) if body_ratios else 0
+
+        # --------------------------------------------------
+        # Range acceleration (short vs long)
+        # --------------------------------------------------
+        range_acceleration = (
+            (short_range / long_range)
+            if short_range and long_range and long_range > 0
+            else 0
+        )
+
+        # --------------------------------------------------
+        # Distance from 20 high/low
+        # --------------------------------------------------
+        highs_20 = [x[1] for x in c[-20:]]
+        lows_20 = [x[2] for x in c[-20:]]
+
+        dist_high = (
+            (last_close - max(highs_20)) / last_close
+            if highs_20 else 0
+        )
+
+        dist_low = (
+            (last_close - min(lows_20)) / last_close
+            if lows_20 else 0
+        )
+
+        # --------------------------------------------------
+        # Directional consistency (last 6 closes)
+        # --------------------------------------------------
+        closes = [x[3] for x in c[-6:]]
+        up_moves = sum(1 for i in range(1, len(closes)) if closes[i] > closes[i-1])
+        down_moves = sum(1 for i in range(1, len(closes)) if closes[i] < closes[i-1])
+        directional_consistency = max(up_moves, down_moves)
+
+        return np.array([
+            short_range / last_close if short_range else 0,
+            long_range / last_close if long_range else 0,
+            trend_score,
+            wick_ratio_recent,
+            body_ratio_recent,
+            range_acceleration,
+            dist_high,
+            dist_low,
+            directional_consistency,
+        ]).reshape(1, -1)
+
+    # ======================================================
+    # Forward Simulation Labeling
+    # ======================================================
+    def _update_simulations(self, symbol):
+
+        candles = self._candle_history.get(symbol)
+        if not candles:
+            return
+
+        latest = candles[-1]
+        high = latest[1]
+        low = latest[2]
+
+        finished = []
+
+        with self._ml_lock:
+            for sim in self._pending_simulations:
+
+                entry = sim["entry_price"]
+                direction = sim["direction"]
+                risk = sim["risk_distance"]
+
+                # Convert to R units
+                if direction == "LONG":
+                    adverse_move = (entry - low) / risk
+                    favorable_move = (high - entry) / risk
+                else:
+                    adverse_move = (high - entry) / risk
+                    favorable_move = (entry - low) / risk
+
+                sim["mae"] = max(sim["mae"], adverse_move)
+                sim["mfe"] = max(sim["mfe"], favorable_move)
+
+                sim["candles_seen"] += 1
+
+                # --- EARLY WEAKNESS LABEL ---
+                label = None
+
+                # After first 3 candles decide
+                if sim["candles_seen"] == 3:
+                    if sim["mae"] >= 0.5:
+                        label = 1  # BAD ENTRY
+                    else:
+                        label = 0  # GOOD ENTRY
+
+                # Hard stop at 5 candles to finalize dataset row
+                if sim["candles_seen"] >= 5:
+
+                    row = {
+                        "symbol": sim["symbol"],
+                        "direction": sim["direction"],
+                        "short_range": sim["short_range"],
+                        "long_range": sim["long_range"],
+                        "trend_score": sim["trend_score"],
+                        "wick_ratio_recent": sim["wick_ratio_recent"],
+                        "body_ratio_recent": sim["body_ratio_recent"],
+                        "range_acceleration": sim["range_acceleration"],
+                        "dist_high": sim["dist_high"],
+                        "dist_low": sim["dist_low"],
+                        "directional_consistency": sim["directional_consistency"],
+                        "mae_3": sim["mae"],
+                        "mfe_3": sim["mfe"],
+                        "label": 1 if sim["mae"] >= 0.3 else 0,
+                    }
+
+                    self._append_ml_dataset(row)
+                    finished.append(sim)
+
+            for f in finished:
+                self._pending_simulations.remove(f)
+
+    def _append_ml_dataset(self, row):
+        """
+        Append-only JSONL dataset.
+        Each row written as single line.
+        No full-file rewrite.
+        """
+        try:
+            line = json.dumps(row)
+            with open(self._ml_dataset_path, "a") as f:
+                f.write(line + "\n")
+        except Exception:
+            pass
+
     # ======================================================
     # Main Proposal Logic
     # ======================================================
@@ -255,9 +443,6 @@ class Strategy:
     def propose_intent(self) -> Optional[TradeIntent]:
 
         if not self._warmed_up:
-            return None
-
-        if self._daily_trade_count >= self.MAX_TRADES_PER_DAY:
             return None
 
         candidates = []
@@ -295,9 +480,6 @@ class Strategy:
 
             bucket = self._current_candle[symbol]["bucket"]
 
-            if not self._trade_spacing_ok(symbol, bucket):
-                continue
-
             trend_score = self._trend_score(candles)
             breakout_score = self._breakout_score(candles)
 
@@ -321,6 +503,62 @@ class Strategy:
                 total_score = breakout_score + 2  # bonus for structured breakout
 
             if direction:
+                bucket = self._current_candle[symbol]["bucket"]
+
+                # -------------------------------------------------
+                # HARD THROTTLE: Prevent repeated same-bucket firing
+                # -------------------------------------------------
+                last = self._last_trade_info.get(symbol)
+                if last:
+                    last_bucket, last_direction = last
+
+                    # If same candle bucket AND same direction,
+                    # skip re-proposal entirely
+                    if (
+                        last_bucket == bucket
+                        and last_direction == direction
+                    ):
+                        continue
+
+                if not self._counter_trade_spacing_ok(
+                    symbol, bucket, direction
+                ):
+                    continue
+
+                # ------------------------------------------
+                # Start ML Forward Simulation (ALL setups)
+                # ------------------------------------------
+                last_close = candles[-1][3]
+
+                features = self._build_ml_features(candles)[0]
+
+                # Match real RiskManager math exactly
+                initial_risk_usd = 0.9 * RISK_PER_TRADE_USD
+                qty = initial_risk_usd / last_close
+                risk_distance = initial_risk_usd / qty
+
+                simulation = {
+                    "symbol": symbol,
+                    "direction": direction,
+                    "entry_price": last_close,
+                    "risk_distance": risk_distance,
+                    "candles_seen": 0,
+                    "mae": 0.0,
+                    "mfe": 0.0,
+                    "short_range": float(features[0]),
+                    "long_range": float(features[1]),
+                    "trend_score": float(features[2]),
+                    "wick_ratio_recent": float(features[3]),
+                    "body_ratio_recent": float(features[4]),
+                    "range_acceleration": float(features[5]),
+                    "dist_high": float(features[6]),
+                    "dist_low": float(features[7]),
+                    "directional_consistency": float(features[8]),
+                }
+
+                with self._ml_lock:
+                    self._pending_simulations.append(simulation)
+
                 candidates.append((symbol, direction, total_score))
 
         if not candidates:
@@ -332,8 +570,25 @@ class Strategy:
 
         # Governor update
         bucket = self._current_candle[best_symbol]["bucket"]
-        self._daily_trade_count += 1
-        self._last_trade_minute[best_symbol] = bucket
+
+        # ------------------------------------------
+        # ML Probability Filter
+        # ------------------------------------------
+        if self._ml_model:
+            candles = self._candle_history[best_symbol]
+            features = self._build_ml_features(candles)
+
+            features_scaled = self._scaler.transform(features)
+            prob = self._ml_model.predict_proba(features_scaled)[0][1]
+
+            if prob < self._ml_threshold:
+                return None  # Reject low probability trade
+
+        # Record last trade info ONLY when trade approved
+        self._last_trade_info[best_symbol] = (
+            bucket,
+            best_direction,
+        )
 
         return TradeIntent(
             symbol=best_symbol,

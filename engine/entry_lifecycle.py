@@ -239,7 +239,7 @@ class EntryLifecycle:
         # Recalculate SL
         # --------------------------------------------------
 
-        actual_risk_usd = 0.5 * self.risk.RISK_PER_TRADE_USD
+        actual_risk_usd = 0.9 * self.risk.RISK_PER_TRADE_USD
         if intent.direction == "LONG":
             corrected_sl = ack.avg_price - (
                 actual_risk_usd / ack.filled_qty
