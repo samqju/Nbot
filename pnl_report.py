@@ -14,12 +14,13 @@ def _utc_today_string():
     return now.strftime("%Y-%m-%d")
 
 
-def generate_daily_pnl_summary():
+def generate_daily_pnl_summary(date_str=None):
 
     if not os.path.exists(TRADES_LOG_PATH):
         return "No trades log found."
 
-    today_str = _utc_today_string()
+    if date_str is None:
+        date_str = _utc_today_string()
 
     total_trades = 0
     winning_trades = 0
@@ -37,7 +38,7 @@ def generate_daily_pnl_summary():
                 continue
 
             # Filter only today's UTC trades
-            if today_str not in line:
+            if date_str not in line:
                 continue
 
             match = re.search(r"pnl=([-+]?\d*\.?\d+)", line)
@@ -58,7 +59,7 @@ def generate_daily_pnl_summary():
     net_pnl = total_profit + total_loss
 
     summary = (
-        f"📊 <b>DAILY PnL SUMMARY (UTC)</b>\n\n"
+        f"📊 <b>PnL SUMMARY ({date_str} UTC)</b>\n\n"
         f"Total Trades Closed: {total_trades}\n"
         f"Winning Trades: {winning_trades}\n"
         f"Losing Trades: {losing_trades}\n\n"
