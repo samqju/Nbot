@@ -23,7 +23,7 @@ BASE_URL = os.getenv("TESTNET_BASE_URL")
 TIMEOUT = 3  # Reduced timeout (important)
 
 MIN_CHANGE_PCT = 1.0
-MAX_CHANGE_PCT = 12.0
+MAX_CHANGE_PCT = 25.0
 MIN_QUOTE_VOLUME = 15_000_000
 
 INTERVAL = "5m"

@@ -32,21 +32,19 @@ class Strategy:
         # ------------------------------------
         # ML Edge Model (Optional)
         # ------------------------------------
+        self._model_path = "models/edge_model.pkl"
+        self._model_mtime = None
         self._ml_model = None
-        self._ml_threshold = 0.60  # minimum probability required
+        self._ml_threshold = 0.50  # minimum probability required
 
-        model_path = "models/edge_model.pkl"
-        if os.path.exists(model_path):
-            with open(model_path, "rb") as f:
-                self._scaler, self._ml_model = pickle.load(f)
-
+        self._load_model_if_exists()
         # ------------------------------------
         # ML Forward Simulation Dataset
         # ------------------------------------
         self._ml_dataset_path = "ml_dataset.jsonl"
         self._pending_simulations = []
         self._ml_lock = threading.Lock()
-        self.MAX_FORWARD_CANDLES = 36  # 3 hours on 5m
+        self.MAX_FORWARD_CANDLES = 120  # 10 hours on 5m
 
         # -----------------------------
         # Trade Governor (UNCHANGED)
@@ -60,6 +58,35 @@ class Strategy:
         self.SHORT_WINDOW = 10
         self.LONG_WINDOW = 30
         self.WARMUP_WINDOW = 50
+
+    # ======================================================
+    # ML Hot Reload
+    # ======================================================
+
+    def _load_model_if_exists(self):
+
+        if not os.path.exists(self._model_path):
+            return
+
+        try:
+            mtime = os.path.getmtime(self._model_path)
+
+            # First load
+            if self._model_mtime is None:
+                with open(self._model_path, "rb") as f:
+                    self._scaler, self._ml_model = pickle.load(f)
+                self._model_mtime = mtime
+                return
+
+            # Reload if file changed
+            if mtime != self._model_mtime:
+                with open(self._model_path, "rb") as f:
+                    self._scaler, self._ml_model = pickle.load(f)
+                self._model_mtime = mtime
+
+        except Exception:
+            # Silent fail — never break strategy loop
+            pass
 
     # ======================================================
     # Candle Builder (5M)
@@ -398,7 +425,7 @@ class Strategy:
                         label = 0  # GOOD ENTRY
 
                 # Hard stop at 5 candles to finalize dataset row
-                if sim["candles_seen"] >= 5:
+                if sim["candles_seen"] >= self.MAX_FORWARD_CANDLES:
 
                     row = {
                         "symbol": sim["symbol"],
@@ -414,7 +441,7 @@ class Strategy:
                         "directional_consistency": sim["directional_consistency"],
                         "mae_3": sim["mae"],
                         "mfe_3": sim["mfe"],
-                        "label": 1 if sim["mae"] >= 0.3 else 0,
+                        "label": 1 if sim["mae"] >= 2.0 else 0,
                     }
 
                     self._append_ml_dataset(row)
@@ -475,7 +502,7 @@ class Strategy:
                 continue
 
             # 3️⃣ Reject volatility spikes (exhaustion move)
-            if short_range > (2.5 * long_range):
+            if short_range > (4.0 * long_range):
                 continue
 
             bucket = self._current_candle[symbol]["bucket"]
@@ -573,6 +600,10 @@ class Strategy:
 
         # ------------------------------------------
         # ML Probability Filter
+        # Hot reload check (cheap stat call)
+        # No side effects
+        # Safe during open position
+        self._load_model_if_exists()
         # ------------------------------------------
         if self._ml_model:
             candles = self._candle_history[best_symbol]

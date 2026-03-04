@@ -169,33 +169,27 @@ class RiskManager:
 
         # -----------------------------
         # Trailing SL Logic
-        # --------------------------------
-        step = 0.5
+        # -----------------------------
+        if highest_R >= 1:
 
-        if highest_R >= step:
+            integer_R = int(highest_R)
+            last_locked_R = position.get("last_locked_R", 0)
 
-            # Number of 0.5R milestones achieved
-            step_count = int(highest_R / step)
+            if integer_R > last_locked_R:
 
-            last_locked_step = position.get("last_locked_R", 0)
-
-            if step_count > last_locked_step:
-
-                # Lock one step behind current milestone
-                locked_R = (step_count - 1) * step
+                locked_R = integer_R - 1
                 locked_profit_usd = locked_R * risk_usd
 
                 if side == "LONG":
                     candidate_sl = entry_price + (locked_profit_usd / qty)
                     if candidate_sl > current_sl:
                         updated_stop_loss = candidate_sl
-                        next_integer_R = step_count
-
+                        next_integer_R = integer_R
                 else:
                     candidate_sl = entry_price - (locked_profit_usd / qty)
                     if candidate_sl < current_sl:
                         updated_stop_loss = candidate_sl
-                        next_integer_R = step_count
+                        next_integer_R = integer_R
 
         # -----------------------------
         # Risk Contract Validation
@@ -240,10 +234,10 @@ class RiskManager:
         peak_R = daily_peak_pnl / self.MAX_RISK_USD
         realized_R = daily_realized_pnl / self.MAX_RISK_USD
 
-        if peak_R >= 7:
-            allowed_giveback_R = 3
-        else:
+        if peak_R >= 10:
             allowed_giveback_R = 5
+        else:
+            allowed_giveback_R = 7
 
         dlf_R = peak_R - allowed_giveback_R
         dlf_usd = dlf_R * self.MAX_RISK_USD
