@@ -137,23 +137,32 @@ class UniverseManager:
 
     def _warm_symbols(self, symbols, exchange):
 
+        required = self.strategy.WARMUP_WINDOW
+        request_limit = max(required + 10, 60)
+
         for symbol in symbols:
 
             candles = exchange.get_historical_candles(
                 symbol=symbol,
                 interval="5m",
-                limit=60,
+                limit=request_limit,
             )
 
-            for ts, o, h, l, c in candles:
-                self.strategy.seed_candle(
-                    symbol=symbol,
-                    o=o,
-                    h=h,
-                    l=l,
-                    c=c,
-                    timestamp=ts,
+            seeded = self.strategy.seed_candle_history(
+                symbol=symbol,
+                candles=candles,
+            )
+
+            if seeded < required:
+                raise RuntimeError(
+                    f"SYMBOL_WARMUP_INSUFFICIENT | symbol={symbol} | "
+                    f"seeded={seeded} | required={required}"
                 )
+
+            self.system_log.info(
+                f"SYMBOL_WARMUP_READY | symbol={symbol} | "
+                f"completed_candles={seeded}"
+            )
 
     # ======================================================
     # HOT RELOAD (MEMORY-DRIVEN)

@@ -22,3 +22,10 @@ __pycache__/
 venv/
 .venv/
 env/
+
+# Machine learning
+ml_dataset*.jsonl
+models/
+
+# Generated review files
+live_review_codebase*.txt

@@ -36,6 +36,16 @@ class OperationalExchangeError(ExchangeError):
     pass
 
 
+class EntryValidationError(ExchangeError):
+    """
+    Deterministic local entry rejection raised before an order is submitted.
+
+    These failures must not enter ambiguous-order recovery because Binance
+    has not received an order request.
+    """
+    pass
+
+
 # ----------------------------------------------------------
 # Market Safety Violations (Price / State based)
 # ----------------------------------------------------------

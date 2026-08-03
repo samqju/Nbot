@@ -42,6 +42,11 @@ class StateManager:
 
             # ----------------------------
             # TRADE STATE (SINGLE TRADE ONLY)
+            # open_position schema may include:
+            # symbol, side, entry_price, qty, stop_loss,
+            # risk_usd, highest_profit_usd, last_locked_R,
+            # entry_timestamp, structure_fingerprint,
+            # entry_order_id, entry_client_order_id, sl_order_id
             # ----------------------------
             "open_position": None,
 
@@ -196,6 +201,14 @@ class StateManager:
             self.state["open_position"]["stop_loss"] = new_sl
 
     # ==================================================
+    # Stop Loss Status
+    # =================================================
+    def update_sl_status(self, status):
+
+        if self.state["open_position"] is not None:
+            self.state["open_position"]["sl_status"] = status
+
+    # ==================================================
     # HEARTBEAT / SHUTDOWN
     # ==================================================
 
@@ -246,6 +259,7 @@ class StateManager:
                 "qty",
                 "stop_loss",
                 "risk_usd",
+                "sl_status",
             ]
 
             for field in required_fields:
@@ -263,6 +277,21 @@ class StateManager:
             if open_position["stop_loss"] is not None:
                 if open_position["stop_loss"] <= 0:
                     raise ValueError("STATE_INVALID_STOP_LOSS")
+
+            for field in ("entry_order_id", "sl_order_id"):
+                value = open_position.get(field)
+                if value is not None and not isinstance(value, int):
+                    raise ValueError(
+                        f"STATE_INVALID_POSITION_{field.upper()}"
+                    )
+
+            client_id = open_position.get("entry_client_order_id")
+            if client_id is not None and (
+                not isinstance(client_id, str) or not client_id
+            ):
+                raise ValueError(
+                    "STATE_INVALID_POSITION_ENTRY_CLIENT_ORDER_ID"
+                )
 
         # ------------------------------------------
         # Daily Accounting Consistency

@@ -40,17 +40,46 @@ class ReconciliationLifecycle:
         entry_timestamp=None,
         highest_profit_usd: float = 0.0,
         last_locked_R: int = 0,
+        structure_fingerprint=None,
+        sl_status=None,
+        mae: float = 0.0,
+        mfe: float = 0.0,
+        risk_usd=None,
+        initial_risk_usd=None,
+        initial_stop_loss=None,
+        entry_order_id=None,
+        entry_client_order_id=None,
+        sl_order_id=None,
     ):
+        if sl_status is None:
+            sl_status = "VERIFIED" if stop_loss is not None else "MISSING"
+
+        if risk_usd is None:
+            risk_usd = self.risk.RISK_PER_TRADE_USD
+        if initial_risk_usd is None:
+            initial_risk_usd = risk_usd
+        if initial_stop_loss is None:
+            initial_stop_loss = stop_loss
+
         return {
             "symbol": symbol,
             "side": side,
             "entry_price": entry_price,
             "qty": qty,
             "stop_loss": stop_loss,
-            "risk_usd": self.risk.RISK_PER_TRADE_USD,
+            "initial_stop_loss": initial_stop_loss,
+            "risk_usd": risk_usd,
+            "initial_risk_usd": initial_risk_usd,
+            "entry_order_id": entry_order_id,
+            "entry_client_order_id": entry_client_order_id,
+            "sl_order_id": sl_order_id,
             "highest_profit_usd": highest_profit_usd,
             "last_locked_R": last_locked_R,
             "entry_timestamp": entry_timestamp,
+            "structure_fingerprint": structure_fingerprint,
+            "sl_status": sl_status,
+            "mae": mae,
+            "mfe": mfe,
         }
 
     # --------------------------------------------------
@@ -61,10 +90,13 @@ class ReconciliationLifecycle:
 
         engine_state = self.state.get_state().get("engine_state")
         if engine_state != "RUNNING":
+            # Reconciliation protects existing exchange exposure and repairs
+            # persisted truth. Entry permission must never suppress it.
             self.system_log.info(
-                f"RECONCILIATION_SKIPPED | engine_state={engine_state}"
+                f"RECONCILIATION_RUNNING_WITH_ENTRIES_DISABLED | "
+                f"engine_state={engine_state}"
             )
-            return None
+
         self.system_log.info(
             f"RECONCILIATION_START | reason={reason}"
         )
@@ -226,9 +258,13 @@ class ReconciliationLifecycle:
                 if previous_state:
                     highest_profit_usd = previous_state.get("highest_profit_usd", 0.0)
                     last_locked_R = previous_state.get("last_locked_R", 0)
+                    mae = previous_state.get("mae", 0.0)
+                    mfe = previous_state.get("mfe", 0.0)
                 else:
                     highest_profit_usd = 0.0
                     last_locked_R = 0
+                    mae = 0.0
+                    mfe = 0.0
 
                 if previous_state:
                     restored_ts = previous_state.get("entry_timestamp")
@@ -246,6 +282,45 @@ class ReconciliationLifecycle:
                     entry_timestamp=restored_ts,
                     highest_profit_usd=highest_profit_usd,
                     last_locked_R=last_locked_R,
+                    structure_fingerprint=previous_state.get("structure_fingerprint") if previous_state else None,
+                    mae=mae,
+                    mfe=mfe,
+                    risk_usd=(
+                        previous_state.get("risk_usd")
+                        if previous_state
+                        else self.risk.RISK_PER_TRADE_USD
+                    ),
+                    initial_risk_usd=(
+                        previous_state.get(
+                            "initial_risk_usd",
+                            previous_state.get("risk_usd"),
+                        )
+                        if previous_state
+                        else self.risk.RISK_PER_TRADE_USD
+                    ),
+                    initial_stop_loss=(
+                        previous_state.get(
+                            "initial_stop_loss",
+                            previous_state.get("stop_loss"),
+                        )
+                        if previous_state
+                        else position.stop_loss
+                    ),
+                    entry_order_id=(
+                        previous_state.get("entry_order_id")
+                        if previous_state
+                        else None
+                    ),
+                    entry_client_order_id=(
+                        previous_state.get("entry_client_order_id")
+                        if previous_state
+                        else None
+                    ),
+                    sl_order_id=(
+                        self.exchange.get_active_sl_order_id()
+                        if position.stop_loss is not None
+                        else None
+                    ),
                 )
 
                 # --------------------------------------------------
@@ -343,7 +418,7 @@ class ReconciliationLifecycle:
                         raise RuntimeError("RECOVERY_SL_ALREADY_BREACHED")
 
                     try:
-                        self.exchange.place_initial_sl(
+                        sl_ref = self.exchange.place_initial_sl(
                             symbol=position.symbol,
                             side=position.side,
                             qty=position.qty,
@@ -363,7 +438,10 @@ class ReconciliationLifecycle:
                         )
                         raise RuntimeError("RECOVERY_SL_VERIFICATION_FAILED")
 
-                    self.state.update_stop_loss(verified.stop_loss)
+                    rebuilt["stop_loss"] = verified.stop_loss
+                    rebuilt["sl_status"] = "RECOVERED"
+                    rebuilt["sl_order_id"] = sl_ref["algo_id"]
+                    self.state.update_open_position(rebuilt)
                     self.system_log.info("RECOVERY_SL_SUCCESS")
                     self.system_log.info(
                         f"RECOVERY_SL_CONFIRMED | "

@@ -1,3 +1,11 @@
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load the project-local .env before reading runtime settings.
+_ENV_PATH = Path(__file__).resolve().parent / ".env"
+load_dotenv(dotenv_path=_ENV_PATH, override=False)
+
 # ==========================================================
 # CONFIGURATION FILE
 # ==========================================================
@@ -33,6 +41,16 @@ LEVERAGE = 5
 # ================================
 
 GLOBAL_KILL_SWITCH = False
+
+# Runtime environment and execution policy are separate controls.
+# Expected .env values:
+#   TRADING_ENV=TESTNET | LIVE
+#   EXECUTION_MODE=SHADOW | TRADE
+TRADING_ENV = os.getenv("TRADING_ENV", "TESTNET").strip().upper()
+EXECUTION_MODE = os.getenv("EXECUTION_MODE", "SHADOW").strip().upper()
+
+# Backward-compatible derived flag used by the existing engine.
+SHADOW_MODE = EXECUTION_MODE == "SHADOW"
 
 # ================================
 # ORDER EXECUTION POLICY
@@ -71,9 +89,21 @@ def _validate():
     if not (0 <= ENTRY_SLIPPAGE_PCT <= 10):
         raise ValueError("CONFIG_INVALID: ENTRY_SLIPPAGE_PCT")
 
+    if TRADING_ENV not in {"TESTNET", "LIVE"}:
+        raise ValueError("CONFIG_INVALID: TRADING_ENV")
+
+    if EXECUTION_MODE not in {"SHADOW", "TRADE"}:
+        raise ValueError("CONFIG_INVALID: EXECUTION_MODE")
+
+    if not isinstance(SHADOW_MODE, bool):
+        raise ValueError("CONFIG_INVALID: SHADOW_MODE")
+
     if not (0 <= MAX_SPREAD_PCT <= 5):
         raise ValueError("CONFIG_INVALID: MAX_SPREAD_PCT")
 
 
 _validate()
 del _validate
+
+# ===== Learning dataset =====
+TRADE_DATASET_PATH = "data/trade_observations.jsonl"

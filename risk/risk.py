@@ -94,7 +94,7 @@ class RiskManager:
 
         Policy:
         - Fixed notional sizing
-        - Initial SL at −0.9R
+        - Initial SL at −1.0R
         - Tolerance does NOT affect SL placement
         """
 
@@ -112,8 +112,8 @@ class RiskManager:
                 daily_loss_floor=0.0,
             )
 
-        # Initial risk = 0.9R
-        initial_risk_usd = 0.9 * self.MAX_RISK_USD
+        # Initial risk = 1.0R
+        initial_risk_usd = self.MAX_RISK_USD
 
         if side == "LONG":
             stop_loss = price - (initial_risk_usd / intended_qty)
@@ -235,9 +235,9 @@ class RiskManager:
         realized_R = daily_realized_pnl / self.MAX_RISK_USD
 
         if peak_R >= 10:
-            allowed_giveback_R = 5
+            allowed_giveback_R = 3
         else:
-            allowed_giveback_R = 7
+            allowed_giveback_R = 5
 
         dlf_R = peak_R - allowed_giveback_R
         dlf_usd = dlf_R * self.MAX_RISK_USD
@@ -304,3 +304,4 @@ class RiskManager:
             initial_sl=sl,
             risk_r=1.0,
         )
+

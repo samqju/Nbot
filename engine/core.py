@@ -16,6 +16,7 @@ from config import (
     NOTIONAL_TOLERANCE_PCT,
     RISK_PER_TRADE_USD,
     RISK_TOLERANCE_PCT,
+    SHADOW_MODE,
 )
 from execution.exceptions import MarketStateError
 from risk.risk import RiskManager
@@ -72,7 +73,7 @@ class TradingEngine:
 
         # Core components
         self.state = StateManager()
-        self.strategy = Strategy()
+        self.strategy = Strategy(system_log=system_log)
         self.risk = RiskManager(
             NOTIONAL_TARGET=MAX_NOTIONAL_USD,
             NOTIONAL_TOLERANCE_PCT=NOTIONAL_TOLERANCE_PCT,
@@ -161,6 +162,7 @@ class TradingEngine:
         # ------------------------------------------
         self._symbols_seen = set()
         self._strategy_activated = False
+        self._shadow_mode_logged = False
     # --------------------------------------------------
     # Start
     # --------------------------------------------------
@@ -273,11 +275,27 @@ class TradingEngine:
                     self.state.save()
                     return
 
+        actual_engine_state = self.state.get_state().get("engine_state")
+        actual_halt_reason = self.state.get_state().get(
+            "engine_halt_reason"
+        )
+
+        if SHADOW_MODE:
+            runtime_status = (
+                "SHADOW MODE — ORDERS BLOCKED\n"
+                f"Persisted entry state: {actual_engine_state}"
+            )
+        else:
+            runtime_status = f"Status: {actual_engine_state}"
+
+        if actual_halt_reason:
+            runtime_status += f"\nReason: {actual_halt_reason}"
+
         send_info(
             "ENGINE STARTED",
             f"UTC: {datetime.now(timezone.utc).strftime(
                 '%Y-%m-%d %H:%M:%S')}\n"
-            "Status: RUNNING"
+            f"{runtime_status}"
         )
 
         self._main_loop()
@@ -310,33 +328,23 @@ class TradingEngine:
                         price=tick.price,
                         timestamp=tick.timestamp,
                     )
-                    # --------------------------------------------------
-                    # HARD GUARD: Do not execute trading logic
-                    # when engine is not RUNNING
-                    # --------------------------------------------------
-                    engine_state = self.state.get_state().get("engine_state")
-                    if engine_state != RUNNING:
-                        continue
+
+                    # ------------------------------------------
+                    # Always feed market data into the strategy.
+                    # Entry permission and position exposure must not
+                    # create gaps in candle history or simulations.
+                    # ------------------------------------------
+                    self.strategy.on_price(
+                        symbol=tick.symbol,
+                        price=tick.price,
+                        timestamp=tick.timestamp,
+                    )
 
                     # --------------------------------------------------
-                    # STARTUP TICK BARRIER
-                    # Delay strategy activation until all symbols seen
+                    # POSITION MANAGEMENT HAS PRIORITY OVER ENTRY STATE
                     # --------------------------------------------------
-                    if not self._strategy_activated:
-
-                        if tick.symbol in self.universe.symbols:
-                            self._symbols_seen.add(tick.symbol)
-
-                        if len(self._symbols_seen) >= int(0.9 * len(self.universe.symbols)):
-                            self._strategy_activated = True
-                            self.system_log.info(
-                                "STARTUP_TICK_BARRIER_PASSED | "
-                                f"symbols={len(self._symbols_seen)}"
-                            )
-                        else:
-                            # Still collecting first ticks
-                            continue
-
+                    # TRADING_DISABLED means "no new entries". It must
+                    # never stop supervision of capital already exposed.
                     open_position = self.state.get_open_position()
 
                     # ==================================================
@@ -344,20 +352,22 @@ class TradingEngine:
                     # ==================================================
                     if open_position:
 
-                        # Ignore irrelevant symbols
+                        # Ignore irrelevant symbols; the exchange position
+                        # is managed from ticks for its own symbol.
                         if tick.symbol != open_position["symbol"]:
                             continue
 
-                        # Daily lifecycle
-                        result = self.daily_lifecycle.handle(
-                            timestamp=tick.timestamp
-                        )
-                        if result is False:
-                            continue
-
-                        # Position lifecycle
+                        # Position lifecycle must run before any entry-state
+                        # or daily-entry guard can block the loop.
                         self.position_lifecycle.manage(
                             market_state=self.market_state
+                        )
+
+                        # Daily lifecycle is evaluated after position
+                        # supervision. A daily halt may block future entries,
+                        # but it must not prevent management of this position.
+                        self.daily_lifecycle.handle(
+                            timestamp=tick.timestamp
                         )
 
                         # Heartbeat + persistence
@@ -376,9 +386,35 @@ class TradingEngine:
                                     f"STATE_SAVE_FAILED | {e}"
                                 )
                                 self._disable_trading(reason="STATE_SAVE_FAILED")
-                                self.state.save()
 
                         continue
+
+                    # --------------------------------------------------
+                    # ENTRY GUARD — APPLIES ONLY WHILE FLAT
+                    # --------------------------------------------------
+                    engine_state = self.state.get_state().get("engine_state")
+                    if engine_state != RUNNING and not SHADOW_MODE:
+                        continue
+
+                    # --------------------------------------------------
+                    # STARTUP TICK BARRIER
+                    # Delay new-entry strategy activation until enough
+                    # universe symbols have produced a live tick.
+                    # --------------------------------------------------
+                    if not self._strategy_activated:
+
+                        if tick.symbol in self.universe.symbols:
+                            self._symbols_seen.add(tick.symbol)
+
+                        if len(self._symbols_seen) >= int(0.9 * len(self.universe.symbols)):
+                            self._strategy_activated = True
+                            self.system_log.info(
+                                "STARTUP_TICK_BARRIER_PASSED | "
+                                f"symbols={len(self._symbols_seen)}"
+                            )
+                        else:
+                            # Still collecting first ticks
+                            continue
 
                     # ==================================================
                     # MODE B — NO POSITION
@@ -391,31 +427,43 @@ class TradingEngine:
                     if result is False:
                         continue
 
-                    # Feed strategy
-                    self.strategy.on_price(
-                        symbol=tick.symbol,
-                        price=tick.price,
-                        timestamp=tick.timestamp,
-                    )
-
-                    # Observe intent
+                    # Strategy market data was already updated above.
+                    # Observe intent only when flat and entries are enabled.
                     self.intent_lifecycle.observe(
                         market_state=self.market_state
                     )
 
                     intent = self.intent_lifecycle.accepted_intent
 
-                    # Try execute entry
-                    entry_attempted = intent is not None
+                    # Shadow mode deliberately permits strategy evaluation and
+                    # dataset generation while blocking every order submission.
+                    if SHADOW_MODE:
+                        if not self._shadow_mode_logged:
+                            self.system_log.warning(
+                                "SHADOW_MODE_ACTIVE | order_submission=BLOCKED"
+                            )
+                            self._shadow_mode_logged = True
 
-                    result = self.entry_lifecycle.maybe_execute(
-                        intent=intent,
-                        market_state=self.market_state,
-                    )
+                        if intent is not None:
+                            self.system_log.info(
+                                "SHADOW_INTENT_BLOCKED | "
+                                f"symbol={intent.symbol} | "
+                                f"direction={intent.direction}"
+                            )
+                            self.intent_lifecycle.clear_accepted_intent()
 
-                    # Clear intent after ANY attempt (success or failure)
-                    if entry_attempted:
-                        self.intent_lifecycle.clear_accepted_intent()
+                    else:
+                        # Try execute entry only when shadow mode is disabled.
+                        entry_attempted = intent is not None
+
+                        self.entry_lifecycle.maybe_execute(
+                            intent=intent,
+                            market_state=self.market_state,
+                        )
+
+                        # Clear intent after ANY attempt (success or failure)
+                        if entry_attempted:
+                            self.intent_lifecycle.clear_accepted_intent()
 
                     # Heartbeat
                     self.state.heartbeat(
@@ -522,11 +570,14 @@ class TradingEngine:
             action = cmd.get("action")
 
             if action == "ENABLE_TRADING":
-                self.state.set_engine_state(RUNNING, reason=None)
-                self.state.save()
-                result = self.reconciliation.run(
+                # Keep new entries disabled until exchange/state truth has
+                # reconciled successfully. Reconciliation is allowed to run
+                # while the engine is TRADING_DISABLED.
+                self.reconciliation.run(
                     reason="OPERATOR_RESUME"
                 )
+                self.state.set_engine_state(RUNNING, reason=None)
+                self.state.save()
                 self.system_log.info("OPERATOR_COMMAND | ENABLE_TRADING")
 
             elif action == "DISABLE_TRADING":
@@ -553,11 +604,13 @@ class TradingEngine:
     def _handle_operator_command(self, text: str):
 
         if text == "/enable":
-            self.state.set_engine_state("RUNNING", reason=None)
-            self.state.save()
-            result = self.reconciliation.run(
+            # Reconcile while entries remain disabled. Only a successful
+            # reconciliation may transition the engine back to RUNNING.
+            self.reconciliation.run(
                 reason="OPERATOR_RESUME"
             )
+            self.state.set_engine_state(RUNNING, reason=None)
+            self.state.save()
             self.system_log.info("OPERATOR_ENABLE")
             send_info("TRADING ENABLED", "Operator command accepted.")
 

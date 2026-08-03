@@ -179,68 +179,11 @@ def build_universe():
         key=lambda x: x[1] * x[2],
         reverse=True
     )
-
-    symbols_for_kline = [
-        s for s, _, _ in pre_candidates[:MAX_PRE_KLINE_SYMBOLS]
+    selected = [
+        s for s, _, _ in pre_candidates[:EXPECTED_SIZE]
     ]
 
-    trend_bucket = []
-    compression_bucket = []
-    fallback_bucket = []
-
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {
-            executor.submit(fetch_klines, symbol): symbol
-            for symbol in symbols_for_kline
-        }
-
-        for future in as_completed(futures):
-            symbol, candles = future.result()
-
-            if not candles or len(candles) < CANDLE_LIMIT:
-                continue
-
-            if avg_wick_ratio(candles) > 0.55:
-                continue
-
-            structure = classify_structure(candles)
-
-            # Find volume and volatility again
-            for s, vol, chg in pre_candidates:
-                if s == symbol:
-                    score = vol * chg
-                    break
-            else:
-                score = 0
-
-            if structure == "TREND":
-                trend_bucket.append((symbol, score))
-
-            elif structure == "COMPRESSION":
-                compression_bucket.append((symbol, score))
-
-            else:
-                fallback_bucket.append((symbol, score))
-
-    trend_bucket.sort(key=lambda x: x[1], reverse=True)
-    compression_bucket.sort(key=lambda x: x[1], reverse=True)
-    fallback_bucket.sort(key=lambda x: x[1], reverse=True)
-
-    selected = (
-        [s for s, _ in trend_bucket[:15]] +
-        [s for s, _ in compression_bucket[:15]]
-    )
-
-    # Fallback fill
-    if len(selected) < EXPECTED_SIZE:
-        needed = EXPECTED_SIZE - len(selected)
-        fallback_symbols = [
-            s for s, _ in fallback_bucket
-            if s not in selected
-        ]
-        selected.extend(fallback_symbols[:needed])
-
-    return selected[:EXPECTED_SIZE]
+    return selected
 
 # ============================================================
 # ENTRYPOINT (CRON SAFE)

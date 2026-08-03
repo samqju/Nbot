@@ -12,11 +12,12 @@ import numpy as np
 import json
 import threading
 from config import RISK_PER_TRADE_USD, MAX_NOTIONAL_USD
+from strategy.structure_classifier import StructureClassifier
 
 class Strategy:
 
-    def __init__(self, max_history: int = 200):
-
+    def __init__(self, max_history: int = 200, system_log=None):
+        self.system_log = system_log
         # -----------------------------
         # Candle Storage
         # -----------------------------
@@ -29,13 +30,29 @@ class Strategy:
         self._universe = set()
         self._warmed_up = False
 
+        self._classifier = StructureClassifier()
+        self._latest_structure = {}
+
         # ------------------------------------
         # ML Edge Model (Optional)
         # ------------------------------------
         self._model_path = "models/edge_model.pkl"
         self._model_mtime = None
         self._ml_model = None
+        self._scaler = None
         self._ml_threshold = 0.50  # minimum probability required
+        self._model_schema_version = 2
+        self._ml_feature_names = (
+            "short_range",
+            "long_range",
+            "trend_score",
+            "wick_ratio_recent",
+            "body_ratio_recent",
+            "range_acceleration",
+            "dist_high",
+            "dist_low",
+            "directional_consistency",
+        )
 
         self._load_model_if_exists()
         # ------------------------------------
@@ -50,6 +67,10 @@ class Strategy:
         # Trade Governor (UNCHANGED)
         # -----------------------------
         self._last_trade_info = {}  # {symbol: (bucket, direction)}
+        # Last current-candle bucket evaluated per symbol. Since the
+        # strategy uses completed candles only, a new current bucket means
+        # exactly one newly closed 5-minute candle is available.
+        self._last_evaluated_bucket = {}
         self.COUNTER_TRADE_SPACING_BUCKETS = 6
 
         # -----------------------------
@@ -68,31 +89,79 @@ class Strategy:
         if not os.path.exists(self._model_path):
             return
 
+        mtime = None
+
         try:
             mtime = os.path.getmtime(self._model_path)
-
-            # First load
-            if self._model_mtime is None:
-                with open(self._model_path, "rb") as f:
-                    self._scaler, self._ml_model = pickle.load(f)
-                self._model_mtime = mtime
+            if self._model_mtime == mtime:
                 return
 
-            # Reload if file changed
-            if mtime != self._model_mtime:
-                with open(self._model_path, "rb") as f:
-                    self._scaler, self._ml_model = pickle.load(f)
+            with open(self._model_path, "rb") as f:
+                artifact = pickle.load(f)
+
+            if not isinstance(artifact, dict):
+                raise RuntimeError("LEGACY_MODEL_ARTIFACT_UNSUPPORTED")
+
+            schema_version = artifact.get("schema_version")
+            feature_names = tuple(artifact.get("feature_names", ()))
+            scaler = artifact.get("scaler")
+            model = artifact.get("model")
+
+            if schema_version != self._model_schema_version:
+                raise RuntimeError(
+                    f"MODEL_SCHEMA_MISMATCH | expected={self._model_schema_version} "
+                    f"actual={schema_version}"
+                )
+            if feature_names != self._ml_feature_names:
+                raise RuntimeError(
+                    "MODEL_FEATURE_ORDER_MISMATCH | "
+                    f"expected={self._ml_feature_names} actual={feature_names}"
+                )
+            if scaler is None or model is None:
+                raise RuntimeError("MODEL_ARTIFACT_INCOMPLETE")
+
+            expected_count = len(self._ml_feature_names)
+            scaler_count = getattr(scaler, "n_features_in_", expected_count)
+            model_count = getattr(model, "n_features_in_", expected_count)
+            if scaler_count != expected_count or model_count != expected_count:
+                raise RuntimeError(
+                    "MODEL_FEATURE_COUNT_MISMATCH | "
+                    f"expected={expected_count} scaler={scaler_count} model={model_count}"
+                )
+
+            # Install only after the entire artifact passes validation. A bad
+            # hot-reload never replaces the last known-good in-memory model.
+            self._scaler = scaler
+            self._ml_model = model
+            self._model_mtime = mtime
+
+            if self.system_log:
+                self.system_log.info(
+                    f"ML_MODEL_LOADED | schema={schema_version} | "
+                    f"features={expected_count}"
+                )
+
+        except Exception as e:
+            # Quarantine this exact rejected artifact. It will be retried only
+            # after the model file is replaced and its modification time changes.
+            if mtime is not None:
                 self._model_mtime = mtime
 
-        except Exception:
-            # Silent fail — never break strategy loop
-            pass
+            if self.system_log:
+                self.system_log.error(
+                    f"ML_MODEL_REJECTED | mtime={mtime} | error={e}"
+                )
 
     # ======================================================
     # Candle Builder (5M)
     # ======================================================
 
     def on_price(self, symbol: str, price: float, timestamp: int):
+
+        # The exchange price stream may contain every listed contract. The
+        # strategy must build candles only for the active selected universe.
+        if self._universe and symbol not in self._universe:
+            return
 
         bucket = timestamp // 300000  # 5m bucket
 
@@ -109,6 +178,19 @@ class Strategy:
                         candle["close"],
                     )
                 )
+
+                # Keep the latest market-structure fingerprint aligned
+                # with the newest completed 5-minute candle.
+                try:
+                    self._latest_structure[symbol] = self._classifier.fingerprint(
+                        list(self._candle_history[symbol])
+                    )
+                except Exception as e:
+                    if self.system_log:
+                        self.system_log.error(
+                            f"STRUCTURE_FINGERPRINT_ERROR | "
+                            f"symbol={symbol} | error={e}"
+                        )
 
                 # Update forward simulations
                 self._update_simulations(symbol)
@@ -139,6 +221,72 @@ class Strategy:
             self._warmed_up = True
 
     # ======================================================
+    # Historical Warmup Seeder
+    # ======================================================
+
+    def seed_candle_history(self, symbol: str, candles) -> int:
+        """
+        Replace one symbol's completed history with closed REST candles.
+
+        UniverseManager calls this while preparing newly added symbols,
+        before committing the new universe to Strategy. Therefore this
+        method must not reject a symbol merely because it is not yet in
+        self._universe.
+        """
+        ordered = sorted(candles, key=lambda item: int(item[0]))
+        history = self._candle_history[symbol]
+        history.clear()
+
+        last_bucket = None
+
+        for timestamp, o, h, l, c in ordered:
+            bucket = int(timestamp) // 300000
+
+            # Defensive de-duplication for repeated REST rows.
+            if bucket == last_bucket:
+                continue
+
+            o = float(o)
+            h = float(h)
+            l = float(l)
+            c = float(c)
+
+            if min(o, h, l, c) <= 0:
+                continue
+            if h < max(o, c) or l > min(o, c) or h < l:
+                continue
+
+            history.append((o, h, l, c))
+            last_bucket = bucket
+
+        # Historical rows are completed candles. The current live candle must
+        # be created only by the first live tick received after startup.
+        self._current_candle.pop(symbol, None)
+        self._last_ts.pop(symbol, None)
+        self._last_evaluated_bucket.pop(symbol, None)
+
+        if history:
+            try:
+                self._latest_structure[symbol] = self._classifier.fingerprint(
+                    list(history)
+                )
+            except Exception as e:
+                if self.system_log:
+                    self.system_log.error(
+                        f"STRUCTURE_FINGERPRINT_ERROR | symbol={symbol} | error={e}"
+                    )
+
+        self._warmed_up = bool(
+            self._universe
+            and all(
+                len(self._candle_history[s]) >= self.WARMUP_WINDOW
+                for s in self._universe
+            )
+        )
+
+        return len(history)
+
+    # ======================================================
     # Warmup Seeder (UNCHANGED CONTRACT)
     # ======================================================
 
@@ -156,6 +304,19 @@ class Strategy:
 
         self._candle_history[symbol].append((o, h, l, c))
 
+        candles = list(self._candle_history[symbol])
+
+        if len(candles) < 20:
+            return
+
+        try:
+            fingerprint = self._classifier.fingerprint(candles)
+            self._latest_structure[symbol] = fingerprint
+        except Exception as e:
+            if self.system_log:
+                self.system_log.error(
+                    f"STRUCTURE_FINGERPRINT_ERROR | symbol={symbol} | error={e}"
+                )
         self._current_candle[symbol] = {
             "bucket": bucket,
             "open": c,
@@ -179,6 +340,9 @@ class Strategy:
 
     def set_universe(self, symbols):
         self._universe = set(symbols)
+
+    def get_structure(self, symbol):
+        return self._latest_structure.get(symbol)
 
     def is_warmed_up(self) -> bool:
         return self._warmed_up
@@ -248,6 +412,34 @@ class Strategy:
         if last_close < min(lows[:-1]):
             return 4
         return 0
+
+    # --------------------------------------------------
+    # STRUCTURE QUALITY SCORE
+    # --------------------------------------------------
+
+    def _structure_score(self, candles):
+
+        trend = abs(self._trend_score(candles)) / 10.0
+
+        ranges = [(c[1] - c[2]) for c in candles]
+
+        short = sum(ranges[-5:]) / 5
+        long = sum(ranges) / len(ranges)
+
+        volatility = short / long if long > 0 else 0
+
+        breakout = abs(self._breakout_score(candles))
+
+        pullback = 1.0 if self._strong_pullback(candles) else 0.0
+
+        score = (
+            0.35 * trend +
+            0.30 * volatility +
+            0.20 * breakout +
+            0.15 * pullback
+        )
+
+        return score
 
     def _is_compressing(self, candles):
         """
@@ -397,6 +589,12 @@ class Strategy:
         with self._ml_lock:
             for sim in self._pending_simulations:
 
+                # A newly closed candle may update only simulations for
+                # the same symbol. Cross-symbol prices would corrupt MAE,
+                # MFE, candle counts, and every resulting training label.
+                if sim["symbol"] != symbol:
+                    continue
+
                 entry = sim["entry_price"]
                 direction = sim["direction"]
                 risk = sim["risk_distance"]
@@ -427,9 +625,23 @@ class Strategy:
                 # Hard stop at 5 candles to finalize dataset row
                 if sim["candles_seen"] >= self.MAX_FORWARD_CANDLES:
 
+                    target_r = sim["mfe"] - sim["mae"]
+
                     row = {
+                        "schema_version": 2,
+                        "observation_type": "FORWARD_SIMULATION",
+                        "timestamp": int(time.time()),
                         "symbol": sim["symbol"],
                         "direction": sim["direction"],
+                        "structure": str(sim["structure_fingerprint"].get("structure"))
+                        if sim.get("structure_fingerprint") else None,
+                        "trend": str(sim["structure_fingerprint"].get("trend"))
+                        if sim.get("structure_fingerprint") else None,
+                        "volatility": str(sim["structure_fingerprint"].get("volatility"))
+                        if sim.get("structure_fingerprint") else None,
+                        "compression": str(sim["structure_fingerprint"].get("compression"))
+                        if sim.get("structure_fingerprint") else None,
+
                         "short_range": sim["short_range"],
                         "long_range": sim["long_range"],
                         "trend_score": sim["trend_score"],
@@ -441,7 +653,8 @@ class Strategy:
                         "directional_consistency": sim["directional_consistency"],
                         "mae_3": sim["mae"],
                         "mfe_3": sim["mfe"],
-                        "label": 1 if sim["mae"] >= 2.0 else 0,
+                        "target_r": target_r,
+                        "label": 1 if target_r > 0 else 0,
                     }
 
                     self._append_ml_dataset(row)
@@ -505,7 +718,19 @@ class Strategy:
             if short_range > (4.0 * long_range):
                 continue
 
-            bucket = self._current_candle[symbol]["bucket"]
+            current = self._current_candle.get(symbol)
+            if current is None:
+                continue
+
+            bucket = current["bucket"]
+
+            # Evaluate each symbol at most once after a 5-minute candle
+            # closes. propose_intent() is called on every market tick, so
+            # without this guard the same completed-candle setup can create
+            # repeated candidates and duplicate forward simulations.
+            if self._last_evaluated_bucket.get(symbol) == bucket:
+                continue
+            self._last_evaluated_bucket[symbol] = bucket
 
             trend_score = self._trend_score(candles)
             breakout_score = self._breakout_score(candles)
@@ -516,7 +741,17 @@ class Strategy:
             # Strong continuation
             if abs(trend_score) >= 6 and self._strong_pullback(candles):
                 direction = "LONG" if trend_score > 0 else "SHORT"
-                total_score = abs(trend_score)
+                total_score = self._structure_score(candles)
+                # ------------------------------------------
+                # STRUCTURE SCORE DEBUG (LOW FREQUENCY)
+                # ------------------------------------------
+                if total_score >= 0.6 and self.system_log:
+                    self.system_log.info(
+                        f"STRUCTURE_SCORE | "
+                        f"symbol={symbol} | "
+                        f"direction={direction} | "
+                        f"score={total_score:.3f}"
+                    )
 
             # Breakout (allowed without prior trend)
             elif (
@@ -527,7 +762,7 @@ class Strategy:
                 last_close = candles[-1][3]
                 prev_close = candles[-2][3]
                 direction = "LONG" if last_close > prev_close else "SHORT"
-                total_score = breakout_score + 2  # bonus for structured breakout
+                total_score = self._structure_score(candles)
 
             if direction:
                 bucket = self._current_candle[symbol]["bucket"]
@@ -559,10 +794,15 @@ class Strategy:
 
                 features = self._build_ml_features(candles)[0]
 
-                # Match real RiskManager math exactly
-                initial_risk_usd = 0.9 * RISK_PER_TRADE_USD
-                qty = initial_risk_usd / last_close
+                # Match the actual position sizing contract: quantity is
+                # derived from the configured notional, while price-distance
+                # risk is derived from USD risk divided by that quantity.
+                initial_risk_usd = RISK_PER_TRADE_USD
+                qty = MAX_NOTIONAL_USD / last_close
                 risk_distance = initial_risk_usd / qty
+
+                if qty <= 0 or risk_distance <= 0:
+                    continue
 
                 simulation = {
                     "symbol": symbol,
@@ -572,6 +812,7 @@ class Strategy:
                     "candles_seen": 0,
                     "mae": 0.0,
                     "mfe": 0.0,
+                    "structure_fingerprint": self._latest_structure.get(symbol),
                     "short_range": float(features[0]),
                     "long_range": float(features[1]),
                     "trend_score": float(features[2]),
@@ -627,4 +868,5 @@ class Strategy:
             pattern="STRUCTURE_5M",
             entry_price=None,
             generated_at=datetime.now(timezone.utc),
+            structure_fingerprint=self._latest_structure.get(best_symbol),
         )

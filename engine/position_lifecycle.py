@@ -16,6 +16,8 @@ from utils.telegram_notifier import (
     edit_message,
     format_trade_panel,
 )
+from train_model import record_observation
+
 
 class PositionLifecycle:
 
@@ -59,6 +61,19 @@ class PositionLifecycle:
             return
 
         price = market_state.get_price(symbol)
+        entry_price = open_position["entry_price"]
+        qty = open_position["qty"]
+        side = open_position["side"]
+        if side == "LONG":
+            pnl_move = (price - entry_price) * qty
+        else:
+            pnl_move = (entry_price - price) * qty
+
+        # update MFE (max favorable excursion)
+        open_position["mfe"] = max(open_position.get("mfe", pnl_move), pnl_move)
+
+        # update MAE (max adverse excursion)
+        open_position["mae"] = min(open_position.get("mae", pnl_move), pnl_move)
 
         exchange_position = self.exchange.get_position()
 
@@ -134,7 +149,7 @@ class PositionLifecycle:
 
             for attempt in range(2):
                 try:
-                    self.exchange.update_sl(
+                    sl_ref = self.exchange.update_sl(
                         symbol=open_position["symbol"],
                         side=open_position["side"],
                         qty=open_position["qty"],
@@ -164,6 +179,7 @@ class PositionLifecycle:
                         ) < 1e-12
                     ):
                         update_ok = True
+                        open_position["sl_order_id"] = sl_ref["algo_id"]
                         self.system_log.info(
                             f"SL_UPDATE_VERIFIED | "
                             f"symbol={symbol} | "
@@ -192,14 +208,34 @@ class PositionLifecycle:
 
                 send_warning(
                     "SL UPDATE VERIFICATION FAILED",
-                    "Monitoring risk boundary."
+                    "Verifying whether exchange protection still exists."
                 )
 
                 try:
                     exchange_pos = self.exchange.get_position()
-                    exchange_sl = getattr(exchange_pos, "stop_loss", None)
-                except Exception:
-                    exchange_sl = None
+                except Exception as verify_error:
+                    self.system_log.error(
+                        f"SL_UPDATE_FINAL_POSITION_CHECK_FAILED | "
+                        f"symbol={symbol} | error={verify_error}"
+                    )
+                    self.emergency.execute(
+                        reason=f"SL_UPDATE_OUTCOME_UNKNOWN:{symbol}"
+                    )
+                    raise RuntimeError(
+                        f"SL_UPDATE_OUTCOME_UNKNOWN | symbol={symbol}"
+                    ) from verify_error
+
+                # The position may have closed while the stop update was in
+                # flight. Process the close instead of attempting to flatten
+                # an already-flat account.
+                if exchange_pos is None:
+                    self.system_log.info(
+                        f"SL_UPDATE_POSITION_CLOSED | symbol={symbol}"
+                    )
+                    self._handle_close(open_position)
+                    return
+
+                exchange_sl = getattr(exchange_pos, "stop_loss", None)
 
                 self.system_log.error(
                     f"SL_UPDATE_FAILED | "
@@ -208,9 +244,32 @@ class PositionLifecycle:
                     f"exchange_sl={exchange_sl}"
                 )
 
+                # update_sl may cancel the old protective order before a new
+                # one is accepted. Never continue managing an exposed
+                # position when exchange truth shows no stop protection.
+                if exchange_sl is None:
+                    self.emergency.execute(
+                        reason=f"SL_UPDATE_LEFT_POSITION_UNPROTECTED:{symbol}"
+                    )
+                    raise RuntimeError(
+                        f"SL_UPDATE_LEFT_POSITION_UNPROTECTED | symbol={symbol}"
+                    )
+
+                # A protective stop still exists, but the requested trailing
+                # level was not confirmed. Synchronize local state to the
+                # actual exchange stop and do not advance last_locked_R.
+                open_position["stop_loss"] = exchange_sl
+                open_position["sl_status"] = "VERIFIED"
+
             else:
-                # Mutate state ONLY after exchange confirmation
-                self.state.update_stop_loss(expected_sl)
+                # Mutate the local canonical snapshot only after exchange
+                # confirmation. This same object is persisted below.
+                #
+                # Do not update StateManager separately here: the final
+                # update_open_position(open_position) call would otherwise
+                # overwrite the confirmed SL with this snapshot's old value.
+                open_position["stop_loss"] = expected_sl
+                open_position["sl_status"] = "VERIFIED"
 
                 if intended_integer_R is not None:
                     open_position["last_locked_R"] = intended_integer_R
@@ -267,8 +326,32 @@ class PositionLifecycle:
                 f"reason={decision.reason}"
             )
 
+            try:
+                self.emergency.execute(
+                    reason=(
+                        f"POSITION_RISK_VIOLATION:"
+                        f"{open_position['symbol']}:"
+                        f"{decision.reason}"
+                    )
+                )
+            except Exception as emergency_error:
+                self.system_log.critical(
+                    f"POSITION_RISK_EMERGENCY_FAILED | "
+                    f"symbol={open_position['symbol']} | "
+                    f"reason={decision.reason} | "
+                    f"error={emergency_error}"
+                )
+                raise RuntimeError(
+                    f"POSITION_RISK_EMERGENCY_FAILED | "
+                    f"symbol={open_position['symbol']} | "
+                    f"reason={decision.reason}"
+                ) from emergency_error
+            finally:
+                self.exit_in_progress = False
+
             raise RuntimeError(
-                f"POSITION_RISK_VIOLATION | {decision.reason}"
+                f"POSITION_RISK_VIOLATION_FLATTENED | "
+                f"{decision.reason}"
             )
 
     # --------------------------------------------------
@@ -328,13 +411,73 @@ class PositionLifecycle:
             realized = 0.0
 
         self.state.update_daily_realized(realized)
+        # --------------------------------------------------
+        # Compute trade experiment metrics
+        # --------------------------------------------------
+
+        # MAE and MFE are accumulated as USD PnL values, so their R-unit
+        # denominator must also be USD. Use the immutable entry-risk basis;
+        # the current stop may have trailed and is not a valid historical
+        # denominator. Realized PnL includes the exchange-reported outcome.
+        initial_risk_usd = float(
+            open_position.get(
+                "initial_risk_usd",
+                open_position.get("risk_usd", 0.0),
+            )
+            or 0.0
+        )
+
+        if initial_risk_usd > 0:
+            r_multiple = float(realized) / initial_risk_usd
+            mae_r = float(open_position.get("mae", 0.0)) / initial_risk_usd
+            mfe_r = float(open_position.get("mfe", 0.0)) / initial_risk_usd
+        else:
+            r_multiple = 0.0
+            mae_r = 0.0
+            mfe_r = 0.0
+
+        # Entry timestamps are stored in milliseconds; time.time() is seconds.
+        entry_ts = open_position.get("entry_timestamp")
+        holding_seconds = (
+            max(0, int(time.time() - (float(entry_ts) / 1000.0)))
+            if entry_ts
+            else 0
+        )
 
         new_balance = self.exchange.get_available_balance()
+
+        # Persist a complete, JSON-safe close summary. This is audit state,
+        # independent of whether the trade is eligible for ML recording.
+        last_trade = {
+            "symbol": str(open_position["symbol"]),
+            "side": str(open_position["side"]),
+            "entry_price": float(open_position["entry_price"]),
+            "exit_price": float(exit_price),
+            "qty": float(open_position["qty"]),
+            "pnl": float(realized),
+            "r_multiple": float(r_multiple),
+            "mae_usd": float(open_position.get("mae", 0.0)),
+            "mfe_usd": float(open_position.get("mfe", 0.0)),
+            "mae_r": float(mae_r),
+            "mfe_r": float(mfe_r),
+            "holding_time": int(holding_seconds),
+            "entry_timestamp": open_position.get("entry_timestamp"),
+            "closed_timestamp": int(time.time() * 1000),
+            "entry_order_id": open_position.get("entry_order_id"),
+            "entry_client_order_id": open_position.get(
+                "entry_client_order_id"
+            ),
+            "sl_order_id": open_position.get("sl_order_id"),
+            "initial_risk_usd": float(initial_risk_usd),
+            "initial_stop_loss": open_position.get("initial_stop_loss"),
+            "final_stop_loss": open_position.get("stop_loss"),
+            "learning_recorded": False,
+        }
 
         self.state.update_after_trade(
             balance=new_balance,
             open_position=None,
-            last_trade=None,
+            last_trade=last_trade,
         )
 
         msg_id = self.state.get_state().get(
@@ -366,9 +509,49 @@ class PositionLifecycle:
             f"entry={open_position['entry_price']:.4f} | "
             f"exit={exit_price:.4f} | "
             f"qty={open_position['qty']:.6f} | "
-            f"pnl={realized:.2f}"
+            f"pnl={realized:.2f} | "
+            f"structure={open_position.get('structure_fingerprint')}"
         )
 
+        try:
+            learning_recorded = record_observation(
+                symbol=open_position["symbol"],
+                structure=open_position.get("structure_fingerprint"),
+                pnl=realized,
+                entry_price=open_position["entry_price"],
+                exit_price=exit_price,
+                qty=open_position["qty"],
+                r_multiple=r_multiple,
+                mae_r=mae_r,
+                mfe_r=mfe_r,
+                holding_time=holding_seconds,
+                mae=open_position.get("mae", 0.0),
+                mfe=open_position.get("mfe", 0.0),
+            )
+
+            if learning_recorded:
+                last_trade["learning_recorded"] = True
+                self.system_log.info(
+                    f"EXECUTED_TRADE_RECORDED | "
+                    f"symbol={open_position['symbol']} | "
+                    f"r_multiple={r_multiple:.6f}"
+                )
+            else:
+                self.system_log.warning(
+                    f"LEARNING_RECORD_SKIPPED | "
+                    f"symbol={open_position['symbol']} | "
+                    f"reason=MISSING_OR_INVALID_STRUCTURE_FINGERPRINT"
+                )
+
+        except Exception as e:
+            self.system_log.error(
+                f"LEARNING_RECORD_FAILED | error={e}"
+            )
+
+        # update_after_trade stored the same last_trade object by reference,
+        # but assign it explicitly so the final learning_recorded flag is
+        # unambiguous before atomic persistence.
+        self.state.state["last_trade"] = last_trade
         self.state.save()
         self.exit_in_progress = False
 

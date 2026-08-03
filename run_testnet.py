@@ -14,6 +14,7 @@ import sys
 
 from engine import TradingEngine
 from execution.testnet_exchange import TestnetExchange
+from config import TRADING_ENV, EXECUTION_MODE
 
 from utils.logger import (
     system_logger,
@@ -139,7 +140,17 @@ def run_engine(engine):
 
 def main():
 
-    system_log.info("BOOTSTRAP_START | environment=TESTNET")
+    if TRADING_ENV != "TESTNET":
+        system_log.critical(
+            "BOOTSTRAP_ENVIRONMENT_MISMATCH | "
+            f"runner=TESTNET | configured={TRADING_ENV}"
+        )
+        sys.exit(1)
+
+    system_log.info(
+        "BOOTSTRAP_START | "
+        f"environment={TRADING_ENV} | execution_mode={EXECUTION_MODE}"
+    )
 
     configure_notifications()
 

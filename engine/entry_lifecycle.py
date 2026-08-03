@@ -11,6 +11,7 @@
 # ==========================================================
 
 import time
+import uuid
 from datetime import datetime, timezone
 from config import (
     MAX_NOTIONAL_USD,
@@ -21,6 +22,8 @@ from config import (
     ENTRY_SLIPPAGE_PCT,
     MAX_SPREAD_PCT,
 )
+
+from execution.exceptions import EntryValidationError
 
 from utils.telegram_notifier import (
     send_warning,
@@ -52,6 +55,10 @@ class EntryLifecycle:
         self.throttle = throttle
         self._entry_in_progress = False
 
+        # Set only after the exchange confirms a positive fill.
+        # Cleared only after the initial stop-loss is verified.
+        self._unprotected_entry_symbol = None
+
     @property
     def entry_in_progress(self):
         return self._entry_in_progress
@@ -69,11 +76,63 @@ class EntryLifecycle:
             return False
 
         self._entry_in_progress = True
+        self._unprotected_entry_symbol = None
 
         try:
             return self._execute(intent, market_state)
+
+        except Exception as entry_error:
+            # A positive fill without a verified initial SL is a capital
+            # emergency. Flatten before allowing the error to reach core.
+            if self._unprotected_entry_symbol is not None:
+                self._abort_unprotected_entry(
+                    symbol=self._unprotected_entry_symbol,
+                    error=entry_error,
+                )
+            raise
+
         finally:
+            self._unprotected_entry_symbol = None
             self._entry_in_progress = False
+
+
+    # --------------------------------------------------
+    # Post-Fill Emergency Boundary
+    # --------------------------------------------------
+
+    def _abort_unprotected_entry(self, *, symbol: str, error: Exception):
+        """
+        Flatten a confirmed fill that does not yet have a verified SL.
+
+        This method returns only after EmergencyHandler confirms the
+        exchange is flat. If flattening cannot be verified, it raises a
+        fatal error and preserves the emergency failure as the cause.
+        """
+
+        reason = (
+            f"POST_FILL_UNPROTECTED_FAILURE | "
+            f"symbol={symbol} | "
+            f"error={type(error).__name__}:{error}"
+        )
+
+        self.system_log.critical(reason)
+
+        try:
+            self.emergency.execute(reason=reason)
+        except Exception as emergency_error:
+            self.system_log.critical(
+                f"POST_FILL_EMERGENCY_FAILED | "
+                f"symbol={symbol} | "
+                f"original_error={type(error).__name__}:{error} | "
+                f"emergency_error={type(emergency_error).__name__}:{emergency_error}"
+            )
+            raise RuntimeError(
+                f"POST_FILL_EMERGENCY_FAILED | symbol={symbol}"
+            ) from emergency_error
+
+        self.system_log.error(
+            f"POST_FILL_EMERGENCY_FLATTEN_CONFIRMED | symbol={symbol}"
+        )
 
     # --------------------------------------------------
     # Core Execution
@@ -183,18 +242,116 @@ class EntryLifecycle:
         # Place entry
         # --------------------------------------------------
 
-        ack = self.exchange.place_entry(
-            symbol=symbol,
-            side=intent.direction,
-            quantity=entry_plan.quantity,
-            price=entry_price,
+        # Binance requires this identifier to resolve a timeout without
+        # risking a duplicate market order. Keep it unique and under the
+        # exchange's 36-character client-order-id limit.
+        client_order_id = (
+            f"nb{int(time.time() * 1000)}{uuid.uuid4().hex[:10]}"
         )
+
+        try:
+            ack = self.exchange.place_entry(
+                symbol=symbol,
+                side=intent.direction,
+                quantity=entry_plan.quantity,
+                price=entry_price,
+                client_order_id=client_order_id,
+            )
+        except EntryValidationError as entry_error:
+            # Deterministic adapter-side validation occurs before the POST.
+            # No order can exist, so ambiguous-order recovery is incorrect.
+            self.system_log.info(
+                f"ENTRY_REJECTED_LOCALLY | "
+                f"symbol={symbol} | "
+                f"client_order_id={client_order_id} | "
+                f"reason={entry_error}"
+            )
+            return False
+        except Exception as entry_error:
+            # A timeout or transport failure does not prove that Binance
+            # rejected the order. Resolve the exact order by client ID and
+            # corroborate it with authoritative position truth. Never retry
+            # the market order itself.
+            self.system_log.error(
+                f"ENTRY_ACK_AMBIGUOUS | "
+                f"symbol={symbol} | "
+                f"client_order_id={client_order_id} | "
+                f"error={entry_error}"
+            )
+
+            resolution = self.exchange.resolve_ambiguous_entry(
+                symbol=symbol,
+                client_order_id=client_order_id,
+                requested_qty=entry_plan.quantity,
+                fallback_price=entry_price,
+                timeout_seconds=10.0,
+            )
+
+            outcome = resolution.get("outcome")
+
+            if outcome == "FILLED":
+                ack = resolution["ack"]
+                self.system_log.warning(
+                    f"ENTRY_ACK_RECOVERED | "
+                    f"symbol={symbol} | "
+                    f"client_order_id={client_order_id} | "
+                    f"filled_qty={ack.filled_qty} | "
+                    f"avg_price={ack.avg_price}"
+                )
+
+            elif outcome == "POSITION_EXISTS":
+                position = resolution["position"]
+                self._unprotected_entry_symbol = symbol
+                self.system_log.error(
+                    f"ENTRY_ACK_FAILED_POSITION_EXISTS | "
+                    f"requested_symbol={symbol} | "
+                    f"client_order_id={client_order_id} | "
+                    f"exchange_symbol={position.symbol} | "
+                    f"qty={position.qty}"
+                )
+
+                try:
+                    self.emergency.execute(
+                        reason=(
+                            "AMBIGUOUS_ENTRY_ACK_WITH_OPEN_POSITION:"
+                            f"{symbol}:{client_order_id}"
+                        )
+                    )
+                except Exception as emergency_error:
+                    raise RuntimeError(
+                        f"AMBIGUOUS_ENTRY_EMERGENCY_FAILED | "
+                        f"symbol={symbol} | "
+                        f"client_order_id={client_order_id} | "
+                        f"entry_error={entry_error} | "
+                        f"emergency_error={emergency_error}"
+                    ) from emergency_error
+                finally:
+                    self._unprotected_entry_symbol = None
+
+                raise RuntimeError(
+                    f"AMBIGUOUS_ENTRY_FLATTENED | "
+                    f"symbol={symbol} | "
+                    f"client_order_id={client_order_id}"
+                ) from entry_error
+
+            else:
+                raise RuntimeError(
+                    f"ENTRY_OUTCOME_UNRESOLVED | "
+                    f"symbol={symbol} | "
+                    f"client_order_id={client_order_id} | "
+                    f"resolution={outcome} | "
+                    f"entry_error={entry_error}"
+                ) from entry_error
 
         if ack.filled_qty <= 0:
             self.system_log.error(
                 f"ENTRY_NOT_FILLED | symbol={symbol}"
             )
             return False
+
+        # From this point until initial-SL verification, any exception
+        # must trigger a verified emergency flatten.
+        self._unprotected_entry_symbol = symbol
 
         # --------------------------------------------------
         # Partial fill guard
@@ -239,7 +396,7 @@ class EntryLifecycle:
         # Recalculate SL
         # --------------------------------------------------
 
-        actual_risk_usd = 0.9 * self.risk.RISK_PER_TRADE_USD
+        actual_risk_usd = self.risk.RISK_PER_TRADE_USD
         if intent.direction == "LONG":
             corrected_sl = ack.avg_price - (
                 actual_risk_usd / ack.filled_qty
@@ -255,13 +412,27 @@ class EntryLifecycle:
             "entry_price": ack.avg_price,
             "qty": ack.filled_qty,
             "stop_loss": corrected_sl,
-            "risk_usd": RISK_PER_TRADE_USD,
+            "entry_order_id": ack.order_id,
+            "entry_client_order_id": (
+                ack.client_order_id or client_order_id
+            ),
+            "sl_order_id": None,
+            # Immutable entry-risk basis for later R-multiple, MAE, and MFE
+            # calculations. stop_loss may trail after entry, so it cannot be
+            # used as the historical denominator when the trade closes.
+            "initial_stop_loss": corrected_sl,
+            "risk_usd": actual_risk_usd,
+            "initial_risk_usd": actual_risk_usd,
+            "sl_status": "PENDING_VERIFICATION",
             "highest_profit_usd": 0.0,
             "last_locked_R": 0,
             "entry_timestamp": int(
                 datetime.now(timezone.utc).timestamp() * 1000
             ),
-        }
+            "structure_fingerprint": intent.structure_fingerprint,
+            "mae": 0.0,
+            "mfe": 0.0,
+	        }
 
         # --------------------------------------------------
         # Post-fill risk guard
@@ -320,7 +491,7 @@ class EntryLifecycle:
 
         for attempt in range(2):
             try:
-                self.exchange.place_initial_sl(
+                sl_ref = self.exchange.place_initial_sl(
                     symbol=symbol,
                     side=intent.direction,
                     qty=ack.filled_qty,
@@ -344,6 +515,8 @@ class EntryLifecycle:
                     ) < 1e-12
                 ):
                     sl_placed = True
+                    open_position["sl_status"] = "VERIFIED"
+                    open_position["sl_order_id"] = sl_ref["algo_id"]
                     self.system_log.info(
                         f"INITIAL_SL_VERIFIED | "
                         f"symbol={symbol} | "
@@ -369,9 +542,25 @@ class EntryLifecycle:
 
         if not sl_placed:
             send_warning(
-                "SL PLACEMENT FAILED",
-                "Monitoring risk boundary."
+                "INITIAL SL NOT VERIFIED — EMERGENCY EXIT",
+                (
+                    f"Symbol: {symbol}\n"
+                    "The initial stop-loss could not be verified.\n\n"
+                    "A verified emergency flatten is being triggered."
+                ),
             )
+
+            self.system_log.critical(
+                f"INITIAL_SL_NOT_VERIFIED | symbol={symbol}"
+            )
+
+            raise RuntimeError(
+                f"INITIAL_SL_NOT_VERIFIED | symbol={symbol}"
+            )
+
+        # The exchange has confirmed the protective stop. Later failures
+        # are no longer failures of an unprotected-entry boundary.
+        self._unprotected_entry_symbol = None
 
         if (time.time() - sl_start_time) > MAX_SL_PLACEMENT_SECONDS:
             self.system_log.error(

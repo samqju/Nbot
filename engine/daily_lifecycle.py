@@ -93,3 +93,4 @@ class DailyLifecycle:
                 f"DAILY_RISK_HALT | reason={daily_decision.reason}")
 
         return True
+

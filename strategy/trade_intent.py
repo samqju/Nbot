@@ -17,7 +17,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
-
+from typing import Dict, Any
 
 @dataclass(frozen=True)
 class TradeIntent:
@@ -33,6 +33,7 @@ class TradeIntent:
     pattern: str                   # Strategy identifier
     entry_price: Optional[float]   # Advisory only (engine uses market truth)
     generated_at: datetime         # UTC timestamp
+    structure_fingerprint: Optional[Dict[str, Any]] = None
 
     def __post_init__(self):
         if self.direction not in ("LONG", "SHORT"):

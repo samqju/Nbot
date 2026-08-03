@@ -32,12 +32,25 @@ import hmac
 import hashlib
 import requests
 import websocket
+import threading
+from urllib.parse import urlparse
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import List
 from decimal import Decimal, ROUND_DOWN
-from config import LEVERAGE, MAX_SPREAD_PCT
-from execution.exceptions import OperationalExchangeError, MarketStateError, StopAlreadyBreached
+from config import (
+    LEVERAGE,
+    MAX_SPREAD_PCT,
+    SHADOW_MODE,
+    TRADING_ENV,
+    EXECUTION_MODE,
+)
+from execution.exceptions import (
+    OperationalExchangeError,
+    EntryValidationError,
+    MarketStateError,
+    StopAlreadyBreached,
+)
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -48,6 +61,11 @@ load_dotenv()
 BASE_URL = os.getenv("TESTNET_BASE_URL")
 API_KEY = os.getenv("TESTNET_API_KEY")
 API_SECRET = os.getenv("TESTNET_API_SECRET")
+MARKET_WS_URL = os.getenv("TESTNET_MARKET_WS_URL")
+USER_WS_URL = os.getenv("TESTNET_USER_WS_URL")
+USER_STREAM_READY_TIMEOUT = float(
+    os.getenv("TESTNET_USER_STREAM_READY_TIMEOUT", "20")
+)
 
 TIMEOUT = 5  # seconds
 
@@ -62,6 +80,8 @@ class EntryAck:
     avg_price: float
     requested_qty: float
     fully_filled: bool
+    order_id: int | None = None
+    client_order_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -91,23 +111,86 @@ class TestnetExchange:
 
     def __init__(self, system_log):
         self.system_log = system_log
+
+        if TRADING_ENV != "TESTNET":
+            raise RuntimeError(
+                f"TESTNET_ADAPTER_ENVIRONMENT_MISMATCH | configured={TRADING_ENV}"
+            )
+
+        if EXECUTION_MODE not in {"SHADOW", "TRADE"}:
+            raise RuntimeError(
+                f"TESTNET_EXECUTION_MODE_INVALID | mode={EXECUTION_MODE}"
+            )
+
+        if not BASE_URL:
+            raise RuntimeError("TESTNET_BASE_URL_MISSING")
+
+        rest_host = (urlparse(BASE_URL).hostname or "").lower()
+        if rest_host == "fapi.binance.com":
+            raise RuntimeError("TESTNET_BASE_URL_POINTS_TO_MAINNET")
+        if rest_host != "demo-fapi.binance.com":
+            raise RuntimeError(
+                f"TESTNET_REST_HOST_UNEXPECTED | host={rest_host}"
+            )
+
+        if not MARKET_WS_URL:
+            raise RuntimeError("TESTNET_MARKET_WS_URL_MISSING")
+
+        market_host = (urlparse(MARKET_WS_URL).hostname or "").lower()
+        if market_host != "stream.binancefuture.com":
+            raise RuntimeError(
+                f"TESTNET_MARKET_WS_HOST_UNEXPECTED | host={market_host}"
+            )
+
+        if not SHADOW_MODE:
+            if not USER_WS_URL:
+                raise RuntimeError("TESTNET_USER_WS_URL_MISSING")
+            user_host = (urlparse(USER_WS_URL).hostname or "").lower()
+            if user_host != "stream.binancefuture.com":
+                raise RuntimeError(
+                    f"TESTNET_USER_WS_HOST_UNEXPECTED | host={user_host}"
+                )
+
+        if not API_KEY or not API_SECRET:
+            raise RuntimeError("TESTNET_EXCHANGE_CREDENTIALS_MISSING")
+
         self.session = requests.Session()
         self.session.headers.update({"X-MBX-APIKEY": API_KEY})
         self._symbol_filters = self._load_symbol_filters()
-
-        if not BASE_URL or not API_KEY or not API_SECRET:
-            raise RuntimeError("TESTNET_EXCHANGE_CONFIG_MISSING")
         # =====================================================
         # HARDENING STATE TRACKERS
         # =====================================================
         self._active_sl_order_id = None
         self._user_stream_healthy = False
+        self._user_stream_ready = threading.Event()
         self._last_user_event_ts = 0
         self._cached_position = None
 
     # ========================================================
     # SECTION B — LOW LEVEL REST BOUNDARY
     # ========================================================
+
+    def _public_get(self, path: str, params: dict | None = None):
+        try:
+            resp = self.session.get(
+                f"{BASE_URL}{path}",
+                params=params or {},
+                timeout=TIMEOUT,
+            )
+            if resp.status_code != 200:
+                error_detail = self._extract_binance_error(resp)
+                raise OperationalExchangeError(
+                    f"PUBLIC_REST_GET_FAILED | path={path} | {error_detail}"
+                )
+            return resp.json()
+        except requests.exceptions.Timeout:
+            raise OperationalExchangeError("PUBLIC_REST_TIMEOUT")
+        except OperationalExchangeError:
+            raise
+        except Exception as e:
+            raise OperationalExchangeError(
+                f"PUBLIC_REST_ERROR | path={path} | {e}"
+            )
 
     def _require_fields(self, data: dict, required: list, context: str):
         missing = [k for k in required if k not in data]
@@ -260,17 +343,19 @@ class TestnetExchange:
             return f"HTTP_{response.status_code}"
 
     def is_user_stream_healthy(self) -> bool:
-        """
-        HARDENING: Detect WS stall.
-        """
-        if not self._user_stream_healthy:
-            return False
+        """Return whether the authenticated user stream is connected."""
+        if SHADOW_MODE:
+            return True
+        return self._user_stream_healthy and self._user_stream_ready.is_set()
 
-        if (time.time() * 1000) - self._last_user_event_ts > 60000:
-            self.system_log.error("USER_STREAM_STALLED")
-            return False
-
-        return True
+    def wait_for_user_stream_ready(self, timeout: float | None = None) -> bool:
+        """Wait until the authenticated user stream completes its handshake."""
+        if SHADOW_MODE:
+            return True
+        wait_timeout = (
+            USER_STREAM_READY_TIMEOUT if timeout is None else float(timeout)
+        )
+        return self._user_stream_ready.wait(wait_timeout)
 
     # ========================================================
     # SECTION C — EXCHANGE CONTRACTS & QUANTIZATION
@@ -362,9 +447,34 @@ class TestnetExchange:
     # ========================================================
 
     def connect(self):
+        self._public_get("/fapi/v1/ping")
+
+        if SHADOW_MODE:
+            self.system_log.info(
+                "TESTNET_SHADOW_CONNECT_OK | auth_stream=SKIPPED"
+            )
+            return
+
         self._get(
             "/fapi/v2/account",
             {"timestamp": int(time.time() * 1000)},
+        )
+
+        self._start_user_stream()
+
+        if not self.wait_for_user_stream_ready():
+            raise OperationalExchangeError(
+                "TESTNET_USER_STREAM_READY_TIMEOUT | "
+                f"timeout={USER_STREAM_READY_TIMEOUT}"
+            )
+
+        if not self.is_user_stream_healthy():
+            raise OperationalExchangeError(
+                "TESTNET_USER_STREAM_UNHEALTHY_AT_STARTUP"
+            )
+
+        self.system_log.info(
+            "TESTNET_TRADE_CONNECT_OK | auth_stream=READY"
         )
 
     def disconnect(self):
@@ -403,9 +513,7 @@ class TestnetExchange:
         Event-driven.
         """
 
-        stream_url = "wss://stream.binancefuture.com/ws/!ticker@arr"
-
-        ws = websocket.create_connection(stream_url)
+        ws = websocket.create_connection(MARKET_WS_URL)
 
         try:
             while True:
@@ -439,6 +547,7 @@ class TestnetExchange:
                 pass
 
     def get_historical_candles(self, *, symbol: str, interval: str, limit: int):
+        """Return only fully closed Binance klines in OHLC tuple format."""
         data = self._get(
             "/fapi/v1/klines",
             {
@@ -449,16 +558,37 @@ class TestnetExchange:
             },
         )
 
-        return [
-            (
-                int(c[0]),
-                float(c[1]),
-                float(c[2]),
-                float(c[3]),
-                float(c[4]),
-            )
-            for c in data
-        ]
+        now_ms = int(time.time() * 1000)
+        candles = []
+
+        for candle in data:
+            if not isinstance(candle, (list, tuple)) or len(candle) < 7:
+                raise OperationalExchangeError(
+                    f"HISTORICAL_CANDLE_SCHEMA_INVALID | symbol={symbol}"
+                )
+
+            open_time = int(candle[0])
+            close_time = int(candle[6])
+
+            # Binance includes the currently forming kline in this endpoint.
+            # It must never enter completed-candle strategy history.
+            if close_time >= now_ms:
+                continue
+
+            o = float(candle[1])
+            h = float(candle[2])
+            l = float(candle[3])
+            c = float(candle[4])
+
+            if min(o, h, l, c) <= 0 or h < max(o, c) or l > min(o, c):
+                raise OperationalExchangeError(
+                    f"HISTORICAL_CANDLE_VALUES_INVALID | symbol={symbol} | "
+                    f"open_time={open_time}"
+                )
+
+            candles.append((open_time, o, h, l, c))
+
+        return candles
 
     def get_current_spread_pct(self, *, symbol: str) -> float:
         data = self._get(
@@ -524,38 +654,24 @@ class TestnetExchange:
         return None
 
     def recover_active_stop_loss(self, symbol: str):
-        """
-        One-time recovery of active STOP_MARKET order.
-        Used only during reconciliation, not per tick.
-        """
+        """Recover the active conditional stop and its Binance algo ID."""
 
-        orders = self._get(
-            "/fapi/v1/openOrders",
-            {
-                "symbol": symbol,
-                "timestamp": int(time.time() * 1000),
-            },
-        )
+        ref = self._get_active_stop_loss_ref(symbol)
+        if ref is None:
+            return None
 
-        for o in orders:
-            if (
-                o.get("type") == "STOP_MARKET"
-                and o.get("reduceOnly") is True
-            ):
-                self._active_sl_order_id = o.get("orderId")
-                return float(o.get("stopPrice"))
+        self._active_sl_order_id = ref["algo_id"]
+        return ref["stop_price"]
 
-        return None
+    def get_active_sl_order_id(self):
+        return self._active_sl_order_id
 
     # ========================================================
     # INTERNAL SL QUERY
     # ========================================================
 
-    def _get_active_stop_loss(self, symbol: str):
-        """
-        Return current active STOP_MARKET reduce-only SL price.
-        Returns float stopPrice or None.
-        """
+    def _get_active_stop_loss_ref(self, symbol: str, algo_id=None):
+        """Return active STOP_MARKET metadata, optionally for one algoId."""
 
         try:
             orders = self._get(
@@ -566,28 +682,58 @@ class TestnetExchange:
                 },
             )
 
-            for o in orders:
-                if (
-                    o.get("algoType") == "CONDITIONAL"
-                    and o.get("orderType") == "STOP_MARKET"
-                    and o.get("reduceOnly") is True
+            for order in orders:
+                if not (
+                    order.get("algoType") == "CONDITIONAL"
+                    and order.get("orderType") == "STOP_MARKET"
+                    and order.get("reduceOnly") is True
                 ):
-                    self._active_sl_order_id = o.get("algoId")
-                    return float(o.get("triggerPrice"))
+                    continue
+
+                current_id = order.get("algoId")
+                if current_id is None:
+                    continue
+                current_id = int(current_id)
+
+                if algo_id is not None and current_id != int(algo_id):
+                    continue
+
+                return {
+                    "algo_id": current_id,
+                    "stop_price": float(order.get("triggerPrice")),
+                }
 
             return None
 
-        except Exception as e:
+        except Exception as error:
             raise OperationalExchangeError(
-                f"GET_ACTIVE_SL_FAILED | {e}"
+                f"GET_ACTIVE_SL_FAILED | {error}"
             )
+
+    def _get_active_stop_loss(self, symbol: str):
+        ref = self._get_active_stop_loss_ref(symbol)
+        if ref is None:
+            return None
+
+        self._active_sl_order_id = ref["algo_id"]
+        return ref["stop_price"]
 
     def _start_user_stream(self):
         """
         Start hardened Binance user data stream with reconnect + keepalive.
         """
 
-        import threading
+        if SHADOW_MODE:
+            self.system_log.info(
+                "USER_STREAM_SKIPPED | reason=SHADOW_MODE"
+            )
+            return
+
+        if not USER_WS_URL:
+            raise RuntimeError("TESTNET_USER_WS_URL_MISSING")
+
+        self._user_stream_ready.clear()
+        self._user_stream_healthy = False
 
         def _run():
             while True:
@@ -602,11 +748,13 @@ class TestnetExchange:
                     if not listen_key:
                         raise OperationalExchangeError("LISTEN_KEY_FAILED")
 
-                    ws_url = f"wss://fstream.binance.com/ws/{listen_key}"
+                    ws_url = f"{USER_WS_URL.rstrip('/')}/{listen_key}"
                     ws = websocket.create_connection(ws_url)
                     ws.settimeout(60)
 
+                    self._last_user_event_ts = int(time.time() * 1000)
                     self._user_stream_healthy = True
+                    self._user_stream_ready.set()
                     self.system_log.info("USER_STREAM_CONNECTED")
 
                     # Start keepalive thread
@@ -630,7 +778,20 @@ class TestnetExchange:
                     ).start()
 
                     while True:
-                        msg = ws.recv()
+                        try:
+                            msg = ws.recv()
+                        except websocket.WebSocketTimeoutException:
+                            # An idle authenticated stream is normal when no
+                            # orders or account changes are occurring. Probe
+                            # the socket instead of reconnecting every minute.
+                            ws.ping()
+                            continue
+
+                        if not msg:
+                            raise OperationalExchangeError(
+                                "USER_STREAM_CLOSED_WITHOUT_MESSAGE"
+                            )
+
                         event = json.loads(msg)
 
                         self._last_user_event_ts = int(time.time() * 1000)
@@ -652,6 +813,7 @@ class TestnetExchange:
 
                 except Exception as e:
                     self._user_stream_healthy = False
+                    self._user_stream_ready.clear()
                     try:
                         ws.close()
                     except Exception:
@@ -742,32 +904,45 @@ class TestnetExchange:
         side: str,
         quantity: float,
         price: float,
+        client_order_id: str,
     ) -> EntryAck:
 
         if side not in ("LONG", "SHORT"):
-            raise OperationalExchangeError("INVALID_SIDE")
+            raise EntryValidationError(f"INVALID_SIDE | side={side}")
 
         order_side = "BUY" if side == "LONG" else "SELL"
 
         filters = self._symbol_filters.get(symbol)
         if not filters:
-            raise OperationalExchangeError(
+            raise EntryValidationError(
                 f"SYMBOL_FILTERS_MISSING | symbol={symbol}"
             )
 
         requested_qty = self._quantize_qty(quantity, filters["stepSize"])
 
         if requested_qty <= 0:
-            raise OperationalExchangeError("QTY_ROUNDED_TO_ZERO")
+            raise EntryValidationError(
+                f"QTY_ROUNDED_TO_ZERO | requested={quantity} | "
+                f"step={filters['stepSize']}"
+            )
 
         if Decimal(str(requested_qty)) % Decimal(str(filters["stepSize"])) != 0:
-            raise OperationalExchangeError("QTY_STEP_MISALIGNMENT")
+            raise EntryValidationError(
+                f"QTY_STEP_MISALIGNMENT | qty={requested_qty} | "
+                f"step={filters['stepSize']}"
+            )
 
         if requested_qty < filters["marketMinQty"]:
-            raise OperationalExchangeError("QTY_BELOW_MIN")
+            raise EntryValidationError(
+                f"QTY_BELOW_MIN | qty={requested_qty} | "
+                f"min={filters['marketMinQty']}"
+            )
 
         if requested_qty > filters["marketMaxQty"]:
-            raise OperationalExchangeError("QTY_ABOVE_MAX")
+            raise EntryValidationError(
+                f"QTY_ABOVE_MAX | qty={requested_qty} | "
+                f"max={filters['marketMaxQty']}"
+            )
 
         data = self._post(
             "/fapi/v1/order",
@@ -776,13 +951,18 @@ class TestnetExchange:
                 "side": order_side,
                 "type": "MARKET",
                 "quantity": requested_qty,
+                "newClientOrderId": client_order_id,
+                "recvWindow": 5000,
                 "timestamp": int(time.time() * 1000),
             },
         )
 
+        # Some valid Futures market-order responses omit cumQuote.
+        # executedQty and status remain mandatory; average price is derived
+        # from avgPrice, cumQuote, or confirmed position truth.
         self._require_fields(
             data,
-            ["executedQty", "cumQuote", "status"],
+            ["executedQty", "status"],
             context="place_entry"
         )
 
@@ -816,10 +996,16 @@ class TestnetExchange:
             if not confirmed or confirmed.symbol != symbol:
                 raise OperationalExchangeError("ENTRY_NOT_FILLED")
         else:
-            cum_quote = float(data["cumQuote"])
-            if cum_quote > 0:
-                avg_price = cum_quote / filled_qty
-            else:
+            avg_price = float(data.get("avgPrice", 0.0) or 0.0)
+
+            if avg_price <= 0:
+                cum_quote = float(data.get("cumQuote", 0.0) or 0.0)
+                if cum_quote > 0:
+                    avg_price = cum_quote / filled_qty
+
+            if avg_price <= 0:
+                # Final fallback is replaced below by authoritative REST
+                # position truth before the acknowledgement is returned.
                 avg_price = price
 
         fully_filled = abs(filled_qty - requested_qty) < 1e-12
@@ -836,8 +1022,150 @@ class TestnetExchange:
             avg_price=avg_price,
             requested_qty=requested_qty,
             fully_filled=fully_filled,
+            order_id=(
+                int(data["orderId"])
+                if data.get("orderId") is not None
+                else None
+            ),
+            client_order_id=str(
+                data.get("clientOrderId") or client_order_id
+            ),
         )
 
+
+    def query_order_by_client_id(
+        self,
+        *,
+        symbol: str,
+        client_order_id: str,
+    ):
+        """Return an order by client ID, or None when Binance says absent."""
+
+        try:
+            return self._get(
+                "/fapi/v1/order",
+                {
+                    "symbol": symbol,
+                    "origClientOrderId": client_order_id,
+                    "recvWindow": 5000,
+                    "timestamp": int(time.time() * 1000),
+                },
+            )
+        except OperationalExchangeError as error:
+            message = str(error)
+            if "code=-2013" in message or "Order does not exist" in message:
+                return None
+            raise
+
+    def resolve_ambiguous_entry(
+        self,
+        *,
+        symbol: str,
+        client_order_id: str,
+        requested_qty: float,
+        fallback_price: float,
+        timeout_seconds: float = 10.0,
+    ) -> dict:
+        """
+        Resolve a timed-out market entry without resubmitting it.
+
+        The exact order is queried by origClientOrderId while position truth
+        is polled in parallel. A confirmed fill returns an EntryAck. Any
+        position without a confirmed full-fill acknowledgement is returned as
+        an unprotected position so the engine can emergency-flatten it.
+        """
+
+        deadline = time.monotonic() + max(1.0, timeout_seconds)
+        last_order_error = None
+        last_position_error = None
+        latest_order = None
+        latest_position = None
+
+        while time.monotonic() < deadline:
+            try:
+                latest_order = self.query_order_by_client_id(
+                    symbol=symbol,
+                    client_order_id=client_order_id,
+                )
+                last_order_error = None
+            except Exception as error:
+                last_order_error = error
+
+            try:
+                position = self.get_position()
+                latest_position = (
+                    position
+                    if position is not None and position.symbol == symbol
+                    else None
+                )
+                last_position_error = None
+            except Exception as error:
+                last_position_error = error
+
+            if latest_order is not None:
+                status = str(latest_order.get("status", "")).upper()
+                executed_qty = float(latest_order.get("executedQty", 0.0) or 0.0)
+
+                if status == "FILLED" and executed_qty > 0:
+                    avg_price = float(latest_order.get("avgPrice", 0.0) or 0.0)
+                    if avg_price <= 0:
+                        cum_quote = float(latest_order.get("cumQuote", 0.0) or 0.0)
+                        avg_price = (
+                            cum_quote / executed_qty
+                            if cum_quote > 0
+                            else fallback_price
+                        )
+
+                    requested = self._quantize_qty(
+                        requested_qty,
+                        self._symbol_filters[symbol]["stepSize"],
+                    )
+                    fully_filled = abs(executed_qty - requested) < 1e-12
+
+                    if latest_position is not None and fully_filled:
+                        return {
+                            "outcome": "FILLED",
+                            "ack": EntryAck(
+                                filled_qty=executed_qty,
+                                avg_price=avg_price,
+                                requested_qty=requested,
+                                fully_filled=True,
+                                order_id=(
+                                    int(latest_order["orderId"])
+                                    if latest_order.get("orderId") is not None
+                                    else None
+                                ),
+                                client_order_id=str(
+                                    latest_order.get("clientOrderId")
+                                    or client_order_id
+                                ),
+                            ),
+                        }
+
+                if status in {"CANCELED", "EXPIRED", "REJECTED"} and latest_position is None:
+                    return {"outcome": "NOT_FILLED"}
+
+            if latest_position is not None:
+                # Position truth takes precedence. Without a confirmed full
+                # fill response, the position has no verified protective SL.
+                return {
+                    "outcome": "POSITION_EXISTS",
+                    "position": latest_position,
+                }
+
+            time.sleep(0.5)
+
+        self.system_log.error(
+            f"ENTRY_RESOLUTION_TIMEOUT | "
+            f"symbol={symbol} | "
+            f"client_order_id={client_order_id} | "
+            f"order_seen={latest_order is not None} | "
+            f"position_seen={latest_position is not None} | "
+            f"order_error={last_order_error} | "
+            f"position_error={last_position_error}"
+        )
+
+        return {"outcome": "UNRESOLVED"}
 
     def place_initial_sl(
         self,
@@ -904,15 +1232,21 @@ class TestnetExchange:
                     raise
                 time.sleep(0.5 * (attempt + 1))
 
-        # Verify SL exists
-        actual_sl = self._get_active_stop_loss(symbol)
-        if actual_sl is None:
+        if not isinstance(data, dict) or data.get("algoId") is None:
+            raise OperationalExchangeError("SL_ALGO_ID_MISSING")
+
+        new_algo_id = int(data["algoId"])
+        ref = self._get_active_stop_loss_ref(
+            symbol,
+            algo_id=new_algo_id,
+        )
+        if ref is None:
             raise OperationalExchangeError(
                 "SL_PLACEMENT_NOT_CONFIRMED"
             )
-        # Track SL order id to avoid openOrders scan
-        if isinstance(data, dict) and "algoId" in data:
-            self._active_sl_order_id = data["algoId"]
+
+        self._active_sl_order_id = new_algo_id
+        return ref
 
     def update_sl(
         self,
@@ -931,63 +1265,40 @@ class TestnetExchange:
             f"new_stop_price={new_stop_price}"
         )
 
-        # ======================================================
-        # ATOMIC SL REPLACEMENT (ABSOLUTELY SAFE PATTERN)
-        # ======================================================
+        old_algo_id = self._active_sl_order_id
 
-        old_order_id = self._active_sl_order_id
-
-        # STEP 1 — Place NEW SL FIRST (never leave position unprotected)
-        self.place_initial_sl(
+        # Place and verify the new stop before cancelling the old one.
+        new_ref = self.place_initial_sl(
             symbol=symbol,
             side=side,
             qty=qty,
             stop_price=new_stop_price,
         )
+        new_algo_id = new_ref["algo_id"]
 
-        # STEP 2 — Confirm new SL exists
-        actual_sl = self._get_active_stop_loss(symbol)
-        if actual_sl is None:
-            raise OperationalExchangeError(
-                "SL_UPDATE_NOT_CONFIRMED"
-            )
-
-        # Ensure internal pointer tracks the NEW stop order
-        try:
-            orders = self._get(
-                "/fapi/v1/openOrders",
-                {
-                    "symbol": symbol,
-                    "timestamp": int(time.time() * 1000),
-                },
-            )
-
-            for o in orders:
-                if (
-                    o.get("type") == "STOP_MARKET"
-                    and o.get("reduceOnly") is True
-                ):
-                    self._active_sl_order_id = o.get("orderId")
-                    break
-        except Exception:
-            raise OperationalExchangeError(
-                "SL_UPDATE_ORDER_TRACKING_FAILED"
-            )
-
-        # STEP 3 — Only AFTER confirmation, delete old SL
-        if old_order_id:
+        if old_algo_id and old_algo_id != new_algo_id:
             try:
                 self._delete(
                     "/fapi/v1/algoOrder",
                     {
                         "symbol": symbol,
-                        "algoId": old_order_id,
+                        "algoId": old_algo_id,
                         "timestamp": int(time.time() * 1000),
                     },
                 )
-            except Exception:
-                # Old SL may already be triggered or cancelled
-                pass
+            except Exception as error:
+                # The new stop is confirmed. Keep managing safely, but record
+                # that an obsolete stop may still require cleanup.
+                self.system_log.warning(
+                    f"OLD_SL_CANCEL_FAILED | "
+                    f"symbol={symbol} | "
+                    f"old_algo_id={old_algo_id} | "
+                    f"new_algo_id={new_algo_id} | "
+                    f"error={error}"
+                )
+
+        self._active_sl_order_id = new_algo_id
+        return new_ref
 
     def cancel_pending_entries(self):
 
@@ -1016,7 +1327,7 @@ class TestnetExchange:
 
     def emergency_exit(self):
 
-        # Force authoritative REST truth (never trust WS for emergency)
+        # Force authoritative REST truth (never trust WS for emergency).
         data = self._get(
             "/fapi/v2/positionRisk",
             {"timestamp": int(time.time() * 1000)},
@@ -1038,7 +1349,65 @@ class TestnetExchange:
 
         symbol = pos.symbol
 
-        # Cancel ALGO stop orders first
+        # Keep the existing protective stop alive while submitting the
+        # reduce-only market close. Removing protection before the flatten
+        # is confirmed creates an unnecessary unprotected interval.
+        filters = self._symbol_filters.get(symbol)
+        if not filters:
+            raise OperationalExchangeError(
+                f"SYMBOL_FILTERS_MISSING | symbol={symbol}"
+            )
+
+        qty = self._quantize_qty(pos.qty, filters["stepSize"])
+
+        if Decimal(str(qty)) % Decimal(str(filters["stepSize"])) != 0:
+            raise OperationalExchangeError("FLATTEN_STEP_MISALIGNMENT")
+
+        if qty <= 0:
+            raise OperationalExchangeError(
+                f"FLATTEN_QTY_INVALID | symbol={symbol} | qty={qty}"
+            )
+
+        if qty < filters["marketMinQty"]:
+            raise OperationalExchangeError(
+                f"FLATTEN_QTY_BELOW_MARKET_MIN | qty={qty}"
+            )
+
+        side = "SELL" if pos.side == "LONG" else "BUY"
+
+        self._post(
+            "/fapi/v1/order",
+            {
+                "symbol": symbol,
+                "side": side,
+                "type": "MARKET",
+                "quantity": qty,
+                "reduceOnly": True,
+                "timestamp": int(time.time() * 1000),
+            },
+        )
+
+        # Final authoritative REST check. Do not remove protective orders or
+        # clear local SL state unless exchange truth confirms the position is
+        # completely flat.
+        data = self._get(
+            "/fapi/v2/positionRisk",
+            {"timestamp": int(time.time() * 1000)},
+        )
+
+        remaining = []
+        for p in data:
+            remaining_qty = float(p["positionAmt"])
+            if abs(remaining_qty) > 0.0:
+                remaining.append((p["symbol"], remaining_qty))
+
+        if remaining:
+            raise OperationalExchangeError(
+                f"EMERGENCY_FLATTEN_NOT_CONFIRMED | remaining={remaining}"
+            )
+
+        # Exchange is flat. Protective orders are now orphans and can be
+        # removed safely.
         try:
             algo_orders = self._get(
                 "/fapi/v1/openAlgoOrders",
@@ -1070,74 +1439,6 @@ class TestnetExchange:
                 f"FLATTEN_FETCH_ALGO_FAILED | {e}"
             )
 
-        # Re-check position via REST after SL deletions
-        data = self._get(
-            "/fapi/v2/positionRisk",
-            {"timestamp": int(time.time() * 1000)},
-        )
-
-        pos = None
-        for p in data:
-            qty = float(p["positionAmt"])
-            if abs(qty) > 0.0:
-                pos = SimpleNamespace(
-                    qty=abs(qty),
-                    side="LONG" if qty > 0 else "SHORT",
-                    symbol=p["symbol"],
-                )
-                break
-
-        if pos is None:
-            return
-
-        filters = self._symbol_filters.get(symbol)
-        if not filters:
-            raise OperationalExchangeError(
-                f"SYMBOL_FILTERS_MISSING | symbol={symbol}"
-            )
-
-        qty = self._quantize_qty(pos.qty, filters["stepSize"])
-
-        if Decimal(str(qty)) % Decimal(str(filters["stepSize"])) != 0:
-            raise OperationalExchangeError("FLATTEN_STEP_MISALIGNMENT")
-
-        if qty <= 0:
-            return
-
-        if qty < filters["marketMinQty"]:
-            raise OperationalExchangeError(
-                f"FLATTEN_QTY_BELOW_MARKET_MIN | qty={qty}"
-            )
-
-        side = "SELL" if pos.side == "LONG" else "BUY"
-
-        self._post(
-            "/fapi/v1/order",
-            {
-                "symbol": symbol,
-                "side": side,
-                "type": "MARKET",
-                "quantity": qty,
-                "reduceOnly": True,
-                "timestamp": int(time.time() * 1000),
-            },
-        )
-
-        # Final authoritative REST check
-        data = self._get(
-            "/fapi/v2/positionRisk",
-            {"timestamp": int(time.time() * 1000)},
-        )
-
-        still_open = False
-        for p in data:
-            if abs(float(p["positionAmt"])) > 0.0:
-                still_open = True
-                break
-
-        # Clear active SL pointer
-        self._active_sl_order_id = None
-
         try:
             open_orders = self._get(
                 "/fapi/v1/openOrders",
@@ -1162,6 +1463,8 @@ class TestnetExchange:
                         pass
         except Exception:
             pass
+
+        self._active_sl_order_id = None
 
 
     # ========================================================
