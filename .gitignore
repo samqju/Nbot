@@ -1,31 +1,32 @@
 # ===============================
 # Secrets & environment
-# ===============================
 .env
 
-# ===============================
 # Runtime / state
-# ===============================
 logs/
 bot_state.json
 universe_snapshot.json
-
-# ===============================
 # Python
-# ===============================
 __pycache__/
 *.pyc
-
-# ===============================
 # Virtual environments
-# ===============================
 venv/
 .venv/
 env/
-
 # Machine learning
 ml_dataset*.jsonl
 models/
-
 # Generated review files
 live_review_codebase*.txt
+# Credentials
+.env.*
+!.env.example
+# Python environments and caches
+*.py[cod]
+.pytest_cache/
+# Runtime-generated files
+runtime/
+data/
+# Local backups and patches
+phase5_*_backup/
+*.patch

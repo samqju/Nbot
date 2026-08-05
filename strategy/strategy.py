@@ -6,13 +6,34 @@ from collections import defaultdict, deque
 from datetime import datetime, timezone
 from typing import Dict, Optional
 from strategy.trade_intent import TradeIntent
-import os
-import pickle
-import numpy as np
-import json
 import threading
-from config import RISK_PER_TRADE_USD, MAX_NOTIONAL_USD
+from config import (
+    CANDIDATE_OBSERVATIONS_PATH,
+    CANDIDATE_OUTCOMES_PATH,
+    LEARNING_RUNTIME_STATE_PATH,
+    SHADOW_MODEL_ARTIFACT_PATH,
+    SHADOW_MODEL_PREDICTIONS_PATH,
+    SHADOW_MODEL_REFRESH_SECONDS,
+    SHADOW_MODEL_SCORING_ENABLED,
+    RISK_PER_TRADE_USD,
+    MAX_NOTIONAL_USD,
+    TRADING_ENV,
+    EXECUTION_MODE,
+)
 from strategy.structure_classifier import StructureClassifier
+from strategy.candidate import rank_candidates
+from strategy.candidate_generator import StructureCandidateGenerator
+from strategy.candidate_observer import CandidateObservationWriter
+from strategy.candidate_outcome import CandidateOutcomeWriter
+from strategy.candidate_scorer import CandidateScorer
+from strategy.candidate_risk import CandidateRiskPlanner
+from strategy.virtual_trade_engine import VirtualTradeEngine
+from strategy.learning_runtime_state import LearningRuntimeStateStore
+from strategy.features import (
+    CANDIDATE_FEATURE_NAMES,
+    CandidateFeatureExtractor,
+)
+from learning.shadow_scorer import ShadowModelScorer
 
 class Strategy:
 
@@ -27,40 +48,34 @@ class Strategy:
         )
 
         self._last_ts: Dict[str, int] = {}
+
+        # Phase 3.6B.1 dual-universe contract.
+        #
+        # During B.1 both sets intentionally contain the same existing
+        # symbols, so runtime behavior remains unchanged. Later B patches
+        # will widen only the observation universe.
+        self._execution_universe = set()
+        self._observation_universe = set()
+
+        # Backward-compatible alias used by existing candidate-generation
+        # and warmup logic until the later dual-universe behavior patches.
         self._universe = set()
         self._warmed_up = False
 
         self._classifier = StructureClassifier()
         self._latest_structure = {}
 
-        # ------------------------------------
-        # ML Edge Model (Optional)
-        # ------------------------------------
-        self._model_path = "models/edge_model.pkl"
-        self._model_mtime = None
-        self._ml_model = None
-        self._scaler = None
-        self._ml_threshold = 0.50  # minimum probability required
-        self._model_schema_version = 2
-        self._ml_feature_names = (
-            "short_range",
-            "long_range",
-            "trend_score",
-            "wick_ratio_recent",
-            "body_ratio_recent",
-            "range_acceleration",
-            "dist_high",
-            "dist_low",
-            "directional_consistency",
-        )
-
-        self._load_model_if_exists()
-        # ------------------------------------
-        # ML Forward Simulation Dataset
-        # ------------------------------------
-        self._ml_dataset_path = "ml_dataset.jsonl"
-        self._pending_simulations = []
+        # Protect pending simulations and retained-observation symbol state.
         self._ml_lock = threading.Lock()
+
+        # Phase 4 shadow scoring is the authoritative model path.
+        self._learning_runtime_store = LearningRuntimeStateStore(
+            LEARNING_RUNTIME_STATE_PATH,
+            system_log=system_log,
+        )
+        self._pending_simulations = (
+            self._restore_pending_simulations()
+        )
         self.MAX_FORWARD_CANDLES = 120  # 10 hours on 5m
 
         # -----------------------------
@@ -80,77 +95,124 @@ class Strategy:
         self.LONG_WINDOW = 30
         self.WARMUP_WINDOW = 50
 
-    # ======================================================
-    # ML Hot Reload
-    # ======================================================
+        # Phase 3.1: candidate discovery is isolated from final intent
+        # selection while preserving the existing structure rules.
+        self._feature_extractor = CandidateFeatureExtractor(self)
+        self._candidate_generator = StructureCandidateGenerator(self)
+        self._candidate_scorer = CandidateScorer()
+        self._candidate_risk_planner = CandidateRiskPlanner()
+        self._candidate_observer = CandidateObservationWriter(
+            CANDIDATE_OBSERVATIONS_PATH,
+            system_log=system_log,
+            environment=TRADING_ENV,
+            execution_mode=EXECUTION_MODE,
+        )
+        self._candidate_outcome_writer = CandidateOutcomeWriter(
+            CANDIDATE_OUTCOMES_PATH,
+            system_log=system_log,
+            environment=TRADING_ENV,
+            execution_mode=EXECUTION_MODE,
+        )
+        self._virtual_trade_engine = VirtualTradeEngine(
+            system_log=system_log,
+            outcome_writer=self._candidate_outcome_writer,
+            runtime_store=self._learning_runtime_store,
+            environment=TRADING_ENV,
+            execution_mode=EXECUTION_MODE,
+        )
+        self._shadow_model_scorer = ShadowModelScorer(
+            enabled=SHADOW_MODEL_SCORING_ENABLED,
+            artifact_path=SHADOW_MODEL_ARTIFACT_PATH,
+            predictions_path=SHADOW_MODEL_PREDICTIONS_PATH,
+            refresh_seconds=SHADOW_MODEL_REFRESH_SECONDS,
+            system_log=system_log,
+        )
 
-    def _load_model_if_exists(self):
-
-        if not os.path.exists(self._model_path):
-            return
-
-        mtime = None
-
-        try:
-            mtime = os.path.getmtime(self._model_path)
-            if self._model_mtime == mtime:
-                return
-
-            with open(self._model_path, "rb") as f:
-                artifact = pickle.load(f)
-
-            if not isinstance(artifact, dict):
-                raise RuntimeError("LEGACY_MODEL_ARTIFACT_UNSUPPORTED")
-
-            schema_version = artifact.get("schema_version")
-            feature_names = tuple(artifact.get("feature_names", ()))
-            scaler = artifact.get("scaler")
-            model = artifact.get("model")
-
-            if schema_version != self._model_schema_version:
+    def _restore_pending_simulations(self):
+        rows = self._learning_runtime_store.get_section(
+            "pending_simulations"
+        )
+        restored = []
+        ids = set()
+        for simulation in rows:
+            self._validate_pending_simulation(simulation)
+            observation_id = simulation[
+                "candidate_observation_id"
+            ]
+            if observation_id in ids:
                 raise RuntimeError(
-                    f"MODEL_SCHEMA_MISMATCH | expected={self._model_schema_version} "
-                    f"actual={schema_version}"
+                    "PENDING_SIMULATION_RECOVERY_DUPLICATE_ID"
                 )
-            if feature_names != self._ml_feature_names:
-                raise RuntimeError(
-                    "MODEL_FEATURE_ORDER_MISMATCH | "
-                    f"expected={self._ml_feature_names} actual={feature_names}"
-                )
-            if scaler is None or model is None:
-                raise RuntimeError("MODEL_ARTIFACT_INCOMPLETE")
+            ids.add(observation_id)
+            restored.append(dict(simulation))
 
-            expected_count = len(self._ml_feature_names)
-            scaler_count = getattr(scaler, "n_features_in_", expected_count)
-            model_count = getattr(model, "n_features_in_", expected_count)
-            if scaler_count != expected_count or model_count != expected_count:
-                raise RuntimeError(
-                    "MODEL_FEATURE_COUNT_MISMATCH | "
-                    f"expected={expected_count} scaler={scaler_count} model={model_count}"
-                )
+        if self.system_log:
+            self.system_log.info(
+                "PENDING_SIMULATIONS_RECOVERED | "
+                f"count={len(restored)}"
+            )
+        return restored
 
-            # Install only after the entire artifact passes validation. A bad
-            # hot-reload never replaces the last known-good in-memory model.
-            self._scaler = scaler
-            self._ml_model = model
-            self._model_mtime = mtime
+    @staticmethod
+    def _validate_pending_simulation(simulation):
+        required = {
+            "candidate_observation_id",
+            "symbol",
+            "direction",
+            "entry_price",
+            "risk_distance",
+            "candles_seen",
+            "mae",
+            "mfe",
+        }
+        if (
+            not isinstance(simulation, dict)
+            or not required.issubset(simulation)
+        ):
+            raise RuntimeError(
+                "PENDING_SIMULATION_RECOVERY_SCHEMA_INVALID"
+            )
+        if simulation["direction"] not in {"LONG", "SHORT"}:
+            raise RuntimeError(
+                "PENDING_SIMULATION_RECOVERY_DIRECTION_INVALID"
+            )
+        if float(simulation["entry_price"]) <= 0:
+            raise RuntimeError(
+                "PENDING_SIMULATION_RECOVERY_ENTRY_INVALID"
+            )
+        if float(simulation["risk_distance"]) <= 0:
+            raise RuntimeError(
+                "PENDING_SIMULATION_RECOVERY_RISK_INVALID"
+            )
+        if int(simulation["candles_seen"]) < 0:
+            raise RuntimeError(
+                "PENDING_SIMULATION_RECOVERY_CANDLES_INVALID"
+            )
 
-            if self.system_log:
-                self.system_log.info(
-                    f"ML_MODEL_LOADED | schema={schema_version} | "
-                    f"features={expected_count}"
-                )
+    def add_pending_simulation(self, simulation):
+        self._validate_pending_simulation(simulation)
+        with self._ml_lock:
+            observation_id = simulation[
+                "candidate_observation_id"
+            ]
+            if any(
+                row.get("candidate_observation_id")
+                == observation_id
+                for row in self._pending_simulations
+            ):
+                return False
+            self._pending_simulations.append(dict(simulation))
+            self._persist_pending_simulations_locked()
+        return True
 
-        except Exception as e:
-            # Quarantine this exact rejected artifact. It will be retried only
-            # after the model file is replaced and its modification time changes.
-            if mtime is not None:
-                self._model_mtime = mtime
-
-            if self.system_log:
-                self.system_log.error(
-                    f"ML_MODEL_REJECTED | mtime={mtime} | error={e}"
-                )
+    def _persist_pending_simulations_locked(self):
+        self._learning_runtime_store.replace_section(
+            "pending_simulations",
+            [
+                dict(simulation)
+                for simulation in self._pending_simulations
+            ],
+        )
 
     # ======================================================
     # Candle Builder (5M)
@@ -192,8 +254,17 @@ class Strategy:
                             f"symbol={symbol} | error={e}"
                         )
 
-                # Update forward simulations
+                # Update learning simulations.
                 self._update_simulations(symbol)
+                self._virtual_trade_engine.on_candle(
+                    symbol,
+                    (
+                        candle["open"],
+                        candle["high"],
+                        candle["low"],
+                        candle["close"],
+                    ),
+                )
 
             self._current_candle[symbol] = {
                 "bucket": bucket,
@@ -339,7 +410,62 @@ class Strategy:
     # ======================================================
 
     def set_universe(self, symbols):
-        self._universe = set(symbols)
+        """Backward-compatible setter for one shared universe."""
+        self.set_universes(
+            execution_symbols=symbols,
+            observation_symbols=symbols,
+        )
+
+    def set_universes(
+        self,
+        *,
+        execution_symbols,
+        observation_symbols,
+    ):
+        """Set the execution and observation symbol sets.
+
+        Phase 3.6B.1 establishes the contract only. The current
+        UniverseManager supplies the same 30 symbols to both sets.
+        """
+        execution = set(execution_symbols)
+        observation = set(observation_symbols)
+
+        if not execution:
+            raise ValueError("EXECUTION_UNIVERSE_EMPTY")
+        if not observation:
+            raise ValueError("OBSERVATION_UNIVERSE_EMPTY")
+        if not execution.issubset(observation):
+            raise ValueError(
+                "EXECUTION_UNIVERSE_NOT_SUBSET_OF_OBSERVATION"
+            )
+
+        self._execution_universe = execution
+        self._observation_universe = observation
+
+        # Existing scanning behavior remains tied to the shared alias in
+        # B.1. B.2 will intentionally point scanning at the expanded
+        # observation universe.
+        self._universe = set(observation)
+        self._warmed_up = False
+
+    def get_execution_universe(self):
+        return set(self._execution_universe)
+
+    def get_observation_universe(self):
+        return set(self._observation_universe)
+
+    def get_retained_observation_symbols(self):
+        """Symbols whose learning lifecycle has not yet completed."""
+        with self._ml_lock:
+            pending_symbols = {
+                sim["symbol"]
+                for sim in self._pending_simulations
+                if sim.get("symbol")
+            }
+        return (
+            pending_symbols
+            | self._virtual_trade_engine.active_symbols()
+        )
 
     def get_structure(self, symbol):
         return self._latest_structure.get(symbol)
@@ -494,83 +620,6 @@ class Strategy:
     # ==========================================================
     # Machine Learning
     # ==========================================================
-    def _build_ml_features(self, candles):
-        """
-        Expanded structural feature vector.
-        Designed for early adverse-move learning.
-        """
-
-        c = list(candles)
-        last_close = c[-1][3]
-
-        short_range = self._avg_range(candles, self.SHORT_WINDOW)
-        long_range = self._avg_range(candles, self.LONG_WINDOW)
-        trend_score = self._trend_score(candles)
-
-        # --------------------------------------------------
-        # Wick ratio (last 5 candles)
-        # --------------------------------------------------
-        recent = c[-5:]
-        wick_ratios = []
-        body_ratios = []
-
-        for o, h, l, cl in recent:
-            total = h - l
-            if total <= 0:
-                continue
-            body = abs(cl - o)
-            wick = total - body
-            wick_ratios.append(wick / total)
-            body_ratios.append(body / total)
-
-        wick_ratio_recent = sum(wick_ratios) / len(wick_ratios) if wick_ratios else 0
-        body_ratio_recent = sum(body_ratios) / len(body_ratios) if body_ratios else 0
-
-        # --------------------------------------------------
-        # Range acceleration (short vs long)
-        # --------------------------------------------------
-        range_acceleration = (
-            (short_range / long_range)
-            if short_range and long_range and long_range > 0
-            else 0
-        )
-
-        # --------------------------------------------------
-        # Distance from 20 high/low
-        # --------------------------------------------------
-        highs_20 = [x[1] for x in c[-20:]]
-        lows_20 = [x[2] for x in c[-20:]]
-
-        dist_high = (
-            (last_close - max(highs_20)) / last_close
-            if highs_20 else 0
-        )
-
-        dist_low = (
-            (last_close - min(lows_20)) / last_close
-            if lows_20 else 0
-        )
-
-        # --------------------------------------------------
-        # Directional consistency (last 6 closes)
-        # --------------------------------------------------
-        closes = [x[3] for x in c[-6:]]
-        up_moves = sum(1 for i in range(1, len(closes)) if closes[i] > closes[i-1])
-        down_moves = sum(1 for i in range(1, len(closes)) if closes[i] < closes[i-1])
-        directional_consistency = max(up_moves, down_moves)
-
-        return np.array([
-            short_range / last_close if short_range else 0,
-            long_range / last_close if long_range else 0,
-            trend_score,
-            wick_ratio_recent,
-            body_ratio_recent,
-            range_acceleration,
-            dist_high,
-            dist_low,
-            directional_consistency,
-        ]).reshape(1, -1)
-
     # ======================================================
     # Forward Simulation Labeling
     # ======================================================
@@ -627,54 +676,35 @@ class Strategy:
 
                     target_r = sim["mfe"] - sim["mae"]
 
-                    row = {
-                        "schema_version": 2,
-                        "observation_type": "FORWARD_SIMULATION",
-                        "timestamp": int(time.time()),
-                        "symbol": sim["symbol"],
-                        "direction": sim["direction"],
-                        "structure": str(sim["structure_fingerprint"].get("structure"))
-                        if sim.get("structure_fingerprint") else None,
-                        "trend": str(sim["structure_fingerprint"].get("trend"))
-                        if sim.get("structure_fingerprint") else None,
-                        "volatility": str(sim["structure_fingerprint"].get("volatility"))
-                        if sim.get("structure_fingerprint") else None,
-                        "compression": str(sim["structure_fingerprint"].get("compression"))
-                        if sim.get("structure_fingerprint") else None,
-
-                        "short_range": sim["short_range"],
-                        "long_range": sim["long_range"],
-                        "trend_score": sim["trend_score"],
-                        "wick_ratio_recent": sim["wick_ratio_recent"],
-                        "body_ratio_recent": sim["body_ratio_recent"],
-                        "range_acceleration": sim["range_acceleration"],
-                        "dist_high": sim["dist_high"],
-                        "dist_low": sim["dist_low"],
-                        "directional_consistency": sim["directional_consistency"],
-                        "mae_3": sim["mae"],
-                        "mfe_3": sim["mfe"],
-                        "target_r": target_r,
-                        "label": 1 if target_r > 0 else 0,
-                    }
-
-                    self._append_ml_dataset(row)
+                    try:
+                        self._candidate_outcome_writer.append(
+                            observation_id=sim.get(
+                                "candidate_observation_id"
+                            ),
+                            outcome_type="FORWARD_5_CANDLE",
+                            symbol=sim["symbol"],
+                            direction=sim["direction"],
+                            payload={
+                                "mae_r": sim["mae"],
+                                "mfe_r": sim["mfe"],
+                                "target_r": target_r,
+                                "label": 1 if target_r > 0 else 0,
+                                "candles_seen": sim["candles_seen"],
+                            },
+                        )
+                    except Exception as e:
+                        if self.system_log:
+                            self.system_log.error(
+                                "CANDIDATE_FORWARD_OUTCOME_WRITE_FAILED | "
+                                f"symbol={sim['symbol']} | error={e}"
+                            )
                     finished.append(sim)
 
             for f in finished:
                 self._pending_simulations.remove(f)
 
-    def _append_ml_dataset(self, row):
-        """
-        Append-only JSONL dataset.
-        Each row written as single line.
-        No full-file rewrite.
-        """
-        try:
-            line = json.dumps(row)
-            with open(self._ml_dataset_path, "a") as f:
-                f.write(line + "\n")
-        except Exception:
-            pass
+            # Persist MAE/MFE/candle-count progress and completed removals.
+            self._persist_pending_simulations_locked()
 
     # ======================================================
     # Main Proposal Logic
@@ -685,176 +715,93 @@ class Strategy:
         if not self._warmed_up:
             return None
 
-        candidates = []
-
-        for symbol in self._universe:
-
-            candles = self._candle_history.get(symbol)
-            if not candles or len(candles) < self.WARMUP_WINDOW:
-                continue
-
-            # --------------------------------------------------
-            # STRUCTURE SAFETY FILTERS (NEW)
-            # --------------------------------------------------
-
-            last_close = candles[-1][3]
-
-            # 1️⃣ Reject ultra low priced coins
-            if last_close < 0.01:
-                continue
-
-            # 2️⃣ Reject dead structure (too small average range)
-            short_range = self._avg_range(candles, self.SHORT_WINDOW)
-            long_range = self._avg_range(candles, self.LONG_WINDOW)
-
-            if short_range is None or long_range is None:
-                continue
-
-            # Require meaningful movement (at least 0.25% average range)
-            if (short_range / last_close) < 0.0025:
-                continue
-
-            # 3️⃣ Reject volatility spikes (exhaustion move)
-            if short_range > (4.0 * long_range):
-                continue
-
-            current = self._current_candle.get(symbol)
-            if current is None:
-                continue
-
-            bucket = current["bucket"]
-
-            # Evaluate each symbol at most once after a 5-minute candle
-            # closes. propose_intent() is called on every market tick, so
-            # without this guard the same completed-candle setup can create
-            # repeated candidates and duplicate forward simulations.
-            if self._last_evaluated_bucket.get(symbol) == bucket:
-                continue
-            self._last_evaluated_bucket[symbol] = bucket
-
-            trend_score = self._trend_score(candles)
-            breakout_score = self._breakout_score(candles)
-
-            direction = None
-            total_score = 0
-
-            # Strong continuation
-            if abs(trend_score) >= 6 and self._strong_pullback(candles):
-                direction = "LONG" if trend_score > 0 else "SHORT"
-                total_score = self._structure_score(candles)
-                # ------------------------------------------
-                # STRUCTURE SCORE DEBUG (LOW FREQUENCY)
-                # ------------------------------------------
-                if total_score >= 0.6 and self.system_log:
-                    self.system_log.info(
-                        f"STRUCTURE_SCORE | "
-                        f"symbol={symbol} | "
-                        f"direction={direction} | "
-                        f"score={total_score:.3f}"
-                    )
-
-            # Breakout (allowed without prior trend)
-            elif (
-                breakout_score > 0
-                and self._is_compressing(candles)
-                and self._has_directional_bias(candles)
-            ):
-                last_close = candles[-1][3]
-                prev_close = candles[-2][3]
-                direction = "LONG" if last_close > prev_close else "SHORT"
-                total_score = self._structure_score(candles)
-
-            if direction:
-                bucket = self._current_candle[symbol]["bucket"]
-
-                # -------------------------------------------------
-                # HARD THROTTLE: Prevent repeated same-bucket firing
-                # -------------------------------------------------
-                last = self._last_trade_info.get(symbol)
-                if last:
-                    last_bucket, last_direction = last
-
-                    # If same candle bucket AND same direction,
-                    # skip re-proposal entirely
-                    if (
-                        last_bucket == bucket
-                        and last_direction == direction
-                    ):
-                        continue
-
-                if not self._counter_trade_spacing_ok(
-                    symbol, bucket, direction
-                ):
-                    continue
-
-                # ------------------------------------------
-                # Start ML Forward Simulation (ALL setups)
-                # ------------------------------------------
-                last_close = candles[-1][3]
-
-                features = self._build_ml_features(candles)[0]
-
-                # Match the actual position sizing contract: quantity is
-                # derived from the configured notional, while price-distance
-                # risk is derived from USD risk divided by that quantity.
-                initial_risk_usd = RISK_PER_TRADE_USD
-                qty = MAX_NOTIONAL_USD / last_close
-                risk_distance = initial_risk_usd / qty
-
-                if qty <= 0 or risk_distance <= 0:
-                    continue
-
-                simulation = {
-                    "symbol": symbol,
-                    "direction": direction,
-                    "entry_price": last_close,
-                    "risk_distance": risk_distance,
-                    "candles_seen": 0,
-                    "mae": 0.0,
-                    "mfe": 0.0,
-                    "structure_fingerprint": self._latest_structure.get(symbol),
-                    "short_range": float(features[0]),
-                    "long_range": float(features[1]),
-                    "trend_score": float(features[2]),
-                    "wick_ratio_recent": float(features[3]),
-                    "body_ratio_recent": float(features[4]),
-                    "range_acceleration": float(features[5]),
-                    "dist_high": float(features[6]),
-                    "dist_low": float(features[7]),
-                    "directional_consistency": float(features[8]),
-                }
-
-                with self._ml_lock:
-                    self._pending_simulations.append(simulation)
-
-                candidates.append((symbol, direction, total_score))
+        candidates = self._candidate_generator.generate()
 
         if not candidates:
             return None
 
-        # Top 3 ranking
-        candidates.sort(key=lambda x: x[2], reverse=True)
-        best_symbol, best_direction, _ = candidates[0]
+        scored_candidates = self._candidate_scorer.score_all(candidates)
+        planned_candidates = self._candidate_risk_planner.plan_all(scored_candidates)
+        self._virtual_trade_engine.enroll_all(planned_candidates)
+        ranked_candidates = rank_candidates(planned_candidates)
+        execution_candidates = [
+            candidate
+            for candidate in ranked_candidates
+            if candidate.symbol in self._execution_universe
+        ]
+        best_candidate = (
+            execution_candidates[0]
+            if execution_candidates
+            else None
+        )
+
+        # Phase 4.6 shadow scoring is observational only. The rule-ranked
+        # best_candidate above is deliberately computed first and is never
+        # replaced or rejected by this scorer.
+        try:
+            self._shadow_model_scorer.score_candidates(
+                ranked_candidates,
+                rule_selected_candidate=best_candidate,
+            )
+        except Exception as e:
+            if self.system_log:
+                self.system_log.error(
+                    "SHADOW_MODEL_BATCH_FAILED | "
+                    f"error={e} | runtime_effect=NONE"
+                )
+
+        for rank, candidate in enumerate(ranked_candidates, start=1):
+            try:
+                self._candidate_observer.append(
+                    candidate,
+                    rank=rank,
+                    selected=(
+                        best_candidate is not None
+                        and candidate is best_candidate
+                    ),
+                )
+            except Exception as e:
+                if self.system_log:
+                    self.system_log.error(
+                        "CANDIDATE_OBSERVATION_WRITE_FAILED | "
+                        f"symbol={candidate.symbol} | error={e}"
+                    )
+        if best_candidate is None:
+            if self.system_log:
+                self.system_log.info(
+                    "OBSERVATION_CANDIDATES_ONLY | "
+                    f"count={len(ranked_candidates)} | "
+                    "paper_intent=NONE"
+                )
+            return None
+
+        best_symbol = best_candidate.symbol
+        best_direction = best_candidate.direction
+
+        if self.system_log and best_candidate.risk_plan is not None:
+            plan = best_candidate.risk_plan
+            self.system_log.info(
+                "CANDIDATE_RISK_PLAN | "
+                f"symbol={best_symbol} | direction={best_direction} | "
+                f"risk_usd={plan.risk_budget_usd:.6f} | stop_pct={plan.stop_distance_pct:.6f} | "
+                f"notional={plan.suggested_notional_usd:.6f} | margin={plan.required_margin_usd:.6f} | "
+                f"capped_by={plan.capped_by} | advisory_only=true"
+            )
+
+        if self.system_log and best_candidate.score_breakdown is not None:
+            breakdown = best_candidate.score_breakdown
+            self.system_log.info(
+                "CANDIDATE_SELECTED | "
+                f"symbol={best_symbol} | direction={best_direction} | "
+                f"final_score={breakdown.final_score:.6f} | "
+                f"rule_score={breakdown.rule_score:.6f} | "
+                f"trend={breakdown.trend_alignment:.6f} | "
+                f"volatility={breakdown.volatility_quality:.6f} | "
+                f"location={breakdown.location_quality:.6f}"
+            )
 
         # Governor update
         bucket = self._current_candle[best_symbol]["bucket"]
-
-        # ------------------------------------------
-        # ML Probability Filter
-        # Hot reload check (cheap stat call)
-        # No side effects
-        # Safe during open position
-        self._load_model_if_exists()
-        # ------------------------------------------
-        if self._ml_model:
-            candles = self._candle_history[best_symbol]
-            features = self._build_ml_features(candles)
-
-            features_scaled = self._scaler.transform(features)
-            prob = self._ml_model.predict_proba(features_scaled)[0][1]
-
-            if prob < self._ml_threshold:
-                return None  # Reject low probability trade
 
         # Record last trade info ONLY when trade approved
         self._last_trade_info[best_symbol] = (
@@ -865,8 +812,10 @@ class Strategy:
         return TradeIntent(
             symbol=best_symbol,
             direction=best_direction,
-            pattern="STRUCTURE_5M",
+            pattern=best_candidate.pattern,
             entry_price=None,
             generated_at=datetime.now(timezone.utc),
-            structure_fingerprint=self._latest_structure.get(best_symbol),
+            structure_fingerprint=best_candidate.structure_fingerprint,
+            advisory_risk_plan=(best_candidate.risk_plan.as_dict() if best_candidate.risk_plan is not None else None),
+            candidate_observation_id=best_candidate.observation_id,
         )

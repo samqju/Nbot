@@ -44,7 +44,13 @@ from config import (
     SHADOW_MODE,
     TRADING_ENV,
     EXECUTION_MODE,
+    TESTNET_MAX_ENTRY_NOTIONAL_USD,
+    TESTNET_MAX_SESSION_ENTRIES,
+    TESTNET_REQUIRE_FLAT_START,
+    TESTNET_TRADING_ARM_FILE,
+    TESTNET_TRADING_CONFIRMATION,
 )
+from execution.testnet_trading_guard import TestnetTradingGuard
 from execution.exceptions import (
     OperationalExchangeError,
     EntryValidationError,
@@ -165,6 +171,14 @@ class TestnetExchange:
         self._user_stream_ready = threading.Event()
         self._last_user_event_ts = 0
         self._cached_position = None
+        self._execution_guard = TestnetTradingGuard(
+            confirmation=TESTNET_TRADING_CONFIRMATION,
+            arm_file=TESTNET_TRADING_ARM_FILE,
+            max_session_entries=TESTNET_MAX_SESSION_ENTRIES,
+            max_entry_notional_usd=TESTNET_MAX_ENTRY_NOTIONAL_USD,
+            require_flat_start=TESTNET_REQUIRE_FLAT_START,
+            system_log=system_log,
+        )
 
     # ========================================================
     # SECTION B — LOW LEVEL REST BOUNDARY
@@ -475,6 +489,14 @@ class TestnetExchange:
 
         self.system_log.info(
             "TESTNET_TRADE_CONNECT_OK | auth_stream=READY"
+        )
+        report = self._execution_guard.validate_startup(self)
+        self.system_log.warning(
+            "TESTNET_CONTROLLED_EXECUTION_READY | "
+            f"session_entry_limit={report['session_entry_limit']} | "
+            f"entry_notional_limit_usd="
+            f"{report['entry_notional_limit_usd']:.2f} | "
+            "real_money=false"
         )
 
     def disconnect(self):
@@ -943,6 +965,16 @@ class TestnetExchange:
                 f"QTY_ABOVE_MAX | qty={requested_qty} | "
                 f"max={filters['marketMaxQty']}"
             )
+
+        reference_price = float(price)
+        if reference_price <= 0:
+            reference_price = self.get_last_price(symbol)
+        self._execution_guard.authorize_entry(
+            symbol=symbol,
+            qty=float(requested_qty),
+            reference_price=reference_price,
+            current_position=self.get_position(),
+        )
 
         data = self._post(
             "/fapi/v1/order",

@@ -237,6 +237,47 @@ def format_trade_panel(
     )
 
 
+def format_trade_close_panel(
+    *,
+    symbol: str,
+    side: str,
+    entry_price,
+    initial_stop_loss,
+    final_stop_loss,
+    qty,
+    risk_usd,
+    exit_price,
+    realized_pnl,
+    r_multiple,
+    status: str = "CLOSED",
+    exit_reason: str | None = None,
+) -> str:
+    """Return a null-safe final trade receipt for Telegram."""
+
+    def _number(value, default=0.0):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return float(default)
+
+    text = (
+        f"📊 <b>TRADE {status}</b>\n\n"
+        f"Symbol: {symbol}\n"
+        f"Side: {side}\n"
+        f"Entry: {_number(entry_price):.8f}\n"
+        f"Initial Stop: {_number(initial_stop_loss):.8f}\n"
+        f"Final Stop: {_number(final_stop_loss):.8f}\n"
+        f"Qty: {_number(qty):.6f}\n"
+        f"Risk: {_number(risk_usd):.2f} USD\n"
+        f"Exit: {_number(exit_price):.8f}\n"
+        f"PnL: {_number(realized_pnl):+.2f} USD\n"
+        f"Result: {_number(r_multiple):+.2f}R\n"
+    )
+    if exit_reason:
+        text += f"Exit Reason: {exit_reason}\n"
+    return text
+
+
 def send_trade_panel(text: str) -> Optional[int]:
     return send_message(text)
 

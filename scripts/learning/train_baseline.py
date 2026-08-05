@@ -1,0 +1,6 @@
+import json
+from config import BASELINE_MODEL_ARTIFACT_PATH,BASELINE_MODEL_REPORT_PATH,BASELINE_MODEL_OUTCOME_TYPE,BASELINE_MODEL_MIN_TRAIN_ROWS,BASELINE_MODEL_MIN_EVAL_ROWS,BASELINE_MODEL_RANDOM_STATE,TRAIN_SPLIT_PATH,VALIDATION_SPLIT_PATH,TEST_SPLIT_PATH
+from learning.baseline_trainer import BaselineModelTrainer
+def main():
+ report=BaselineModelTrainer(train_path=TRAIN_SPLIT_PATH,validation_path=VALIDATION_SPLIT_PATH,test_path=TEST_SPLIT_PATH,artifact_path=BASELINE_MODEL_ARTIFACT_PATH,report_path=BASELINE_MODEL_REPORT_PATH,outcome_type=BASELINE_MODEL_OUTCOME_TYPE,min_train_rows=BASELINE_MODEL_MIN_TRAIN_ROWS,min_eval_rows=BASELINE_MODEL_MIN_EVAL_ROWS,random_state=BASELINE_MODEL_RANDOM_STATE).train(); print(json.dumps(report,indent=2,sort_keys=True)); return 0
+if __name__=="__main__": raise SystemExit(main())

@@ -430,6 +430,10 @@ class EntryLifecycle:
                 datetime.now(timezone.utc).timestamp() * 1000
             ),
             "structure_fingerprint": intent.structure_fingerprint,
+            "candidate_observation_id": (
+                intent.candidate_observation_id
+            ),
+            "advisory_risk_plan": intent.advisory_risk_plan,
             "mae": 0.0,
             "mfe": 0.0,
 	        }

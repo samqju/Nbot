@@ -12,12 +12,24 @@
 
 import json
 import os
+import time
 from datetime import datetime, timezone
-from config import LEVERAGE
+from config import (
+    LEVERAGE,
+    OBSERVATION_UNIVERSE_REFRESH_SECONDS,
+    OBSERVATION_UNIVERSE_SIZE,
+    OBSERVATION_UNIVERSE_SNAPSHOT_PATH,
+    TRADING_ENV,
+    UNIVERSE_SNAPSHOT_PATH,
+)
 from utils.telegram_notifier import send_info
 
-UNIVERSE_SNAPSHOT_FILE = "universe_snapshot.json"
+UNIVERSE_SNAPSHOT_FILE = UNIVERSE_SNAPSHOT_PATH
+OBSERVATION_UNIVERSE_SNAPSHOT_FILE = (
+    OBSERVATION_UNIVERSE_SNAPSHOT_PATH
+)
 EXPECTED_UNIVERSE_SIZE = 30
+MAX_OBSERVATION_UNIVERSE_SIZE = OBSERVATION_UNIVERSE_SIZE
 
 class UniverseManager:
 
@@ -25,7 +37,11 @@ class UniverseManager:
         self.strategy = strategy
         self.system_log = system_log
         self.symbols = []
+        self.observation_symbols = []
         self.generated_at = None
+        self.observation_generated_at = None
+        self._last_observation_refresh_monotonic = 0.0
+        self._execution_selection_metadata = {}
 
     # ======================================================
     # STARTUP LOAD (RECOVERY FROM SNAPSHOT)
@@ -34,10 +50,24 @@ class UniverseManager:
     def load(self):
 
         if not os.path.exists(UNIVERSE_SNAPSHOT_FILE):
-            raise RuntimeError("UNIVERSE_SNAPSHOT_MISSING")
+            self.system_log.warning(
+                "UNIVERSE_ENV_SNAPSHOT_MISSING | "
+                f"environment={TRADING_ENV} | "
+                f"path={UNIVERSE_SNAPSHOT_FILE} | action=BUILD"
+            )
+            symbols = self._build_universe()
+            self._persist_snapshot(symbols)
 
         with open(UNIVERSE_SNAPSHOT_FILE, "r") as f:
             snapshot = json.load(f)
+
+        snapshot_environment = snapshot.get("environment")
+        if snapshot_environment not in {None, TRADING_ENV}:
+            raise RuntimeError(
+                "UNIVERSE_SNAPSHOT_ENVIRONMENT_MISMATCH | "
+                f"expected={TRADING_ENV} | "
+                f"actual={snapshot_environment}"
+            )
 
         symbols = snapshot.get("symbols")
         generated_at = snapshot.get("generated_at")
@@ -46,12 +76,37 @@ class UniverseManager:
 
         self.symbols = sorted(symbols)
         self.generated_at = generated_at
-
-        self.system_log.info(
-            f"UNIVERSE_LOADED | count={len(self.symbols)} | generated_at={generated_at}"
+        self._execution_selection_metadata = snapshot.get(
+            "selection",
+            {},
         )
 
-        self.strategy.set_universe(self.symbols)
+        self.system_log.info(
+            "UNIVERSE_LOADED | "
+            f"environment={TRADING_ENV} | "
+            f"path={UNIVERSE_SNAPSHOT_FILE} | "
+            f"count={len(self.symbols)} | "
+            f"generated_at={generated_at}"
+        )
+
+        self.observation_symbols = (
+            self._load_or_build_observation_universe()
+        )
+
+        self.system_log.info(
+            "OBSERVATION_UNIVERSE_LOADED | "
+            f"count={len(self.observation_symbols)} | "
+            f"target={MAX_OBSERVATION_UNIVERSE_SIZE} | "
+            f"generated_at={self.observation_generated_at}"
+        )
+
+        self.strategy.set_universes(
+            execution_symbols=self.symbols,
+            observation_symbols=self.observation_symbols,
+        )
+        self._last_observation_refresh_monotonic = (
+            time.monotonic()
+        )
 
     # ======================================================
     # INTERNAL BUILD (REPLACES CRON)
@@ -60,13 +115,103 @@ class UniverseManager:
     def _build_universe(self):
 
         # Import locally to avoid circular dependency
-        from universe_selector import build_universe
+        from universe_selector import (
+            build_universe,
+            get_last_build_metadata,
+        )
 
         symbols = build_universe()
+        self._execution_selection_metadata = (
+            get_last_build_metadata()
+        )
 
         self._validate_symbols(symbols)
 
         return sorted(symbols)
+
+    def _build_observation_universe(self):
+        from observation_universe import build_observation_universe
+
+        original_execution = list(self.symbols)
+        symbols = build_observation_universe(
+            original_execution,
+            require_execution_eligible=False,
+        )
+        eligible = set(symbols)
+        missing = sorted(set(original_execution) - eligible)
+
+        if missing:
+            retained = [
+                symbol for symbol in original_execution
+                if symbol in eligible
+            ]
+            replacements = [
+                symbol for symbol in symbols
+                if symbol not in set(original_execution)
+            ]
+            required = EXPECTED_UNIVERSE_SIZE - len(retained)
+            if len(replacements) < required:
+                raise RuntimeError(
+                    "EXECUTION_UNIVERSE_REPLACEMENT_INSUFFICIENT | "
+                    f"missing={missing} | required={required} | "
+                    f"available={len(replacements)}"
+                )
+
+            replacement_symbols = replacements[:required]
+            self.symbols = sorted(retained + replacement_symbols)
+            self._validate_symbols(self.symbols)
+            self._persist_snapshot(self.symbols)
+
+            self.system_log.warning(
+                "EXECUTION_UNIVERSE_OBSERVATION_RECONCILED | "
+                f"environment={TRADING_ENV} | "
+                f"removed={missing} | "
+                f"replacements={replacement_symbols}"
+            )
+
+            # Rebuild strictly so the final observation snapshot is guaranteed
+            # to contain every corrected execution symbol.
+            symbols = build_observation_universe(
+                self.symbols,
+                require_execution_eligible=True,
+            )
+
+        self._validate_observation_symbols(symbols)
+        return sorted(symbols)
+
+    def _load_or_build_observation_universe(self):
+        if os.path.exists(OBSERVATION_UNIVERSE_SNAPSHOT_FILE):
+            try:
+                with open(
+                    OBSERVATION_UNIVERSE_SNAPSHOT_FILE,
+                    "r",
+                ) as f:
+                    snapshot = json.load(f)
+                snapshot_environment = snapshot.get("environment")
+                if snapshot_environment not in {None, TRADING_ENV}:
+                    raise RuntimeError(
+                        "OBSERVATION_UNIVERSE_SNAPSHOT_ENVIRONMENT_MISMATCH | "
+                        f"expected={TRADING_ENV} | "
+                        f"actual={snapshot_environment}"
+                    )
+                symbols = snapshot.get("symbols")
+                self._validate_observation_symbols(symbols)
+                self.observation_generated_at = snapshot.get(
+                    "generated_at"
+                )
+                return sorted(symbols)
+            except Exception as e:
+                self.system_log.warning(
+                    "OBSERVATION_UNIVERSE_SNAPSHOT_REJECTED | "
+                    f"error={e}"
+                )
+
+        symbols = self._build_observation_universe()
+        self.observation_generated_at = (
+            datetime.now(timezone.utc).isoformat()
+        )
+        self._persist_observation_snapshot(symbols)
+        return symbols
 
     # ======================================================
     # STRICT VALIDATION
@@ -98,6 +243,37 @@ class UniverseManager:
             if not base.isalnum():
                 raise RuntimeError(f"UNIVERSE_SYMBOL_INVALID_CHARS | {s}")
 
+    def _validate_observation_symbols(self, symbols):
+        if not isinstance(symbols, list):
+            raise RuntimeError(
+                "OBSERVATION_UNIVERSE_SYMBOLS_NOT_LIST"
+            )
+        if not (
+            EXPECTED_UNIVERSE_SIZE
+            <= len(symbols)
+            <= MAX_OBSERVATION_UNIVERSE_SIZE
+        ):
+            raise RuntimeError(
+                "OBSERVATION_UNIVERSE_INVALID_SIZE | "
+                f"actual={len(symbols)} | "
+                f"max={MAX_OBSERVATION_UNIVERSE_SIZE}"
+            )
+        if not set(self.symbols).issubset(set(symbols)):
+            raise RuntimeError(
+                "EXECUTION_UNIVERSE_MISSING_FROM_OBSERVATION"
+            )
+        for symbol in symbols:
+            if (
+                not isinstance(symbol, str)
+                or not symbol.isascii()
+                or not symbol.endswith("USDT")
+                or not symbol.replace("USDT", "").isalnum()
+            ):
+                raise RuntimeError(
+                    "OBSERVATION_UNIVERSE_SYMBOL_INVALID | "
+                    f"symbol={symbol}"
+                )
+
     # ======================================================
     # ATOMIC SNAPSHOT PERSISTENCE
     # ======================================================
@@ -108,14 +284,40 @@ class UniverseManager:
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "count": len(symbols),
             "symbols": symbols,
+            "selection": self._execution_selection_metadata,
+            "environment": TRADING_ENV,
         }
 
+        os.makedirs(
+            os.path.dirname(UNIVERSE_SNAPSHOT_FILE) or ".",
+            exist_ok=True,
+        )
         tmp_path = UNIVERSE_SNAPSHOT_FILE + ".tmp"
 
         with open(tmp_path, "w") as f:
             json.dump(snapshot, f, indent=2, sort_keys=True)
 
         os.replace(tmp_path, UNIVERSE_SNAPSHOT_FILE)
+
+    def _persist_observation_snapshot(self, symbols):
+        snapshot = {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "count": len(symbols),
+            "target_count": MAX_OBSERVATION_UNIVERSE_SIZE,
+            "symbols": sorted(symbols),
+            "environment": TRADING_ENV,
+        }
+        os.makedirs(
+            os.path.dirname(OBSERVATION_UNIVERSE_SNAPSHOT_FILE) or ".",
+            exist_ok=True,
+        )
+        tmp_path = OBSERVATION_UNIVERSE_SNAPSHOT_FILE + ".tmp"
+        with open(tmp_path, "w") as f:
+            json.dump(snapshot, f, indent=2, sort_keys=True)
+        os.replace(
+            tmp_path,
+            OBSERVATION_UNIVERSE_SNAPSHOT_FILE,
+        )
 
     # ======================================================
     # PUBLIC WARMUP (USED BY CORE AT STARTUP)
@@ -125,10 +327,12 @@ class UniverseManager:
         """
         Warm entire universe (startup use).
         """
-        self._warm_symbols(self.symbols, exchange)
+        self._warm_symbols(self.observation_symbols, exchange)
 
         self.system_log.info(
-            f"STRATEGY_WARMUP_COMPLETE | symbols={len(self.symbols)}"
+            "STRATEGY_WARMUP_COMPLETE | "
+            f"execution_symbols={len(self.symbols)} | "
+            f"observation_symbols={len(self.observation_symbols)}"
         )
 
     # ======================================================
@@ -159,66 +363,161 @@ class UniverseManager:
                     f"seeded={seeded} | required={required}"
                 )
 
-            self.system_log.info(
+            getattr(self.system_log, "debug", lambda *_args, **_kwargs: None)(
                 f"SYMBOL_WARMUP_READY | symbol={symbol} | "
                 f"completed_candles={seeded}"
             )
+
+    def _observation_refresh_due(self, *, force=False):
+        if force:
+            return True
+        elapsed = (
+            time.monotonic()
+            - self._last_observation_refresh_monotonic
+        )
+        return elapsed >= OBSERVATION_UNIVERSE_REFRESH_SECONDS
+
+    def _build_effective_observation_universe(
+        self,
+        ranked_symbols,
+    ):
+        retained = self.strategy.get_retained_observation_symbols()
+        effective = sorted(set(ranked_symbols) | set(retained))
+        return effective, retained
 
     # ======================================================
     # HOT RELOAD (MEMORY-DRIVEN)
     # ======================================================
     def maybe_reload(self, *, exchange, state, force=False):
+        """Refresh execution and observation universes safely.
 
-        # --------------------------------------------------
-        # Build latest governance state (in memory)
-        # --------------------------------------------------
-
+        The persisted observation snapshot contains only the ranked pool.
+        The in-memory effective pool may be larger while unfinished virtual
+        trades or forward simulations still require candle updates.
+        """
         try:
-            new_symbols = self._build_universe()
+            new_execution = self._build_universe()
         except Exception as e:
             self.system_log.error(f"UNIVERSE_BUILD_FAILED | {e}")
             return
 
-        # No change
-        if new_symbols == self.symbols:
-            self.system_log.info("UNIVERSE_RELOAD_NO_CHANGE")
+        execution_changed = new_execution != self.symbols
+
+        # Execution-universe changes remain capital-boundary protected.
+        if (
+            execution_changed
+            and state.get_open_position() is not None
+        ):
+            self.system_log.info(
+                "EXECUTION_UNIVERSE_RELOAD_SKIPPED_POSITION_OPEN"
+            )
+            new_execution = list(self.symbols)
+            execution_changed = False
+
+        observation_due = self._observation_refresh_due(force=force)
+        ranked_observation = None
+
+        if observation_due:
+            original_execution = self.symbols
+            try:
+                # The observation builder must include the prospective
+                # execution universe, not only the previous one.
+                self.symbols = sorted(new_execution)
+                ranked_observation = (
+                    self._build_observation_universe()
+                )
+                # _build_observation_universe may replace prospective execution
+                # symbols that fail observation eligibility. Preserve that
+                # reconciled result before restoring the current universe.
+                new_execution = list(self.symbols)
+            except Exception as e:
+                self.system_log.error(
+                    "OBSERVATION_UNIVERSE_BUILD_FAILED | "
+                    f"error={e}"
+                )
+            finally:
+                self.symbols = original_execution
+
+        if ranked_observation is None:
+            ranked_observation = list(
+                self.observation_symbols
+            )
+
+        # Prospective execution symbols are mandatory even when the broad
+        # observation refresh was skipped or failed.
+        ranked_observation = sorted(
+            set(ranked_observation) | set(new_execution)
+        )
+
+        effective_observation, retained = (
+            self._build_effective_observation_universe(
+                ranked_observation
+            )
+        )
+
+        execution_changed = new_execution != self.symbols
+        observation_changed = (
+            effective_observation != self.observation_symbols
+        )
+
+        if not execution_changed and not observation_changed:
+            if observation_due:
+                self._last_observation_refresh_monotonic = (
+                    time.monotonic()
+                )
+            getattr(self.system_log, "debug", lambda *_args, **_kwargs: None)("UNIVERSE_RELOAD_NO_CHANGE")
             return
 
-        # --------------------------------------------------
-        # Capital Boundary Guards
-        # --------------------------------------------------
+        old_execution = set(self.symbols)
+        new_execution_set = set(new_execution)
+        execution_added = new_execution_set - old_execution
+        execution_removed = old_execution - new_execution_set
 
-        if state.get_open_position() is not None:
-            self.system_log.info("UNIVERSE_RELOAD_SKIPPED_POSITION_OPEN")
-            return
+        old_observation = set(self.observation_symbols)
+        new_observation_set = set(effective_observation)
+        observation_added = new_observation_set - old_observation
+        observation_removed = old_observation - new_observation_set
 
-        # --------------------------------------------------
-        # Apply Delta
-        # --------------------------------------------------
+        # Warm only symbols that are genuinely new to the candle universe.
+        if observation_added:
+            self._warm_symbols(
+                sorted(observation_added),
+                exchange,
+            )
 
-        old_symbols = set(self.symbols)
-        new_set = set(new_symbols)
+        self.symbols = sorted(new_execution)
+        self.observation_symbols = sorted(effective_observation)
+        now_iso = datetime.now(timezone.utc).isoformat()
+        self.generated_at = now_iso
 
-        added = new_set - old_symbols
-        removed = old_symbols - new_set
+        if execution_changed:
+            self._persist_snapshot(self.symbols)
 
-        # Warm only new symbols
-        if added:
-            self._warm_symbols(list(added), exchange)
+        if observation_due:
+            self.observation_generated_at = now_iso
+            self._persist_observation_snapshot(
+                sorted(ranked_observation)
+            )
+            self._last_observation_refresh_monotonic = (
+                time.monotonic()
+            )
 
-        # Update memory
-        self.symbols = new_symbols
-        self.generated_at = datetime.now(timezone.utc).isoformat()
-
-        # Persist snapshot only AFTER successful reload
-        self._persist_snapshot(self.symbols)
-
-        # Inform strategy
-        self.strategy.set_universe(self.symbols)
+        self.strategy.set_universes(
+            execution_symbols=self.symbols,
+            observation_symbols=self.observation_symbols,
+        )
 
         self.system_log.info(
-            f"UNIVERSE_RELOADED | "
-            f"added={len(added)} | removed={len(removed)} | "
-            f"added_symbols={sorted(list(added))} | "
-            f"removed_symbols={sorted(list(removed))}"
+            "DUAL_UNIVERSE_RELOADED | "
+            f"execution_count={len(self.symbols)} | "
+            f"execution_added={len(execution_added)} | "
+            f"execution_removed={len(execution_removed)} | "
+            f"observation_ranked={len(ranked_observation)} | "
+            f"observation_effective={len(self.observation_symbols)} | "
+            f"observation_added={len(observation_added)} | "
+            f"observation_removed={len(observation_removed)} | "
+            f"retained={len(retained)} | "
+            f"refresh_due={str(observation_due).lower()} | "
+            f"execution_selector="
+            f"{self._execution_selection_metadata.get('mode', 'UNKNOWN')}"
         )

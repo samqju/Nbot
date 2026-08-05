@@ -34,6 +34,8 @@ class TradeIntent:
     entry_price: Optional[float]   # Advisory only (engine uses market truth)
     generated_at: datetime         # UTC timestamp
     structure_fingerprint: Optional[Dict[str, Any]] = None
+    advisory_risk_plan: Optional[Dict[str, Any]] = None
+    candidate_observation_id: Optional[str] = None
 
     def __post_init__(self):
         if self.direction not in ("LONG", "SHORT"):

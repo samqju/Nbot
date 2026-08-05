@@ -3,7 +3,13 @@
 # Synchronizes engine state with exchange truth
 # ==========================================================
 import time
-from utils.telegram_notifier import send_trade_panel, format_trade_panel, edit_message
+from config import STOP_TRIGGER_GRACE_SECONDS, STOP_TRIGGER_POLL_INTERVAL_SECONDS
+from utils.telegram_notifier import (
+    send_trade_panel,
+    format_trade_panel,
+    format_trade_close_panel,
+    edit_message,
+)
 
 class ReconciliationLifecycle:
     """Reconcile engine memory with exchange position state."""
@@ -14,6 +20,7 @@ class ReconciliationLifecycle:
         exchange,
         state,
         risk,
+        emergency,
         universe,
         system_log,
         trade_log,
@@ -21,6 +28,7 @@ class ReconciliationLifecycle:
         self.exchange = exchange
         self.state = state
         self.risk = risk
+        self.emergency = emergency
         self.universe = universe
         self.system_log = system_log
         self.trade_log = trade_log
@@ -204,18 +212,32 @@ class ReconciliationLifecycle:
                         else:
                             locked_R = 0.0
 
-                        panel_text = format_trade_panel(
-                            symbol=existing["symbol"],
-                            side=existing["side"],
-                            entry_price=existing["entry_price"],
-                            stop_loss=existing["stop_loss"],
-                            qty=existing["qty"],
-                            risk_usd=existing["risk_usd"],
+                        initial_risk_usd = float(
+                            existing.get("initial_risk_usd")
+                            or existing.get("risk_usd")
+                            or 0.0
+                        )
+                        r_multiple = (
+                            float(realized) / initial_risk_usd
+                            if initial_risk_usd > 0
+                            else 0.0
+                        )
+                        panel_text = format_trade_close_panel(
+                            symbol=existing.get("symbol", "UNKNOWN"),
+                            side=existing.get("side", "UNKNOWN"),
+                            entry_price=existing.get("entry_price"),
+                            initial_stop_loss=existing.get(
+                                "initial_stop_loss",
+                                existing.get("stop_loss"),
+                            ),
+                            final_stop_loss=existing.get("stop_loss"),
+                            qty=existing.get("qty"),
+                            risk_usd=initial_risk_usd,
+                            exit_price=exit_price,
+                            realized_pnl=realized,
+                            r_multiple=r_multiple,
                             status="CLOSED (RECON)",
-                        ) + (
-                            f"Locked: +{locked_R:.1f}R\n"
-                            f"Exit: {exit_price:.4f}\n"
-                            f"PnL: {realized:.2f} USD\n"
+                            exit_reason="RECONCILIATION",
                         )
 
                         edit_message(msg_id, panel_text)
@@ -411,11 +433,30 @@ class ReconciliationLifecycle:
                         or
                         (position.side == "SHORT" and intended_sl <= live_price)
                     ):
-                        self.system_log.error(
-                            "RECOVERY_SL_ALREADY_BREACHED"
+                        self.system_log.warning(
+                            "RECOVERY_SL_ALREADY_BREACHED | "
+                            f"symbol={position.symbol} | action=WAIT_FOR_SETTLEMENT"
                         )
 
-                        raise RuntimeError("RECOVERY_SL_ALREADY_BREACHED")
+                        deadline = time.monotonic() + STOP_TRIGGER_GRACE_SECONDS
+                        while time.monotonic() < deadline:
+                            time.sleep(STOP_TRIGGER_POLL_INTERVAL_SECONDS)
+                            settled = self.exchange.get_position()
+                            if settled is None:
+                                self.system_log.info(
+                                    "STOP_TRIGGER_SETTLED_DURING_RECON | "
+                                    f"symbol={position.symbol}"
+                                )
+                                return self.run(reason="STOP_TRIGGER_SETTLED")
+
+                        self.system_log.error(
+                            "RECOVERY_BREACHED_SL_POSITION_STILL_OPEN | "
+                            f"symbol={position.symbol} | action=EMERGENCY_EXIT"
+                        )
+                        self.emergency.execute(
+                            reason=f"RECOVERY_BREACHED_SL:{position.symbol}"
+                        )
+                        return self.run(reason="RECOVERY_BREACHED_SL_FLATTENED")
 
                     try:
                         sl_ref = self.exchange.place_initial_sl(

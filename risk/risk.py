@@ -1,24 +1,6 @@
 # ==========================================================
 # RISK MANAGER
 # ==========================================================
-# Canonical risk authority.
-#
-# Responsibilities:
-# - Entry-time risk checks
-# - Position-level profit protection
-# - Daily Loss Floor enforcement
-# - Risk contract breach detection
-#
-# Design Principles:
-# - All trade math expressed in R-units
-# - Unrealised PnL governs trade-level protection
-# - Realised PnL governs daily protection
-# - Risk tolerance applies ONLY post-fill
-#
-# NO exchange interaction.
-# NO state mutation.
-# PURE deterministic decisions.
-# ==========================================================
 
 from dataclasses import dataclass
 from risk.decisions import EntryDecision, PositionDecision, DailyDecision
@@ -33,7 +15,6 @@ class EntryPlanData:
     quantity: float
     initial_sl: float
     risk_r: float
-
 
 # ==========================================================
 # SECTION 2 — INITIALIZATION
@@ -234,10 +215,10 @@ class RiskManager:
         peak_R = daily_peak_pnl / self.MAX_RISK_USD
         realized_R = daily_realized_pnl / self.MAX_RISK_USD
 
-        if peak_R >= 10:
+        if peak_R >= 100:
             allowed_giveback_R = 3
         else:
-            allowed_giveback_R = 5
+            allowed_giveback_R = 95
 
         dlf_R = peak_R - allowed_giveback_R
         dlf_usd = dlf_R * self.MAX_RISK_USD
