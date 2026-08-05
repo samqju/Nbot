@@ -10,13 +10,20 @@
 # ==========================================================
 
 import time
+from config import (
+    CANDIDATE_OUTCOMES_PATH,
+    TRADING_ENV,
+    EXECUTION_MODE,
+    STOP_TRIGGER_GRACE_SECONDS,
+    STOP_TRIGGER_POLL_INTERVAL_SECONDS,
+)
+from strategy.candidate_outcome import CandidateOutcomeWriter
 from utils.telegram_notifier import (
     send_critical,
     send_warning,
     edit_message,
-    format_trade_panel,
+    format_trade_close_panel,
 )
-from train_model import record_observation
 
 
 class PositionLifecycle:
@@ -87,10 +94,28 @@ class PositionLifecycle:
         ):
             if not getattr(self, "_sl_recovery_in_progress", False):
                 self._sl_recovery_in_progress = True
-                self.system_log.error(
-                    f"LIVE_SL_MISSING_DETECTED | symbol={exchange_position.symbol}"
+                self.system_log.warning(
+                    f"LIVE_SL_MISSING_DETECTED | symbol={exchange_position.symbol} | "
+                    f"action=WAIT_FOR_SETTLEMENT"
                 )
                 try:
+                    deadline = time.monotonic() + STOP_TRIGGER_GRACE_SECONDS
+                    while time.monotonic() < deadline:
+                        time.sleep(STOP_TRIGGER_POLL_INTERVAL_SECONDS)
+                        settled = self.exchange.get_position()
+                        if settled is None:
+                            self.system_log.info(
+                                f"STOP_TRIGGER_SETTLED | symbol={symbol}"
+                            )
+                            self._handle_close(open_position)
+                            return
+                        if settled.stop_loss is not None:
+                            self.system_log.info(
+                                f"LIVE_SL_REAPPEARED | symbol={symbol} | "
+                                f"stop_loss={settled.stop_loss}"
+                            )
+                            return
+
                     self.reconciliation.run(reason="LIVE_SL_MISSING")
                 finally:
                     self._sl_recovery_in_progress = False
@@ -274,37 +299,6 @@ class PositionLifecycle:
                 if intended_integer_R is not None:
                     open_position["last_locked_R"] = intended_integer_R
 
-            # --------------------------------------------
-            # Update Telegram panel (Locked R emphasis)
-            # --------------------------------------------
-
-            msg_id = state_snapshot.get(
-                "active_trade_panel_message_id"
-            )
-
-            if msg_id:
-
-                last_step = open_position.get("last_locked_R", 0)
-                step = 0.5
-
-                if last_step > 0:
-                    locked_R = (last_step - 1) * step
-                else:
-                    locked_R = 0.0
-
-                panel_text = format_trade_panel(
-                    symbol=open_position["symbol"],
-                    side=open_position["side"],
-                    entry_price=open_position["entry_price"],
-                    stop_loss=open_position["stop_loss"],
-                    qty=open_position["qty"],
-                    risk_usd=open_position["risk_usd"],
-                    status="OPEN 🔼",
-                ) + (
-                    f"\n<b>Locked:</b> +{locked_R:.1f}R\n"
-                )
-
-                edit_message(msg_id, panel_text)
 
         if decision.highest_profit_usd is not None:
             open_position["highest_profit_usd"] = (
@@ -472,6 +466,9 @@ class PositionLifecycle:
             "initial_stop_loss": open_position.get("initial_stop_loss"),
             "final_stop_loss": open_position.get("stop_loss"),
             "learning_recorded": False,
+            "candidate_observation_id": open_position.get(
+                "candidate_observation_id"
+            ),
         }
 
         self.state.update_after_trade(
@@ -485,17 +482,22 @@ class PositionLifecycle:
         )
 
         if msg_id:
-            panel_text = format_trade_panel(
-                symbol=open_position["symbol"],
-                side=open_position["side"],
-                entry_price=open_position["entry_price"],
-                stop_loss=open_position["stop_loss"],
-                qty=open_position["qty"],
-                risk_usd=open_position["risk_usd"],
+            panel_text = format_trade_close_panel(
+                symbol=open_position.get("symbol", "UNKNOWN"),
+                side=open_position.get("side", "UNKNOWN"),
+                entry_price=open_position.get("entry_price"),
+                initial_stop_loss=open_position.get(
+                    "initial_stop_loss",
+                    open_position.get("stop_loss"),
+                ),
+                final_stop_loss=open_position.get("stop_loss"),
+                qty=open_position.get("qty"),
+                risk_usd=initial_risk_usd,
+                exit_price=exit_price,
+                realized_pnl=realized,
+                r_multiple=r_multiple,
                 status="CLOSED",
-            ) + (
-                f"Exit: {exit_price:.4f}\n"
-                f"PnL: {realized:.2f} USD\n"
+                exit_reason="EXCHANGE_POSITION_CLOSED",
             )
 
             edit_message(msg_id, panel_text)
@@ -513,40 +515,41 @@ class PositionLifecycle:
             f"structure={open_position.get('structure_fingerprint')}"
         )
 
-        try:
-            learning_recorded = record_observation(
-                symbol=open_position["symbol"],
-                structure=open_position.get("structure_fingerprint"),
-                pnl=realized,
-                entry_price=open_position["entry_price"],
-                exit_price=exit_price,
-                qty=open_position["qty"],
-                r_multiple=r_multiple,
-                mae_r=mae_r,
-                mfe_r=mfe_r,
-                holding_time=holding_seconds,
-                mae=open_position.get("mae", 0.0),
-                mfe=open_position.get("mfe", 0.0),
-            )
-
-            if learning_recorded:
-                last_trade["learning_recorded"] = True
-                self.system_log.info(
-                    f"EXECUTED_TRADE_RECORDED | "
-                    f"symbol={open_position['symbol']} | "
-                    f"r_multiple={r_multiple:.6f}"
+        # Executed-trade learning now flows only through candidate outcomes.
+        candidate_observation_id = open_position.get(
+            "candidate_observation_id"
+        )
+        if candidate_observation_id:
+            try:
+                CandidateOutcomeWriter(
+                    CANDIDATE_OUTCOMES_PATH,
+                    system_log=self.system_log,
+                    environment=TRADING_ENV,
+                    execution_mode=EXECUTION_MODE,
+                ).append(
+                    observation_id=candidate_observation_id,
+                    outcome_type="EXECUTED_TRADE",
+                    symbol=open_position["symbol"],
+                    direction=open_position["side"],
+                    payload={
+                        "entry_price": float(
+                            open_position["entry_price"]
+                        ),
+                        "exit_price": float(exit_price),
+                        "qty": float(open_position["qty"]),
+                        "realized_pnl_usd": float(realized),
+                        "r_multiple": float(r_multiple),
+                        "mae_r": float(mae_r),
+                        "mfe_r": float(mfe_r),
+                        "holding_seconds": int(holding_seconds),
+                        "profitable": bool(realized > 0),
+                    },
                 )
-            else:
-                self.system_log.warning(
-                    f"LEARNING_RECORD_SKIPPED | "
-                    f"symbol={open_position['symbol']} | "
-                    f"reason=MISSING_OR_INVALID_STRUCTURE_FINGERPRINT"
+            except Exception as e:
+                self.system_log.error(
+                    "CANDIDATE_TRADE_OUTCOME_WRITE_FAILED | "
+                    f"symbol={open_position['symbol']} | error={e}"
                 )
-
-        except Exception as e:
-            self.system_log.error(
-                f"LEARNING_RECORD_FAILED | error={e}"
-            )
 
         # update_after_trade stored the same last_trade object by reference,
         # but assign it explicitly so the final learning_recorded flag is

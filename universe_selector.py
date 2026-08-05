@@ -1,220 +1,443 @@
 # ============================================================
-# UNIVERSE SELECTOR — MAINNET (5M Structure Optimized)
+# EXECUTION UNIVERSE SELECTOR — 5M MARKET STRUCTURE
 # ============================================================
 
 from dotenv import load_dotenv
 load_dotenv()
 
-import os
 import json
-import requests
-from datetime import datetime, timezone
+import math
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
+from pathlib import Path
 
-# ============================================================
-# CONFIG (COMPATIBLE)
-# ============================================================
+import requests
 
-BASE_DIR = os.path.dirname(os.path.realpath(__file__))
-UNIVERSE_SNAPSHOT_FILE = "/home/ubuntu/nbot/universe_snapshot.json"
-EXPECTED_SIZE = 30
+from config import (
+    STRUCTURE_UNIVERSE_CANDLE_LIMIT,
+    STRUCTURE_UNIVERSE_ENABLED,
+    STRUCTURE_UNIVERSE_MARKET_BASE_URL,
+    STRUCTURE_UNIVERSE_MAX_BREAKOUT,
+    STRUCTURE_UNIVERSE_MAX_CHANGE_PCT,
+    STRUCTURE_UNIVERSE_MAX_REVERSION,
+    STRUCTURE_UNIVERSE_MAX_TREND,
+    STRUCTURE_UNIVERSE_MAX_WORKERS,
+    STRUCTURE_UNIVERSE_MIN_CHANGE_PCT,
+    STRUCTURE_UNIVERSE_MIN_COMPLETED_CANDLES,
+    STRUCTURE_UNIVERSE_MIN_QUOTE_VOLUME,
+    STRUCTURE_UNIVERSE_MIN_SCORE,
+    STRUCTURE_UNIVERSE_PREFILTER_SIZE,
+    STRUCTURE_UNIVERSE_RETENTION_BONUS,
+    STRUCTURE_UNIVERSE_SIZE,
+    TRADING_ENV,
+    UNIVERSE_SNAPSHOT_PATH,
+)
+from strategy.universe_structure import UniverseStructureAnalyzer
 
-BASE_URL = os.getenv("TESTNET_BASE_URL")
-TIMEOUT = 3  # Reduced timeout (important)
 
-MIN_CHANGE_PCT = 1.0
-MAX_CHANGE_PCT = 25.0
-MIN_QUOTE_VOLUME = 15_000_000
-
+BASE_DIR = Path(__file__).resolve().parent
+UNIVERSE_SNAPSHOT_FILE = Path(UNIVERSE_SNAPSHOT_PATH)
+if not UNIVERSE_SNAPSHOT_FILE.is_absolute():
+    UNIVERSE_SNAPSHOT_FILE = BASE_DIR / UNIVERSE_SNAPSHOT_FILE
+EXPECTED_SIZE = STRUCTURE_UNIVERSE_SIZE
+BASE_URL = STRUCTURE_UNIVERSE_MARKET_BASE_URL.rstrip("/")
+TIMEOUT = 5
 INTERVAL = "5m"
-CANDLE_LIMIT = 60
 
-MAX_PRE_KLINE_SYMBOLS = 60  # Critical optimization
-MAX_WORKERS = 4  # Safe for 1 vCPU
+_LAST_BUILD_METADATA = {}
 
-
-# ============================================================
-# REST HELPERS
-# ============================================================
 
 def fetch_exchange_info():
-    resp = requests.get(f"{BASE_URL}/fapi/v1/exchangeInfo", timeout=TIMEOUT)
-    resp.raise_for_status()
-    return resp.json()
+    response = requests.get(
+        f"{BASE_URL}/fapi/v1/exchangeInfo",
+        timeout=TIMEOUT,
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 def fetch_24h_tickers():
-    resp = requests.get(f"{BASE_URL}/fapi/v1/ticker/24hr", timeout=TIMEOUT)
-    resp.raise_for_status()
-    return resp.json()
+    response = requests.get(
+        f"{BASE_URL}/fapi/v1/ticker/24hr",
+        timeout=TIMEOUT,
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 def fetch_klines(symbol):
     try:
-        resp = requests.get(
+        response = requests.get(
             f"{BASE_URL}/fapi/v1/klines",
             params={
                 "symbol": symbol,
                 "interval": INTERVAL,
-                "limit": CANDLE_LIMIT,
+                "limit": STRUCTURE_UNIVERSE_CANDLE_LIMIT,
             },
             timeout=TIMEOUT,
         )
-        resp.raise_for_status()
-        return symbol, resp.json()
-    except Exception:
-        return symbol, None
+        response.raise_for_status()
+        rows = response.json()
+        # Binance's final row is normally the currently-forming candle.
+        completed = rows[:-1] if len(rows) > 1 else []
+        return symbol, completed, None
+    except Exception as exc:
+        return symbol, None, str(exc)
 
 
-# ============================================================
-# STRUCTURE LOGIC
-# ============================================================
+def get_last_build_metadata():
+    return json.loads(json.dumps(_LAST_BUILD_METADATA))
 
-def avg_wick_ratio(candles):
-    ratios = []
-    for c in candles:
-        o = float(c[1])
-        h = float(c[2])
-        l = float(c[3])
-        close = float(c[4])
-        total = h - l
-        if total <= 0:
-            continue
-        body = abs(close - o)
-        wick = total - body
-        ratios.append(wick / total)
-    return sum(ratios) / len(ratios) if ratios else 1.0
-
-
-def classify_structure(candles):
-    ranges = []
-    closes = []
-
-    for c in candles:
-        h = float(c[2])
-        l = float(c[3])
-        close = float(c[4])
-        ranges.append(h - l)
-        closes.append(close)
-
-    short_avg = sum(ranges[-10:]) / 10
-    long_avg = sum(ranges) / len(ranges)
-    if long_avg <= 0:
-        return None
-
-    vol_ratio = short_avg / long_avg
-
-    trend_score = 0
-    for i in range(-5, -1):
-        if closes[i] > closes[i - 1]:
-            trend_score += 1
-        elif closes[i] < closes[i - 1]:
-            trend_score -= 1
-
-    if abs(trend_score) >= 3 and vol_ratio > 1.0:
-        return "TREND"
-
-    if vol_ratio < 0.8:
-        return "COMPRESSION"
-
-    return None
-
-
-# ============================================================
-# BUILD UNIVERSE
-# ============================================================
 
 def build_universe():
+    global _LAST_BUILD_METADATA
 
-    exchange_info = fetch_exchange_info()
-    tickers = fetch_24h_tickers()
+    supported = _supported_symbols(fetch_exchange_info())
+    liquid = _liquid_prefilter(
+        fetch_24h_tickers(),
+        supported,
+    )
+    previous = _load_previous_symbols()
 
-    supported = {
-        s["symbol"]
-        for s in exchange_info["symbols"]
+    if not STRUCTURE_UNIVERSE_ENABLED:
+        selected = [
+            row["symbol"]
+            for row in liquid[:EXPECTED_SIZE]
+        ]
+        if len(selected) != EXPECTED_SIZE:
+            raise RuntimeError(
+                f"UNIVERSE_INSUFFICIENT_LIQUID_SYMBOLS | "
+                f"found={len(selected)}"
+            )
+        _LAST_BUILD_METADATA = {
+            "selector_version": 2,
+            "mode": "LIQUIDITY_FALLBACK",
+            "selected": [
+                {
+                    **row,
+                    "selection_reason": "STRUCTURE_DISABLED",
+                }
+                for row in liquid[:EXPECTED_SIZE]
+            ],
+        }
+        return selected
+
+    analyzed = _analyze_candidates(
+        liquid[:STRUCTURE_UNIVERSE_PREFILTER_SIZE],
+        previous,
+    )
+    eligible = [
+        row for row in analyzed
         if (
-            s["contractType"] == "PERPETUAL"
-            and s["quoteAsset"] == "USDT"
-            and s["status"] == "TRADING"
+            row["universe_score"] >= STRUCTURE_UNIVERSE_MIN_SCORE
+            and "UNSTABLE" not in row["regime"]
+        )
+    ]
+    selected = _select_diversified(eligible)
+
+    if len(selected) != EXPECTED_SIZE:
+        raise RuntimeError(
+            "STRUCTURE_UNIVERSE_INSUFFICIENT | "
+            f"analyzed={len(analyzed)} | "
+            f"eligible={len(eligible)} | "
+            f"selected={len(selected)}"
+        )
+
+    _LAST_BUILD_METADATA = {
+        "selector_version": 2,
+        "mode": "MARKET_STRUCTURE",
+        "market_base_url": BASE_URL,
+        "interval": INTERVAL,
+        "completed_candle_requirement": (
+            STRUCTURE_UNIVERSE_MIN_COMPLETED_CANDLES
+        ),
+        "prefilter_count": len(liquid),
+        "analyzed_count": len(analyzed),
+        "eligible_count": len(eligible),
+        "category_counts": _category_counts(selected),
+        "selected": selected,
+        "top_rejected": [
+            {
+                **row,
+                "selection_reason": "RANKED_OUT",
+            }
+            for row in eligible
+            if row["symbol"] not in {
+                selected_row["symbol"]
+                for selected_row in selected
+            }
+        ][:20],
+    }
+    return [row["symbol"] for row in selected]
+
+
+def _supported_symbols(exchange_info):
+    return {
+        item["symbol"]
+        for item in exchange_info.get("symbols", [])
+        if (
+            item.get("contractType") == "PERPETUAL"
+            and item.get("quoteAsset") == "USDT"
+            and item.get("status") == "TRADING"
         )
     }
 
-    pre_candidates = []
 
-    for t in tickers:
-        symbol = t.get("symbol")
-
-        # --------------------------------------------------
-        # STRICT SYMBOL SANITIZATION (Testnet Hardening)
-        # --------------------------------------------------
-        if (
-            not isinstance(symbol, str)
-            or not symbol.isascii()
-            or " " in symbol
-            or not symbol.endswith("USDT")
-            or not symbol.replace("USDT", "").isalnum()
-            or symbol not in supported
-        ):
+def _liquid_prefilter(tickers, supported):
+    rows = []
+    for ticker in tickers:
+        symbol = ticker.get("symbol")
+        if not _valid_symbol(symbol) or symbol not in supported:
             continue
-
         try:
-            quote_volume = float(t["quoteVolume"])
-            change_pct = abs(float(t["priceChangePercent"]))
-        except Exception:
+            quote_volume = float(ticker["quoteVolume"])
+            change_pct = abs(
+                float(ticker["priceChangePercent"])
+            )
+        except (KeyError, TypeError, ValueError):
             continue
-
         if (
-            change_pct < MIN_CHANGE_PCT
-            or change_pct > MAX_CHANGE_PCT
-            or quote_volume < MIN_QUOTE_VOLUME
+            quote_volume < STRUCTURE_UNIVERSE_MIN_QUOTE_VOLUME
+            or change_pct < STRUCTURE_UNIVERSE_MIN_CHANGE_PCT
+            or change_pct > STRUCTURE_UNIVERSE_MAX_CHANGE_PCT
         ):
             continue
-
-        pre_candidates.append(
-            (symbol, quote_volume, change_pct)
+        activity = math.log10(max(quote_volume, 1.0)) * (
+            1.0 + change_pct / 10.0
         )
+        rows.append({
+            "symbol": symbol,
+            "quote_volume": quote_volume,
+            "change_pct": change_pct,
+            "activity_score_raw": activity,
+        })
 
-    # Sort by liquidity × volatility
-    pre_candidates.sort(
-        key=lambda x: x[1] * x[2],
-        reverse=True
+    rows.sort(
+        key=lambda row: (
+            -row["activity_score_raw"],
+            row["symbol"],
+        )
     )
-    selected = [
-        s for s, _, _ in pre_candidates[:EXPECTED_SIZE]
-    ]
+    if rows:
+        maximum = max(row["activity_score_raw"] for row in rows)
+        minimum = min(row["activity_score_raw"] for row in rows)
+        span = max(maximum - minimum, 1e-9)
+        for row in rows:
+            row["liquidity_score"] = (
+                row["activity_score_raw"] - minimum
+            ) / span
+    return rows
+
+
+def _analyze_candidates(rows, previous):
+    analyzer = UniverseStructureAnalyzer()
+    ticker_by_symbol = {
+        row["symbol"]: row for row in rows
+    }
+    results = []
+    with ThreadPoolExecutor(
+        max_workers=STRUCTURE_UNIVERSE_MAX_WORKERS
+    ) as executor:
+        futures = {
+            executor.submit(fetch_klines, row["symbol"]):
+            row["symbol"]
+            for row in rows
+        }
+        for future in as_completed(futures):
+            symbol, candles, error = future.result()
+            if (
+                error is not None
+                or candles is None
+                or len(candles)
+                < STRUCTURE_UNIVERSE_MIN_COMPLETED_CANDLES
+            ):
+                continue
+            try:
+                analysis = analyzer.analyze(candles)
+            except Exception:
+                continue
+
+            ticker = ticker_by_symbol[symbol]
+            retention_bonus = (
+                STRUCTURE_UNIVERSE_RETENTION_BONUS
+                if symbol in previous else 0.0
+            )
+            setup_score = analysis.best_setup_score
+            score = min(
+                1.0,
+                0.20 * ticker["liquidity_score"]
+                + 0.20 * analysis.structure_score
+                + 0.15 * analysis.volatility_score
+                + 0.20 * setup_score
+                + 0.10 * analysis.directional_score
+                + 0.15 * analysis.candle_quality_score
+                + retention_bonus,
+            )
+            results.append({
+                "symbol": symbol,
+                "universe_score": round(score, 8),
+                "liquidity_score": round(
+                    ticker["liquidity_score"], 8
+                ),
+                "quote_volume": ticker["quote_volume"],
+                "change_pct": ticker["change_pct"],
+                "structure_score": round(
+                    analysis.structure_score, 8
+                ),
+                "volatility_score": round(
+                    analysis.volatility_score, 8
+                ),
+                "candle_quality_score": round(
+                    analysis.candle_quality_score, 8
+                ),
+                "directional_score": round(
+                    analysis.directional_score, 8
+                ),
+                "regime": list(analysis.regime),
+                "category": analysis.category,
+                "best_setup": analysis.best_setup,
+                "best_setup_score": round(
+                    analysis.best_setup_score, 8
+                ),
+                "setup_readiness": analysis.setup_readiness,
+                "features": {
+                    key: round(value, 10)
+                    for key, value in analysis.features.items()
+                },
+                "retained": symbol in previous,
+                "retention_bonus": retention_bonus,
+            })
+
+    results.sort(
+        key=lambda row: (
+            -row["universe_score"],
+            -row["best_setup_score"],
+            -row["quote_volume"],
+            row["symbol"],
+        )
+    )
+    return results
+
+
+def _select_diversified(ranked):
+    limits = {
+        "TREND": STRUCTURE_UNIVERSE_MAX_TREND,
+        "BREAKOUT": STRUCTURE_UNIVERSE_MAX_BREAKOUT,
+        "REVERSION": STRUCTURE_UNIVERSE_MAX_REVERSION,
+    }
+    counts = {key: 0 for key in limits}
+    selected = []
+
+    for row in ranked:
+        category = row["category"]
+        if counts[category] >= limits[category]:
+            continue
+        selected.append({
+            **row,
+            "selection_reason": (
+                "RETAINED_STRUCTURE_QUALITY"
+                if row["retained"]
+                else "HIGH_STRUCTURE_SETUP_READINESS"
+            ),
+        })
+        counts[category] += 1
+        if len(selected) == EXPECTED_SIZE:
+            break
+
+    # If one category is scarce, fill remaining places by score while
+    # preserving the already-selected rows. This avoids fragile startup.
+    if len(selected) < EXPECTED_SIZE:
+        chosen = {row["symbol"] for row in selected}
+        for row in ranked:
+            if row["symbol"] in chosen:
+                continue
+            selected.append({
+                **row,
+                "selection_reason": "DIVERSITY_BACKFILL",
+            })
+            chosen.add(row["symbol"])
+            if len(selected) == EXPECTED_SIZE:
+                break
 
     return selected
 
-# ============================================================
-# ENTRYPOINT (CRON SAFE)
-# ============================================================
+
+def _load_previous_symbols():
+    if not UNIVERSE_SNAPSHOT_FILE.exists():
+        return set()
+    try:
+        document = json.loads(
+            UNIVERSE_SNAPSHOT_FILE.read_text()
+        )
+        return {
+            symbol
+            for symbol in document.get("symbols", [])
+            if _valid_symbol(symbol)
+        }
+    except Exception:
+        return set()
+
+
+def _valid_symbol(symbol):
+    return (
+        isinstance(symbol, str)
+        and symbol.isascii()
+        and " " not in symbol
+        and symbol.endswith("USDT")
+        and symbol.removesuffix("USDT").isalnum()
+    )
+
+
+def _category_counts(rows):
+    counts = {
+        "TREND": 0,
+        "BREAKOUT": 0,
+        "REVERSION": 0,
+    }
+    for row in rows:
+        counts[row["category"]] += 1
+    return counts
+
 
 def main():
     try:
         universe = build_universe()
-
-        if len(universe) < EXPECTED_SIZE:
+        if len(universe) != EXPECTED_SIZE:
             raise RuntimeError(
-                f"INSUFFICIENT_SYMBOLS | found={len(universe)}"
+                f"UNIVERSE_INVALID_SIZE | found={len(universe)}"
             )
 
         snapshot = {
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(
+                timezone.utc
+            ).isoformat(),
             "count": len(universe),
             "symbols": universe,
+            "selection": get_last_build_metadata(),
+            "environment": TRADING_ENV,
         }
-
-        with open(UNIVERSE_SNAPSHOT_FILE, "w") as f:
-            json.dump(snapshot, f, indent=2, sort_keys=True)
+        UNIVERSE_SNAPSHOT_FILE.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+        temporary = UNIVERSE_SNAPSHOT_FILE.with_suffix(
+            ".json.tmp"
+        )
+        temporary.write_text(
+            json.dumps(snapshot, indent=2, sort_keys=True)
+        )
+        os.replace(temporary, UNIVERSE_SNAPSHOT_FILE)
 
         print(
-            f"[OK] Universe 5M built | "
+            "[OK] Structure universe built | "
             f"symbols={len(universe)} | "
+            f"mode={snapshot['selection'].get('mode')} | "
             f"time={snapshot['generated_at']}"
         )
-
-    except Exception as e:
-        print(f"[ERROR] Universe build failed | {e}")
+    except Exception as exc:
+        print(f"[ERROR] Universe build failed | {exc}")
+        raise
 
 
 if __name__ == "__main__":

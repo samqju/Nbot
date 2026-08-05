@@ -17,11 +17,13 @@ from config import (
     RISK_PER_TRADE_USD,
     RISK_TOLERANCE_PCT,
     SHADOW_MODE,
+    BOT_STATE_PATH,
 )
+from execution.exchange_contract import validate_exchange_adapter
 from execution.exceptions import MarketStateError
 from risk.risk import RiskManager
 from state.state import StateManager
-from strategy.strategy import Strategy
+from strategy.strategy_factory import build_strategy
 from execution.exceptions import OperationalExchangeError
 from utils.telegram_notifier import send_info, send_critical, start_operator_listener, send_warning
 from engine.market_state import MarketState
@@ -53,27 +55,19 @@ class TradingEngine:
 
     def __init__(self, exchange, system_log, trade_log):
 
-        # --- Adapter contract sanity ---
-        required_methods = [
-            "connect",
-            "disconnect",
-            "price_stream",
-            "get_position",
-            "get_realized_pnl",
-            "place_entry",
-            "place_initial_sl",
-            "update_sl",
-            "cancel_pending_entries",
-            "emergency_exit",
-        ]
-        for m in required_methods:
-            assert hasattr(exchange, m), f"ADAPTER_MISSING_METHOD:{m}"
+        # --- Complete exchange adapter contract ---
+        contract_report = validate_exchange_adapter(exchange)
+        system_log.info(
+            "EXCHANGE_ADAPTER_CONTRACT_OK | "
+            f"adapter={contract_report.adapter_class} | "
+            f"required_methods={contract_report.required_count}"
+        )
 
         self.exchange = exchange
 
         # Core components
-        self.state = StateManager()
-        self.strategy = Strategy(system_log=system_log)
+        self.state = StateManager(filename=BOT_STATE_PATH)
+        self.strategy = build_strategy(system_log=system_log)
         self.risk = RiskManager(
             NOTIONAL_TARGET=MAX_NOTIONAL_USD,
             NOTIONAL_TOLERANCE_PCT=NOTIONAL_TOLERANCE_PCT,
@@ -139,6 +133,7 @@ class TradingEngine:
             exchange=self.exchange,
             state=self.state,
             risk=self.risk,
+            emergency=self.emergency,
             universe=self.universe,
             system_log=self.system_log,
             trade_log=self.trade_log,
@@ -281,8 +276,21 @@ class TradingEngine:
         )
 
         if SHADOW_MODE:
+            paper_position = self.exchange.get_position()
+            if paper_position is None:
+                paper_position_status = "Paper position: FLAT"
+            else:
+                paper_position_status = (
+                    "Paper position: RECOVERED "
+                    f"{paper_position.symbol} {paper_position.side} "
+                    f"qty={paper_position.qty} "
+                    f"entry={paper_position.entry_price} "
+                    f"stop={paper_position.stop_loss}"
+                )
             runtime_status = (
-                "SHADOW MODE — ORDERS BLOCKED\n"
+                "SHADOW MODE — LOCAL PAPER EXECUTION ACTIVE\n"
+                "Binance order submission: IMPOSSIBLE\n"
+                f"{paper_position_status}\n"
                 f"Persisted entry state: {actual_engine_state}"
             )
         else:
@@ -435,35 +443,27 @@ class TradingEngine:
 
                     intent = self.intent_lifecycle.accepted_intent
 
-                    # Shadow mode deliberately permits strategy evaluation and
-                    # dataset generation while blocking every order submission.
-                    if SHADOW_MODE:
-                        if not self._shadow_mode_logged:
-                            self.system_log.warning(
-                                "SHADOW_MODE_ACTIVE | order_submission=BLOCKED"
-                            )
-                            self._shadow_mode_logged = True
-
-                        if intent is not None:
-                            self.system_log.info(
-                                "SHADOW_INTENT_BLOCKED | "
-                                f"symbol={intent.symbol} | "
-                                f"direction={intent.direction}"
-                            )
-                            self.intent_lifecycle.clear_accepted_intent()
-
-                    else:
-                        # Try execute entry only when shadow mode is disabled.
-                        entry_attempted = intent is not None
-
-                        self.entry_lifecycle.maybe_execute(
-                            intent=intent,
-                            market_state=self.market_state,
+                    # In SHADOW mode the exchange factory supplies a local
+                    # PaperExchange. Therefore the normal entry lifecycle is
+                    # safe to run and produces a complete paper trade instead
+                    # of discarding the accepted strategy intent.
+                    if SHADOW_MODE and not self._shadow_mode_logged:
+                        self.system_log.warning(
+                            "SHADOW_PAPER_EXECUTION_ACTIVE | "
+                            "binance_order_submission=IMPOSSIBLE"
                         )
+                        self._shadow_mode_logged = True
 
-                        # Clear intent after ANY attempt (success or failure)
-                        if entry_attempted:
-                            self.intent_lifecycle.clear_accepted_intent()
+                    entry_attempted = intent is not None
+
+                    self.entry_lifecycle.maybe_execute(
+                        intent=intent,
+                        market_state=self.market_state,
+                    )
+
+                    # Clear intent after ANY attempt (success or failure).
+                    if entry_attempted:
+                        self.intent_lifecycle.clear_accepted_intent()
 
                     # Heartbeat
                     self.state.heartbeat(

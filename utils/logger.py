@@ -18,7 +18,9 @@ FORMATTER = logging.Formatter(
 
 def _build_logger(name, filename):
     logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+    level_name = os.getenv("BOT_LOG_LEVEL", "INFO").strip().upper()
+    level = getattr(logging, level_name, logging.INFO)
+    logger.setLevel(level)
     logger.propagate = False
 
     if not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
@@ -27,6 +29,7 @@ def _build_logger(name, filename):
             maxBytes=MAX_LOG_SIZE_BYTES,
             backupCount=BACKUP_COUNT,
         )
+        handler.setLevel(level)
         handler.setFormatter(FORMATTER)
         logger.addHandler(handler)
 
