@@ -7,9 +7,30 @@ TradeIntent creation remain in Strategy until later Phase 3 patches.
 
 from __future__ import annotations
 
-from config import MAX_NOTIONAL_USD, RISK_PER_TRADE_USD
+from config import (
+    EXECUTION_MODE,
+    EXPERIMENT_CANDLE_INTERVAL,
+    MAX_NOTIONAL_USD,
+    PAPER_ENTRY_SLIPPAGE_PCT,
+    PAPER_EXECUTION_VARIANT_ID,
+    PAPER_EXIT_SLIPPAGE_PCT,
+    PAPER_TAKER_FEE_RATE,
+    RISK_PER_TRADE_USD,
+    RULE_MODEL_VERSION,
+    STRATEGY_VARIANT_ID,
+    STRATEGY_VERSION,
+    TRADING_ENV,
+    VIRTUAL_STRATEGY_VARIANT_ID,
+    VIRTUAL_TRADE_MAX_CANDLES,
+    VIRTUAL_TRADE_TARGET_R,
+)
 from strategy.candidate import StrategyCandidate
 from strategy.features import CandidateFeatureExtractor
+from strategy.experiment_contract import (
+    build_experiment_context,
+    build_market_event_id,
+    new_decision_batch_id,
+)
 from strategy.setup_detectors import SetupDetectorRegistry
 
 
@@ -22,6 +43,7 @@ class StructureCandidateGenerator:
     def generate(self) -> list[StrategyCandidate]:
         s = self.strategy
         candidates: list[StrategyCandidate] = []
+        decision_batch_id = new_decision_batch_id()
 
         for symbol in s._universe:
             candles = s._candle_history.get(symbol)
@@ -84,6 +106,31 @@ class StructureCandidateGenerator:
                 ):
                     continue
 
+                structure_fingerprint = s._latest_structure.get(symbol)
+                market_event_id = build_market_event_id(
+                    environment=TRADING_ENV,
+                    candle_bucket=bucket,
+                    candle_interval=EXPERIMENT_CANDLE_INTERVAL,
+                )
+                experiment_context = build_experiment_context(
+                    decision_batch_id=decision_batch_id,
+                    market_event_id=market_event_id,
+                    strategy_version=STRATEGY_VERSION,
+                    strategy_variant_id=STRATEGY_VARIANT_ID,
+                    selection_model_version=RULE_MODEL_VERSION,
+                    environment=TRADING_ENV,
+                    execution_mode=EXECUTION_MODE,
+                    candle_bucket=bucket,
+                    structure_fingerprint=structure_fingerprint,
+                    paper_taker_fee_rate=PAPER_TAKER_FEE_RATE,
+                    paper_entry_slippage_pct=PAPER_ENTRY_SLIPPAGE_PCT,
+                    paper_exit_slippage_pct=PAPER_EXIT_SLIPPAGE_PCT,
+                    virtual_variant_id=VIRTUAL_STRATEGY_VARIANT_ID,
+                    virtual_target_r=VIRTUAL_TRADE_TARGET_R,
+                    virtual_max_candles=VIRTUAL_TRADE_MAX_CANDLES,
+                    paper_variant_id=PAPER_EXECUTION_VARIANT_ID,
+                    candle_interval=EXPERIMENT_CANDLE_INTERVAL,
+                )
                 candidate = StrategyCandidate(
                     symbol=symbol,
                     direction=direction,
@@ -91,8 +138,17 @@ class StructureCandidateGenerator:
                     pattern=signal.pattern,
                     bucket=bucket,
                     features=candidate_features,
-                    structure_fingerprint=s._latest_structure.get(symbol),
+                    structure_fingerprint=structure_fingerprint,
                     reference_price=last_close,
+                    decision_batch_id=decision_batch_id,
+                    market_event_id=market_event_id,
+                    strategy_version=STRATEGY_VERSION,
+                    strategy_variant_id=STRATEGY_VARIANT_ID,
+                    model_version=RULE_MODEL_VERSION,
+                    execution_eligible=(
+                        symbol in s._execution_universe
+                    ),
+                    experiment_context=experiment_context,
                 )
 
                 simulation = {
@@ -104,7 +160,13 @@ class StructureCandidateGenerator:
                     "candles_seen": 0,
                     "mae": 0.0,
                     "mfe": 0.0,
-                    "structure_fingerprint": s._latest_structure.get(symbol),
+                    "structure_fingerprint": structure_fingerprint,
+                    "decision_batch_id": decision_batch_id,
+                    "market_event_id": market_event_id,
+                    "strategy_version": STRATEGY_VERSION,
+                    "strategy_variant_id": STRATEGY_VARIANT_ID,
+                    "model_version": RULE_MODEL_VERSION,
+                    "experiment_context": experiment_context,
                     "short_range": float(features[0]),
                     "long_range": float(features[1]),
                     "trend_score": float(features[2]),

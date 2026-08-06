@@ -44,7 +44,7 @@ class Phase17PreflightTests(unittest.TestCase):
         log = Log()
         with patch.dict("os.environ", {
             "LIVE_BASE_URL": "https://fapi.binance.com",
-            "LIVE_MARKET_WS_URL": "wss://fstream.binance.com/ws/!ticker@arr",
+            "LIVE_MARKET_WS_URL": "wss://fstream.binance.com/market/ws/!ticker@arr",
         }, clear=False):
             client = BinanceMarketClient(system_log=log)
         client._symbol_filters = {"BTCUSDT": {"tickSize": 0.1}}
@@ -83,7 +83,7 @@ class Phase17PreflightTests(unittest.TestCase):
         log = Log()
         with patch.dict("os.environ", {
             "LIVE_BASE_URL": "https://fapi.binance.com",
-            "LIVE_MARKET_WS_URL": "wss://fstream.binance.com/ws/!ticker@arr",
+            "LIVE_MARKET_WS_URL": "wss://fstream.binance.com/market/ws/!ticker@arr",
         }, clear=False):
             client = BinanceMarketClient(system_log=log)
         client._symbol_filters = {}

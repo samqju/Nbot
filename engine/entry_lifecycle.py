@@ -430,10 +430,17 @@ class EntryLifecycle:
                 datetime.now(timezone.utc).timestamp() * 1000
             ),
             "structure_fingerprint": intent.structure_fingerprint,
+            "pattern": intent.pattern,
             "candidate_observation_id": (
                 intent.candidate_observation_id
             ),
             "advisory_risk_plan": intent.advisory_risk_plan,
+            "decision_batch_id": intent.decision_batch_id,
+            "market_event_id": intent.market_event_id,
+            "strategy_version": intent.strategy_version,
+            "strategy_variant_id": intent.strategy_variant_id,
+            "model_version": intent.model_version,
+            "experiment_context": intent.experiment_context,
             "mae": 0.0,
             "mfe": 0.0,
 	        }
@@ -479,6 +486,43 @@ class EntryLifecycle:
             )
             raise RuntimeError(
                 f"ENTRY_SLIPPAGE_BREACH | symbol={symbol}"
+            )
+
+        # --------------------------------------------------
+        # Attach experiment metadata to local paper execution.
+        # Other adapters need not implement this optional method; the engine
+        # state above remains the canonical metadata source for them.
+        # --------------------------------------------------
+        metadata_setter = getattr(
+            self.exchange,
+            "set_pending_entry_metadata",
+            None,
+        )
+        if callable(metadata_setter):
+            metadata_setter(
+                symbol=symbol,
+                client_order_id=(
+                    ack.client_order_id or client_order_id
+                ),
+                metadata={
+                    "candidate_observation_id": (
+                        intent.candidate_observation_id
+                    ),
+                    "decision_batch_id": intent.decision_batch_id,
+                    "market_event_id": intent.market_event_id,
+                    "strategy_version": intent.strategy_version,
+                    "strategy_variant_id": (
+                        intent.strategy_variant_id
+                    ),
+                    "model_version": intent.model_version,
+                    "structure_fingerprint": (
+                        intent.structure_fingerprint
+                    ),
+                    "pattern": intent.pattern,
+                    "experiment_context": (
+                        intent.experiment_context
+                    ),
+                },
             )
 
         # --------------------------------------------------

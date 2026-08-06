@@ -36,6 +36,12 @@ class TradeIntent:
     structure_fingerprint: Optional[Dict[str, Any]] = None
     advisory_risk_plan: Optional[Dict[str, Any]] = None
     candidate_observation_id: Optional[str] = None
+    decision_batch_id: Optional[str] = None
+    market_event_id: Optional[str] = None
+    strategy_version: Optional[str] = None
+    strategy_variant_id: Optional[str] = None
+    model_version: Optional[str] = None
+    experiment_context: Optional[Dict[str, Any]] = None
 
     def __post_init__(self):
         if self.direction not in ("LONG", "SHORT"):

@@ -358,6 +358,7 @@ class PositionLifecycle:
 
         realized = None
         exit_price = None
+        exit_reason = "EXCHANGE_POSITION_CLOSED"
 
         for attempt in range(3):
             try:
@@ -368,13 +369,17 @@ class PositionLifecycle:
 
                 realized = trade_data["pnl"]
                 exit_price = trade_data["exit_price"]
+                reported_reason = trade_data.get("exit_reason")
+                if reported_reason:
+                    exit_reason = str(reported_reason).strip().upper()
 
                 self.system_log.info(
                     f"POSITION_CLOSE_DETAILS | "
                     f"symbol={open_position['symbol']} | "
                     f"entry={open_position['entry_price']} | "
                     f"exit={exit_price} | "
-                    f"pnl={realized}"
+                    f"pnl={realized} | "
+                    f"exit_reason={exit_reason}"
                 )
 
                 if exit_price is not None:
@@ -465,9 +470,26 @@ class PositionLifecycle:
             "initial_risk_usd": float(initial_risk_usd),
             "initial_stop_loss": open_position.get("initial_stop_loss"),
             "final_stop_loss": open_position.get("stop_loss"),
+            "exit_reason": exit_reason,
             "learning_recorded": False,
             "candidate_observation_id": open_position.get(
                 "candidate_observation_id"
+            ),
+            "decision_batch_id": open_position.get(
+                "decision_batch_id"
+            ),
+            "market_event_id": open_position.get(
+                "market_event_id"
+            ),
+            "strategy_version": open_position.get(
+                "strategy_version"
+            ),
+            "strategy_variant_id": open_position.get(
+                "strategy_variant_id"
+            ),
+            "model_version": open_position.get("model_version"),
+            "experiment_context": open_position.get(
+                "experiment_context"
             ),
         }
 
@@ -497,7 +519,7 @@ class PositionLifecycle:
                 realized_pnl=realized,
                 r_multiple=r_multiple,
                 status="CLOSED",
-                exit_reason="EXCHANGE_POSITION_CLOSED",
+                exit_reason=exit_reason,
             )
 
             edit_message(msg_id, panel_text)
@@ -512,6 +534,7 @@ class PositionLifecycle:
             f"exit={exit_price:.4f} | "
             f"qty={open_position['qty']:.6f} | "
             f"pnl={realized:.2f} | "
+            f"exit_reason={exit_reason} | "
             f"structure={open_position.get('structure_fingerprint')}"
         )
 
@@ -543,7 +566,26 @@ class PositionLifecycle:
                         "mfe_r": float(mfe_r),
                         "holding_seconds": int(holding_seconds),
                         "profitable": bool(realized > 0),
+                        "exit_reason": exit_reason,
+                        "pattern": open_position.get("pattern"),
+                        "strategy_version": open_position.get(
+                            "strategy_version"
+                        ),
+                        "strategy_variant_id": open_position.get(
+                            "strategy_variant_id"
+                        ),
+                        "model_version": open_position.get(
+                            "model_version"
+                        ),
                     },
+                    experiment_context=open_position.get(
+                        "experiment_context"
+                    ),
+                    outcome_variant_id=(
+                        (open_position.get("experiment_context") or {})
+                        .get("paper_policy", {})
+                        .get("variant_id")
+                    ),
                 )
             except Exception as e:
                 self.system_log.error(

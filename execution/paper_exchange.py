@@ -261,6 +261,17 @@ class PaperExchange:
             qty=position.qty,
             entry_price=position.entry_price,
             stop_loss=position.stop_loss,
+            structure_fingerprint=position.structure_fingerprint,
+            pattern=position.pattern,
+            strategy_version=position.strategy_version,
+            model_version=position.model_version,
+            candidate_observation_id=(
+                position.candidate_observation_id
+            ),
+            decision_batch_id=position.decision_batch_id,
+            market_event_id=position.market_event_id,
+            strategy_variant_id=position.strategy_variant_id,
+            experiment_context=position.experiment_context,
         )
 
     @staticmethod
@@ -316,6 +327,26 @@ class PaperExchange:
         }
         return ack
 
+    def set_pending_entry_metadata(
+        self,
+        *,
+        symbol: str,
+        client_order_id: str,
+        metadata: dict,
+    ) -> None:
+        pending = self._pending_entry
+        if pending is None:
+            raise RuntimeError("PAPER_PENDING_ENTRY_NOT_FOUND")
+        ack = pending["ack"]
+        if (
+            pending["symbol"] != str(symbol).strip().upper()
+            or ack.client_order_id != str(client_order_id).strip()
+        ):
+            raise RuntimeError("PAPER_PENDING_ENTRY_METADATA_MISMATCH")
+        if not isinstance(metadata, dict):
+            raise ValueError("PAPER_PENDING_ENTRY_METADATA_INVALID")
+        pending["metadata"] = dict(metadata)
+
     def query_order_by_client_id(self, *, symbol: str, client_order_id: str):
         pending = self._pending_entry
         if not pending:
@@ -358,6 +389,7 @@ class PaperExchange:
         risk_usd = abs(ack.avg_price - stop) * ack.filled_qty
         self._positive(risk_usd, "initial_risk_usd")
         entry_fee = ack.avg_price * ack.filled_qty * PAPER_TAKER_FEE_RATE
+        metadata = dict(pending.get("metadata") or {})
         self.account.open_position(
             symbol=symbol,
             side=side,
@@ -367,6 +399,21 @@ class PaperExchange:
             opened_at_ms=pending["created_at_ms"],
             initial_risk_usd=risk_usd,
             entry_fee_usd=entry_fee,
+            structure_fingerprint=metadata.get(
+                "structure_fingerprint"
+            ),
+            pattern=metadata.get("pattern"),
+            strategy_version=metadata.get("strategy_version"),
+            model_version=metadata.get("model_version"),
+            candidate_observation_id=metadata.get(
+                "candidate_observation_id"
+            ),
+            decision_batch_id=metadata.get("decision_batch_id"),
+            market_event_id=metadata.get("market_event_id"),
+            strategy_variant_id=metadata.get(
+                "strategy_variant_id"
+            ),
+            experiment_context=metadata.get("experiment_context"),
             trade_id=ack.order_id,
         )
         self._pending_entry = None
@@ -440,8 +487,16 @@ class PaperExchange:
     def get_trade_realized_pnl(self, *, symbol: str, since_timestamp=None):
         trade = self._last_trade
         if trade is None or trade.symbol != str(symbol).upper():
-            return {"pnl": 0.0, "exit_price": None}
-        return {"pnl": trade.net_pnl_usd, "exit_price": trade.exit_price}
+            return {
+                "pnl": 0.0,
+                "exit_price": None,
+                "exit_reason": None,
+            }
+        return {
+            "pnl": trade.net_pnl_usd,
+            "exit_price": trade.exit_price,
+            "exit_reason": trade.exit_reason,
+        }
 
     @staticmethod
     def _positive(value: float, name: str) -> None:

@@ -19,8 +19,6 @@ from config import (
     MAX_NOTIONAL_USD,
     TRADING_ENV,
     EXECUTION_MODE,
-    FORWARD_OUTCOME_VARIANT_ID,
-    FORWARD_SIMULATION_MAX_CANDLES,
 )
 from strategy.structure_classifier import StructureClassifier
 from strategy.candidate import rank_candidates
@@ -78,7 +76,7 @@ class Strategy:
         self._pending_simulations = (
             self._restore_pending_simulations()
         )
-        self.MAX_FORWARD_CANDLES = FORWARD_SIMULATION_MAX_CANDLES
+        self.MAX_FORWARD_CANDLES = 120  # 10 hours on 5m
 
         # -----------------------------
         # Trade Governor (UNCHANGED)
@@ -692,16 +690,7 @@ class Strategy:
                                 "target_r": target_r,
                                 "label": 1 if target_r > 0 else 0,
                                 "candles_seen": sim["candles_seen"],
-                                "outcome_variant_id": (
-                                    FORWARD_OUTCOME_VARIANT_ID
-                                ),
                             },
-                            experiment_context=sim.get(
-                                "experiment_context"
-                            ),
-                            outcome_variant_id=(
-                                FORWARD_OUTCOME_VARIANT_ID
-                            ),
                         )
                     except Exception as e:
                         if self.system_log:
@@ -829,10 +818,4 @@ class Strategy:
             structure_fingerprint=best_candidate.structure_fingerprint,
             advisory_risk_plan=(best_candidate.risk_plan.as_dict() if best_candidate.risk_plan is not None else None),
             candidate_observation_id=best_candidate.observation_id,
-            decision_batch_id=best_candidate.decision_batch_id,
-            market_event_id=best_candidate.market_event_id,
-            strategy_version=best_candidate.strategy_version,
-            strategy_variant_id=best_candidate.strategy_variant_id,
-            model_version=best_candidate.model_version,
-            experiment_context=best_candidate.experiment_context,
         )

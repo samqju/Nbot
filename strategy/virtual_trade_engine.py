@@ -9,10 +9,15 @@ import time
 from pathlib import Path
 
 from config import (
+    VIRTUAL_STRATEGY_VARIANT_ID,
     VIRTUAL_TRADES_PATH,
     VIRTUAL_TRADE_MAX_ACTIVE,
     VIRTUAL_TRADE_MAX_CANDLES,
     VIRTUAL_TRADE_TARGET_R,
+)
+from strategy.experiment_contract import (
+    copy_experiment_context,
+    validate_experiment_context,
 )
 
 
@@ -77,6 +82,15 @@ class VirtualTradeEngine:
                 "opened_at_ms": int(time.time() * 1000),
                 "environment": self.environment,
                 "execution_mode": self.execution_mode,
+                "decision_batch_id": candidate.decision_batch_id,
+                "market_event_id": candidate.market_event_id,
+                "strategy_version": candidate.strategy_version,
+                "strategy_variant_id": candidate.strategy_variant_id,
+                "model_version": candidate.model_version,
+                "outcome_variant_id": VIRTUAL_STRATEGY_VARIANT_ID,
+                "experiment_context": copy_experiment_context(
+                    candidate.experiment_context
+                ),
             }
             self._persist_active_locked()
         return True
@@ -154,7 +168,16 @@ class VirtualTradeEngine:
                         "mfe_r": result["mfe_r"],
                         "candles_seen": result["candles_seen"],
                         "profitable": result["profitable"],
+                        "outcome_variant_id": result.get(
+                            "outcome_variant_id"
+                        ),
                     },
+                    experiment_context=result.get(
+                        "experiment_context"
+                    ),
+                    outcome_variant_id=result.get(
+                        "outcome_variant_id"
+                    ),
                 )
         return finished
 
@@ -236,6 +259,14 @@ class VirtualTradeEngine:
             raise RuntimeError(
                 "VIRTUAL_TRADE_RECOVERY_CANDLES_INVALID"
             )
+        context = trade.get("experiment_context")
+        if context is not None:
+            try:
+                validate_experiment_context(context)
+            except ValueError as exc:
+                raise RuntimeError(
+                    "VIRTUAL_TRADE_RECOVERY_EXPERIMENT_INVALID"
+                ) from exc
 
     def _persist_active_locked(self) -> None:
         if self.runtime_store is None:

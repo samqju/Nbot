@@ -20,6 +20,13 @@ from execution.exceptions import OperationalExchangeError
 
 _TIMEOUT_SECONDS = 5
 
+_LIVE_LEGACY_MARKET_WS_URL = (
+    "wss://fstream.binance.com/ws/!ticker@arr"
+)
+_LIVE_PUBLIC_MARKET_WS_URL = (
+    "wss://fstream.binance.com/market/ws/!ticker@arr"
+)
+
 
 @dataclass(frozen=True)
 class PriceTick:
@@ -37,11 +44,39 @@ class BinanceMarketClient:
 
         prefix = "LIVE" if self.environment == "LIVE" else "TESTNET"
         self.base_url = os.getenv(f"{prefix}_BASE_URL", "").strip()
-        self.market_ws_url = os.getenv(f"{prefix}_MARKET_WS_URL", "").strip()
+        configured_market_ws_url = os.getenv(
+            f"{prefix}_MARKET_WS_URL", ""
+        ).strip()
+        self.market_ws_url = self._normalize_market_ws_url(
+            configured_market_ws_url
+        )
 
         self._validate_endpoints()
         self.session = requests.Session()
         self._symbol_filters = {}
+
+
+    def _normalize_market_ws_url(self, configured_url: str) -> str:
+        """Migrate the retired LIVE ticker path without touching TESTNET.
+
+        Binance moved USD-M public market streams under the ``/market``
+        namespace. Existing deployments may still have the old raw-stream URL
+        in ``.env``; normalize that exact legacy value so the runtime starts
+        receiving frames immediately after this code upgrade.
+        """
+        configured_url = str(configured_url or "").strip()
+        if (
+            self.environment == "LIVE"
+            and configured_url.rstrip("/")
+            == _LIVE_LEGACY_MARKET_WS_URL
+        ):
+            self.system_log.warning(
+                "PUBLIC_WS_URL_MIGRATED | "
+                f"environment=LIVE | old={configured_url} | "
+                f"new={_LIVE_PUBLIC_MARKET_WS_URL}"
+            )
+            return _LIVE_PUBLIC_MARKET_WS_URL
+        return configured_url
 
     def _validate_endpoints(self) -> None:
         if not self.base_url:

@@ -13,6 +13,11 @@ from pathlib import Path
 
 import numpy as np
 
+from strategy.experiment_contract import (
+    EXPERIMENT_CONTRACT_VERSION,
+    build_model_version_from_bytes,
+)
+
 
 class ShadowModelError(RuntimeError):
     pass
@@ -37,6 +42,7 @@ class ShadowModelScorer:
         self.system_log = system_log
         self._artifact = None
         self._artifact_mtime_ns = None
+        self._artifact_model_version = None
         self._last_load_attempt = 0.0
         self._lock = threading.Lock()
 
@@ -72,6 +78,16 @@ class ShadowModelScorer:
                 "rule_rank": rule_rank,
                 "rule_score": float(candidate.score),
                 "shadow_probability": probability,
+                "decision_batch_id": candidate.decision_batch_id,
+                "market_event_id": candidate.market_event_id,
+                "strategy_version": candidate.strategy_version,
+                "strategy_variant_id": candidate.strategy_variant_id,
+                "rule_model_version": candidate.model_version,
+                "experiment_contract_version": (
+                    EXPERIMENT_CONTRACT_VERSION
+                    if candidate.experiment_context else 0
+                ),
+                "shadow_model_version": self._artifact_model_version,
                 "rule_selected": bool(
                     rule_selected_candidate is not None
                     and candidate is rule_selected_candidate
@@ -148,10 +164,12 @@ class ShadowModelScorer:
                 return self._artifact
 
             try:
-                artifact = pickle.loads(
-                    self.artifact_path.read_bytes()
-                )
+                artifact_bytes = self.artifact_path.read_bytes()
+                artifact = pickle.loads(artifact_bytes)
                 self._validate_artifact(artifact)
+                artifact_model_version = (
+                    build_model_version_from_bytes(artifact_bytes)
+                )
             except Exception as exc:
                 if self.system_log:
                     self.system_log.error(
@@ -162,11 +180,13 @@ class ShadowModelScorer:
 
             self._artifact = artifact
             self._artifact_mtime_ns = mtime_ns
+            self._artifact_model_version = artifact_model_version
             if self.system_log:
                 self.system_log.info(
                     "SHADOW_MODEL_LOADED | "
                     f"path={self.artifact_path} | "
                     f"winner={artifact['winner']['name']} | "
+                    f"model_version={artifact_model_version} | "
                     "runtime_effect=NONE"
                 )
             return self._artifact
@@ -278,7 +298,7 @@ class ShadowModelScorer:
         lines = []
         for row in rows:
             document = {
-                "schema_version": 1,
+                "schema_version": 2,
                 "observation_type": "SHADOW_MODEL_PREDICTION",
                 "observed_at_ms": observed_at_ms,
                 **row,

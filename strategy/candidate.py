@@ -24,6 +24,13 @@ class StrategyCandidate:
     observation_id: str = field(
         default_factory=lambda: uuid.uuid4().hex
     )
+    decision_batch_id: str | None = None
+    market_event_id: str | None = None
+    strategy_version: str | None = None
+    strategy_variant_id: str | None = None
+    model_version: str | None = None
+    execution_eligible: bool = True
+    experiment_context: dict | None = None
 
     def __post_init__(self):
         symbol = str(self.symbol).strip().upper()
@@ -48,6 +55,35 @@ class StrategyCandidate:
         object.__setattr__(self, "score", float(self.score))
         object.__setattr__(self, "bucket", int(self.bucket))
         object.__setattr__(self, "observation_id", observation_id)
+        for field_name in (
+            "decision_batch_id",
+            "market_event_id",
+            "strategy_version",
+            "strategy_variant_id",
+            "model_version",
+        ):
+            value = getattr(self, field_name)
+            if value is not None:
+                normalized = str(value).strip()
+                if not normalized:
+                    raise ValueError(
+                        f"CANDIDATE_{field_name.upper()}_INVALID"
+                    )
+                object.__setattr__(self, field_name, normalized)
+        object.__setattr__(
+            self,
+            "execution_eligible",
+            bool(self.execution_eligible),
+        )
+        if self.experiment_context is not None:
+            from strategy.experiment_contract import (
+                copy_experiment_context,
+            )
+            object.__setattr__(
+                self,
+                "experiment_context",
+                copy_experiment_context(self.experiment_context),
+            )
         if self.reference_price is not None:
             reference_price = float(self.reference_price)
             if reference_price <= 0:

@@ -18,8 +18,14 @@ class PaperPosition:
     highest_price: Optional[float] = None
     lowest_price: Optional[float] = None
     structure_fingerprint: Optional[str] = None
+    pattern: Optional[str] = None
     strategy_version: Optional[str] = None
     model_version: Optional[str] = None
+    candidate_observation_id: Optional[str] = None
+    decision_batch_id: Optional[str] = None
+    market_event_id: Optional[str] = None
+    strategy_variant_id: Optional[str] = None
+    experiment_context: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -49,8 +55,14 @@ class PaperTrade:
     highest_price: Optional[float] = None
     lowest_price: Optional[float] = None
     structure_fingerprint: Optional[str] = None
+    pattern: Optional[str] = None
     strategy_version: Optional[str] = None
     model_version: Optional[str] = None
+    candidate_observation_id: Optional[str] = None
+    decision_batch_id: Optional[str] = None
+    market_event_id: Optional[str] = None
+    strategy_variant_id: Optional[str] = None
+    experiment_context: Optional[Dict[str, Any]] = None
     source: str = "PAPER"
 
     def to_dict(self) -> Dict[str, Any]:

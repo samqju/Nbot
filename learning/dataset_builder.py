@@ -11,20 +11,17 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-
-TRAINING_DATASET_SCHEMA_VERSION = 1
-CANDIDATE_FEATURE_SCHEMA_VERSION = 3
-CANDIDATE_FEATURE_NAMES = (
-    "short_range",
-    "long_range",
-    "trend_score",
-    "wick_ratio_recent",
-    "body_ratio_recent",
-    "range_acceleration",
-    "dist_high",
-    "dist_low",
-    "directional_consistency",
+from strategy.experiment_contract import (
+    EXPERIMENT_CONTRACT_VERSION,
+    validate_experiment_context,
 )
+from strategy.features import (
+    CANDIDATE_FEATURE_NAMES,
+    CANDIDATE_FEATURE_SCHEMA_VERSION,
+)
+
+
+TRAINING_DATASET_SCHEMA_VERSION = 2
 
 
 class DatasetBuildError(RuntimeError):
@@ -91,6 +88,11 @@ class TrainingDatasetBuilder:
         directions = Counter()
         symbols = Counter()
         labels = Counter()
+        experiment_contract_versions = Counter()
+        strategy_versions = Counter()
+        strategy_variants = Counter()
+        model_versions = Counter()
+        market_context_completeness = Counter()
 
         for outcome in outcome_rows:
             observation_id = self._text(
@@ -122,6 +124,14 @@ class TrainingDatasetBuilder:
                 issues["direction_mismatch"] += 1
                 continue
 
+            contract_error = self._validate_contract_link(
+                observation,
+                outcome,
+            )
+            if contract_error:
+                issues[contract_error] += 1
+                continue
+
             outcome_key = self._outcome_key(outcome)
             if outcome_key in seen_outcomes:
                 issues["duplicate_outcome"] += 1
@@ -137,6 +147,22 @@ class TrainingDatasetBuilder:
             label = row["label_profitable"]
             labels[
                 str(label).lower() if label is not None else "unknown"
+            ] += 1
+            experiment_contract_versions[str(
+                row["experiment_contract_version"]
+            )] += 1
+            strategy_versions[
+                row.get("strategy_version") or "LEGACY_UNKNOWN"
+            ] += 1
+            strategy_variants[
+                row.get("strategy_variant_id") or "LEGACY_UNKNOWN"
+            ] += 1
+            model_versions[
+                row.get("model_version") or "LEGACY_UNKNOWN"
+            ] += 1
+            context = row.get("market_context") or {}
+            market_context_completeness[
+                context.get("completeness", "LEGACY_UNKNOWN")
             ] += 1
 
         dataset_rows.sort(
@@ -182,6 +208,21 @@ class TrainingDatasetBuilder:
                 "outcome_types": dict(sorted(outcome_types.items())),
                 "directions": dict(sorted(directions.items())),
                 "labels": dict(sorted(labels.items())),
+                "experiment_contract_versions": dict(
+                    sorted(experiment_contract_versions.items())
+                ),
+                "strategy_versions": dict(
+                    sorted(strategy_versions.items())
+                ),
+                "strategy_variants": dict(
+                    sorted(strategy_variants.items())
+                ),
+                "model_versions": dict(
+                    sorted(model_versions.items())
+                ),
+                "market_context_completeness": dict(
+                    sorted(market_context_completeness.items())
+                ),
                 "unique_symbols": len(symbols),
             },
             "issues": dict(sorted(issues.items())),
@@ -252,6 +293,19 @@ class TrainingDatasetBuilder:
             return "observation_feature_value_invalid"
         if not self._integer(row.get("observed_at_ms")):
             return "observation_timestamp_invalid"
+        contract_version = int(
+            row.get("experiment_contract_version", 0) or 0
+        )
+        if contract_version not in {0, EXPERIMENT_CONTRACT_VERSION}:
+            return "observation_experiment_contract_unsupported"
+        if contract_version == EXPERIMENT_CONTRACT_VERSION:
+            context = row.get("experiment_context")
+            try:
+                validate_experiment_context(context)
+            except (TypeError, ValueError):
+                return "observation_experiment_context_invalid"
+            if not self._projection_matches_context(row, context):
+                return "observation_experiment_projection_mismatch"
         return None
 
     def _validate_outcome(self, row: dict) -> str | None:
@@ -270,6 +324,69 @@ class TrainingDatasetBuilder:
             return "outcome_payload_invalid"
         if not self._integer(row.get("recorded_at_ms")):
             return "outcome_timestamp_invalid"
+        schema_version = int(row.get("schema_version", 1) or 1)
+        if schema_version not in {1, 2}:
+            return "outcome_schema_invalid"
+        contract_version = int(
+            row.get("experiment_contract_version", 0) or 0
+        )
+        if contract_version not in {0, EXPERIMENT_CONTRACT_VERSION}:
+            return "outcome_experiment_contract_unsupported"
+        if contract_version == EXPERIMENT_CONTRACT_VERSION:
+            context = row.get("experiment_context")
+            try:
+                validate_experiment_context(context)
+            except (TypeError, ValueError):
+                return "outcome_experiment_context_invalid"
+            if not self._projection_matches_context(row, context):
+                return "outcome_experiment_projection_mismatch"
+        return None
+
+    @staticmethod
+    def _projection_matches_context(row: dict, context: dict) -> bool:
+        expected = {
+            "decision_batch_id": context["decision_batch_id"],
+            "market_event_id": context["market_event_id"],
+            "strategy_version": context["strategy_version"],
+            "strategy_variant_id": context["strategy_variant_id"],
+            "model_version": context["selection_model_version"],
+            "feature_schema_version": context[
+                "feature_schema_version"
+            ],
+        }
+        return all(row.get(key) == value for key, value in expected.items())
+
+    def _validate_contract_link(
+        self,
+        observation: dict,
+        outcome: dict,
+    ) -> str | None:
+        observation_version = int(
+            observation.get("experiment_contract_version", 0) or 0
+        )
+        outcome_version = int(
+            outcome.get("experiment_contract_version", 0) or 0
+        )
+        if observation_version != outcome_version:
+            return "experiment_contract_version_mismatch"
+        if observation_version == 0:
+            return None
+        observation_context = observation["experiment_context"]
+        outcome_context = outcome["experiment_context"]
+        for key in (
+            "decision_batch_id",
+            "market_event_id",
+            "strategy_version",
+            "strategy_variant_id",
+            "selection_model_version",
+            "feature_schema_version",
+            "environment",
+            "execution_mode",
+            "candle_interval",
+            "candle_bucket",
+        ):
+            if observation_context.get(key) != outcome_context.get(key):
+                return f"experiment_context_{key}_mismatch"
         return None
 
     def _join(self, observation: dict, outcome: dict) -> dict:
@@ -277,6 +394,18 @@ class TrainingDatasetBuilder:
         return {
             "dataset_schema_version": TRAINING_DATASET_SCHEMA_VERSION,
             "feature_schema_version": CANDIDATE_FEATURE_SCHEMA_VERSION,
+            "experiment_contract_version": int(
+                observation.get("experiment_contract_version", 0) or 0
+            ),
+            "decision_batch_id": observation.get("decision_batch_id"),
+            "market_event_id": observation.get("market_event_id"),
+            "strategy_version": observation.get("strategy_version"),
+            "strategy_variant_id": observation.get(
+                "strategy_variant_id"
+            ),
+            "model_version": observation.get("model_version"),
+            "outcome_variant_id": outcome.get("outcome_variant_id"),
+            "legacy_record": bool(observation.get("legacy_record", True)),
             "candidate_observation_id": observation[
                 "candidate_observation_id"
             ],
@@ -307,6 +436,22 @@ class TrainingDatasetBuilder:
             "risk_plan": observation.get("risk_plan"),
             "structure_fingerprint": observation.get(
                 "structure_fingerprint"
+            ),
+            "market_context": observation.get("market_context"),
+            "cost_model": observation.get("cost_model"),
+            "virtual_policy": observation.get("virtual_policy"),
+            "paper_policy": observation.get("paper_policy"),
+            "experiment_context": observation.get(
+                "experiment_context"
+            ),
+            "selection_status": observation.get(
+                "selection_status"
+            ),
+            "rejection_reason": observation.get(
+                "rejection_reason"
+            ),
+            "execution_eligible": observation.get(
+                "execution_eligible"
             ),
             "outcome_type": self._text(
                 outcome["outcome_type"]

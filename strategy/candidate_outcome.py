@@ -8,8 +8,13 @@ import threading
 import time
 from pathlib import Path
 
+from strategy.experiment_contract import (
+    copy_experiment_context,
+    experiment_projection,
+)
 
-CANDIDATE_OUTCOME_SCHEMA_VERSION = 1
+
+CANDIDATE_OUTCOME_SCHEMA_VERSION = 2
 
 
 class CandidateOutcomeWriter:
@@ -39,13 +44,20 @@ class CandidateOutcomeWriter:
         symbol: str,
         direction: str,
         payload: dict,
+        experiment_context: dict | None = None,
+        outcome_variant_id: str | None = None,
     ) -> None:
         observation_id = str(observation_id or "").strip()
         if not observation_id:
             raise ValueError("CANDIDATE_OUTCOME_OBSERVATION_ID_INVALID")
 
+        normalized_context = copy_experiment_context(
+            experiment_context
+        )
+        projection = experiment_projection(normalized_context)
         row = {
             "schema_version": CANDIDATE_OUTCOME_SCHEMA_VERSION,
+            **projection,
             "observation_type": "CANDIDATE_OUTCOME",
             "recorded_at_ms": int(time.time() * 1000),
             "environment": self.environment,
@@ -54,6 +66,11 @@ class CandidateOutcomeWriter:
             "outcome_type": str(outcome_type).strip().upper(),
             "symbol": str(symbol).strip().upper(),
             "direction": str(direction).strip().upper(),
+            "outcome_variant_id": (
+                str(outcome_variant_id).strip()
+                if outcome_variant_id is not None else None
+            ),
+            "experiment_context": normalized_context,
             "payload": dict(payload),
         }
 

@@ -3,7 +3,14 @@
 # Synchronizes engine state with exchange truth
 # ==========================================================
 import time
-from config import STOP_TRIGGER_GRACE_SECONDS, STOP_TRIGGER_POLL_INTERVAL_SECONDS
+from config import (
+    CANDIDATE_OUTCOMES_PATH,
+    EXECUTION_MODE,
+    STOP_TRIGGER_GRACE_SECONDS,
+    STOP_TRIGGER_POLL_INTERVAL_SECONDS,
+    TRADING_ENV,
+)
+from strategy.candidate_outcome import CandidateOutcomeWriter
 from utils.telegram_notifier import (
     send_trade_panel,
     format_trade_panel,
@@ -33,6 +40,68 @@ class ReconciliationLifecycle:
         self.system_log = system_log
         self.trade_log = trade_log
 
+
+    @staticmethod
+    def _number(value, default: float = 0.0) -> float:
+        """Return a log-safe float for partially populated stale state."""
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return float(default)
+
+    def _cleanup_orphan_stop_orders(self, symbol: str) -> None:
+        """Cancel legacy REST stop orders only when the adapter supports it.
+
+        PaperExchange intentionally exposes no private HTTP helpers. Calling
+        ``_get``/``_delete`` unconditionally made LIVE+SHADOW reconciliation
+        fail before it could repair stale engine state.
+        """
+        raw_get = getattr(self.exchange, "_get", None)
+        raw_delete = getattr(self.exchange, "_delete", None)
+        if not callable(raw_get) or not callable(raw_delete):
+            self.system_log.info(
+                "RECON_ORPHAN_SL_CLEANUP_NOT_APPLICABLE | "
+                f"adapter={type(self.exchange).__name__} | symbol={symbol}"
+            )
+            return
+
+        try:
+            orders = raw_get(
+                "/fapi/v1/openOrders",
+                {
+                    "symbol": symbol,
+                    "timestamp": int(time.time() * 1000),
+                },
+            )
+        except Exception as exc:
+            self.system_log.error(
+                f"RECON_SL_CLEANUP_FETCH_FAILED | error={exc}"
+            )
+            return
+
+        for order in orders or []:
+            if (
+                order.get("type") != "STOP_MARKET"
+                or order.get("reduceOnly") is not True
+            ):
+                continue
+            try:
+                raw_delete(
+                    "/fapi/v1/order",
+                    {
+                        "symbol": symbol,
+                        "orderId": order["orderId"],
+                        "timestamp": int(time.time() * 1000),
+                    },
+                )
+                self.system_log.info(
+                    f"RECON_ORPHAN_SL_CANCELLED | symbol={symbol}"
+                )
+            except Exception as exc:
+                self.system_log.error(
+                    f"RECON_ORPHAN_SL_CANCEL_FAILED | error={exc}"
+                )
+
     # --------------------------------------------------
     # Canonical Open Position Builder
     # --------------------------------------------------
@@ -49,6 +118,7 @@ class ReconciliationLifecycle:
         highest_profit_usd: float = 0.0,
         last_locked_R: int = 0,
         structure_fingerprint=None,
+        pattern=None,
         sl_status=None,
         mae: float = 0.0,
         mfe: float = 0.0,
@@ -58,6 +128,13 @@ class ReconciliationLifecycle:
         entry_order_id=None,
         entry_client_order_id=None,
         sl_order_id=None,
+        candidate_observation_id=None,
+        decision_batch_id=None,
+        market_event_id=None,
+        strategy_version=None,
+        strategy_variant_id=None,
+        model_version=None,
+        experiment_context=None,
     ):
         if sl_status is None:
             sl_status = "VERIFIED" if stop_loss is not None else "MISSING"
@@ -85,9 +162,17 @@ class ReconciliationLifecycle:
             "last_locked_R": last_locked_R,
             "entry_timestamp": entry_timestamp,
             "structure_fingerprint": structure_fingerprint,
+            "pattern": pattern,
             "sl_status": sl_status,
             "mae": mae,
             "mfe": mfe,
+            "candidate_observation_id": candidate_observation_id,
+            "decision_batch_id": decision_batch_id,
+            "market_event_id": market_event_id,
+            "strategy_version": strategy_version,
+            "strategy_variant_id": strategy_variant_id,
+            "model_version": model_version,
+            "experiment_context": experiment_context,
         }
 
     # --------------------------------------------------
@@ -128,44 +213,11 @@ class ReconciliationLifecycle:
                     # --------------------------------------------------
                     # Orphan SL Cleanup
                     # --------------------------------------------------
-                    try:
-                        orders = self.exchange._get(
-                            "/fapi/v1/openOrders",
-                            {
-                                "symbol": existing["symbol"],
-                               "timestamp": int(time.time() * 1000),
-                            },
-                        )
-
-                        for o in orders:
-                            if (
-                                o.get("type") == "STOP_MARKET"
-                                and o.get("reduceOnly") is True
-                            ):
-                                try:
-                                    self.exchange._delete(
-                                        "/fapi/v1/order",
-                                        {
-                                            "symbol": existing["symbol"],
-                                            "orderId": o["orderId"],
-                                            "timestamp": int(time.time() * 1000),
-                                        },
-                                    )
-                                    self.system_log.info(
-                                        f"RECON_ORPHAN_SL_CANCELLED | "
-                                        f"symbol={existing['symbol']}"
-                                    )
-                                except Exception as e:
-                                    self.system_log.error(
-                                        f"RECON_ORPHAN_SL_CANCEL_FAILED | {e}"
-                                    )
-                    except Exception as e:
-                        self.system_log.error(
-                            f"RECON_SL_CLEANUP_FETCH_FAILED | error={e}"
-                        )
+                    self._cleanup_orphan_stop_orders(existing["symbol"])
 
                     realized = 0.0
                     exit_price = 0.0
+                    exit_reason = "RECONCILIATION"
 
                     try:
                         trade_data = self.exchange.get_trade_realized_pnl(
@@ -175,6 +227,10 @@ class ReconciliationLifecycle:
 
                         realized = trade_data["pnl"]
                         exit_price = trade_data["exit_price"]
+                        if trade_data.get("exit_reason"):
+                            exit_reason = str(
+                                trade_data["exit_reason"]
+                            ).strip().upper()
 
                     except Exception as e:
                         self.system_log.error(
@@ -189,12 +245,157 @@ class ReconciliationLifecycle:
                         f"TRADE_CLOSE | "
                         f"symbol={existing['symbol']} | "
                         f"side={existing['side']} | "
-                        f"entry={existing['entry_price']:.4f} | "
-                        f"exit={exit_price:.4f} | "
-                        f"qty={existing['qty']:.6f} | "
-                        f"pnl={realized:.2f} | "
+                        f"entry={self._number(existing.get('entry_price')):.4f} | "
+                        f"exit={self._number(exit_price):.4f} | "
+                        f"qty={self._number(existing.get('qty')):.6f} | "
+                        f"pnl={self._number(realized):.2f} | "
+                        f"exit_reason={exit_reason} | "
                         f"source=RECON"
                     )
+
+                    initial_risk_usd = self._number(
+                        existing.get(
+                            "initial_risk_usd",
+                            existing.get("risk_usd"),
+                        )
+                    )
+                    r_multiple = (
+                        self._number(realized) / initial_risk_usd
+                        if initial_risk_usd > 0 else 0.0
+                    )
+                    entry_timestamp = existing.get("entry_timestamp")
+                    holding_seconds = (
+                        max(
+                            0,
+                            int(
+                                time.time()
+                                - float(entry_timestamp) / 1000.0
+                            ),
+                        )
+                        if entry_timestamp else 0
+                    )
+                    candidate_observation_id = existing.get(
+                        "candidate_observation_id"
+                    )
+                    learning_recorded = False
+                    if candidate_observation_id:
+                        try:
+                            context = existing.get(
+                                "experiment_context"
+                            )
+                            paper_variant = (
+                                (context or {})
+                                .get("paper_policy", {})
+                                .get("variant_id")
+                            )
+                            CandidateOutcomeWriter(
+                                CANDIDATE_OUTCOMES_PATH,
+                                system_log=self.system_log,
+                                environment=TRADING_ENV,
+                                execution_mode=EXECUTION_MODE,
+                            ).append(
+                                observation_id=(
+                                    candidate_observation_id
+                                ),
+                                outcome_type="EXECUTED_TRADE",
+                                symbol=existing["symbol"],
+                                direction=existing["side"],
+                                payload={
+                                    "entry_price": self._number(
+                                        existing.get("entry_price")
+                                    ),
+                                    "exit_price": self._number(
+                                        exit_price
+                                    ),
+                                    "qty": self._number(
+                                        existing.get("qty")
+                                    ),
+                                    "realized_pnl_usd": (
+                                        self._number(realized)
+                                    ),
+                                    "r_multiple": r_multiple,
+                                    "mae_r": (
+                                        self._number(
+                                            existing.get("mae")
+                                        ) / initial_risk_usd
+                                        if initial_risk_usd > 0
+                                        else 0.0
+                                    ),
+                                    "mfe_r": (
+                                        self._number(
+                                            existing.get("mfe")
+                                        ) / initial_risk_usd
+                                        if initial_risk_usd > 0
+                                        else 0.0
+                                    ),
+                                    "holding_seconds": (
+                                        holding_seconds
+                                    ),
+                                    "profitable": bool(
+                                        self._number(realized) > 0
+                                    ),
+                                    "exit_reason": exit_reason,
+                                    "pattern": existing.get(
+                                        "pattern"
+                                    ),
+                                    "strategy_version": existing.get(
+                                        "strategy_version"
+                                    ),
+                                    "strategy_variant_id": existing.get(
+                                        "strategy_variant_id"
+                                    ),
+                                    "model_version": existing.get(
+                                        "model_version"
+                                    ),
+                                },
+                                experiment_context=context,
+                                outcome_variant_id=paper_variant,
+                            )
+                            learning_recorded = True
+                        except Exception as exc:
+                            self.system_log.error(
+                                "RECON_CANDIDATE_OUTCOME_WRITE_FAILED | "
+                                f"symbol={existing['symbol']} | "
+                                f"error={exc}"
+                            )
+
+                    reconciled_last_trade = {
+                        "symbol": existing.get("symbol"),
+                        "side": existing.get("side"),
+                        "entry_price": self._number(
+                            existing.get("entry_price")
+                        ),
+                        "exit_price": self._number(exit_price),
+                        "qty": self._number(existing.get("qty")),
+                        "pnl": self._number(realized),
+                        "r_multiple": r_multiple,
+                        "holding_time": holding_seconds,
+                        "entry_timestamp": entry_timestamp,
+                        "closed_timestamp": int(time.time() * 1000),
+                        "exit_reason": exit_reason,
+                        "candidate_observation_id": (
+                            candidate_observation_id
+                        ),
+                        "decision_batch_id": existing.get(
+                            "decision_batch_id"
+                        ),
+                        "market_event_id": existing.get(
+                            "market_event_id"
+                        ),
+                        "strategy_version": existing.get(
+                            "strategy_version"
+                        ),
+                        "strategy_variant_id": existing.get(
+                            "strategy_variant_id"
+                        ),
+                        "model_version": existing.get(
+                            "model_version"
+                        ),
+                        "experiment_context": existing.get(
+                            "experiment_context"
+                        ),
+                        "learning_recorded": learning_recorded,
+                    }
 
                     # --------------------------------------------
                     # Update Telegram Trade Panel (Manual Close)
@@ -237,7 +438,7 @@ class ReconciliationLifecycle:
                             realized_pnl=realized,
                             r_multiple=r_multiple,
                             status="CLOSED (RECON)",
-                            exit_reason="RECONCILIATION",
+                            exit_reason=exit_reason,
                         )
 
                         edit_message(msg_id, panel_text)
@@ -251,7 +452,9 @@ class ReconciliationLifecycle:
                 self.state.update_after_trade(
                     balance=self.state.get_state().get("balance", 0.0),
                     open_position=None,
-                    last_trade=None,
+                    last_trade=(
+                        reconciled_last_trade if existing else None
+                    ),
                 )
 
                 # --------------------------------------------------
@@ -304,7 +507,18 @@ class ReconciliationLifecycle:
                     entry_timestamp=restored_ts,
                     highest_profit_usd=highest_profit_usd,
                     last_locked_R=last_locked_R,
-                    structure_fingerprint=previous_state.get("structure_fingerprint") if previous_state else None,
+                    structure_fingerprint=(
+                        previous_state.get("structure_fingerprint")
+                        if previous_state
+                        else getattr(
+                            position, "structure_fingerprint", None
+                        )
+                    ),
+                    pattern=(
+                        previous_state.get("pattern")
+                        if previous_state
+                        else getattr(position, "pattern", None)
+                    ),
                     mae=mae,
                     mfe=mfe,
                     risk_usd=(
@@ -342,6 +556,50 @@ class ReconciliationLifecycle:
                         self.exchange.get_active_sl_order_id()
                         if position.stop_loss is not None
                         else None
+                    ),
+                    candidate_observation_id=(
+                        previous_state.get("candidate_observation_id")
+                        if previous_state else getattr(
+                            position,
+                            "candidate_observation_id",
+                            None,
+                        )
+                    ),
+                    decision_batch_id=(
+                        previous_state.get("decision_batch_id")
+                        if previous_state else getattr(
+                            position, "decision_batch_id", None
+                        )
+                    ),
+                    market_event_id=(
+                        previous_state.get("market_event_id")
+                        if previous_state else getattr(
+                            position, "market_event_id", None
+                        )
+                    ),
+                    strategy_version=(
+                        previous_state.get("strategy_version")
+                        if previous_state else getattr(
+                            position, "strategy_version", None
+                        )
+                    ),
+                    strategy_variant_id=(
+                        previous_state.get("strategy_variant_id")
+                        if previous_state else getattr(
+                            position, "strategy_variant_id", None
+                        )
+                    ),
+                    model_version=(
+                        previous_state.get("model_version")
+                        if previous_state else getattr(
+                            position, "model_version", None
+                        )
+                    ),
+                    experiment_context=(
+                        previous_state.get("experiment_context")
+                        if previous_state else getattr(
+                            position, "experiment_context", None
+                        )
                     ),
                 )
 

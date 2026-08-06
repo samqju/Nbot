@@ -174,8 +174,14 @@ class PaperAccount:
         initial_risk_usd: float,
         entry_fee_usd: float,
         structure_fingerprint: Optional[str] = None,
+        pattern: Optional[str] = None,
         strategy_version: Optional[str] = None,
         model_version: Optional[str] = None,
+        candidate_observation_id: Optional[str] = None,
+        decision_batch_id: Optional[str] = None,
+        market_event_id: Optional[str] = None,
+        strategy_variant_id: Optional[str] = None,
+        experiment_context: Optional[Dict[str, Any]] = None,
         trade_id: Optional[str] = None,
     ) -> PaperPosition:
         with self._lock:
@@ -217,8 +223,14 @@ class PaperAccount:
                 highest_price=float(entry_price),
                 lowest_price=float(entry_price),
                 structure_fingerprint=structure_fingerprint,
+                pattern=pattern,
                 strategy_version=strategy_version,
                 model_version=model_version,
+                candidate_observation_id=candidate_observation_id,
+                decision_batch_id=decision_batch_id,
+                market_event_id=market_event_id,
+                strategy_variant_id=strategy_variant_id,
+                experiment_context=experiment_context,
             )
 
             self._state["open_position"] = position.to_dict()
@@ -320,8 +332,16 @@ class PaperAccount:
                 highest_price=position.highest_price,
                 lowest_price=position.lowest_price,
                 structure_fingerprint=position.structure_fingerprint,
+                pattern=position.pattern,
                 strategy_version=position.strategy_version,
                 model_version=position.model_version,
+                candidate_observation_id=(
+                    position.candidate_observation_id
+                ),
+                decision_batch_id=position.decision_batch_id,
+                market_event_id=position.market_event_id,
+                strategy_variant_id=position.strategy_variant_id,
+                experiment_context=position.experiment_context,
                 source=self._state["source"],
             )
 

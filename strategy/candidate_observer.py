@@ -9,6 +9,10 @@ import time
 from pathlib import Path
 
 from strategy.features import CANDIDATE_FEATURE_SCHEMA_VERSION
+from strategy.experiment_contract import (
+    copy_experiment_context,
+    experiment_projection,
+)
 
 
 class CandidateObservationWriter:
@@ -31,8 +35,25 @@ class CandidateObservationWriter:
         self._lock = threading.Lock()
 
     def append(self, candidate, *, rank: int, selected: bool) -> None:
+        experiment_context = copy_experiment_context(
+            getattr(candidate, "experiment_context", None)
+        )
+        projection = experiment_projection(experiment_context)
+        if selected:
+            selection_status = "SELECTED_FOR_EXECUTION"
+            rejection_reason = None
+        elif not bool(
+            getattr(candidate, "execution_eligible", True)
+        ):
+            selection_status = "OBSERVATION_ONLY"
+            rejection_reason = "SYMBOL_NOT_IN_EXECUTION_UNIVERSE"
+        else:
+            selection_status = "NOT_SELECTED"
+            rejection_reason = "LOWER_RULE_RANK"
+
         row = {
             "schema_version": CANDIDATE_FEATURE_SCHEMA_VERSION,
+            **projection,
             "observation_type": "STRATEGY_CANDIDATE",
             "observed_at_ms": int(time.time() * 1000),
             "environment": self.environment,
@@ -49,9 +70,31 @@ class CandidateObservationWriter:
             "risk_plan": (candidate.risk_plan.as_dict() if candidate.risk_plan is not None else None),
             "rank": int(rank),
             "selected": bool(selected),
+            "execution_eligible": bool(
+                getattr(candidate, "execution_eligible", True)
+            ),
+            "selection_status": selection_status,
+            "rejection_reason": rejection_reason,
             "eligible_for_training": True,
             "features": candidate.features.as_dict(),
             "structure_fingerprint": candidate.structure_fingerprint,
+            "market_context": (
+                experiment_context.get("market_context")
+                if experiment_context else None
+            ),
+            "cost_model": (
+                experiment_context.get("cost_model")
+                if experiment_context else None
+            ),
+            "virtual_policy": (
+                experiment_context.get("virtual_policy")
+                if experiment_context else None
+            ),
+            "paper_policy": (
+                experiment_context.get("paper_policy")
+                if experiment_context else None
+            ),
+            "experiment_context": experiment_context,
         }
 
         self.path.parent.mkdir(parents=True, exist_ok=True)

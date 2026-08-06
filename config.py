@@ -19,6 +19,39 @@ LEVERAGE = 5
 TRADING_ENV = os.getenv("TRADING_ENV", "TESTNET").strip().upper()
 EXECUTION_MODE = os.getenv("EXECUTION_MODE", "SHADOW").strip().upper()
 
+# ================================
+# VERSIONED EXPERIMENT CONTRACT
+# ================================
+# These identifiers describe the strategy and decision authority that created
+# each new learning record. They do not alter trading behavior.
+STRATEGY_VERSION = os.getenv(
+    "STRATEGY_VERSION",
+    "STRUCTURE_RULES_V1",
+).strip()
+RULE_MODEL_VERSION = os.getenv(
+    "RULE_MODEL_VERSION",
+    "RULE_SYSTEM_V1",
+).strip()
+STRATEGY_VARIANT_ID = os.getenv(
+    "STRATEGY_VARIANT_ID",
+    "STRUCTURE_CANDIDATE_GENERATOR_V1",
+).strip()
+PAPER_EXECUTION_VARIANT_ID = os.getenv(
+    "PAPER_EXECUTION_VARIANT_ID",
+    "PAPER_TRAILING_SL_V1",
+).strip()
+EXPERIMENT_CANDLE_INTERVAL = os.getenv(
+    "EXPERIMENT_CANDLE_INTERVAL",
+    "5m",
+).strip().lower()
+FORWARD_SIMULATION_MAX_CANDLES = int(
+    os.getenv("FORWARD_SIMULATION_MAX_CANDLES", "120")
+)
+FORWARD_OUTCOME_VARIANT_ID = os.getenv(
+    "FORWARD_OUTCOME_VARIANT_ID",
+    "FORWARD_MAE_MFE_120C_V1",
+).strip()
+
 # Backward-compatible derived flag used by the existing engine.
 SHADOW_MODE = EXECUTION_MODE == "SHADOW"
 
@@ -326,6 +359,10 @@ VIRTUAL_TRADE_MAX_CANDLES = int(
 VIRTUAL_TRADE_MAX_ACTIVE = int(
     os.getenv("VIRTUAL_TRADE_MAX_ACTIVE", "500")
 )
+VIRTUAL_STRATEGY_VARIANT_ID = os.getenv(
+    "VIRTUAL_STRATEGY_VARIANT_ID",
+    f"VIRTUAL_FIXED_{VIRTUAL_TRADE_TARGET_R:g}R_{VIRTUAL_TRADE_MAX_CANDLES}C_V1",
+).strip()
 OBSERVATION_UNIVERSE_SIZE = int(
     os.getenv("OBSERVATION_UNIVERSE_SIZE", "200")
 )
@@ -546,6 +583,23 @@ def _validate():
 
     if EXECUTION_MODE not in {"SHADOW", "TRADE"}:
         raise ValueError("CONFIG_INVALID: EXECUTION_MODE")
+
+    experiment_identifiers = (
+        STRATEGY_VERSION,
+        RULE_MODEL_VERSION,
+        STRATEGY_VARIANT_ID,
+        PAPER_EXECUTION_VARIANT_ID,
+        VIRTUAL_STRATEGY_VARIANT_ID,
+        FORWARD_OUTCOME_VARIANT_ID,
+    )
+    if any(not value for value in experiment_identifiers):
+        raise ValueError("CONFIG_INVALID: EXPERIMENT_IDENTIFIER")
+    if EXPERIMENT_CANDLE_INTERVAL != "5m":
+        raise ValueError("CONFIG_INVALID: EXPERIMENT_CANDLE_INTERVAL")
+    if not (3 <= FORWARD_SIMULATION_MAX_CANDLES <= 500):
+        raise ValueError(
+            "CONFIG_INVALID: FORWARD_SIMULATION_MAX_CANDLES"
+        )
 
     if not isinstance(SHADOW_MODE, bool):
         raise ValueError("CONFIG_INVALID: SHADOW_MODE")

@@ -242,13 +242,22 @@ class ShadowPromotionEvaluator:
                 issues["prediction_value_invalid"] += 1
                 continue
 
-            key = (observed_at_ms, candidate_id)
+            decision_batch_id = str(
+                row.get("decision_batch_id") or ""
+            ).strip()
+            batch_id = decision_batch_id or observed_at_ms
+            key = (batch_id, candidate_id)
             if key in seen:
                 issues["duplicate_prediction"] += 1
                 continue
             seen.add(key)
             valid.append({
-                "batch_id": observed_at_ms,
+                "batch_id": batch_id,
+                "decision_batch_id": decision_batch_id or None,
+                "market_event_id": row.get("market_event_id"),
+                "shadow_model_version": row.get(
+                    "shadow_model_version"
+                ),
                 "candidate_observation_id": candidate_id,
                 "symbol": str(row.get("symbol") or "").upper(),
                 "direction": str(

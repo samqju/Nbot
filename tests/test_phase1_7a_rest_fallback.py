@@ -33,7 +33,7 @@ class Phase17ARestFallbackTests(unittest.TestCase):
                 "TRADING_ENV": "LIVE",
                 "EXECUTION_MODE": "SHADOW",
                 "LIVE_BASE_URL": "https://fapi.binance.com",
-                "LIVE_MARKET_WS_URL": "wss://fstream.binance.com/ws/!ticker@arr",
+                "LIVE_MARKET_WS_URL": "wss://fstream.binance.com/market/ws/!ticker@arr",
                 "PAPER_WS_FIRST_TICK_TIMEOUT_SECONDS": "2",
                 "PAPER_REST_POLL_INTERVAL_SECONDS": "0.5",
                 "PAPER_WS_RETRY_INTERVAL_SECONDS": "30",

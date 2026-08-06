@@ -33,7 +33,7 @@ class Phase14MarketClientTests(unittest.TestCase):
                 "TRADING_ENV": "LIVE",
                 "EXECUTION_MODE": "SHADOW",
                 "LIVE_BASE_URL": "https://fapi.binance.com",
-                "LIVE_MARKET_WS_URL": "wss://fstream.binance.com/ws/!ticker@arr",
+                "LIVE_MARKET_WS_URL": "wss://fstream.binance.com/market/ws/!ticker@arr",
             },
             clear=False,
         )
@@ -119,7 +119,7 @@ with patch("execution.exchange_factory.BinanceMarketClient", Market), \
             TRADING_ENV="LIVE",
             EXECUTION_MODE="SHADOW",
             LIVE_BASE_URL="https://fapi.binance.com",
-            LIVE_MARKET_WS_URL="wss://fstream.binance.com/ws/!ticker@arr",
+            LIVE_MARKET_WS_URL="wss://fstream.binance.com/market/ws/!ticker@arr",
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Paper PAPER_LIVE", result.stdout)
