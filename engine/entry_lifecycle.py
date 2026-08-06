@@ -21,6 +21,7 @@ from config import (
     RISK_TOLERANCE_PCT,
     ENTRY_SLIPPAGE_PCT,
     MAX_SPREAD_PCT,
+    EXECUTION_MODE,
 )
 
 from execution.exceptions import EntryValidationError
@@ -141,6 +142,30 @@ class EntryLifecycle:
     def _execute(self, intent, market_state):
 
         symbol = intent.symbol
+        selection_authority = str(
+            getattr(intent, "selection_authority", "RULES") or "RULES"
+        ).strip().upper()
+        risk_multiplier = float(
+            getattr(intent, "paper_risk_multiplier", 1.0) or 1.0
+        )
+        if not (0.0 < risk_multiplier <= 1.0):
+            raise RuntimeError("ENTRY_PAPER_RISK_MULTIPLIER_INVALID")
+        if (
+            selection_authority in {"PAPER_CANARY", "PAPER_CHAMPION"}
+            and EXECUTION_MODE != "SHADOW"
+        ):
+            self.system_log.error(
+                "PAPER_MODEL_ENTRY_BLOCKED_NON_SHADOW | "
+                f"symbol={symbol} | execution_mode={EXECUTION_MODE}"
+            )
+            return False
+        if (
+            selection_authority in {"PAPER_CANARY", "PAPER_CHAMPION"}
+            and abs(risk_multiplier - 1.0) > 1e-12
+        ):
+            raise RuntimeError("ENTRY_MODEL_RISK_MULTIPLIER_MUST_EQUAL_ONE")
+        target_notional_usd = MAX_NOTIONAL_USD * risk_multiplier
+        target_risk_usd = RISK_PER_TRADE_USD * risk_multiplier
 
         if not market_state.has_price(symbol):
             self.system_log.info(
@@ -223,9 +248,11 @@ class EntryLifecycle:
         entry_plan = self.risk.build_entry_plan(
             direction=intent.direction,
             entry_price=entry_price,
+            notional_target=target_notional_usd,
+            risk_usd=target_risk_usd,
         )
 
-        required_margin = MAX_NOTIONAL_USD / LEVERAGE
+        required_margin = target_notional_usd / LEVERAGE
 
         balance = self.exchange.get_available_balance()
         # balance stored via update_after_trade later
@@ -377,7 +404,7 @@ class EntryLifecycle:
         # --------------------------------------------------
 
         executed_notional = ack.filled_qty * ack.avg_price
-        max_allowed = MAX_NOTIONAL_USD * (
+        max_allowed = target_notional_usd * (
             1 + NOTIONAL_TOLERANCE_PCT / 100
         )
 
@@ -396,7 +423,7 @@ class EntryLifecycle:
         # Recalculate SL
         # --------------------------------------------------
 
-        actual_risk_usd = self.risk.RISK_PER_TRADE_USD
+        actual_risk_usd = target_risk_usd
         if intent.direction == "LONG":
             corrected_sl = ack.avg_price - (
                 actual_risk_usd / ack.filled_qty
@@ -441,6 +468,14 @@ class EntryLifecycle:
             "strategy_variant_id": intent.strategy_variant_id,
             "model_version": intent.model_version,
             "experiment_context": intent.experiment_context,
+            "selection_authority": selection_authority,
+            "paper_canary_model_id": getattr(
+                intent, "paper_canary_model_id", None
+            ),
+            "paper_risk_multiplier": risk_multiplier,
+            "paper_allocation_id": getattr(
+                intent, "paper_allocation_id", None
+            ),
             "mae": 0.0,
             "mfe": 0.0,
 	        }
@@ -454,7 +489,7 @@ class EntryLifecycle:
             * ack.filled_qty
         )
 
-        max_allowed_risk = RISK_PER_TRADE_USD * (
+        max_allowed_risk = target_risk_usd * (
             1 + RISK_TOLERANCE_PCT / 100
         )
 
@@ -521,6 +556,14 @@ class EntryLifecycle:
                     "pattern": intent.pattern,
                     "experiment_context": (
                         intent.experiment_context
+                    ),
+                    "selection_authority": selection_authority,
+                    "paper_canary_model_id": getattr(
+                        intent, "paper_canary_model_id", None
+                    ),
+                    "paper_risk_multiplier": risk_multiplier,
+                    "paper_allocation_id": getattr(
+                        intent, "paper_allocation_id", None
                     ),
                 },
             )

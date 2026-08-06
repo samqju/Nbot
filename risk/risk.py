@@ -245,41 +245,44 @@ class RiskManager:
         *,
         direction: str,
         entry_price: float,
+        notional_target: float | None = None,
+        risk_usd: float | None = None,
     ) -> EntryPlanData:
-        """
-        Build sizing and initial SL.
-        No state mutation.
-        No exchange interaction.
-        """
+        """Build sizing and initial SL without state or exchange mutation.
 
+        Phase 5.11 may pass smaller local-paper canary limits. Defaults retain
+        the original rule-trading contract exactly.
+        """
         if direction not in ("LONG", "SHORT"):
             raise RuntimeError(f"INVALID_DIRECTION: {direction}")
-
-        decision = self.evaluate_entry(
-            price=entry_price,
-            side=direction,
+        entry_price = float(entry_price)
+        notional_target = float(
+            self.NOTIONAL_TARGET
+            if notional_target is None
+            else notional_target
         )
+        risk_usd = float(
+            self.RISK_PER_TRADE_USD if risk_usd is None else risk_usd
+        )
+        if entry_price <= 0:
+            raise RuntimeError("ENTRY_PLAN_PRICE_INVALID")
+        if notional_target <= 0:
+            raise RuntimeError("ENTRY_PLAN_NOTIONAL_INVALID")
+        if risk_usd <= 0:
+            raise RuntimeError("ENTRY_PLAN_RISK_INVALID")
 
-        if not decision.allowed or decision.stop_loss is None:
+        quantity = notional_target / entry_price
+        risk_per_unit = risk_usd / quantity
+        sl = (
+            entry_price - risk_per_unit
+            if direction == "LONG"
+            else entry_price + risk_per_unit
+        )
+        if sl <= 0 or risk_per_unit <= 1e-12:
             raise RuntimeError(
-                f"ENTRY_PLAN_BLOCKED | reason={decision.reason}"
-            )
-
-        sl = decision.stop_loss
-
-        if direction == "LONG":
-            risk_per_unit = entry_price - sl
-        else:
-            risk_per_unit = sl - entry_price
-
-        if risk_per_unit <= 1e-12:
-            raise RuntimeError(
-                f"INVALID_SL_DISTANCE | direction={direction} "
+                f"ENTRY_PLAN_BLOCKED | direction={direction} "
                 f"entry={entry_price} sl={sl}"
             )
-
-        quantity = self.NOTIONAL_TARGET / entry_price
-
         return EntryPlanData(
             quantity=quantity,
             initial_sl=sl,

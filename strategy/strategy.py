@@ -21,6 +21,23 @@ from config import (
     EXECUTION_MODE,
     FORWARD_OUTCOME_VARIANT_ID,
     FORWARD_SIMULATION_MAX_CANDLES,
+    VIRTUAL_LAB_CATALOG_VERSION,
+    VIRTUAL_LAB_ENABLED,
+    VIRTUAL_LAB_MAX_ACTIVE,
+    MODEL_REGISTRY_PATH,
+    RULE_MODEL_VERSION,
+    SHADOW_DECISIONS_PATH,
+    SHADOW_DECISION_MIN_COVERAGE,
+    SHADOW_DECISION_SETTLE_SECONDS,
+    SHADOW_DECISION_TESTING_ENABLED,
+    SHADOW_DECISION_TOP_K,
+    PAPER_CANARY_EXECUTION_ENABLED,
+    PAPER_CANARY_ALLOCATION_FRACTION,
+    PAPER_CANARY_RISK_MULTIPLIER,
+    PAPER_CANARY_MAX_TRADES_PER_UTC_DAY,
+    PAPER_CANARY_MIN_MODEL_PROBABILITY,
+    PAPER_CANARY_DECISIONS_PATH,
+    PAPER_TRADES_PATH,
 )
 from strategy.structure_classifier import StructureClassifier
 from strategy.candidate import rank_candidates
@@ -36,6 +53,17 @@ from strategy.features import (
     CandidateFeatureExtractor,
 )
 from learning.shadow_scorer import ShadowModelScorer
+from learning.shadow_decision_testing import (
+    ChampionChallengerShadowTester,
+)
+from learning.paper_canary import PaperCanaryRouter
+from strategy.decision_cycle import FiveMinuteDecisionCycleCoordinator
+from strategy.experiment_contract import (
+    build_market_event_id,
+    copy_experiment_context,
+    new_decision_batch_id,
+    validate_experiment_context,
+)
 
 class Strategy:
 
@@ -121,6 +149,9 @@ class Strategy:
             runtime_store=self._learning_runtime_store,
             environment=TRADING_ENV,
             execution_mode=EXECUTION_MODE,
+            lab_enabled=VIRTUAL_LAB_ENABLED,
+            catalog_version=VIRTUAL_LAB_CATALOG_VERSION,
+            max_active=VIRTUAL_LAB_MAX_ACTIVE,
         )
         self._shadow_model_scorer = ShadowModelScorer(
             enabled=SHADOW_MODEL_SCORING_ENABLED,
@@ -129,6 +160,44 @@ class Strategy:
             refresh_seconds=SHADOW_MODEL_REFRESH_SECONDS,
             system_log=system_log,
         )
+        self._decision_cycle_coordinator = (
+            FiveMinuteDecisionCycleCoordinator(
+                minimum_coverage=SHADOW_DECISION_MIN_COVERAGE,
+                settle_seconds=SHADOW_DECISION_SETTLE_SECONDS,
+            )
+        )
+        self._champion_challenger_tester = (
+            ChampionChallengerShadowTester(
+                enabled=SHADOW_DECISION_TESTING_ENABLED,
+                environment=TRADING_ENV,
+                registry_path=MODEL_REGISTRY_PATH,
+                default_champion_model_id=RULE_MODEL_VERSION,
+                decisions_path=SHADOW_DECISIONS_PATH,
+                top_k=SHADOW_DECISION_TOP_K,
+                system_log=system_log,
+            )
+        )
+        self._paper_canary_router = PaperCanaryRouter(
+            enabled=PAPER_CANARY_EXECUTION_ENABLED,
+            execution_mode=EXECUTION_MODE,
+            environment=TRADING_ENV,
+            registry_path=MODEL_REGISTRY_PATH,
+            default_champion_model_id=RULE_MODEL_VERSION,
+            decisions_path=PAPER_CANARY_DECISIONS_PATH,
+            trades_path=PAPER_TRADES_PATH,
+            allocation_fraction=PAPER_CANARY_ALLOCATION_FRACTION,
+            risk_multiplier=PAPER_CANARY_RISK_MULTIPLIER,
+            max_trades_per_utc_day=(
+                PAPER_CANARY_MAX_TRADES_PER_UTC_DAY
+            ),
+            minimum_model_probability=(
+                PAPER_CANARY_MIN_MODEL_PROBABILITY
+            ),
+            system_log=system_log,
+        )
+        self._pending_paper_candidate = None
+        self._pending_paper_route = None
+        self._coordinated_runtime_enabled = False
 
     def _restore_pending_simulations(self):
         rows = self._learning_runtime_store.get_section(
@@ -266,6 +335,10 @@ class Strategy:
                         candle["low"],
                         candle["close"],
                     ),
+                )
+                self._decision_cycle_coordinator.mark_rollover(
+                    symbol=symbol,
+                    new_bucket=bucket,
                 )
 
             self._current_candle[symbol] = {
@@ -448,6 +521,7 @@ class Strategy:
         # B.1. B.2 will intentionally point scanning at the expanded
         # observation universe.
         self._universe = set(observation)
+        self._decision_cycle_coordinator.set_symbols(observation)
         self._warmed_up = False
 
     def get_execution_universe(self):
@@ -718,21 +792,71 @@ class Strategy:
             self._persist_pending_simulations_locked()
 
     # ======================================================
-    # Main Proposal Logic
+    # Phase 5.9 Decision-Cycle Processing
     # ======================================================
 
-    def propose_intent(self) -> Optional[TradeIntent]:
+    def process_ready_decision_cycles(
+        self,
+        *,
+        paper_entry_allowed: bool,
+        now_monotonic: float | None = None,
+    ) -> list[dict]:
+        """Evaluate completed five-minute cycles regardless of paper exposure.
 
+        When paper_entry_allowed is false, the same candidates, virtual
+        experiments, and champion/challenger decisions are recorded, but no
+        TradeIntent is retained for later execution.
+        """
+        self._coordinated_runtime_enabled = True
         if not self._warmed_up:
-            return None
+            return []
+        ready = self._decision_cycle_coordinator.ready_buckets(
+            now_monotonic=now_monotonic
+        )
+        processed = []
+        for index, coverage in enumerate(ready):
+            bucket = int(coverage["candle_bucket"])
+            allow_paper = bool(
+                paper_entry_allowed and index == len(ready) - 1
+            )
+            try:
+                result = self._evaluate_decision_batch(
+                    decision_bucket=bucket,
+                    paper_entry_allowed=allow_paper,
+                    cycle_coverage=coverage,
+                )
+                processed.append(result)
+            finally:
+                self._decision_cycle_coordinator.mark_processed(bucket)
+        return processed
 
-        candidates = self._candidate_generator.generate()
-
-        if not candidates:
-            return None
+    def _evaluate_decision_batch(
+        self,
+        *,
+        decision_bucket: int | None,
+        paper_entry_allowed: bool,
+        cycle_coverage: dict | None = None,
+    ) -> dict:
+        decision_batch_id = new_decision_batch_id()
+        try:
+            candidates = self._candidate_generator.generate(
+                decision_batch_id=decision_batch_id,
+                decision_bucket=decision_bucket,
+            )
+        except TypeError as exc:
+            # Older tests and local extensions may replace generate() with
+            # a no-argument callable. Preserve that compatibility only for
+            # the direct, uncoordinated proposal path.
+            if decision_bucket is not None or "unexpected keyword" not in str(exc):
+                raise
+            candidates = self._candidate_generator.generate()
+        self._pending_paper_candidate = None
+        self._pending_paper_route = None
 
         scored_candidates = self._candidate_scorer.score_all(candidates)
-        planned_candidates = self._candidate_risk_planner.plan_all(scored_candidates)
+        planned_candidates = self._candidate_risk_planner.plan_all(
+            scored_candidates
+        )
         self._virtual_trade_engine.enroll_all(planned_candidates)
         ranked_candidates = rank_candidates(planned_candidates)
         execution_candidates = [
@@ -740,19 +864,44 @@ class Strategy:
             for candidate in ranked_candidates
             if candidate.symbol in self._execution_universe
         ]
-        best_candidate = (
+        rule_candidate = (
             execution_candidates[0]
-            if execution_candidates
+            if paper_entry_allowed and execution_candidates
             else None
         )
 
-        # Phase 4.6 shadow scoring is observational only. The rule-ranked
-        # best_candidate above is deliberately computed first and is never
-        # replaced or rejected by this scorer.
+        if decision_bucket is None:
+            candidate_buckets = [
+                int(getattr(candidate, "bucket", 0) or 0)
+                for candidate in ranked_candidates
+            ]
+            effective_bucket = (
+                max(candidate_buckets) if candidate_buckets else 0
+            )
+        else:
+            effective_bucket = int(decision_bucket)
+        market_event_id = build_market_event_id(
+            environment=TRADING_ENV,
+            candle_bucket=effective_bucket,
+        )
+
+        paper_route = None
+        paper_candidate = rule_candidate
+        if rule_candidate is not None:
+            paper_route = self._paper_canary_router.route(
+                candidates=execution_candidates,
+                rule_candidate=rule_candidate,
+                decision_batch_id=decision_batch_id,
+                market_event_id=market_event_id,
+                candle_bucket=effective_bucket,
+            )
+            paper_candidate = paper_route.candidate
+
+        # Preserve the legacy Phase 4 shadow stream for historical continuity.
         try:
             self._shadow_model_scorer.score_candidates(
                 ranked_candidates,
-                rule_selected_candidate=best_candidate,
+                rule_selected_candidate=rule_candidate,
             )
         except Exception as e:
             if self.system_log:
@@ -760,16 +909,29 @@ class Strategy:
                     "SHADOW_MODEL_BATCH_FAILED | "
                     f"error={e} | runtime_effect=NONE"
                 )
+        snapshot = None
+        try:
+            snapshot = self._champion_challenger_tester.record_cycle(
+                candidates=ranked_candidates,
+                decision_batch_id=decision_batch_id,
+                market_event_id=market_event_id,
+                candle_bucket=effective_bucket,
+                cycle_coverage=cycle_coverage,
+            )
+        except Exception as e:
+            if self.system_log:
+                self.system_log.error(
+                    "CHAMPION_CHALLENGER_DECISION_FAILED | "
+                    f"batch={decision_batch_id} | error={e} | "
+                    "runtime_effect=NONE"
+                )
 
         for rank, candidate in enumerate(ranked_candidates, start=1):
             try:
                 self._candidate_observer.append(
                     candidate,
                     rank=rank,
-                    selected=(
-                        best_candidate is not None
-                        and candidate is best_candidate
-                    ),
+                    selected=(candidate is paper_candidate),
                 )
             except Exception as e:
                 if self.system_log:
@@ -777,13 +939,63 @@ class Strategy:
                         "CANDIDATE_OBSERVATION_WRITE_FAILED | "
                         f"symbol={candidate.symbol} | error={e}"
                     )
+
+        if paper_candidate is not None:
+            self._pending_paper_candidate = paper_candidate
+            self._pending_paper_route = paper_route
+        elif self.system_log and ranked_candidates:
+            self.system_log.info(
+                "OBSERVATION_CANDIDATES_ONLY | "
+                f"count={len(ranked_candidates)} | "
+                "paper_intent=NONE"
+            )
+
+        return {
+            "decision_batch_id": decision_batch_id,
+            "market_event_id": market_event_id,
+            "candle_bucket": effective_bucket,
+            "candidate_count": len(ranked_candidates),
+            "paper_candidate_id": (
+                paper_candidate.observation_id
+                if paper_candidate is not None
+                else None
+            ),
+            "shadow_snapshot_written": snapshot is not None,
+            "paper_selection_authority": (
+                paper_route.selection_authority
+                if paper_route is not None
+                else ("RULES" if paper_candidate is not None else None)
+            ),
+            "paper_canary_model_id": (
+                paper_route.model_id if paper_route is not None else None
+            ),
+        }
+
+    # ======================================================
+    # Main Proposal Logic
+    # ======================================================
+
+    def propose_intent(self) -> Optional[TradeIntent]:
+        if not self._warmed_up:
+            return None
+
+        # Backward-compatible direct-call path for unit tests and utilities.
+        # The production engine enables coordinated runtime processing before
+        # asking for an intent, so it never fragments a five-minute batch.
+        if (
+            self._pending_paper_candidate is None
+            and not self._coordinated_runtime_enabled
+        ):
+            self._evaluate_decision_batch(
+                decision_bucket=None,
+                paper_entry_allowed=True,
+            )
+
+        best_candidate = self._pending_paper_candidate
+        paper_route = self._pending_paper_route
+        self._pending_paper_candidate = None
+        self._pending_paper_route = None
         if best_candidate is None:
-            if self.system_log:
-                self.system_log.info(
-                    "OBSERVATION_CANDIDATES_ONLY | "
-                    f"count={len(ranked_candidates)} | "
-                    "paper_intent=NONE"
-                )
             return None
 
         best_symbol = best_candidate.symbol
@@ -794,8 +1006,10 @@ class Strategy:
             self.system_log.info(
                 "CANDIDATE_RISK_PLAN | "
                 f"symbol={best_symbol} | direction={best_direction} | "
-                f"risk_usd={plan.risk_budget_usd:.6f} | stop_pct={plan.stop_distance_pct:.6f} | "
-                f"notional={plan.suggested_notional_usd:.6f} | margin={plan.required_margin_usd:.6f} | "
+                f"risk_usd={plan.risk_budget_usd:.6f} | "
+                f"stop_pct={plan.stop_distance_pct:.6f} | "
+                f"notional={plan.suggested_notional_usd:.6f} | "
+                f"margin={plan.required_margin_usd:.6f} | "
                 f"capped_by={plan.capped_by} | advisory_only=true"
             )
 
@@ -811,14 +1025,29 @@ class Strategy:
                 f"location={breakdown.location_quality:.6f}"
             )
 
-        # Governor update
         bucket = self._current_candle[best_symbol]["bucket"]
-
-        # Record last trade info ONLY when trade approved
         self._last_trade_info[best_symbol] = (
             bucket,
             best_direction,
         )
+
+        intent_context = copy_experiment_context(
+            best_candidate.experiment_context
+        )
+        if (
+            intent_context is not None
+            and paper_route is not None
+            and paper_route.is_model_selected
+        ):
+            intent_context["selection_model_version"] = paper_route.model_id
+            intent_context["paper_policy"]["selection_authority"] = (
+                paper_route.selection_authority
+            )
+            intent_context["paper_policy"]["allocation_id"] = (
+                paper_route.allocation_id
+            )
+            intent_context["paper_policy"]["risk_multiplier"] = 1.0
+            validate_experiment_context(intent_context)
 
         return TradeIntent(
             symbol=best_symbol,
@@ -827,12 +1056,40 @@ class Strategy:
             entry_price=None,
             generated_at=datetime.now(timezone.utc),
             structure_fingerprint=best_candidate.structure_fingerprint,
-            advisory_risk_plan=(best_candidate.risk_plan.as_dict() if best_candidate.risk_plan is not None else None),
+            advisory_risk_plan=(
+                best_candidate.risk_plan.as_dict()
+                if best_candidate.risk_plan is not None
+                else None
+            ),
             candidate_observation_id=best_candidate.observation_id,
             decision_batch_id=best_candidate.decision_batch_id,
             market_event_id=best_candidate.market_event_id,
             strategy_version=best_candidate.strategy_version,
             strategy_variant_id=best_candidate.strategy_variant_id,
-            model_version=best_candidate.model_version,
-            experiment_context=best_candidate.experiment_context,
+            model_version=(
+                paper_route.model_id
+                if paper_route is not None and paper_route.is_model_selected
+                else best_candidate.model_version
+            ),
+            experiment_context=intent_context,
+            selection_authority=(
+                paper_route.selection_authority
+                if paper_route is not None
+                else "RULES"
+            ),
+            paper_canary_model_id=(
+                paper_route.model_id
+                if paper_route is not None and paper_route.is_model_selected
+                else None
+            ),
+            paper_risk_multiplier=(
+                paper_route.risk_multiplier
+                if paper_route is not None
+                else 1.0
+            ),
+            paper_allocation_id=(
+                paper_route.allocation_id
+                if paper_route is not None and paper_route.is_canary
+                else None
+            ),
         )

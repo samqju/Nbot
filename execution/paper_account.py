@@ -182,6 +182,10 @@ class PaperAccount:
         market_event_id: Optional[str] = None,
         strategy_variant_id: Optional[str] = None,
         experiment_context: Optional[Dict[str, Any]] = None,
+        selection_authority: str = "RULES",
+        paper_canary_model_id: Optional[str] = None,
+        paper_risk_multiplier: float = 1.0,
+        paper_allocation_id: Optional[str] = None,
         trade_id: Optional[str] = None,
     ) -> PaperPosition:
         with self._lock:
@@ -209,6 +213,36 @@ class PaperAccount:
                 raise ValueError("PAPER_POSITION_INVALID: long_stop")
             if side == "SHORT" and stop_loss <= entry_price:
                 raise ValueError("PAPER_POSITION_INVALID: short_stop")
+            selection_authority = str(
+                selection_authority or "RULES"
+            ).strip().upper()
+            if selection_authority not in {
+                "RULES", "PAPER_CANARY", "PAPER_CHAMPION"
+            }:
+                raise ValueError(
+                    "PAPER_POSITION_INVALID: selection_authority"
+                )
+            paper_risk_multiplier = float(paper_risk_multiplier)
+            if not (0.0 < paper_risk_multiplier <= 1.0):
+                raise ValueError(
+                    "PAPER_POSITION_INVALID: paper_risk_multiplier"
+                )
+            if selection_authority in {"PAPER_CANARY", "PAPER_CHAMPION"}:
+                if abs(paper_risk_multiplier - 1.0) > 1e-12:
+                    raise ValueError(
+                        "PAPER_POSITION_INVALID: model_risk_must_equal_one"
+                    )
+                if not str(paper_canary_model_id or "").strip():
+                    raise ValueError(
+                        "PAPER_POSITION_INVALID: paper_model_id"
+                    )
+                if (
+                    selection_authority == "PAPER_CANARY"
+                    and not str(paper_allocation_id or "").strip()
+                ):
+                    raise ValueError(
+                        "PAPER_POSITION_INVALID: paper_allocation_id"
+                    )
 
             position = PaperPosition(
                 trade_id=trade_id or uuid.uuid4().hex,
@@ -231,6 +265,10 @@ class PaperAccount:
                 market_event_id=market_event_id,
                 strategy_variant_id=strategy_variant_id,
                 experiment_context=experiment_context,
+                selection_authority=selection_authority,
+                paper_canary_model_id=paper_canary_model_id,
+                paper_risk_multiplier=float(paper_risk_multiplier),
+                paper_allocation_id=paper_allocation_id,
             )
 
             self._state["open_position"] = position.to_dict()
@@ -342,6 +380,10 @@ class PaperAccount:
                 market_event_id=position.market_event_id,
                 strategy_variant_id=position.strategy_variant_id,
                 experiment_context=position.experiment_context,
+                selection_authority=position.selection_authority,
+                paper_canary_model_id=position.paper_canary_model_id,
+                paper_risk_multiplier=position.paper_risk_multiplier,
+                paper_allocation_id=position.paper_allocation_id,
                 source=self._state["source"],
             )
 
@@ -410,6 +452,40 @@ class PaperAccount:
             if not isinstance(raw_position, dict):
                 raise ValueError("PAPER_STATE_CORRUPTED_OPEN_POSITION")
             position = PaperPosition.from_dict(raw_position)
+            if position.selection_authority not in {
+                "RULES",
+                "PAPER_CANARY",
+                "PAPER_CHAMPION",
+            }:
+                raise ValueError(
+                    "PAPER_STATE_CORRUPTED_SELECTION_AUTHORITY"
+                )
+            if not (0.0 < float(position.paper_risk_multiplier) <= 1.0):
+                raise ValueError(
+                    "PAPER_STATE_CORRUPTED_RISK_MULTIPLIER"
+                )
+            if position.selection_authority in {
+                "PAPER_CANARY", "PAPER_CHAMPION"
+            } and not str(position.paper_canary_model_id or "").strip():
+                raise ValueError(
+                    "PAPER_STATE_CORRUPTED_MODEL_PROVENANCE"
+                )
+            if (
+                position.selection_authority == "PAPER_CANARY"
+                and not str(position.paper_allocation_id or "").strip()
+            ):
+                raise ValueError(
+                    "PAPER_STATE_CORRUPTED_CANARY_PROVENANCE"
+                )
+            if (
+                position.selection_authority in {
+                    "PAPER_CANARY", "PAPER_CHAMPION"
+                }
+                and abs(float(position.paper_risk_multiplier) - 1.0) > 1e-12
+            ):
+                raise ValueError(
+                    "PAPER_STATE_CORRUPTED_MODEL_RISK_MULTIPLIER"
+                )
             if position.side not in _VALID_SIDES:
                 raise ValueError("PAPER_STATE_CORRUPTED_POSITION_SIDE")
             for value, name in (

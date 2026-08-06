@@ -40,10 +40,21 @@ class StructureCandidateGenerator:
         self.feature_extractor = CandidateFeatureExtractor(strategy)
         self.detectors = SetupDetectorRegistry()
 
-    def generate(self) -> list[StrategyCandidate]:
+    def generate(
+        self,
+        *,
+        decision_batch_id: str | None = None,
+        decision_bucket: int | None = None,
+    ) -> list[StrategyCandidate]:
         s = self.strategy
         candidates: list[StrategyCandidate] = []
-        decision_batch_id = new_decision_batch_id()
+        decision_batch_id = (
+            str(decision_batch_id).strip()
+            if decision_batch_id is not None
+            else new_decision_batch_id()
+        )
+        if not decision_batch_id:
+            raise ValueError("DECISION_BATCH_ID_INVALID")
 
         for symbol in s._universe:
             candles = s._candle_history.get(symbol)
@@ -71,6 +82,11 @@ class StructureCandidateGenerator:
                 continue
 
             bucket = current["bucket"]
+            if (
+                decision_bucket is not None
+                and bucket != int(decision_bucket)
+            ):
+                continue
             if s._last_evaluated_bucket.get(symbol) == bucket:
                 continue
             s._last_evaluated_bucket[symbol] = bucket

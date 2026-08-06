@@ -21,7 +21,7 @@ from strategy.features import (
 )
 
 
-TRAINING_DATASET_SCHEMA_VERSION = 2
+TRAINING_DATASET_SCHEMA_VERSION = 3
 
 
 class DatasetBuildError(RuntimeError):
@@ -91,6 +91,8 @@ class TrainingDatasetBuilder:
         experiment_contract_versions = Counter()
         strategy_versions = Counter()
         strategy_variants = Counter()
+        outcome_variants = Counter()
+        strategy_lab_catalogs = Counter()
         model_versions = Counter()
         market_context_completeness = Counter()
 
@@ -157,6 +159,13 @@ class TrainingDatasetBuilder:
             strategy_variants[
                 row.get("strategy_variant_id") or "LEGACY_UNKNOWN"
             ] += 1
+            outcome_variants[
+                row.get("outcome_variant_id") or "LEGACY_UNKNOWN"
+            ] += 1
+            strategy_lab_catalogs[
+                row.get("strategy_lab_catalog_version")
+                or "NOT_LAB_RECORD"
+            ] += 1
             model_versions[
                 row.get("model_version") or "LEGACY_UNKNOWN"
             ] += 1
@@ -216,6 +225,12 @@ class TrainingDatasetBuilder:
                 ),
                 "strategy_variants": dict(
                     sorted(strategy_variants.items())
+                ),
+                "outcome_variants": dict(
+                    sorted(outcome_variants.items())
+                ),
+                "strategy_lab_catalogs": dict(
+                    sorted(strategy_lab_catalogs.items())
                 ),
                 "model_versions": dict(
                     sorted(model_versions.items())
@@ -391,6 +406,10 @@ class TrainingDatasetBuilder:
 
     def _join(self, observation: dict, outcome: dict) -> dict:
         payload = dict(outcome["payload"])
+        outcome_context = outcome.get("experiment_context") or {}
+        observation_context = observation.get("experiment_context") or {}
+        effective_context = outcome_context or observation_context
+        strategy_lab = effective_context.get("strategy_lab") or {}
         return {
             "dataset_schema_version": TRAINING_DATASET_SCHEMA_VERSION,
             "feature_schema_version": CANDIDATE_FEATURE_SCHEMA_VERSION,
@@ -437,13 +456,28 @@ class TrainingDatasetBuilder:
             "structure_fingerprint": observation.get(
                 "structure_fingerprint"
             ),
-            "market_context": observation.get("market_context"),
-            "cost_model": observation.get("cost_model"),
-            "virtual_policy": observation.get("virtual_policy"),
-            "paper_policy": observation.get("paper_policy"),
-            "experiment_context": observation.get(
-                "experiment_context"
+            "market_context": (
+                effective_context.get("market_context")
+                or observation.get("market_context")
             ),
+            "cost_model": (
+                effective_context.get("cost_model")
+                or observation.get("cost_model")
+            ),
+            "virtual_policy": (
+                effective_context.get("virtual_policy")
+                or observation.get("virtual_policy")
+            ),
+            "paper_policy": (
+                effective_context.get("paper_policy")
+                or observation.get("paper_policy")
+            ),
+            "strategy_lab": strategy_lab or None,
+            "strategy_lab_catalog_version": (
+                strategy_lab.get("catalog_version")
+                or payload.get("strategy_lab_catalog_version")
+            ),
+            "experiment_context": effective_context or None,
             "selection_status": observation.get(
                 "selection_status"
             ),
@@ -463,12 +497,15 @@ class TrainingDatasetBuilder:
 
     @staticmethod
     def _derive_label(payload: dict) -> bool | None:
+        if isinstance(payload.get("net_profitable"), bool):
+            return payload["net_profitable"]
         if isinstance(payload.get("profitable"), bool):
             return payload["profitable"]
         label = payload.get("label")
         if label in {0, 1, False, True}:
             return bool(label)
         for key in (
+            "net_exit_r",
             "exit_r",
             "r_multiple",
             "target_r",
@@ -481,7 +518,12 @@ class TrainingDatasetBuilder:
 
     @staticmethod
     def _derive_target_r(payload: dict) -> float | None:
-        for key in ("exit_r", "r_multiple", "target_r"):
+        for key in (
+            "net_exit_r",
+            "exit_r",
+            "r_multiple",
+            "target_r",
+        ):
             value = payload.get(key)
             if TrainingDatasetBuilder._finite(value):
                 return float(value)

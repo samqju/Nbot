@@ -272,6 +272,10 @@ class PaperExchange:
             market_event_id=position.market_event_id,
             strategy_variant_id=position.strategy_variant_id,
             experiment_context=position.experiment_context,
+            selection_authority=position.selection_authority,
+            paper_canary_model_id=position.paper_canary_model_id,
+            paper_risk_multiplier=position.paper_risk_multiplier,
+            paper_allocation_id=position.paper_allocation_id,
         )
 
     @staticmethod
@@ -414,6 +418,16 @@ class PaperExchange:
                 "strategy_variant_id"
             ),
             experiment_context=metadata.get("experiment_context"),
+            selection_authority=metadata.get(
+                "selection_authority", "RULES"
+            ),
+            paper_canary_model_id=metadata.get(
+                "paper_canary_model_id"
+            ),
+            paper_risk_multiplier=metadata.get(
+                "paper_risk_multiplier", 1.0
+            ),
+            paper_allocation_id=metadata.get("paper_allocation_id"),
             trade_id=ack.order_id,
         )
         self._pending_entry = None

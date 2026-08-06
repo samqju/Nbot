@@ -97,6 +97,10 @@ class TimeAwareDatasetSplitter:
             groups.append({
                 "candidate_id": candidate_id,
                 "observed_at_ms": next(iter(observed_times)),
+                "outcome_end_ms": max(
+                    int(row["recorded_at_ms"])
+                    for row in candidate_rows
+                ),
                 "rows": sorted(
                     candidate_rows,
                     key=lambda row: (
@@ -120,6 +124,7 @@ class TimeAwareDatasetSplitter:
             "test": [],
         }
         embargoed_groups = []
+        purged_groups = []
 
         if len(groups) < 3:
             status = "INSUFFICIENT_DATA"
@@ -143,7 +148,15 @@ class TimeAwareDatasetSplitter:
             )
 
             for group in raw_train:
+                # Purge any training label whose observation window reaches
+                # the validation boundary. This prevents future candles used
+                # to label a training row from leaking into validation time.
                 if (
+                    train_boundary is not None
+                    and group["outcome_end_ms"] >= train_boundary
+                ):
+                    purged_groups.append(group)
+                elif (
                     train_boundary is not None
                     and group["observed_at_ms"]
                     >= train_boundary - self.embargo_ms
@@ -154,6 +167,14 @@ class TimeAwareDatasetSplitter:
 
             for group in raw_validation:
                 timestamp = group["observed_at_ms"]
+                # Validation labels must finish before the untouched test
+                # period begins. Rows crossing that boundary are purged.
+                if (
+                    test_boundary is not None
+                    and group["outcome_end_ms"] >= test_boundary
+                ):
+                    purged_groups.append(group)
+                    continue
                 near_train_boundary = (
                     train_boundary is not None
                     and timestamp < train_boundary + self.embargo_ms
@@ -237,6 +258,14 @@ class TimeAwareDatasetSplitter:
                     ("test", self.test_path),
                 )
             },
+            "purging": {
+                "policy": "LABEL_WINDOW_MUST_END_BEFORE_NEXT_SPLIT",
+                "candidate_groups_excluded": len(purged_groups),
+                "rows_excluded": sum(
+                    len(group["rows"])
+                    for group in purged_groups
+                ),
+            },
             "embargo": {
                 "candidate_groups_excluded": len(embargoed_groups),
                 "rows_excluded": sum(
@@ -246,6 +275,7 @@ class TimeAwareDatasetSplitter:
             },
             "leakage_checks": {
                 "candidate_overlap": False,
+                "label_window_overlap": False,
                 "chronological_order": True,
             },
             "issues": dict(sorted(issues.items())),

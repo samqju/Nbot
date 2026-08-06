@@ -363,6 +363,538 @@ VIRTUAL_STRATEGY_VARIANT_ID = os.getenv(
     "VIRTUAL_STRATEGY_VARIANT_ID",
     f"VIRTUAL_FIXED_{VIRTUAL_TRADE_TARGET_R:g}R_{VIRTUAL_TRADE_MAX_CANDLES}C_V1",
 ).strip()
+VIRTUAL_LAB_ENABLED = (
+    os.getenv("VIRTUAL_LAB_ENABLED", "true")
+    .strip()
+    .lower()
+    in {"1", "true", "yes", "on"}
+)
+VIRTUAL_LAB_CATALOG_VERSION = os.getenv(
+    "VIRTUAL_LAB_CATALOG_VERSION",
+    "PHASE5_6_APPROVED_V1",
+).strip().upper()
+VIRTUAL_LAB_MAX_ACTIVE = int(
+    os.getenv(
+        "VIRTUAL_LAB_MAX_ACTIVE",
+        str(VIRTUAL_TRADE_MAX_ACTIVE * 3),
+    )
+)
+TESTNET_STRATEGY_LAB_REPORT_PATH = os.getenv(
+    "TESTNET_STRATEGY_LAB_REPORT_PATH",
+    "data/strategy_lab_report_testnet.json",
+).strip()
+LIVE_STRATEGY_LAB_REPORT_PATH = os.getenv(
+    "LIVE_STRATEGY_LAB_REPORT_PATH",
+    "data/strategy_lab_report_live.json",
+).strip()
+_DEFAULT_STRATEGY_LAB_REPORT_PATH = (
+    TESTNET_STRATEGY_LAB_REPORT_PATH
+    if TRADING_ENV == "TESTNET"
+    else LIVE_STRATEGY_LAB_REPORT_PATH
+)
+STRATEGY_LAB_REPORT_PATH = os.getenv(
+    "STRATEGY_LAB_REPORT_PATH",
+    _DEFAULT_STRATEGY_LAB_REPORT_PATH,
+).strip()
+del _DEFAULT_STRATEGY_LAB_REPORT_PATH
+STRATEGY_LAB_MIN_OUTCOMES = int(
+    os.getenv("STRATEGY_LAB_MIN_OUTCOMES", "200")
+)
+STRATEGY_LAB_MIN_MARKET_EVENTS = int(
+    os.getenv("STRATEGY_LAB_MIN_MARKET_EVENTS", "50")
+)
+STRATEGY_LAB_MIN_AVG_NET_R = float(
+    os.getenv("STRATEGY_LAB_MIN_AVG_NET_R", "0.02")
+)
+STRATEGY_LAB_MAX_DRAWDOWN_R = float(
+    os.getenv("STRATEGY_LAB_MAX_DRAWDOWN_R", "30")
+)
+# ===== Mission alignment: automatic approved strategy-policy advice =====
+TESTNET_STRATEGY_POLICY_RECOMMENDATION_PATH = os.getenv(
+    "TESTNET_STRATEGY_POLICY_RECOMMENDATION_PATH",
+    "data/strategy_policy_recommendation_testnet.json",
+).strip()
+LIVE_STRATEGY_POLICY_RECOMMENDATION_PATH = os.getenv(
+    "LIVE_STRATEGY_POLICY_RECOMMENDATION_PATH",
+    "data/strategy_policy_recommendation_live.json",
+).strip()
+STRATEGY_POLICY_RECOMMENDATION_PATH = os.getenv(
+    "STRATEGY_POLICY_RECOMMENDATION_PATH",
+    (
+        TESTNET_STRATEGY_POLICY_RECOMMENDATION_PATH
+        if TRADING_ENV == "TESTNET"
+        else LIVE_STRATEGY_POLICY_RECOMMENDATION_PATH
+    ),
+).strip()
+STRATEGY_POLICY_MIN_INDEPENDENT_EVENTS = int(
+    os.getenv("STRATEGY_POLICY_MIN_INDEPENDENT_EVENTS", "50")
+)
+STRATEGY_POLICY_MIN_AVERAGE_NET_R = float(
+    os.getenv("STRATEGY_POLICY_MIN_AVERAGE_NET_R", "0.02")
+)
+# ===== Phase 5.7 reliable offline evaluation =====
+TESTNET_RELIABLE_EVALUATION_REPORT_PATH = os.getenv(
+    "TESTNET_RELIABLE_EVALUATION_REPORT_PATH",
+    "data/reliable_evaluation_report_testnet.json",
+).strip()
+LIVE_RELIABLE_EVALUATION_REPORT_PATH = os.getenv(
+    "LIVE_RELIABLE_EVALUATION_REPORT_PATH",
+    "data/reliable_evaluation_report_live.json",
+).strip()
+_DEFAULT_RELIABLE_EVALUATION_REPORT_PATH = (
+    TESTNET_RELIABLE_EVALUATION_REPORT_PATH
+    if TRADING_ENV == "TESTNET"
+    else LIVE_RELIABLE_EVALUATION_REPORT_PATH
+)
+RELIABLE_EVALUATION_REPORT_PATH = os.getenv(
+    "RELIABLE_EVALUATION_REPORT_PATH",
+    _DEFAULT_RELIABLE_EVALUATION_REPORT_PATH,
+).strip()
+del _DEFAULT_RELIABLE_EVALUATION_REPORT_PATH
+RELIABLE_EVALUATION_WALK_FORWARD_FOLDS = int(
+    os.getenv("RELIABLE_EVALUATION_WALK_FORWARD_FOLDS", "3")
+)
+RELIABLE_EVALUATION_MIN_OUTCOMES = int(
+    os.getenv("RELIABLE_EVALUATION_MIN_OUTCOMES", "200")
+)
+RELIABLE_EVALUATION_MIN_MARKET_EVENTS = int(
+    os.getenv("RELIABLE_EVALUATION_MIN_MARKET_EVENTS", "50")
+)
+RELIABLE_EVALUATION_MIN_HOLDOUT_EVENTS = int(
+    os.getenv("RELIABLE_EVALUATION_MIN_HOLDOUT_EVENTS", "20")
+)
+RELIABLE_EVALUATION_MIN_REGIME_EVENTS = int(
+    os.getenv("RELIABLE_EVALUATION_MIN_REGIME_EVENTS", "20")
+)
+RELIABLE_EVALUATION_MIN_AVG_NET_R = float(
+    os.getenv("RELIABLE_EVALUATION_MIN_AVG_NET_R", "0.02")
+)
+RELIABLE_EVALUATION_MIN_POSITIVE_FOLD_RATIO = float(
+    os.getenv("RELIABLE_EVALUATION_MIN_POSITIVE_FOLD_RATIO", "0.67")
+)
+RELIABLE_EVALUATION_MAX_DRAWDOWN_R = float(
+    os.getenv("RELIABLE_EVALUATION_MAX_DRAWDOWN_R", "30")
+)
+RELIABLE_EVALUATION_LIQUID_MAX_SPREAD_PCT = float(
+    os.getenv("RELIABLE_EVALUATION_LIQUID_MAX_SPREAD_PCT", "0.15")
+)
+RELIABLE_EVALUATION_LIQUID_MIN_QUOTE_VOLUME_USD = float(
+    os.getenv(
+        "RELIABLE_EVALUATION_LIQUID_MIN_QUOTE_VOLUME_USD",
+        "15000000",
+    )
+)
+# ===== Phase 5.8 automatic training orchestrator =====
+AUTO_TRAINING_ENABLED = (
+    os.getenv("AUTO_TRAINING_ENABLED", "true")
+    .strip()
+    .lower()
+    in {"1", "true", "yes", "on"}
+)
+AUTO_TRAINING_POLL_SECONDS = int(
+    os.getenv("AUTO_TRAINING_POLL_SECONDS", "300")
+)
+AUTO_TRAINING_MIN_NEW_OUTCOMES = int(
+    os.getenv("AUTO_TRAINING_MIN_NEW_OUTCOMES", "1000")
+)
+AUTO_TRAINING_MIN_NEW_MARKET_EVENTS = int(
+    os.getenv("AUTO_TRAINING_MIN_NEW_MARKET_EVENTS", "200")
+)
+AUTO_TRAINING_OUTCOME_TYPE = os.getenv(
+    "AUTO_TRAINING_OUTCOME_TYPE",
+    "VIRTUAL_TRADE",
+).strip().upper()
+AUTO_TRAINING_PARENT_MODEL_ID = os.getenv(
+    "AUTO_TRAINING_PARENT_MODEL_ID",
+    RULE_MODEL_VERSION,
+).strip()
+TESTNET_AUTO_TRAINING_SNAPSHOT_ROOT = os.getenv(
+    "TESTNET_AUTO_TRAINING_SNAPSHOT_ROOT",
+    "data/training_snapshots_testnet",
+).strip()
+LIVE_AUTO_TRAINING_SNAPSHOT_ROOT = os.getenv(
+    "LIVE_AUTO_TRAINING_SNAPSHOT_ROOT",
+    "data/training_snapshots_live",
+).strip()
+AUTO_TRAINING_SNAPSHOT_ROOT = os.getenv(
+    "AUTO_TRAINING_SNAPSHOT_ROOT",
+    (
+        TESTNET_AUTO_TRAINING_SNAPSHOT_ROOT
+        if TRADING_ENV == "TESTNET"
+        else LIVE_AUTO_TRAINING_SNAPSHOT_ROOT
+    ),
+).strip()
+TESTNET_AUTO_TRAINING_MODEL_ROOT = os.getenv(
+    "TESTNET_AUTO_TRAINING_MODEL_ROOT",
+    "models/challengers_testnet",
+).strip()
+LIVE_AUTO_TRAINING_MODEL_ROOT = os.getenv(
+    "LIVE_AUTO_TRAINING_MODEL_ROOT",
+    "models/challengers_live",
+).strip()
+AUTO_TRAINING_MODEL_ROOT = os.getenv(
+    "AUTO_TRAINING_MODEL_ROOT",
+    (
+        TESTNET_AUTO_TRAINING_MODEL_ROOT
+        if TRADING_ENV == "TESTNET"
+        else LIVE_AUTO_TRAINING_MODEL_ROOT
+    ),
+).strip()
+TESTNET_MODEL_REGISTRY_PATH = os.getenv(
+    "TESTNET_MODEL_REGISTRY_PATH",
+    "models/model_registry_testnet.json",
+).strip()
+LIVE_MODEL_REGISTRY_PATH = os.getenv(
+    "LIVE_MODEL_REGISTRY_PATH",
+    "models/model_registry_live.json",
+).strip()
+MODEL_REGISTRY_PATH = os.getenv(
+    "MODEL_REGISTRY_PATH",
+    (
+        TESTNET_MODEL_REGISTRY_PATH
+        if TRADING_ENV == "TESTNET"
+        else LIVE_MODEL_REGISTRY_PATH
+    ),
+).strip()
+TESTNET_AUTO_TRAINING_STATUS_PATH = os.getenv(
+    "TESTNET_AUTO_TRAINING_STATUS_PATH",
+    "data/auto_training_status_testnet.json",
+).strip()
+LIVE_AUTO_TRAINING_STATUS_PATH = os.getenv(
+    "LIVE_AUTO_TRAINING_STATUS_PATH",
+    "data/auto_training_status_live.json",
+).strip()
+AUTO_TRAINING_STATUS_PATH = os.getenv(
+    "AUTO_TRAINING_STATUS_PATH",
+    (
+        TESTNET_AUTO_TRAINING_STATUS_PATH
+        if TRADING_ENV == "TESTNET"
+        else LIVE_AUTO_TRAINING_STATUS_PATH
+    ),
+).strip()
+AUTO_TRAINING_LOCK_PATH = os.getenv(
+    "AUTO_TRAINING_LOCK_PATH",
+    f"runtime/AUTO_TRAINING_{TRADING_ENV}.lock",
+).strip()
+AUTO_TRAINING_MIN_ROC_AUC = float(
+    os.getenv("AUTO_TRAINING_MIN_ROC_AUC", "0.50")
+)
+AUTO_TRAINING_MAX_BRIER_SCORE = float(
+    os.getenv("AUTO_TRAINING_MAX_BRIER_SCORE", "0.25")
+)
+AUTO_TRAINING_MAX_CALIBRATION_GAP = float(
+    os.getenv("AUTO_TRAINING_MAX_CALIBRATION_GAP", "0.10")
+)
+AUTO_TRAINING_MAX_FEATURE_PSI = float(
+    os.getenv("AUTO_TRAINING_MAX_FEATURE_PSI", "0.25")
+)
+# ===== Phase 5.9 continuous champion-challenger shadow testing =====
+SHADOW_DECISION_TESTING_ENABLED = (
+    os.getenv("SHADOW_DECISION_TESTING_ENABLED", "true")
+    .strip()
+    .lower()
+    in {"1", "true", "yes", "on"}
+)
+SHADOW_DECISION_MIN_COVERAGE = float(
+    os.getenv("SHADOW_DECISION_MIN_COVERAGE", "0.90")
+)
+SHADOW_DECISION_SETTLE_SECONDS = float(
+    os.getenv("SHADOW_DECISION_SETTLE_SECONDS", "1.0")
+)
+SHADOW_DECISION_TOP_K = int(
+    os.getenv("SHADOW_DECISION_TOP_K", "3")
+)
+SHADOW_DECISION_OUTCOME_TYPE = os.getenv(
+    "SHADOW_DECISION_OUTCOME_TYPE",
+    "VIRTUAL_TRADE",
+).strip().upper()
+TESTNET_SHADOW_DECISIONS_PATH = os.getenv(
+    "TESTNET_SHADOW_DECISIONS_PATH",
+    "data/shadow_decisions_testnet.jsonl",
+).strip()
+LIVE_SHADOW_DECISIONS_PATH = os.getenv(
+    "LIVE_SHADOW_DECISIONS_PATH",
+    "data/shadow_decisions_live.jsonl",
+).strip()
+SHADOW_DECISIONS_PATH = os.getenv(
+    "SHADOW_DECISIONS_PATH",
+    (
+        TESTNET_SHADOW_DECISIONS_PATH
+        if TRADING_ENV == "TESTNET"
+        else LIVE_SHADOW_DECISIONS_PATH
+    ),
+).strip()
+TESTNET_SHADOW_DECISION_REPORT_PATH = os.getenv(
+    "TESTNET_SHADOW_DECISION_REPORT_PATH",
+    "data/shadow_decision_report_testnet.json",
+).strip()
+LIVE_SHADOW_DECISION_REPORT_PATH = os.getenv(
+    "LIVE_SHADOW_DECISION_REPORT_PATH",
+    "data/shadow_decision_report_live.json",
+).strip()
+SHADOW_DECISION_REPORT_PATH = os.getenv(
+    "SHADOW_DECISION_REPORT_PATH",
+    (
+        TESTNET_SHADOW_DECISION_REPORT_PATH
+        if TRADING_ENV == "TESTNET"
+        else LIVE_SHADOW_DECISION_REPORT_PATH
+    ),
+).strip()
+# ===== Phase 5.10 automatic promotion controller =====
+AUTOMATIC_PROMOTION_ENABLED = (
+    os.getenv("AUTOMATIC_PROMOTION_ENABLED", "true")
+    .strip()
+    .lower()
+    in {"1", "true", "yes", "on"}
+)
+AUTOMATIC_PROMOTION_POLL_SECONDS = int(
+    os.getenv("AUTOMATIC_PROMOTION_POLL_SECONDS", "300")
+)
+AUTOMATIC_PROMOTION_MIN_MATCHED_OUTCOMES = int(
+    os.getenv("AUTOMATIC_PROMOTION_MIN_MATCHED_OUTCOMES", "1000")
+)
+AUTOMATIC_PROMOTION_MIN_INDEPENDENT_EVENTS = int(
+    os.getenv("AUTOMATIC_PROMOTION_MIN_INDEPENDENT_EVENTS", "150")
+)
+AUTOMATIC_PROMOTION_MIN_DISAGREEMENT_EVENTS = int(
+    os.getenv("AUTOMATIC_PROMOTION_MIN_DISAGREEMENT_EVENTS", "75")
+)
+AUTOMATIC_PROMOTION_MIN_AVERAGE_R_LIFT = float(
+    os.getenv(
+        "AUTOMATIC_PROMOTION_MIN_AVERAGE_R_LIFT",
+        str(SHADOW_PROMOTION_MIN_AVG_R_LIFT),
+    )
+)
+AUTOMATIC_PROMOTION_MIN_AFTER_COST_EXPECTANCY = float(
+    os.getenv("AUTOMATIC_PROMOTION_MIN_AFTER_COST_EXPECTANCY", "0")
+)
+AUTOMATIC_PROMOTION_MAX_WIN_RATE_DETERIORATION = float(
+    os.getenv(
+        "AUTOMATIC_PROMOTION_MAX_WIN_RATE_DETERIORATION",
+        str(SHADOW_PROMOTION_MAX_WIN_RATE_DROP),
+    )
+)
+AUTOMATIC_PROMOTION_MAX_BRIER_SCORE = float(
+    os.getenv(
+        "AUTOMATIC_PROMOTION_MAX_BRIER_SCORE",
+        str(SHADOW_PROMOTION_MAX_BRIER_SCORE),
+    )
+)
+AUTOMATIC_PROMOTION_MAX_CALIBRATION_GAP = float(
+    os.getenv(
+        "AUTOMATIC_PROMOTION_MAX_CALIBRATION_GAP",
+        str(SHADOW_PROMOTION_MAX_CALIBRATION_GAP),
+    )
+)
+AUTOMATIC_PROMOTION_MAX_FEATURE_PSI = float(
+    os.getenv(
+        "AUTOMATIC_PROMOTION_MAX_FEATURE_PSI",
+        str(SHADOW_PROMOTION_MAX_FEATURE_PSI),
+    )
+)
+AUTOMATIC_PROMOTION_MIN_RECENT_EXPECTANCY = float(
+    os.getenv("AUTOMATIC_PROMOTION_MIN_RECENT_EXPECTANCY", "0")
+)
+AUTOMATIC_PROMOTION_RECENT_EVENT_WINDOW = int(
+    os.getenv("AUTOMATIC_PROMOTION_RECENT_EVENT_WINDOW", "30")
+)
+AUTOMATIC_PROMOTION_EXTEND_EVIDENCE_RATIO = float(
+    os.getenv("AUTOMATIC_PROMOTION_EXTEND_EVIDENCE_RATIO", "0.50")
+)
+TESTNET_AUTOMATIC_PROMOTION_STATUS_PATH = os.getenv(
+    "TESTNET_AUTOMATIC_PROMOTION_STATUS_PATH",
+    "data/promotion_controller_status_testnet.json",
+).strip()
+LIVE_AUTOMATIC_PROMOTION_STATUS_PATH = os.getenv(
+    "LIVE_AUTOMATIC_PROMOTION_STATUS_PATH",
+    "data/promotion_controller_status_live.json",
+).strip()
+AUTOMATIC_PROMOTION_STATUS_PATH = os.getenv(
+    "AUTOMATIC_PROMOTION_STATUS_PATH",
+    (
+        TESTNET_AUTOMATIC_PROMOTION_STATUS_PATH
+        if TRADING_ENV == "TESTNET"
+        else LIVE_AUTOMATIC_PROMOTION_STATUS_PATH
+    ),
+).strip()
+TESTNET_AUTOMATIC_PROMOTION_EVIDENCE_REPORT_PATH = os.getenv(
+    "TESTNET_AUTOMATIC_PROMOTION_EVIDENCE_REPORT_PATH",
+    "data/promotion_evidence_report_testnet.json",
+).strip()
+LIVE_AUTOMATIC_PROMOTION_EVIDENCE_REPORT_PATH = os.getenv(
+    "LIVE_AUTOMATIC_PROMOTION_EVIDENCE_REPORT_PATH",
+    "data/promotion_evidence_report_live.json",
+).strip()
+AUTOMATIC_PROMOTION_EVIDENCE_REPORT_PATH = os.getenv(
+    "AUTOMATIC_PROMOTION_EVIDENCE_REPORT_PATH",
+    (
+        TESTNET_AUTOMATIC_PROMOTION_EVIDENCE_REPORT_PATH
+        if TRADING_ENV == "TESTNET"
+        else LIVE_AUTOMATIC_PROMOTION_EVIDENCE_REPORT_PATH
+    ),
+).strip()
+AUTOMATIC_PROMOTION_LOCK_PATH = os.getenv(
+    "AUTOMATIC_PROMOTION_LOCK_PATH",
+    f"runtime/AUTOMATIC_PROMOTION_{TRADING_ENV}.lock",
+).strip()
+# ===== Phase 5.11 controlled paper-canary execution and rollback =====
+PAPER_CANARY_EXECUTION_ENABLED = (
+    os.getenv("PAPER_CANARY_EXECUTION_ENABLED", "true")
+    .strip()
+    .lower()
+    in {"1", "true", "yes", "on"}
+)
+PAPER_CANARY_ALLOCATION_FRACTION = float(
+    os.getenv("PAPER_CANARY_ALLOCATION_FRACTION", "0.10")
+)
+PAPER_CANARY_RISK_MULTIPLIER = float(
+    os.getenv("PAPER_CANARY_RISK_MULTIPLIER", "1.0")
+)
+# Cumulative, independent paper-evidence gates for deterministic rollout.
+PAPER_CANARY_10_MIN_COMPLETED_TRADES = int(
+    os.getenv("PAPER_CANARY_10_MIN_COMPLETED_TRADES", "25")
+)
+PAPER_CANARY_10_MIN_INDEPENDENT_EVENTS = int(
+    os.getenv("PAPER_CANARY_10_MIN_INDEPENDENT_EVENTS", "20")
+)
+PAPER_CANARY_25_MIN_COMPLETED_TRADES = int(
+    os.getenv("PAPER_CANARY_25_MIN_COMPLETED_TRADES", "75")
+)
+PAPER_CANARY_25_MIN_INDEPENDENT_EVENTS = int(
+    os.getenv("PAPER_CANARY_25_MIN_INDEPENDENT_EVENTS", "50")
+)
+PAPER_CANARY_50_MIN_COMPLETED_TRADES = int(
+    os.getenv("PAPER_CANARY_50_MIN_COMPLETED_TRADES", "150")
+)
+PAPER_CANARY_50_MIN_INDEPENDENT_EVENTS = int(
+    os.getenv("PAPER_CANARY_50_MIN_INDEPENDENT_EVENTS", "100")
+)
+PAPER_CANARY_ADVANCE_MIN_AVERAGE_NET_R = float(
+    os.getenv("PAPER_CANARY_ADVANCE_MIN_AVERAGE_NET_R", "0.0")
+)
+PAPER_CANARY_ADVANCE_MIN_RECENT_AVERAGE_NET_R = float(
+    os.getenv("PAPER_CANARY_ADVANCE_MIN_RECENT_AVERAGE_NET_R", "0.0")
+)
+PAPER_CANARY_MAX_TRADES_PER_UTC_DAY = int(
+    os.getenv("PAPER_CANARY_MAX_TRADES_PER_UTC_DAY", "5")
+)
+PAPER_CANARY_MIN_MODEL_PROBABILITY = float(
+    os.getenv("PAPER_CANARY_MIN_MODEL_PROBABILITY", "0.50")
+)
+TESTNET_PAPER_CANARY_DECISIONS_PATH = os.getenv(
+    "TESTNET_PAPER_CANARY_DECISIONS_PATH",
+    "data/paper_canary_decisions_testnet.jsonl",
+).strip()
+LIVE_PAPER_CANARY_DECISIONS_PATH = os.getenv(
+    "LIVE_PAPER_CANARY_DECISIONS_PATH",
+    "data/paper_canary_decisions_live.jsonl",
+).strip()
+PAPER_CANARY_DECISIONS_PATH = os.getenv(
+    "PAPER_CANARY_DECISIONS_PATH",
+    (
+        TESTNET_PAPER_CANARY_DECISIONS_PATH
+        if TRADING_ENV == "TESTNET"
+        else LIVE_PAPER_CANARY_DECISIONS_PATH
+    ),
+).strip()
+PAPER_CANARY_CONTROLLER_ENABLED = (
+    os.getenv("PAPER_CANARY_CONTROLLER_ENABLED", "true")
+    .strip()
+    .lower()
+    in {"1", "true", "yes", "on"}
+)
+PAPER_CANARY_CONTROLLER_POLL_SECONDS = int(
+    os.getenv("PAPER_CANARY_CONTROLLER_POLL_SECONDS", "300")
+)
+PAPER_CANARY_MIN_COMPLETED_TRADES = int(
+    os.getenv("PAPER_CANARY_MIN_COMPLETED_TRADES", "20")
+)
+PAPER_CANARY_MAX_DRAWDOWN_R = float(
+    os.getenv("PAPER_CANARY_MAX_DRAWDOWN_R", "5.0")
+)
+PAPER_CANARY_MAX_LOSING_STREAK = int(
+    os.getenv("PAPER_CANARY_MAX_LOSING_STREAK", "5")
+)
+PAPER_CANARY_MIN_AVERAGE_NET_R = float(
+    os.getenv("PAPER_CANARY_MIN_AVERAGE_NET_R", "-0.10")
+)
+PAPER_CANARY_RECENT_TRADE_WINDOW = int(
+    os.getenv("PAPER_CANARY_RECENT_TRADE_WINDOW", "10")
+)
+PAPER_CANARY_MIN_RECENT_AVERAGE_NET_R = float(
+    os.getenv("PAPER_CANARY_MIN_RECENT_AVERAGE_NET_R", "-0.25")
+)
+# ===== Phase 5.12 complete automatic rollback health gates =====
+PAPER_ROLLBACK_MIN_PAIRED_EVENTS = int(
+    os.getenv("PAPER_ROLLBACK_MIN_PAIRED_EVENTS", "20")
+)
+PAPER_ROLLBACK_MIN_AVERAGE_R_LIFT = float(
+    os.getenv("PAPER_ROLLBACK_MIN_AVERAGE_R_LIFT", "-0.15")
+)
+PAPER_ROLLBACK_MIN_RUNTIME_DECISIONS = int(
+    os.getenv("PAPER_ROLLBACK_MIN_RUNTIME_DECISIONS", "20")
+)
+PAPER_ROLLBACK_MAX_PREDICTION_FAILURES = int(
+    os.getenv("PAPER_ROLLBACK_MAX_PREDICTION_FAILURES", "3")
+)
+PAPER_ROLLBACK_MAX_PREDICTION_FAILURE_RATE = float(
+    os.getenv("PAPER_ROLLBACK_MAX_PREDICTION_FAILURE_RATE", "0.05")
+)
+PAPER_ROLLBACK_MIN_CALIBRATION_OUTCOMES = int(
+    os.getenv("PAPER_ROLLBACK_MIN_CALIBRATION_OUTCOMES", "20")
+)
+PAPER_ROLLBACK_MAX_BRIER_SCORE = float(
+    os.getenv("PAPER_ROLLBACK_MAX_BRIER_SCORE", "0.25")
+)
+PAPER_ROLLBACK_MAX_CALIBRATION_GAP = float(
+    os.getenv("PAPER_ROLLBACK_MAX_CALIBRATION_GAP", "0.10")
+)
+PAPER_ROLLBACK_MIN_DRIFT_OBSERVATIONS = int(
+    os.getenv("PAPER_ROLLBACK_MIN_DRIFT_OBSERVATIONS", "20")
+)
+PAPER_ROLLBACK_MAX_FEATURE_PSI = float(
+    os.getenv("PAPER_ROLLBACK_MAX_FEATURE_PSI", "0.25")
+)
+TESTNET_PAPER_CANARY_STATUS_PATH = os.getenv(
+    "TESTNET_PAPER_CANARY_STATUS_PATH",
+    "data/paper_canary_status_testnet.json",
+).strip()
+LIVE_PAPER_CANARY_STATUS_PATH = os.getenv(
+    "LIVE_PAPER_CANARY_STATUS_PATH",
+    "data/paper_canary_status_live.json",
+).strip()
+PAPER_CANARY_STATUS_PATH = os.getenv(
+    "PAPER_CANARY_STATUS_PATH",
+    (
+        TESTNET_PAPER_CANARY_STATUS_PATH
+        if TRADING_ENV == "TESTNET"
+        else LIVE_PAPER_CANARY_STATUS_PATH
+    ),
+).strip()
+PAPER_CANARY_CONTROLLER_LOCK_PATH = os.getenv(
+    "PAPER_CANARY_CONTROLLER_LOCK_PATH",
+    f"runtime/PAPER_CANARY_CONTROLLER_{TRADING_ENV}.lock",
+).strip()
+# ===== Phase 5.13 unified non-trader operator status =====
+TESTNET_AUTO_LEARNING_STATUS_PATH = os.getenv(
+    "TESTNET_AUTO_LEARNING_STATUS_PATH",
+    "data/auto_learning_status_testnet.json",
+).strip()
+LIVE_AUTO_LEARNING_STATUS_PATH = os.getenv(
+    "LIVE_AUTO_LEARNING_STATUS_PATH",
+    "data/auto_learning_status_live.json",
+).strip()
+AUTO_LEARNING_STATUS_PATH = os.getenv(
+    "AUTO_LEARNING_STATUS_PATH",
+    (
+        TESTNET_AUTO_LEARNING_STATUS_PATH
+        if TRADING_ENV == "TESTNET"
+        else LIVE_AUTO_LEARNING_STATUS_PATH
+    ),
+).strip()
+AUTO_LEARNING_STATUS_MAX_SOURCE_AGE_SECONDS = int(
+    os.getenv("AUTO_LEARNING_STATUS_MAX_SOURCE_AGE_SECONDS", "1800")
+)
 OBSERVATION_UNIVERSE_SIZE = int(
     os.getenv("OBSERVATION_UNIVERSE_SIZE", "200")
 )
@@ -925,6 +1457,440 @@ def _validate():
         raise ValueError("CONFIG_INVALID: VIRTUAL_TRADE_MAX_CANDLES")
     if not (10 <= VIRTUAL_TRADE_MAX_ACTIVE <= 10000):
         raise ValueError("CONFIG_INVALID: VIRTUAL_TRADE_MAX_ACTIVE")
+    if not VIRTUAL_LAB_CATALOG_VERSION:
+        raise ValueError("CONFIG_INVALID: VIRTUAL_LAB_CATALOG_VERSION")
+    if not (VIRTUAL_TRADE_MAX_ACTIVE <= VIRTUAL_LAB_MAX_ACTIVE <= 30000):
+        raise ValueError("CONFIG_INVALID: VIRTUAL_LAB_MAX_ACTIVE")
+    if not STRATEGY_LAB_REPORT_PATH:
+        raise ValueError("CONFIG_INVALID: STRATEGY_LAB_REPORT_PATH")
+    if STRATEGY_LAB_REPORT_PATH in {
+        CANDIDATE_OBSERVATIONS_PATH,
+        CANDIDATE_OUTCOMES_PATH,
+        VIRTUAL_TRADES_PATH,
+        SHADOW_PROMOTION_REPORT_PATH,
+    }:
+        raise ValueError("CONFIG_INVALID: STRATEGY_LAB_REPORT_PATH_CONFLICT")
+    if STRATEGY_LAB_MIN_OUTCOMES < 20:
+        raise ValueError("CONFIG_INVALID: STRATEGY_LAB_MIN_OUTCOMES")
+    if not (10 <= STRATEGY_LAB_MIN_MARKET_EVENTS <= STRATEGY_LAB_MIN_OUTCOMES):
+        raise ValueError("CONFIG_INVALID: STRATEGY_LAB_MIN_MARKET_EVENTS")
+    if not (-1.0 <= STRATEGY_LAB_MIN_AVG_NET_R <= 5.0):
+        raise ValueError("CONFIG_INVALID: STRATEGY_LAB_MIN_AVG_NET_R")
+    if not (1.0 <= STRATEGY_LAB_MAX_DRAWDOWN_R <= 10000.0):
+        raise ValueError("CONFIG_INVALID: STRATEGY_LAB_MAX_DRAWDOWN_R")
+    if not STRATEGY_POLICY_RECOMMENDATION_PATH:
+        raise ValueError("CONFIG_INVALID: STRATEGY_POLICY_RECOMMENDATION_PATH")
+    if STRATEGY_POLICY_RECOMMENDATION_PATH in {
+        CANDIDATE_OBSERVATIONS_PATH,
+        CANDIDATE_OUTCOMES_PATH,
+        VIRTUAL_TRADES_PATH,
+        STRATEGY_LAB_REPORT_PATH,
+    }:
+        raise ValueError("CONFIG_INVALID: STRATEGY_POLICY_PATH_CONFLICT")
+    if not (1 <= STRATEGY_POLICY_MIN_INDEPENDENT_EVENTS <= 1000000):
+        raise ValueError("CONFIG_INVALID: STRATEGY_POLICY_MIN_INDEPENDENT_EVENTS")
+    if not (-5.0 <= STRATEGY_POLICY_MIN_AVERAGE_NET_R <= 5.0):
+        raise ValueError("CONFIG_INVALID: STRATEGY_POLICY_MIN_AVERAGE_NET_R")
+
+    if not RELIABLE_EVALUATION_REPORT_PATH:
+        raise ValueError(
+            "CONFIG_INVALID: RELIABLE_EVALUATION_REPORT_PATH"
+        )
+    if RELIABLE_EVALUATION_REPORT_PATH in {
+        CANDIDATE_OBSERVATIONS_PATH,
+        CANDIDATE_OUTCOMES_PATH,
+        VIRTUAL_TRADES_PATH,
+        STRATEGY_LAB_REPORT_PATH,
+        TIME_SPLIT_REPORT_PATH,
+    }:
+        raise ValueError(
+            "CONFIG_INVALID: RELIABLE_EVALUATION_REPORT_PATH_CONFLICT"
+        )
+    if not (1 <= RELIABLE_EVALUATION_WALK_FORWARD_FOLDS <= 20):
+        raise ValueError(
+            "CONFIG_INVALID: RELIABLE_EVALUATION_WALK_FORWARD_FOLDS"
+        )
+    if RELIABLE_EVALUATION_MIN_OUTCOMES < 20:
+        raise ValueError(
+            "CONFIG_INVALID: RELIABLE_EVALUATION_MIN_OUTCOMES"
+        )
+    if not (
+        10
+        <= RELIABLE_EVALUATION_MIN_MARKET_EVENTS
+        <= RELIABLE_EVALUATION_MIN_OUTCOMES
+    ):
+        raise ValueError(
+            "CONFIG_INVALID: RELIABLE_EVALUATION_MIN_MARKET_EVENTS"
+        )
+    if not (
+        5
+        <= RELIABLE_EVALUATION_MIN_HOLDOUT_EVENTS
+        <= RELIABLE_EVALUATION_MIN_MARKET_EVENTS
+    ):
+        raise ValueError(
+            "CONFIG_INVALID: RELIABLE_EVALUATION_MIN_HOLDOUT_EVENTS"
+        )
+    if not (
+        5
+        <= RELIABLE_EVALUATION_MIN_REGIME_EVENTS
+        <= RELIABLE_EVALUATION_MIN_MARKET_EVENTS
+    ):
+        raise ValueError(
+            "CONFIG_INVALID: RELIABLE_EVALUATION_MIN_REGIME_EVENTS"
+        )
+    if not (-1.0 <= RELIABLE_EVALUATION_MIN_AVG_NET_R <= 5.0):
+        raise ValueError(
+            "CONFIG_INVALID: RELIABLE_EVALUATION_MIN_AVG_NET_R"
+        )
+    if not (
+        0.0 <= RELIABLE_EVALUATION_MIN_POSITIVE_FOLD_RATIO <= 1.0
+    ):
+        raise ValueError(
+            "CONFIG_INVALID: RELIABLE_EVALUATION_MIN_POSITIVE_FOLD_RATIO"
+        )
+    if not (1.0 <= RELIABLE_EVALUATION_MAX_DRAWDOWN_R <= 10000.0):
+        raise ValueError(
+            "CONFIG_INVALID: RELIABLE_EVALUATION_MAX_DRAWDOWN_R"
+        )
+    if not (0.001 <= RELIABLE_EVALUATION_LIQUID_MAX_SPREAD_PCT <= 5.0):
+        raise ValueError(
+            "CONFIG_INVALID: RELIABLE_EVALUATION_LIQUID_MAX_SPREAD_PCT"
+        )
+    if RELIABLE_EVALUATION_LIQUID_MIN_QUOTE_VOLUME_USD <= 0:
+        raise ValueError(
+            "CONFIG_INVALID: RELIABLE_EVALUATION_LIQUID_MIN_QUOTE_VOLUME_USD"
+        )
+
+    if not (30 <= AUTO_TRAINING_POLL_SECONDS <= 86400):
+        raise ValueError(
+            "CONFIG_INVALID: AUTO_TRAINING_POLL_SECONDS"
+        )
+    if AUTO_TRAINING_MIN_NEW_OUTCOMES < 20:
+        raise ValueError(
+            "CONFIG_INVALID: AUTO_TRAINING_MIN_NEW_OUTCOMES"
+        )
+    if not (
+        10
+        <= AUTO_TRAINING_MIN_NEW_MARKET_EVENTS
+        <= AUTO_TRAINING_MIN_NEW_OUTCOMES
+    ):
+        raise ValueError(
+            "CONFIG_INVALID: AUTO_TRAINING_MIN_NEW_MARKET_EVENTS"
+        )
+    if AUTO_TRAINING_OUTCOME_TYPE not in {
+        "VIRTUAL_TRADE",
+        "VIRTUAL_STRATEGY_VARIANT",
+    }:
+        raise ValueError(
+            "CONFIG_INVALID: AUTO_TRAINING_OUTCOME_TYPE"
+        )
+    if not AUTO_TRAINING_PARENT_MODEL_ID:
+        raise ValueError(
+            "CONFIG_INVALID: AUTO_TRAINING_PARENT_MODEL_ID"
+        )
+    auto_training_paths = {
+        AUTO_TRAINING_SNAPSHOT_ROOT,
+        AUTO_TRAINING_MODEL_ROOT,
+        MODEL_REGISTRY_PATH,
+        AUTO_TRAINING_STATUS_PATH,
+        AUTO_TRAINING_LOCK_PATH,
+    }
+    if any(not path for path in auto_training_paths):
+        raise ValueError(
+            "CONFIG_INVALID: AUTO_TRAINING_PATH"
+        )
+    if len(auto_training_paths) != 5:
+        raise ValueError(
+            "CONFIG_INVALID: AUTO_TRAINING_PATH_CONFLICT"
+        )
+    protected_learning_paths = {
+        CANDIDATE_OBSERVATIONS_PATH,
+        CANDIDATE_OUTCOMES_PATH,
+        TRAINING_DATASET_PATH,
+        DATASET_INTEGRITY_REPORT_PATH,
+        TRAIN_SPLIT_PATH,
+        VALIDATION_SPLIT_PATH,
+        TEST_SPLIT_PATH,
+        TIME_SPLIT_REPORT_PATH,
+        BASELINE_MODEL_ARTIFACT_PATH,
+        BASELINE_MODEL_REPORT_PATH,
+        ENSEMBLE_EXPERIMENT_ARTIFACT_PATH,
+        ENSEMBLE_EXPERIMENT_REPORT_PATH,
+        SHADOW_MODEL_ARTIFACT_PATH,
+        SHADOW_MODEL_PREDICTIONS_PATH,
+        STRATEGY_POLICY_RECOMMENDATION_PATH,
+    }
+    if auto_training_paths & protected_learning_paths:
+        raise ValueError(
+            "CONFIG_INVALID: AUTO_TRAINING_PROTECTED_PATH_CONFLICT"
+        )
+    if not (0.0 <= AUTO_TRAINING_MIN_ROC_AUC <= 1.0):
+        raise ValueError(
+            "CONFIG_INVALID: AUTO_TRAINING_MIN_ROC_AUC"
+        )
+    if not (0.0 < AUTO_TRAINING_MAX_BRIER_SCORE <= 1.0):
+        raise ValueError(
+            "CONFIG_INVALID: AUTO_TRAINING_MAX_BRIER_SCORE"
+        )
+    if not (0.0 <= AUTO_TRAINING_MAX_CALIBRATION_GAP <= 1.0):
+        raise ValueError(
+            "CONFIG_INVALID: AUTO_TRAINING_MAX_CALIBRATION_GAP"
+        )
+    if not (0.0 <= AUTO_TRAINING_MAX_FEATURE_PSI <= 10.0):
+        raise ValueError(
+            "CONFIG_INVALID: AUTO_TRAINING_MAX_FEATURE_PSI"
+        )
+
+    if not (0.50 <= SHADOW_DECISION_MIN_COVERAGE <= 1.0):
+        raise ValueError(
+            "CONFIG_INVALID: SHADOW_DECISION_MIN_COVERAGE"
+        )
+    if not (0.0 <= SHADOW_DECISION_SETTLE_SECONDS <= 60.0):
+        raise ValueError(
+            "CONFIG_INVALID: SHADOW_DECISION_SETTLE_SECONDS"
+        )
+    if not (1 <= SHADOW_DECISION_TOP_K <= 10):
+        raise ValueError(
+            "CONFIG_INVALID: SHADOW_DECISION_TOP_K"
+        )
+    if SHADOW_DECISION_OUTCOME_TYPE != "VIRTUAL_TRADE":
+        raise ValueError(
+            "CONFIG_INVALID: SHADOW_DECISION_OUTCOME_TYPE"
+        )
+    shadow_decision_paths = {
+        SHADOW_DECISIONS_PATH,
+        SHADOW_DECISION_REPORT_PATH,
+    }
+    if any(not path for path in shadow_decision_paths):
+        raise ValueError(
+            "CONFIG_INVALID: SHADOW_DECISION_PATH"
+        )
+    if len(shadow_decision_paths) != 2:
+        raise ValueError(
+            "CONFIG_INVALID: SHADOW_DECISION_PATH_CONFLICT"
+        )
+    if shadow_decision_paths & (
+        protected_learning_paths | auto_training_paths
+    ):
+        raise ValueError(
+            "CONFIG_INVALID: SHADOW_DECISION_PROTECTED_PATH_CONFLICT"
+        )
+
+    if not (30 <= AUTOMATIC_PROMOTION_POLL_SECONDS <= 86400):
+        raise ValueError(
+            "CONFIG_INVALID: AUTOMATIC_PROMOTION_POLL_SECONDS"
+        )
+    if AUTOMATIC_PROMOTION_MIN_MATCHED_OUTCOMES < 20:
+        raise ValueError(
+            "CONFIG_INVALID: AUTOMATIC_PROMOTION_MIN_MATCHED_OUTCOMES"
+        )
+    if not (
+        10
+        <= AUTOMATIC_PROMOTION_MIN_INDEPENDENT_EVENTS
+        <= AUTOMATIC_PROMOTION_MIN_MATCHED_OUTCOMES
+    ):
+        raise ValueError(
+            "CONFIG_INVALID: AUTOMATIC_PROMOTION_MIN_INDEPENDENT_EVENTS"
+        )
+    if not (
+        1
+        <= AUTOMATIC_PROMOTION_MIN_DISAGREEMENT_EVENTS
+        <= AUTOMATIC_PROMOTION_MIN_INDEPENDENT_EVENTS
+    ):
+        raise ValueError(
+            "CONFIG_INVALID: AUTOMATIC_PROMOTION_MIN_DISAGREEMENT_EVENTS"
+        )
+    if not (-5.0 <= AUTOMATIC_PROMOTION_MIN_AVERAGE_R_LIFT <= 5.0):
+        raise ValueError(
+            "CONFIG_INVALID: AUTOMATIC_PROMOTION_MIN_AVERAGE_R_LIFT"
+        )
+    if not (-5.0 <= AUTOMATIC_PROMOTION_MIN_AFTER_COST_EXPECTANCY <= 5.0):
+        raise ValueError(
+            "CONFIG_INVALID: AUTOMATIC_PROMOTION_MIN_AFTER_COST_EXPECTANCY"
+        )
+    if not (
+        0.0 <= AUTOMATIC_PROMOTION_MAX_WIN_RATE_DETERIORATION <= 1.0
+    ):
+        raise ValueError(
+            "CONFIG_INVALID: AUTOMATIC_PROMOTION_MAX_WIN_RATE_DETERIORATION"
+        )
+    if not (0.0 < AUTOMATIC_PROMOTION_MAX_BRIER_SCORE <= 1.0):
+        raise ValueError(
+            "CONFIG_INVALID: AUTOMATIC_PROMOTION_MAX_BRIER_SCORE"
+        )
+    if not (0.0 <= AUTOMATIC_PROMOTION_MAX_CALIBRATION_GAP <= 1.0):
+        raise ValueError(
+            "CONFIG_INVALID: AUTOMATIC_PROMOTION_MAX_CALIBRATION_GAP"
+        )
+    if not (0.0 <= AUTOMATIC_PROMOTION_MAX_FEATURE_PSI <= 10.0):
+        raise ValueError(
+            "CONFIG_INVALID: AUTOMATIC_PROMOTION_MAX_FEATURE_PSI"
+        )
+    if not (-5.0 <= AUTOMATIC_PROMOTION_MIN_RECENT_EXPECTANCY <= 5.0):
+        raise ValueError(
+            "CONFIG_INVALID: AUTOMATIC_PROMOTION_MIN_RECENT_EXPECTANCY"
+        )
+    if not (5 <= AUTOMATIC_PROMOTION_RECENT_EVENT_WINDOW <= 10000):
+        raise ValueError(
+            "CONFIG_INVALID: AUTOMATIC_PROMOTION_RECENT_EVENT_WINDOW"
+        )
+    if not (0.1 <= AUTOMATIC_PROMOTION_EXTEND_EVIDENCE_RATIO <= 1.0):
+        raise ValueError(
+            "CONFIG_INVALID: AUTOMATIC_PROMOTION_EXTEND_EVIDENCE_RATIO"
+        )
+    automatic_promotion_paths = {
+        AUTOMATIC_PROMOTION_STATUS_PATH,
+        AUTOMATIC_PROMOTION_EVIDENCE_REPORT_PATH,
+        AUTOMATIC_PROMOTION_LOCK_PATH,
+    }
+    if any(not path for path in automatic_promotion_paths):
+        raise ValueError(
+            "CONFIG_INVALID: AUTOMATIC_PROMOTION_PATH"
+        )
+    if len(automatic_promotion_paths) != 3:
+        raise ValueError(
+            "CONFIG_INVALID: AUTOMATIC_PROMOTION_PATH_CONFLICT"
+        )
+    if automatic_promotion_paths & (
+        protected_learning_paths
+        | auto_training_paths
+        | shadow_decision_paths
+    ):
+        raise ValueError(
+            "CONFIG_INVALID: AUTOMATIC_PROMOTION_PROTECTED_PATH_CONFLICT"
+        )
+
+    if not (0.0 < PAPER_CANARY_ALLOCATION_FRACTION <= 1.0):
+        raise ValueError(
+            "CONFIG_INVALID: PAPER_CANARY_ALLOCATION_FRACTION"
+        )
+    if abs(PAPER_CANARY_RISK_MULTIPLIER - 1.0) > 1e-12:
+        raise ValueError(
+            "CONFIG_INVALID: PAPER_CANARY_RISK_MULTIPLIER_MUST_EQUAL_ONE"
+        )
+    stage_trade_gates = (
+        PAPER_CANARY_10_MIN_COMPLETED_TRADES,
+        PAPER_CANARY_25_MIN_COMPLETED_TRADES,
+        PAPER_CANARY_50_MIN_COMPLETED_TRADES,
+    )
+    stage_event_gates = (
+        PAPER_CANARY_10_MIN_INDEPENDENT_EVENTS,
+        PAPER_CANARY_25_MIN_INDEPENDENT_EVENTS,
+        PAPER_CANARY_50_MIN_INDEPENDENT_EVENTS,
+    )
+    if any(value < 1 for value in stage_trade_gates):
+        raise ValueError("CONFIG_INVALID: PAPER_CANARY_STAGE_TRADE_GATE")
+    if any(value < 1 for value in stage_event_gates):
+        raise ValueError("CONFIG_INVALID: PAPER_CANARY_STAGE_EVENT_GATE")
+    if tuple(sorted(stage_trade_gates)) != stage_trade_gates:
+        raise ValueError("CONFIG_INVALID: PAPER_CANARY_STAGE_TRADE_ORDER")
+    if tuple(sorted(stage_event_gates)) != stage_event_gates:
+        raise ValueError("CONFIG_INVALID: PAPER_CANARY_STAGE_EVENT_ORDER")
+    if not (1 <= PAPER_CANARY_MAX_TRADES_PER_UTC_DAY <= 100):
+        raise ValueError(
+            "CONFIG_INVALID: PAPER_CANARY_MAX_TRADES_PER_UTC_DAY"
+        )
+    if not (0.0 <= PAPER_CANARY_MIN_MODEL_PROBABILITY <= 1.0):
+        raise ValueError(
+            "CONFIG_INVALID: PAPER_CANARY_MIN_MODEL_PROBABILITY"
+        )
+    if not (30 <= PAPER_CANARY_CONTROLLER_POLL_SECONDS <= 86400):
+        raise ValueError(
+            "CONFIG_INVALID: PAPER_CANARY_CONTROLLER_POLL_SECONDS"
+        )
+    if not (1 <= PAPER_CANARY_MIN_COMPLETED_TRADES <= 10000):
+        raise ValueError(
+            "CONFIG_INVALID: PAPER_CANARY_MIN_COMPLETED_TRADES"
+        )
+    if not (0.1 <= PAPER_CANARY_MAX_DRAWDOWN_R <= 100.0):
+        raise ValueError(
+            "CONFIG_INVALID: PAPER_CANARY_MAX_DRAWDOWN_R"
+        )
+    if not (1 <= PAPER_CANARY_MAX_LOSING_STREAK <= 100):
+        raise ValueError(
+            "CONFIG_INVALID: PAPER_CANARY_MAX_LOSING_STREAK"
+        )
+    if not (-5.0 <= PAPER_CANARY_MIN_AVERAGE_NET_R <= 5.0):
+        raise ValueError(
+            "CONFIG_INVALID: PAPER_CANARY_MIN_AVERAGE_NET_R"
+        )
+    if not (1 <= PAPER_CANARY_RECENT_TRADE_WINDOW <= 1000):
+        raise ValueError(
+            "CONFIG_INVALID: PAPER_CANARY_RECENT_TRADE_WINDOW"
+        )
+    if not (-5.0 <= PAPER_CANARY_MIN_RECENT_AVERAGE_NET_R <= 5.0):
+        raise ValueError(
+            "CONFIG_INVALID: PAPER_CANARY_MIN_RECENT_AVERAGE_NET_R"
+        )
+    if not (1 <= PAPER_ROLLBACK_MIN_PAIRED_EVENTS <= 100000):
+        raise ValueError("CONFIG_INVALID: PAPER_ROLLBACK_MIN_PAIRED_EVENTS")
+    if not (-5.0 <= PAPER_ROLLBACK_MIN_AVERAGE_R_LIFT <= 0.0):
+        raise ValueError("CONFIG_INVALID: PAPER_ROLLBACK_MIN_AVERAGE_R_LIFT")
+    if not (1 <= PAPER_ROLLBACK_MIN_RUNTIME_DECISIONS <= 100000):
+        raise ValueError(
+            "CONFIG_INVALID: PAPER_ROLLBACK_MIN_RUNTIME_DECISIONS"
+        )
+    if not (1 <= PAPER_ROLLBACK_MAX_PREDICTION_FAILURES <= 10000):
+        raise ValueError(
+            "CONFIG_INVALID: PAPER_ROLLBACK_MAX_PREDICTION_FAILURES"
+        )
+    if not (0.0 <= PAPER_ROLLBACK_MAX_PREDICTION_FAILURE_RATE <= 1.0):
+        raise ValueError(
+            "CONFIG_INVALID: PAPER_ROLLBACK_MAX_PREDICTION_FAILURE_RATE"
+        )
+    if not (1 <= PAPER_ROLLBACK_MIN_CALIBRATION_OUTCOMES <= 100000):
+        raise ValueError(
+            "CONFIG_INVALID: PAPER_ROLLBACK_MIN_CALIBRATION_OUTCOMES"
+        )
+    if not (0.0 <= PAPER_ROLLBACK_MAX_BRIER_SCORE <= 1.0):
+        raise ValueError("CONFIG_INVALID: PAPER_ROLLBACK_MAX_BRIER_SCORE")
+    if not (0.0 <= PAPER_ROLLBACK_MAX_CALIBRATION_GAP <= 1.0):
+        raise ValueError(
+            "CONFIG_INVALID: PAPER_ROLLBACK_MAX_CALIBRATION_GAP"
+        )
+    if not (1 <= PAPER_ROLLBACK_MIN_DRIFT_OBSERVATIONS <= 100000):
+        raise ValueError(
+            "CONFIG_INVALID: PAPER_ROLLBACK_MIN_DRIFT_OBSERVATIONS"
+        )
+    if not (0.0 <= PAPER_ROLLBACK_MAX_FEATURE_PSI <= 10.0):
+        raise ValueError("CONFIG_INVALID: PAPER_ROLLBACK_MAX_FEATURE_PSI")
+    paper_canary_paths = {
+        PAPER_CANARY_DECISIONS_PATH,
+        PAPER_CANARY_STATUS_PATH,
+        PAPER_CANARY_CONTROLLER_LOCK_PATH,
+    }
+    if any(not path for path in paper_canary_paths):
+        raise ValueError("CONFIG_INVALID: PAPER_CANARY_PATH")
+    if len(paper_canary_paths) != 3:
+        raise ValueError("CONFIG_INVALID: PAPER_CANARY_PATH_CONFLICT")
+    if paper_canary_paths & (
+        protected_learning_paths
+        | auto_training_paths
+        | shadow_decision_paths
+        | automatic_promotion_paths
+        | {PAPER_STATE_PATH, PAPER_TRADES_PATH}
+    ):
+        raise ValueError(
+            "CONFIG_INVALID: PAPER_CANARY_PROTECTED_PATH_CONFLICT"
+        )
+
+    if not AUTO_LEARNING_STATUS_PATH:
+        raise ValueError("CONFIG_INVALID: AUTO_LEARNING_STATUS_PATH")
+    if not (60 <= AUTO_LEARNING_STATUS_MAX_SOURCE_AGE_SECONDS <= 86400):
+        raise ValueError(
+            "CONFIG_INVALID: AUTO_LEARNING_STATUS_MAX_SOURCE_AGE_SECONDS"
+        )
+    if AUTO_LEARNING_STATUS_PATH in (
+        protected_learning_paths
+        | auto_training_paths
+        | shadow_decision_paths
+        | automatic_promotion_paths
+        | paper_canary_paths
+        | {PAPER_STATE_PATH, PAPER_TRADES_PATH}
+    ):
+        raise ValueError(
+            "CONFIG_INVALID: AUTO_LEARNING_STATUS_PATH_CONFLICT"
+        )
 
     if not (30 <= OBSERVATION_UNIVERSE_SIZE <= 500):
         raise ValueError("CONFIG_INVALID: OBSERVATION_UNIVERSE_SIZE")

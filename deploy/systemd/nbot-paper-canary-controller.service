@@ -1,0 +1,18 @@
+[Unit]
+Description=NBOT Phase 5.12 Automatic Paper Rollback Controller
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/nbot
+ExecStart=/home/ubuntu/venv/bin/python -m scripts.learning.paper_canary_controller --watch
+Restart=on-failure
+RestartSec=15
+Nice=10
+CPUWeight=10
+IOSchedulingClass=idle
+Environment=PYTHONUNBUFFERED=1
+UMask=0077
+
+[Install]
+WantedBy=default.target

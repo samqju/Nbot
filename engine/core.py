@@ -36,6 +36,7 @@ from engine.emergency import EmergencyHandler
 from engine.universe import UniverseManager
 from engine.throttle import LogThrottle
 from pnl_report import generate_daily_pnl_summary
+from learning.operator_status import build_configured_publisher
 
 RUNNING = "RUNNING"
 TRADING_DISABLED = "TRADING_DISABLED"
@@ -355,6 +356,32 @@ class TradingEngine:
                     # never stop supervision of capital already exposed.
                     open_position = self.state.get_open_position()
 
+                    # Phase 5.9 decision snapshots are independent of paper
+                    # exposure. They are processed before the open-position
+                    # fast path can skip irrelevant symbols. Failures remain
+                    # observational and must never disable trading.
+                    cycle_processor = getattr(
+                        self.strategy,
+                        "process_ready_decision_cycles",
+                        None,
+                    )
+                    if callable(cycle_processor):
+                        try:
+                            cycle_processor(
+                                paper_entry_allowed=(
+                                    open_position is None
+                                    and self.state.get_state().get(
+                                        "engine_state"
+                                    ) == RUNNING
+                                )
+                            )
+                        except Exception as decision_error:
+                            self.system_log.error(
+                                "CHAMPION_CHALLENGER_CYCLE_FAILED | "
+                                f"error={decision_error} | "
+                                "runtime_effect=NONE"
+                            )
+
                     # ==================================================
                     # MODE A — POSITION OPEN
                     # ==================================================
@@ -634,3 +661,29 @@ class TradingEngine:
                 "DAILY PNL REPORT",
                 summary
             )
+
+        elif text == "/learning":
+            try:
+                publisher = build_configured_publisher()
+                document = publisher.refresh()
+                send_info(
+                    "AUTO-LEARNING STATUS",
+                    publisher.render_telegram_body(document),
+                )
+                self.system_log.info(
+                    "OPERATOR_LEARNING_STATUS | "
+                    f"champion={document.get('current_paper_champion')} | "
+                    f"challenger={document.get('current_challenger')} | "
+                    f"stage={document.get('challenger_stage')} | "
+                    f"verdict={(document.get('governance') or {}).get('current_verdict')} | "
+                    "real_order_authority=NONE"
+                )
+            except Exception as exc:
+                self.system_log.error(
+                    "OPERATOR_LEARNING_STATUS_FAILED | "
+                    f"error={type(exc).__name__}:{exc}"
+                )
+                send_warning(
+                    "AUTO-LEARNING STATUS UNAVAILABLE",
+                    "The status source could not be refreshed. Trading authority was not changed.",
+                )

@@ -1,4 +1,4 @@
-"""Parallel virtual-trade engine for all candidates."""
+"""Parallel virtual-trade engine and Phase 5.6 strategy laboratory."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ import time
 from pathlib import Path
 
 from config import (
+    VIRTUAL_LAB_CATALOG_VERSION,
+    VIRTUAL_LAB_MAX_ACTIVE,
     VIRTUAL_STRATEGY_VARIANT_ID,
     VIRTUAL_TRADES_PATH,
     VIRTUAL_TRADE_MAX_ACTIVE,
@@ -18,6 +20,14 @@ from config import (
 from strategy.experiment_contract import (
     copy_experiment_context,
     validate_experiment_context,
+)
+from strategy.strategy_lab import (
+    VirtualStrategyVariant,
+    build_approved_variant_catalog,
+    build_variant_experiment_context,
+    estimate_round_trip_cost_r,
+    validate_variant_catalog,
+    variants_for_pattern,
 )
 
 
@@ -30,6 +40,10 @@ class VirtualTradeEngine:
         runtime_store=None,
         environment: str | None = None,
         execution_mode: str | None = None,
+        lab_enabled: bool = False,
+        variant_catalog=None,
+        catalog_version: str | None = None,
+        max_active: int | None = None,
     ):
         self.system_log = system_log
         self.environment = (
@@ -41,41 +55,126 @@ class VirtualTradeEngine:
         self.outcome_writer = outcome_writer
         self.runtime_store = runtime_store
         self.path = Path(VIRTUAL_TRADES_PATH)
-        self.max_active = VIRTUAL_TRADE_MAX_ACTIVE
+        self.lab_enabled = bool(lab_enabled)
+        self.catalog_version = str(
+            catalog_version or VIRTUAL_LAB_CATALOG_VERSION
+        ).strip().upper()
+        self.variant_catalog = validate_variant_catalog(
+            variant_catalog
+            or build_approved_variant_catalog(
+                baseline_variant_id=VIRTUAL_STRATEGY_VARIANT_ID,
+                baseline_target_r=VIRTUAL_TRADE_TARGET_R,
+                baseline_max_candles=VIRTUAL_TRADE_MAX_CANDLES,
+            )
+        )
+        self._baseline_variant = next(
+            variant for variant in self.variant_catalog if variant.baseline
+        )
+        default_capacity = (
+            VIRTUAL_LAB_MAX_ACTIVE
+            if self.lab_enabled
+            else VIRTUAL_TRADE_MAX_ACTIVE
+        )
+        self.max_active = int(
+            default_capacity if max_active is None else max_active
+        )
+        if self.max_active <= 0:
+            raise ValueError("VIRTUAL_TRADE_MAX_ACTIVE_INVALID")
         self.max_candles = VIRTUAL_TRADE_MAX_CANDLES
         self.target_r = VIRTUAL_TRADE_TARGET_R
-        self._active = {}
+        self._active: dict[str, dict] = {}
         self._lock = threading.Lock()
         self._restore_active_trades()
 
+    @staticmethod
+    def _active_key(observation_id: str, variant_id: str) -> str:
+        return f"{str(observation_id).strip()}::{str(variant_id).strip().upper()}"
+
     def enroll(self, candidate) -> bool:
+        """Backward-compatible baseline-only enrollment."""
+        return self._enroll_variant(candidate, self._baseline_variant)
+
+    def enroll_all(self, candidates) -> int:
+        """Enroll approved variants and return experiments created."""
+        created = 0
+        for candidate in candidates:
+            variants = (
+                variants_for_pattern(
+                    self.variant_catalog,
+                    candidate.pattern,
+                )
+                if self.lab_enabled
+                else (self._baseline_variant,)
+            )
+            for variant in variants:
+                created += int(self._enroll_variant(candidate, variant))
+        if self.system_log and created:
+            self.system_log.info(
+                "STRATEGY_LAB_ENROLLED | "
+                f"experiments={created} | active={self.active_count()} | "
+                f"catalog={self.catalog_version} | "
+                f"enabled={str(self.lab_enabled).lower()} | "
+                "paper_authority=UNCHANGED"
+            )
+        return created
+
+    def _enroll_variant(
+        self,
+        candidate,
+        variant: VirtualStrategyVariant,
+    ) -> bool:
         if candidate.risk_plan is None:
             raise ValueError("VIRTUAL_TRADE_RISK_PLAN_MISSING")
-        key = candidate.observation_id
+        observation_id = candidate.observation_id
+        active_key = self._active_key(
+            observation_id,
+            variant.variant_id,
+        )
         with self._lock:
-            if key in self._active:
+            if active_key in self._active:
                 return False
             if len(self._active) >= self.max_active:
                 if self.system_log:
                     self.system_log.warning(
                         "VIRTUAL_TRADE_CAPACITY_REACHED | "
-                        f"active={len(self._active)}"
+                        f"active={len(self._active)} | "
+                        f"max_active={self.max_active}"
                     )
                 return False
+
             plan = candidate.risk_plan
-            self._active[key] = {
-                "candidate_observation_id": key,
+            entry = float(plan.reference_price)
+            base_risk = float(plan.stop_distance_price)
+            risk = base_risk * variant.stop_multiplier
+            if entry <= 0 or base_risk <= 0 or risk <= 0:
+                raise ValueError("VIRTUAL_TRADE_RISK_PLAN_INVALID")
+
+            if candidate.direction == "LONG":
+                stop_price = entry - risk
+                target_price = entry + variant.target_r * risk
+            else:
+                stop_price = entry + risk
+                target_price = entry - variant.target_r * risk
+
+            variant_context = build_variant_experiment_context(
+                base_context=candidate.experiment_context,
+                variant=variant,
+                catalog_version=self.catalog_version,
+            )
+            self._active[active_key] = {
+                "virtual_trade_id": active_key,
+                "candidate_observation_id": observation_id,
                 "symbol": candidate.symbol,
                 "direction": candidate.direction,
                 "pattern": candidate.pattern,
-                "entry_price": float(plan.reference_price),
-                "stop_price": float(plan.suggested_stop_price),
-                "risk_distance": float(plan.stop_distance_price),
-                "target_price": (
-                    float(plan.reference_price) + self.target_r * float(plan.stop_distance_price)
-                    if candidate.direction == "LONG"
-                    else float(plan.reference_price) - self.target_r * float(plan.stop_distance_price)
-                ),
+                "entry_price": entry,
+                "stop_price": float(stop_price),
+                "base_risk_distance": base_risk,
+                "risk_distance": risk,
+                "stop_multiplier": variant.stop_multiplier,
+                "target_r": variant.target_r,
+                "target_price": float(target_price),
+                "max_candles": variant.max_candles,
                 "candles_seen": 0,
                 "mae_r": 0.0,
                 "mfe_r": 0.0,
@@ -87,16 +186,19 @@ class VirtualTradeEngine:
                 "strategy_version": candidate.strategy_version,
                 "strategy_variant_id": candidate.strategy_variant_id,
                 "model_version": candidate.model_version,
-                "outcome_variant_id": VIRTUAL_STRATEGY_VARIANT_ID,
-                "experiment_context": copy_experiment_context(
-                    candidate.experiment_context
+                "outcome_variant_id": variant.variant_id,
+                "outcome_type": (
+                    "VIRTUAL_TRADE"
+                    if variant.baseline
+                    else "VIRTUAL_STRATEGY_VARIANT"
                 ),
+                "strategy_lab_catalog_version": self.catalog_version,
+                "strategy_lab_family": variant.family,
+                "strategy_lab_baseline": variant.baseline,
+                "experiment_context": variant_context,
             }
             self._persist_active_locked()
         return True
-
-    def enroll_all(self, candidates) -> int:
-        return sum(1 for candidate in candidates if self.enroll(candidate))
 
     def on_candle(self, symbol: str, candle: tuple) -> list[dict]:
         _, high, low, close = candle
@@ -105,8 +207,8 @@ class VirtualTradeEngine:
             for key, trade in list(self._active.items()):
                 if trade["symbol"] != symbol:
                     continue
-                risk = trade["risk_distance"]
-                entry = trade["entry_price"]
+                risk = float(trade["risk_distance"])
+                entry = float(trade["entry_price"])
                 if trade["direction"] == "LONG":
                     adverse = max(0.0, (entry - low) / risk)
                     favorable = max(0.0, (high - entry) / risk)
@@ -118,38 +220,62 @@ class VirtualTradeEngine:
                     stop_hit = high >= trade["stop_price"]
                     target_hit = low <= trade["target_price"]
 
-                trade["mae_r"] = max(trade["mae_r"], adverse)
-                trade["mfe_r"] = max(trade["mfe_r"], favorable)
-                trade["candles_seen"] += 1
+                trade["mae_r"] = max(float(trade["mae_r"]), adverse)
+                trade["mfe_r"] = max(float(trade["mfe_r"]), favorable)
+                trade["candles_seen"] = int(trade["candles_seen"]) + 1
 
                 reason = None
-                exit_r = None
+                gross_exit_r = None
+                exit_price = None
                 if stop_hit and target_hit:
-                    reason, exit_r = "AMBIGUOUS_STOP_FIRST", -1.0
+                    reason = "AMBIGUOUS_STOP_FIRST"
+                    gross_exit_r = -1.0
+                    exit_price = float(trade["stop_price"])
                 elif stop_hit:
-                    reason, exit_r = "STOP_LOSS", -1.0
+                    reason = "STOP_LOSS"
+                    gross_exit_r = -1.0
+                    exit_price = float(trade["stop_price"])
                 elif target_hit:
-                    reason, exit_r = "TARGET", self.target_r
-                elif trade["candles_seen"] >= self.max_candles:
+                    reason = "TARGET"
+                    gross_exit_r = float(trade["target_r"])
+                    exit_price = float(trade["target_price"])
+                elif trade["candles_seen"] >= int(trade["max_candles"]):
                     reason = "TIMEOUT"
-                    exit_r = (
-                        (close - entry) / risk
+                    exit_price = float(close)
+                    gross_exit_r = (
+                        (exit_price - entry) / risk
                         if trade["direction"] == "LONG"
-                        else (entry - close) / risk
+                        else (entry - exit_price) / risk
                     )
 
                 if reason is not None:
+                    cost = self._estimate_cost(
+                        trade=trade,
+                        exit_price=exit_price,
+                    )
+                    net_exit_r = float(gross_exit_r) - float(
+                        cost["total_cost_r"]
+                    )
                     result = dict(trade)
                     result.update({
                         "closed_at_ms": int(time.time() * 1000),
                         "exit_reason": reason,
-                        "exit_r": float(exit_r),
-                        "profitable": bool(exit_r > 0),
+                        "exit_price": float(exit_price),
+                        # Kept for the legacy virtual-trades file contract.
+                        "exit_r": float(gross_exit_r),
+                        "gross_exit_r": float(gross_exit_r),
+                        "net_exit_r": float(net_exit_r),
+                        "estimated_cost_r": float(
+                            cost["total_cost_r"]
+                        ),
+                        "cost_breakdown": cost,
+                        "gross_profitable": bool(gross_exit_r > 0),
+                        "profitable": bool(net_exit_r > 0),
+                        "label_basis": "NET_AFTER_ESTIMATED_COSTS",
                     })
                     finished.append(result)
                     del self._active[key]
 
-            # Persist MAE/MFE/candle-count progress even when no trade closes.
             self._persist_active_locked()
 
         for result in finished:
@@ -157,20 +283,42 @@ class VirtualTradeEngine:
             if self.outcome_writer:
                 self.outcome_writer.append(
                     observation_id=result["candidate_observation_id"],
-                    outcome_type="VIRTUAL_TRADE",
+                    outcome_type=result["outcome_type"],
                     symbol=result["symbol"],
                     direction=result["direction"],
                     payload={
                         "pattern": result["pattern"],
                         "exit_reason": result["exit_reason"],
-                        "exit_r": result["exit_r"],
+                        # Learning labels are after estimated costs.
+                        "exit_r": result["net_exit_r"],
+                        "gross_exit_r": result["gross_exit_r"],
+                        "net_exit_r": result["net_exit_r"],
+                        "estimated_cost_r": result[
+                            "estimated_cost_r"
+                        ],
+                        "cost_breakdown": result["cost_breakdown"],
+                        "label_basis": result["label_basis"],
                         "mae_r": result["mae_r"],
                         "mfe_r": result["mfe_r"],
                         "candles_seen": result["candles_seen"],
                         "profitable": result["profitable"],
+                        "gross_profitable": result[
+                            "gross_profitable"
+                        ],
                         "outcome_variant_id": result.get(
                             "outcome_variant_id"
                         ),
+                        "strategy_lab_catalog_version": result.get(
+                            "strategy_lab_catalog_version"
+                        ),
+                        "strategy_lab_family": result.get(
+                            "strategy_lab_family"
+                        ),
+                        "stop_multiplier": result.get(
+                            "stop_multiplier"
+                        ),
+                        "target_r": result.get("target_r"),
+                        "max_candles": result.get("max_candles"),
                     },
                     experiment_context=result.get(
                         "experiment_context"
@@ -181,9 +329,35 @@ class VirtualTradeEngine:
                 )
         return finished
 
+    @staticmethod
+    def _estimate_cost(*, trade: dict, exit_price: float) -> dict:
+        context = trade.get("experiment_context") or {}
+        cost_model = context.get("cost_model") or {}
+        return estimate_round_trip_cost_r(
+            entry_price=float(trade["entry_price"]),
+            exit_price=float(exit_price),
+            risk_distance=float(trade["risk_distance"]),
+            taker_fee_rate=float(
+                cost_model.get("paper_taker_fee_rate", 0.0) or 0.0
+            ),
+            entry_slippage_pct=float(
+                cost_model.get("paper_entry_slippage_pct", 0.0) or 0.0
+            ),
+            exit_slippage_pct=float(
+                cost_model.get("paper_exit_slippage_pct", 0.0) or 0.0
+            ),
+        )
+
     def active_count(self) -> int:
         with self._lock:
             return len(self._active)
+
+    def active_candidate_count(self) -> int:
+        with self._lock:
+            return len({
+                row["candidate_observation_id"]
+                for row in self._active.values()
+            })
 
     def active_symbols(self) -> set[str]:
         """Return symbols that still require candle updates."""
@@ -202,14 +376,19 @@ class VirtualTradeEngine:
             "active_virtual_trades"
         )
         restored = {}
-        for trade in rows:
+        for raw_trade in rows:
+            trade = self._normalize_recovered_trade(raw_trade)
             self._validate_recovered_trade(trade)
-            key = trade["candidate_observation_id"]
+            key = self._active_key(
+                trade["candidate_observation_id"],
+                trade["outcome_variant_id"],
+            )
             if key in restored:
                 raise RuntimeError(
                     "VIRTUAL_TRADE_RECOVERY_DUPLICATE_ID"
                 )
-            restored[key] = dict(trade)
+            trade["virtual_trade_id"] = key
+            restored[key] = trade
 
         if len(restored) > self.max_active:
             raise RuntimeError(
@@ -220,8 +399,39 @@ class VirtualTradeEngine:
         if self.system_log:
             self.system_log.info(
                 "VIRTUAL_TRADES_RECOVERED | "
-                f"count={len(restored)}"
+                f"experiments={len(restored)} | "
+                f"candidates={self.active_candidate_count()}"
             )
+
+    def _normalize_recovered_trade(self, raw_trade: dict) -> dict:
+        if not isinstance(raw_trade, dict):
+            raise RuntimeError("VIRTUAL_TRADE_RECOVERY_SCHEMA_INVALID")
+        trade = dict(raw_trade)
+        variant_id = str(
+            trade.get("outcome_variant_id")
+            or VIRTUAL_STRATEGY_VARIANT_ID
+        ).strip().upper()
+        trade.setdefault("outcome_variant_id", variant_id)
+        trade.setdefault(
+            "outcome_type",
+            "VIRTUAL_TRADE"
+            if variant_id == self._baseline_variant.variant_id
+            else "VIRTUAL_STRATEGY_VARIANT",
+        )
+        trade.setdefault("base_risk_distance", trade.get("risk_distance"))
+        trade.setdefault("stop_multiplier", 1.0)
+        trade.setdefault("target_r", self.target_r)
+        trade.setdefault("max_candles", self.max_candles)
+        trade.setdefault(
+            "strategy_lab_catalog_version",
+            "LEGACY_PRE_PHASE5_6",
+        )
+        trade.setdefault("strategy_lab_family", "LEGACY_BASELINE")
+        trade.setdefault(
+            "strategy_lab_baseline",
+            variant_id == self._baseline_variant.variant_id,
+        )
+        return trade
 
     @staticmethod
     def _validate_recovered_trade(trade: dict) -> None:
@@ -234,6 +444,9 @@ class VirtualTradeEngine:
             "stop_price",
             "risk_distance",
             "target_price",
+            "target_r",
+            "max_candles",
+            "outcome_variant_id",
             "candles_seen",
             "mae_r",
             "mfe_r",
@@ -258,6 +471,14 @@ class VirtualTradeEngine:
         if int(trade["candles_seen"]) < 0:
             raise RuntimeError(
                 "VIRTUAL_TRADE_RECOVERY_CANDLES_INVALID"
+            )
+        if int(trade["max_candles"]) < 3:
+            raise RuntimeError(
+                "VIRTUAL_TRADE_RECOVERY_MAX_CANDLES_INVALID"
+            )
+        if not str(trade["outcome_variant_id"]).strip():
+            raise RuntimeError(
+                "VIRTUAL_TRADE_RECOVERY_VARIANT_INVALID"
             )
         context = trade.get("experiment_context")
         if context is not None:

@@ -26,6 +26,10 @@ class PaperPosition:
     market_event_id: Optional[str] = None
     strategy_variant_id: Optional[str] = None
     experiment_context: Optional[Dict[str, Any]] = None
+    selection_authority: str = "RULES"
+    paper_canary_model_id: Optional[str] = None
+    paper_risk_multiplier: float = 1.0
+    paper_allocation_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -63,6 +67,10 @@ class PaperTrade:
     market_event_id: Optional[str] = None
     strategy_variant_id: Optional[str] = None
     experiment_context: Optional[Dict[str, Any]] = None
+    selection_authority: str = "RULES"
+    paper_canary_model_id: Optional[str] = None
+    paper_risk_multiplier: float = 1.0
+    paper_allocation_id: Optional[str] = None
     source: str = "PAPER"
 
     def to_dict(self) -> Dict[str, Any]:
