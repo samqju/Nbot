@@ -30,3 +30,11 @@ data/
 # Local backups and patches
 phase5_*_backup/
 *.patch
+/data/
+/logs/*.txt
+/runtime/*.lock
+/models/archive/
+/models/model_registry_*.json
+*.bak
+*.orig
+old_vps_system.txt
