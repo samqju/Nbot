@@ -38,3 +38,9 @@ phase5_*_backup/
 *.bak
 *.orig
 old_vps_system.txt
+# Local Python
+*.pyo
+# Secrets
+# Runtime
+*.log
+runtime/*.lock
