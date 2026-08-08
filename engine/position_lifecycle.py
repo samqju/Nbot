@@ -35,7 +35,7 @@ class PositionLifecycle:
         risk,
         emergency,
         reconciliation,
-        universe,
+        universe=None,
         system_log,
         trade_log,
         outcome_publisher=None,
@@ -602,16 +602,17 @@ class PositionLifecycle:
         self.state.save()
         self.exit_in_progress = False
 
-        # --------------------------------------------------
-        # Governance Refresh after close
-        # --------------------------------------------------
-        try:
-            self.universe.maybe_reload(
-                exchange=self.exchange,
-                state=self.state,
-                force=True,
-            )
-        except Exception as e:
-            self.system_log.error(
-                f"UNIVERSE_RELOAD_AFTER_CLOSE_FAILED | {e}"
-            )
+        # Legacy single-process compatibility only. The independent
+        # ExecutionWorker supplies no universe and therefore performs no
+        # observation/governance work after a close.
+        if self.universe is not None:
+            try:
+                self.universe.maybe_reload(
+                    exchange=self.exchange,
+                    state=self.state,
+                    force=True,
+                )
+            except Exception as e:
+                self.system_log.error(
+                    f"UNIVERSE_RELOAD_AFTER_CLOSE_FAILED | {e}"
+                )

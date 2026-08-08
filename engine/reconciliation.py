@@ -27,7 +27,7 @@ class ReconciliationLifecycle:
         state,
         risk,
         emergency,
-        universe,
+        universe=None,
         system_log,
         trade_log,
         outcome_publisher=None,
@@ -460,11 +460,10 @@ class ReconciliationLifecycle:
                         )
                         self.state.save()
 
-                # --------------------------------------------------
-                # Governance Refresh on Flat Transition
-                # Only trigger if reconciliation actually closed a position
-                # --------------------------------------------------
-                if existing:
+                # Legacy single-process compatibility only. The
+                # independent ExecutionWorker supplies no universe, so a
+                # reconciliation close cannot trigger observation/governance.
+                if existing and self.universe is not None:
                     try:
                         self.universe.maybe_reload(
                             exchange=self.exchange,
