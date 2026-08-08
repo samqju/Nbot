@@ -1031,6 +1031,22 @@ PAPER_WS_RETRY_INTERVAL_SECONDS = float(
     os.getenv("PAPER_WS_RETRY_INTERVAL_SECONDS", "300")
 )
 
+# ================================
+# TWO-WORKER CONTROL BOUNDARY
+# ================================
+# These settings harden only worker-to-worker control messages. They do not
+# change strategy, risk, leverage, spread, or execution policy.
+EXECUTION_PROPOSAL_MAX_FUTURE_SKEW_SECONDS = float(
+    os.getenv("EXECUTION_PROPOSAL_MAX_FUTURE_SKEW_SECONDS", "5")
+)
+EXECUTION_OUTCOME_RETRY_INTERVAL_SECONDS = float(
+    os.getenv("EXECUTION_OUTCOME_RETRY_INTERVAL_SECONDS", "5")
+)
+OBSERVATION_CONTROL_TOKEN = os.getenv(
+    "OBSERVATION_CONTROL_TOKEN",
+    "",
+).strip()
+
 # Temporary Phase 1 execution-smoke strategy. PAPER_TEST is deliberately
 # restricted to SHADOW mode and must never submit exchange orders.
 STRATEGY_MODE = os.getenv("STRATEGY_MODE", "STRUCTURE").strip().upper()
@@ -2064,6 +2080,19 @@ def _validate():
 
     if not (30 <= PAPER_WS_RETRY_INTERVAL_SECONDS <= 3600):
         raise ValueError("CONFIG_INVALID: PAPER_WS_RETRY_INTERVAL_SECONDS")
+
+    if not (0.1 <= EXECUTION_PROPOSAL_MAX_FUTURE_SKEW_SECONDS <= 60):
+        raise ValueError(
+            "CONFIG_INVALID: EXECUTION_PROPOSAL_MAX_FUTURE_SKEW_SECONDS"
+        )
+
+    if not (0.5 <= EXECUTION_OUTCOME_RETRY_INTERVAL_SECONDS <= 300):
+        raise ValueError(
+            "CONFIG_INVALID: EXECUTION_OUTCOME_RETRY_INTERVAL_SECONDS"
+        )
+
+    if OBSERVATION_CONTROL_TOKEN and len(OBSERVATION_CONTROL_TOKEN) < 32:
+        raise ValueError("CONFIG_INVALID: OBSERVATION_CONTROL_TOKEN_TOO_SHORT")
 
     if STRATEGY_MODE not in {"STRUCTURE", "PAPER_TEST"}:
         raise ValueError("CONFIG_INVALID: STRATEGY_MODE")

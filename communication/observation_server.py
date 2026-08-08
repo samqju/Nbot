@@ -1,11 +1,13 @@
 """Local HTTP boundary for the Observation Worker.
 
-Phase 6A.0.4 binds this server to loopback only. Authentication/TLS and
-cross-VPS exposure are intentionally deferred until the failure/security phase.
+The server remains loopback-only during local hardening. Optional bearer
+authentication is supported so failure behavior can be proven before cross-VPS
+exposure; TLS and non-loopback binding remain a deployment step.
 """
 
 from __future__ import annotations
 
+import hmac
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -25,6 +27,7 @@ class ObservationHTTPServer:
         target,
         host: str = "127.0.0.1",
         port: int = 8765,
+        auth_token: str | None = None,
         system_log=None,
     ):
         if host not in {"127.0.0.1", "localhost", "::1"}:
@@ -34,6 +37,8 @@ class ObservationHTTPServer:
         self.port = int(port)
         if not (0 <= self.port <= 65535):
             raise ValueError("OBSERVATION_API_PORT_INVALID")
+        token = str(auth_token or "").strip()
+        self.auth_token = token or None
         self.system_log = system_log
         self._server = None
         self._thread = None
@@ -71,6 +76,16 @@ class ObservationHTTPServer:
                 )
 
             def do_POST(self):
+                if not outer._is_authorized(
+                    self.headers.get("Authorization")
+                ):
+                    outer._log(
+                        "warning",
+                        "OBSERVATION_HTTP_AUTHENTICATION_FAILED | "
+                        f"path={self.path}",
+                    )
+                    self._send(401, {"error": "AUTHENTICATION_FAILED"})
+                    return
                 try:
                     payload = self._read_json()
                     if self.path == "/trade-request":
@@ -140,7 +155,8 @@ class ObservationHTTPServer:
         self._log(
             "info",
             "OBSERVATION_HTTP_SERVER_STARTED | "
-            f"host={host} | port={port} | scope=LOOPBACK_ONLY",
+            f"host={host} | port={port} | scope=LOOPBACK_ONLY | "
+            f"auth={'REQUIRED' if self.auth_token else 'DISABLED'}",
         )
         return str(host), int(port)
 
@@ -156,6 +172,12 @@ class ObservationHTTPServer:
         if thread is not None:
             thread.join(timeout=2.0)
         self._log("info", "OBSERVATION_HTTP_SERVER_STOPPED")
+
+    def _is_authorized(self, authorization: str | None) -> bool:
+        if self.auth_token is None:
+            return True
+        expected = f"Bearer {self.auth_token}"
+        return hmac.compare_digest(str(authorization or ""), expected)
 
     def _log(self, level: str, message: str) -> None:
         if self.system_log is None:

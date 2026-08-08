@@ -71,6 +71,9 @@ class StateManager:
             "last_heartbeat_utc": None,
             "heartbeat_count": 0,
             "shutdown_requested": False,
+
+            # Durable duplicate-entry protection for worker proposals.
+            "processed_proposal_ids": [],
         }
 
     # ==================================================
@@ -125,6 +128,7 @@ class StateManager:
                 if key not in loaded:
                     raise ValueError(f"STATE_CORRUPTED_MISSING_{key}")
 
+            loaded.setdefault("processed_proposal_ids", [])
             self.state = loaded
         except Exception as e:
             raise RuntimeError(f"STATE_LOAD_CORRUPTED | {e}")
@@ -233,6 +237,32 @@ class StateManager:
         self.state["engine_state"] = engine_state
         self.state["engine_halt_reason"] = reason
 
+
+    # ==================================================
+    # PROCESSED PROPOSAL DUPLICATE SAFETY
+    # ==================================================
+
+    def has_processed_proposal(self, proposal_id):
+        proposal_id = str(proposal_id or "").strip()
+        if not proposal_id:
+            return False
+        return proposal_id in self.state.get("processed_proposal_ids", [])
+
+    def mark_processed_proposal(self, proposal_id, *, max_entries=1000):
+        proposal_id = str(proposal_id or "").strip()
+        if not proposal_id:
+            raise ValueError("STATE_PROCESSED_PROPOSAL_ID_INVALID")
+        if isinstance(max_entries, bool) or int(max_entries) < 1:
+            raise ValueError("STATE_PROCESSED_PROPOSAL_LIMIT_INVALID")
+        max_entries = int(max_entries)
+        proposal_ids = self.state.setdefault("processed_proposal_ids", [])
+        if proposal_id in proposal_ids:
+            return False
+        proposal_ids.append(proposal_id)
+        if len(proposal_ids) > max_entries:
+            del proposal_ids[:-max_entries]
+        return True
+
     # ==================================================
     # INTERNAL VALIDATION
     # ==================================================
@@ -301,6 +331,23 @@ class StateManager:
 
         if peak < realized:
             raise ValueError("STATE_DAILY_PEAK_INCONSISTENT")
+
+
+        # ------------------------------------------
+        # Processed Proposal IDs
+        # ------------------------------------------
+        processed = self.state.get("processed_proposal_ids", [])
+        if not isinstance(processed, list):
+            raise ValueError("STATE_INVALID_PROCESSED_PROPOSAL_IDS")
+        if len(processed) > 1000:
+            raise ValueError("STATE_PROCESSED_PROPOSAL_HISTORY_TOO_LARGE")
+        if any(
+            not isinstance(value, str) or not value.strip()
+            for value in processed
+        ):
+            raise ValueError("STATE_INVALID_PROCESSED_PROPOSAL_ID")
+        if len(set(processed)) != len(processed):
+            raise ValueError("STATE_DUPLICATE_PROCESSED_PROPOSAL_ID")
 
         # ------------------------------------------
         # Engine State

@@ -7,7 +7,7 @@ import os
 import sys
 
 from communication.observation_client import ObservationClient
-from config import EXECUTION_MODE, TRADING_ENV
+from config import EXECUTION_MODE, OBSERVATION_CONTROL_TOKEN, TRADING_ENV
 from execution.exchange_factory import build_exchange
 from utils.logger import system_logger, trade_logger
 from utils.process_lock import BotAlreadyRunningError, SingleInstanceLock
@@ -92,7 +92,10 @@ def main(argv: list[str] | None = None) -> int:
             f"path={lock.path} | pid={os.getpid()}"
         )
         exchange = build_exchange(system_log=system_log)
-        observation_client = ObservationClient(system_log=system_log)
+        observation_client = ObservationClient(
+            auth_token=OBSERVATION_CONTROL_TOKEN or None,
+            system_log=system_log,
+        )
         worker = ExecutionWorker(
             exchange=exchange,
             observation_client=observation_client,

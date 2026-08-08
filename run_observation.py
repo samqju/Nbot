@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 
 from communication.observation_server import ObservationHTTPServer
-from config import EXECUTION_MODE, TRADING_ENV
+from config import EXECUTION_MODE, OBSERVATION_CONTROL_TOKEN, TRADING_ENV
 from execution.binance_market_client import BinanceMarketClient
 from utils.logger import system_logger
 from utils.process_lock import BotAlreadyRunningError, SingleInstanceLock
@@ -39,6 +39,7 @@ def main() -> int:
         target=worker,
         host="127.0.0.1",
         port=8765,
+        auth_token=OBSERVATION_CONTROL_TOKEN or None,
         system_log=system_log,
     )
     api_server.start()

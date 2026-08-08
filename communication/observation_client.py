@@ -1,8 +1,8 @@
 """Execution-side client for the Observation Worker control API.
 
-Phase 6A.0.5 deliberately permits loopback targets only. Cross-VPS exposure,
-authentication, and TLS are added later after the two local worker processes
-are proven independently.
+The client remains loopback-only during local hardening. Optional bearer
+authentication is supported now so authentication failures can be tested before
+cross-VPS exposure; TLS and non-loopback targets remain a deployment step.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import time
 import uuid
 
 from communication.execution_outcome import ExecutionOutcome
+from communication.protocol import ProtocolValidationError
 from communication.responses import OutcomeAcknowledgement, TradeResponse
 from communication.trade_request import TradeRequest
 
@@ -34,6 +35,7 @@ class ObservationClient:
         host: str = "127.0.0.1",
         port: int = 8765,
         timeout_seconds: float = 2.0,
+        auth_token: str | None = None,
         system_log=None,
     ):
         host = str(host).strip()
@@ -49,6 +51,8 @@ class ObservationClient:
         self.host = host
         self.port = port
         self.timeout_seconds = timeout_seconds
+        token = str(auth_token or "").strip()
+        self.auth_token = token or None
         self.system_log = system_log
 
     def request_best_trade(
@@ -76,7 +80,12 @@ class ObservationClient:
             previous_rejection_reason=previous_rejection_reason,
         )
         payload = self._post("/trade-request", request.to_dict())
-        response = TradeResponse.from_dict(payload)
+        try:
+            response = TradeResponse.from_dict(payload)
+        except (ProtocolValidationError, TypeError, ValueError) as exc:
+            raise ObservationClientError(
+                "OBSERVATION_TRADE_RESPONSE_INVALID"
+            ) from exc
         if response.request_id != request.request_id:
             raise ObservationClientError(
                 "OBSERVATION_RESPONSE_REQUEST_ID_MISMATCH"
@@ -90,7 +99,12 @@ class ObservationClient:
         if not isinstance(outcome, ExecutionOutcome):
             raise TypeError("OBSERVATION_OUTCOME_TYPE_INVALID")
         payload = self._post("/execution-outcome", outcome.to_dict())
-        acknowledgement = OutcomeAcknowledgement.from_dict(payload)
+        try:
+            acknowledgement = OutcomeAcknowledgement.from_dict(payload)
+        except (ProtocolValidationError, TypeError, ValueError) as exc:
+            raise ObservationClientError(
+                "OBSERVATION_OUTCOME_ACK_INVALID"
+            ) from exc
         if acknowledgement.outcome_id != outcome.outcome_id:
             raise ObservationClientError(
                 "OBSERVATION_OUTCOME_ACK_ID_MISMATCH"
@@ -114,17 +128,29 @@ class ObservationClient:
             timeout=self.timeout_seconds,
         )
         try:
+            headers = {
+                "Content-Type": "application/json",
+                "Content-Length": str(len(body)),
+            }
+            if self.auth_token is not None:
+                headers["Authorization"] = f"Bearer {self.auth_token}"
             connection.request(
                 "POST",
                 path,
                 body=body,
-                headers={
-                    "Content-Type": "application/json",
-                    "Content-Length": str(len(body)),
-                },
+                headers=headers,
             )
             response = connection.getresponse()
             raw = response.read(_MAX_RESPONSE_BYTES + 1)
+        except TimeoutError as exc:
+            self._log(
+                "warning",
+                "OBSERVATION_CLIENT_TIMEOUT | "
+                f"path={path} | timeout_seconds={self.timeout_seconds}",
+            )
+            raise ObservationClientError(
+                f"OBSERVATION_CLIENT_TIMEOUT:{path}"
+            ) from exc
         except (OSError, http.client.HTTPException) as exc:
             self._log(
                 "warning",

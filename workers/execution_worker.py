@@ -12,6 +12,8 @@ from config import (
     BOT_STATE_PATH,
     EXECUTION_MODE,
     EXECUTION_OUTBOX_PATH,
+    EXECUTION_OUTCOME_RETRY_INTERVAL_SECONDS,
+    EXECUTION_PROPOSAL_MAX_FUTURE_SKEW_SECONDS,
     MAX_NOTIONAL_USD,
     NOTIONAL_TOLERANCE_PCT,
     RISK_PER_TRADE_USD,
@@ -73,6 +75,12 @@ class ExecutionWorker:
         reconciliation=None,
         position_lifecycle=None,
         request_interval_seconds: float = 1.0,
+        outcome_retry_interval_seconds: float = (
+            EXECUTION_OUTCOME_RETRY_INTERVAL_SECONDS
+        ),
+        proposal_max_future_skew_seconds: float = (
+            EXECUTION_PROPOSAL_MAX_FUTURE_SKEW_SECONDS
+        ),
     ):
         contract_report = validate_exchange_adapter(exchange)
         system_log.info(
@@ -84,6 +92,12 @@ class ExecutionWorker:
         interval = float(request_interval_seconds)
         if interval < 0:
             raise ValueError("EXECUTION_REQUEST_INTERVAL_INVALID")
+        outcome_retry_interval = float(outcome_retry_interval_seconds)
+        if outcome_retry_interval < 0.1:
+            raise ValueError("EXECUTION_OUTCOME_RETRY_INTERVAL_INVALID")
+        future_skew = float(proposal_max_future_skew_seconds)
+        if future_skew < 0:
+            raise ValueError("EXECUTION_PROPOSAL_FUTURE_SKEW_INVALID")
 
         self.exchange = exchange
         self.observation_client = observation_client
@@ -152,7 +166,11 @@ class ExecutionWorker:
         )
 
         self.request_interval_seconds = interval
+        self.outcome_retry_interval_seconds = outcome_retry_interval
+        self.proposal_max_future_skew_seconds = future_skew
         self._last_request_monotonic = float("-inf")
+        self._last_outcome_retry_monotonic = float("-inf")
+        self._session_processed_proposal_ids: set[str] = set()
         self._last_persist_ms = 0
         self._prepared = False
         self._previous_proposal_id = None
@@ -170,6 +188,7 @@ class ExecutionWorker:
             pending = self.execution_outcome_publisher.pending_count()
             if pending:
                 delivered = self.execution_outcome_publisher.retry_pending()
+                self._last_outcome_retry_monotonic = time.monotonic()
                 self.system_log.info(
                     "EXECUTION_OUTCOME_STARTUP_RETRY | "
                     f"pending_before={pending} | delivered={delivered} | "
@@ -264,7 +283,13 @@ class ExecutionWorker:
             return "ENTRY_DISABLED"
 
         if self.execution_outcome_publisher.pending_count():
-            self.execution_outcome_publisher.retry_pending()
+            now_monotonic = time.monotonic()
+            if (
+                now_monotonic - self._last_outcome_retry_monotonic
+                >= self.outcome_retry_interval_seconds
+            ):
+                self.execution_outcome_publisher.retry_pending()
+                self._last_outcome_retry_monotonic = now_monotonic
             if self.execution_outcome_publisher.pending_count():
                 self.throttle.log(
                     key="execution_outcome_pending",
@@ -367,6 +392,16 @@ class ExecutionWorker:
             )
             return "PROPOSAL_REJECTED"
 
+        # Reserve and persist the proposal ID before any order-capable entry
+        # work. A crash after this point may miss one trade, but it must never
+        # replay the same proposal into a second capital exposure.
+        if not self._reserve_proposal_for_entry(proposal.proposal_id):
+            self._remember_rejection(
+                proposal.proposal_id,
+                "DUPLICATE_PROPOSAL",
+            )
+            return "PROPOSAL_REJECTED"
+
         intent = proposal_to_execution_intent(proposal)
         executed = self.entry_lifecycle.maybe_execute(
             intent=intent,
@@ -386,19 +421,45 @@ class ExecutionWorker:
         )
         return "PROPOSAL_REJECTED"
 
-    @staticmethod
-    def _proposal_rejection_reason(proposal) -> str | None:
+    def _proposal_rejection_reason(self, proposal) -> str | None:
         now_ms = int(time.time() * 1000)
         if proposal.environment != TRADING_ENV:
             return "PROPOSAL_ENVIRONMENT_MISMATCH"
+        max_future_ms = int(self.proposal_max_future_skew_seconds * 1000)
+        if proposal.generated_at > now_ms + max_future_ms:
+            return "PROPOSAL_FUTURE_TIMESTAMP"
         if proposal.is_expired(now_ms=now_ms):
             return "PROPOSAL_EXPIRED"
+        if self._proposal_already_processed(proposal.proposal_id):
+            return "DUPLICATE_PROPOSAL"
         if (
             proposal.selection_authority in {"PAPER_CANARY", "PAPER_CHAMPION"}
             and EXECUTION_MODE != "SHADOW"
         ):
             return "PAPER_MODEL_AUTHORITY_REQUIRES_SHADOW"
         return None
+
+    def _proposal_already_processed(self, proposal_id: str) -> bool:
+        proposal_id = str(proposal_id or "").strip()
+        if proposal_id in self._session_processed_proposal_ids:
+            return True
+        checker = getattr(self.state, "has_processed_proposal", None)
+        if callable(checker):
+            return bool(checker(proposal_id))
+        return False
+
+    def _reserve_proposal_for_entry(self, proposal_id: str) -> bool:
+        proposal_id = str(proposal_id or "").strip()
+        if not proposal_id or self._proposal_already_processed(proposal_id):
+            return False
+        marker = getattr(self.state, "mark_processed_proposal", None)
+        if callable(marker) and not marker(proposal_id):
+            return False
+        self._session_processed_proposal_ids.add(proposal_id)
+        # The durable reservation must reach disk before EntryLifecycle can
+        # place an order or create a local paper fill.
+        self.state.save()
+        return True
 
     def _remember_rejection(self, proposal_id: str, reason: str) -> None:
         self._previous_proposal_id = proposal_id

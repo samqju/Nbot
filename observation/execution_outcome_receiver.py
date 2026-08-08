@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 from pathlib import Path
 
@@ -37,6 +38,7 @@ class LocalExecutionOutcomeReceiver:
             environment=self.environment,
             execution_mode=self.execution_mode,
         )
+        self._lock = threading.Lock()
         self._seen_outcome_ids: set[str] = set()
         self._seen_executed_candidate_ids: set[str] = set()
         self._load_existing_execution_evidence()
@@ -74,56 +76,62 @@ class LocalExecutionOutcomeReceiver:
         if outcome.execution_mode != self.execution_mode:
             raise ValueError("OBSERVATION_OUTCOME_EXECUTION_MODE_MISMATCH")
 
-        already_recorded = outcome.outcome_id in self._seen_outcome_ids
-        if (
-            outcome.candidate_observation_id
-            and outcome.candidate_observation_id in self._seen_executed_candidate_ids
-        ):
-            already_recorded = True
+        # ThreadingHTTPServer may deliver the same retry concurrently. Keep
+        # duplicate detection and the learning append in one critical section.
+        with self._lock:
+            already_recorded = outcome.outcome_id in self._seen_outcome_ids
+            if (
+                outcome.candidate_observation_id
+                and outcome.candidate_observation_id
+                in self._seen_executed_candidate_ids
+            ):
+                already_recorded = True
 
-        if already_recorded:
+            if already_recorded:
+                return OutcomeAcknowledgement.create(
+                    outcome_id=outcome.outcome_id,
+                    acknowledged_at=int(time.time() * 1000),
+                    status="ALREADY_RECORDED",
+                )
+
+            if outcome.candidate_observation_id:
+                context = outcome.experiment_context
+                paper_variant = (
+                    (context or {}).get("paper_policy", {}).get("variant_id")
+                )
+                self.writer.append(
+                    observation_id=outcome.candidate_observation_id,
+                    outcome_type="EXECUTED_TRADE",
+                    symbol=outcome.symbol,
+                    direction=outcome.side,
+                    payload={
+                        "entry_price": outcome.entry_price,
+                        "exit_price": outcome.exit_price,
+                        "qty": outcome.quantity,
+                        "realized_pnl_usd": outcome.realized_pnl_usd,
+                        "r_multiple": outcome.r_multiple,
+                        "mae_r": outcome.mae_r,
+                        "mfe_r": outcome.mfe_r,
+                        "holding_seconds": outcome.holding_seconds,
+                        "profitable": bool(outcome.realized_pnl_usd > 0),
+                        "exit_reason": outcome.exit_reason,
+                        "pattern": outcome.pattern,
+                        "strategy_version": outcome.strategy_version,
+                        "strategy_variant_id": outcome.strategy_variant_id,
+                        "model_version": outcome.model_version,
+                        "execution_outcome_id": outcome.outcome_id,
+                        "proposal_id": outcome.proposal_id,
+                    },
+                    experiment_context=context,
+                    outcome_variant_id=paper_variant,
+                )
+                self._seen_executed_candidate_ids.add(
+                    outcome.candidate_observation_id
+                )
+
+            self._seen_outcome_ids.add(outcome.outcome_id)
             return OutcomeAcknowledgement.create(
                 outcome_id=outcome.outcome_id,
                 acknowledged_at=int(time.time() * 1000),
-                status="ALREADY_RECORDED",
+                status="RECORDED",
             )
-
-        if outcome.candidate_observation_id:
-            context = outcome.experiment_context
-            paper_variant = (
-                (context or {}).get("paper_policy", {}).get("variant_id")
-            )
-            self.writer.append(
-                observation_id=outcome.candidate_observation_id,
-                outcome_type="EXECUTED_TRADE",
-                symbol=outcome.symbol,
-                direction=outcome.side,
-                payload={
-                    "entry_price": outcome.entry_price,
-                    "exit_price": outcome.exit_price,
-                    "qty": outcome.quantity,
-                    "realized_pnl_usd": outcome.realized_pnl_usd,
-                    "r_multiple": outcome.r_multiple,
-                    "mae_r": outcome.mae_r,
-                    "mfe_r": outcome.mfe_r,
-                    "holding_seconds": outcome.holding_seconds,
-                    "profitable": bool(outcome.realized_pnl_usd > 0),
-                    "exit_reason": outcome.exit_reason,
-                    "pattern": outcome.pattern,
-                    "strategy_version": outcome.strategy_version,
-                    "strategy_variant_id": outcome.strategy_variant_id,
-                    "model_version": outcome.model_version,
-                    "execution_outcome_id": outcome.outcome_id,
-                    "proposal_id": outcome.proposal_id,
-                },
-                experiment_context=context,
-                outcome_variant_id=paper_variant,
-            )
-            self._seen_executed_candidate_ids.add(outcome.candidate_observation_id)
-
-        self._seen_outcome_ids.add(outcome.outcome_id)
-        return OutcomeAcknowledgement.create(
-            outcome_id=outcome.outcome_id,
-            acknowledged_at=int(time.time() * 1000),
-            status="RECORDED",
-        )
