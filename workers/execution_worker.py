@@ -18,7 +18,6 @@ from config import (
     NOTIONAL_TOLERANCE_PCT,
     RISK_PER_TRADE_USD,
     RISK_TOLERANCE_PCT,
-    SHADOW_MODE,
     TRADING_ENV,
 )
 from engine.daily_lifecycle import DailyLifecycle
@@ -276,12 +275,6 @@ class ExecutionWorker:
             self._heartbeat_and_persist()
             return "POSITION_MANAGED"
 
-        engine_state = self.state.get_state().get("engine_state")
-        # Preserve the legacy migration behavior: TRADING_DISABLED blocks
-        # real/testnet order mode; SHADOW remains a paper-only laboratory.
-        if engine_state != RUNNING and not SHADOW_MODE:
-            return "ENTRY_DISABLED"
-
         if self.execution_outcome_publisher.pending_count():
             now_monotonic = time.monotonic()
             if (
@@ -298,6 +291,13 @@ class ExecutionWorker:
                 )
                 self._heartbeat_and_persist()
                 return "PENDING_OUTCOME"
+
+        # Operator disable means no new entries in every execution mode.
+        # Open-position management and durable outcome delivery intentionally
+        # run above this flat-entry guard.
+        engine_state = self.state.get_state().get("engine_state")
+        if engine_state != RUNNING:
+            return "ENTRY_DISABLED"
 
         if self.daily_lifecycle.handle(timestamp=tick.timestamp) is False:
             return "DAILY_BLOCKED"
