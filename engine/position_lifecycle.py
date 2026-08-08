@@ -11,13 +11,12 @@
 
 import time
 from config import (
-    CANDIDATE_OUTCOMES_PATH,
     TRADING_ENV,
     EXECUTION_MODE,
     STOP_TRIGGER_GRACE_SECONDS,
     STOP_TRIGGER_POLL_INTERVAL_SECONDS,
 )
-from strategy.candidate_outcome import CandidateOutcomeWriter
+from execution.outcome_builder import build_execution_outcome
 from utils.telegram_notifier import (
     send_critical,
     send_warning,
@@ -39,6 +38,7 @@ class PositionLifecycle:
         universe,
         system_log,
         trade_log,
+        outcome_publisher=None,
     ):
         self.exchange = exchange
         self.state = state
@@ -48,6 +48,7 @@ class PositionLifecycle:
         self.universe = universe
         self.system_log = system_log
         self.trade_log = trade_log
+        self.outcome_publisher = outcome_publisher
         self.exit_in_progress = False
 
     # --------------------------------------------------
@@ -444,6 +445,7 @@ class PositionLifecycle:
         )
 
         new_balance = self.exchange.get_available_balance()
+        closed_timestamp = int(time.time() * 1000)
 
         # Persist a complete, JSON-safe close summary. This is audit state,
         # independent of whether the trade is eligible for ML recording.
@@ -461,7 +463,7 @@ class PositionLifecycle:
             "mfe_r": float(mfe_r),
             "holding_time": int(holding_seconds),
             "entry_timestamp": open_position.get("entry_timestamp"),
-            "closed_timestamp": int(time.time() * 1000),
+            "closed_timestamp": closed_timestamp,
             "entry_order_id": open_position.get("entry_order_id"),
             "entry_client_order_id": open_position.get(
                 "entry_client_order_id"
@@ -471,6 +473,9 @@ class PositionLifecycle:
             "initial_stop_loss": open_position.get("initial_stop_loss"),
             "final_stop_loss": open_position.get("stop_loss"),
             "exit_reason": exit_reason,
+            "proposal_id": open_position.get("proposal_id"),
+            "execution_outcome_id": None,
+            "outcome_delivery_status": "PENDING",
             "learning_recorded": False,
             "candidate_observation_id": open_position.get(
                 "candidate_observation_id"
@@ -498,6 +503,8 @@ class PositionLifecycle:
             open_position=None,
             last_trade=last_trade,
         )
+        # Capital/accounting truth is durable before any learning delivery.
+        self.state.save()
 
         msg_id = self.state.get_state().get(
             "active_trade_panel_message_id"
@@ -538,60 +545,55 @@ class PositionLifecycle:
             f"structure={open_position.get('structure_fingerprint')}"
         )
 
-        # Executed-trade learning now flows only through candidate outcomes.
+        # --------------------------------------------------
+        # Execution outcome boundary
+        # --------------------------------------------------
+        # PositionLifecycle no longer imports or writes learning files. The
+        # publisher persists the outcome to the Execution outbox first, then
+        # hands it to the configured Observation receiver/client.
         candidate_observation_id = open_position.get(
             "candidate_observation_id"
         )
-        if candidate_observation_id:
-            try:
-                CandidateOutcomeWriter(
-                    CANDIDATE_OUTCOMES_PATH,
-                    system_log=self.system_log,
+        outcome_delivered = False
+        try:
+            if self.outcome_publisher is None:
+                if candidate_observation_id:
+                    self.system_log.error(
+                        "EXECUTION_OUTCOME_PUBLISHER_UNAVAILABLE | "
+                        f"symbol={open_position['symbol']}"
+                    )
+            else:
+                execution_outcome = build_execution_outcome(
+                    open_position=open_position,
                     environment=TRADING_ENV,
                     execution_mode=EXECUTION_MODE,
-                ).append(
-                    observation_id=candidate_observation_id,
-                    outcome_type="EXECUTED_TRADE",
-                    symbol=open_position["symbol"],
-                    direction=open_position["side"],
-                    payload={
-                        "entry_price": float(
-                            open_position["entry_price"]
-                        ),
-                        "exit_price": float(exit_price),
-                        "qty": float(open_position["qty"]),
-                        "realized_pnl_usd": float(realized),
-                        "r_multiple": float(r_multiple),
-                        "mae_r": float(mae_r),
-                        "mfe_r": float(mfe_r),
-                        "holding_seconds": int(holding_seconds),
-                        "profitable": bool(realized > 0),
-                        "exit_reason": exit_reason,
-                        "pattern": open_position.get("pattern"),
-                        "strategy_version": open_position.get(
-                            "strategy_version"
-                        ),
-                        "strategy_variant_id": open_position.get(
-                            "strategy_variant_id"
-                        ),
-                        "model_version": open_position.get(
-                            "model_version"
-                        ),
-                    },
-                    experiment_context=open_position.get(
-                        "experiment_context"
-                    ),
-                    outcome_variant_id=(
-                        (open_position.get("experiment_context") or {})
-                        .get("paper_policy", {})
-                        .get("variant_id")
-                    ),
+                    exit_price=float(exit_price),
+                    realized_pnl_usd=float(realized),
+                    exit_reason=exit_reason,
+                    closed_timestamp=closed_timestamp,
+                    holding_seconds=holding_seconds,
                 )
-            except Exception as e:
-                self.system_log.error(
-                    "CANDIDATE_TRADE_OUTCOME_WRITE_FAILED | "
-                    f"symbol={open_position['symbol']} | error={e}"
+                last_trade["execution_outcome_id"] = (
+                    execution_outcome.outcome_id
                 )
+                if last_trade.get("proposal_id") is None:
+                    last_trade["proposal_id"] = execution_outcome.proposal_id
+                outcome_delivered = bool(
+                    self.outcome_publisher.publish(execution_outcome)
+                )
+        except Exception as exc:
+            self.system_log.error(
+                "EXECUTION_OUTCOME_PUBLISH_FAILED | "
+                f"symbol={open_position['symbol']} | "
+                f"error={type(exc).__name__}:{exc}"
+            )
+
+        last_trade["outcome_delivery_status"] = (
+            "DELIVERED" if outcome_delivered else "PENDING"
+        )
+        last_trade["learning_recorded"] = bool(
+            outcome_delivered and candidate_observation_id
+        )
 
         # update_after_trade stored the same last_trade object by reference,
         # but assign it explicitly so the final learning_recorded flag is

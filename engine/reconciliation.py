@@ -4,13 +4,12 @@
 # ==========================================================
 import time
 from config import (
-    CANDIDATE_OUTCOMES_PATH,
     EXECUTION_MODE,
     STOP_TRIGGER_GRACE_SECONDS,
     STOP_TRIGGER_POLL_INTERVAL_SECONDS,
     TRADING_ENV,
 )
-from strategy.candidate_outcome import CandidateOutcomeWriter
+from execution.outcome_builder import build_execution_outcome
 from utils.telegram_notifier import (
     send_trade_panel,
     format_trade_panel,
@@ -31,6 +30,7 @@ class ReconciliationLifecycle:
         universe,
         system_log,
         trade_log,
+        outcome_publisher=None,
     ):
         self.exchange = exchange
         self.state = state
@@ -39,6 +39,7 @@ class ReconciliationLifecycle:
         self.universe = universe
         self.system_log = system_log
         self.trade_log = trade_log
+        self.outcome_publisher = outcome_publisher
 
 
     @staticmethod
@@ -128,12 +129,17 @@ class ReconciliationLifecycle:
         entry_order_id=None,
         entry_client_order_id=None,
         sl_order_id=None,
+        proposal_id=None,
         candidate_observation_id=None,
         decision_batch_id=None,
         market_event_id=None,
         strategy_version=None,
         strategy_variant_id=None,
         model_version=None,
+        selection_authority=None,
+        paper_canary_model_id=None,
+        paper_risk_multiplier=1.0,
+        paper_allocation_id=None,
         experiment_context=None,
     ):
         if sl_status is None:
@@ -158,6 +164,7 @@ class ReconciliationLifecycle:
             "entry_order_id": entry_order_id,
             "entry_client_order_id": entry_client_order_id,
             "sl_order_id": sl_order_id,
+            "proposal_id": proposal_id,
             "highest_profit_usd": highest_profit_usd,
             "last_locked_R": last_locked_R,
             "entry_timestamp": entry_timestamp,
@@ -172,6 +179,10 @@ class ReconciliationLifecycle:
             "strategy_version": strategy_version,
             "strategy_variant_id": strategy_variant_id,
             "model_version": model_version,
+            "selection_authority": selection_authority,
+            "paper_canary_model_id": paper_canary_model_id,
+            "paper_risk_multiplier": paper_risk_multiplier,
+            "paper_allocation_id": paper_allocation_id,
             "experiment_context": experiment_context,
         }
 
@@ -277,87 +288,36 @@ class ReconciliationLifecycle:
                     candidate_observation_id = existing.get(
                         "candidate_observation_id"
                     )
+                    closed_timestamp = int(time.time() * 1000)
+                    execution_outcome = None
+                    execution_outcome_id = None
+                    outcome_delivered = False
                     learning_recorded = False
-                    if candidate_observation_id:
+
+                    if self.outcome_publisher is not None:
                         try:
-                            context = existing.get(
-                                "experiment_context"
-                            )
-                            paper_variant = (
-                                (context or {})
-                                .get("paper_policy", {})
-                                .get("variant_id")
-                            )
-                            CandidateOutcomeWriter(
-                                CANDIDATE_OUTCOMES_PATH,
-                                system_log=self.system_log,
+                            execution_outcome = build_execution_outcome(
+                                open_position=existing,
                                 environment=TRADING_ENV,
                                 execution_mode=EXECUTION_MODE,
-                            ).append(
-                                observation_id=(
-                                    candidate_observation_id
-                                ),
-                                outcome_type="EXECUTED_TRADE",
-                                symbol=existing["symbol"],
-                                direction=existing["side"],
-                                payload={
-                                    "entry_price": self._number(
-                                        existing.get("entry_price")
-                                    ),
-                                    "exit_price": self._number(
-                                        exit_price
-                                    ),
-                                    "qty": self._number(
-                                        existing.get("qty")
-                                    ),
-                                    "realized_pnl_usd": (
-                                        self._number(realized)
-                                    ),
-                                    "r_multiple": r_multiple,
-                                    "mae_r": (
-                                        self._number(
-                                            existing.get("mae")
-                                        ) / initial_risk_usd
-                                        if initial_risk_usd > 0
-                                        else 0.0
-                                    ),
-                                    "mfe_r": (
-                                        self._number(
-                                            existing.get("mfe")
-                                        ) / initial_risk_usd
-                                        if initial_risk_usd > 0
-                                        else 0.0
-                                    ),
-                                    "holding_seconds": (
-                                        holding_seconds
-                                    ),
-                                    "profitable": bool(
-                                        self._number(realized) > 0
-                                    ),
-                                    "exit_reason": exit_reason,
-                                    "pattern": existing.get(
-                                        "pattern"
-                                    ),
-                                    "strategy_version": existing.get(
-                                        "strategy_version"
-                                    ),
-                                    "strategy_variant_id": existing.get(
-                                        "strategy_variant_id"
-                                    ),
-                                    "model_version": existing.get(
-                                        "model_version"
-                                    ),
-                                },
-                                experiment_context=context,
-                                outcome_variant_id=paper_variant,
+                                exit_price=self._number(exit_price),
+                                realized_pnl_usd=self._number(realized),
+                                exit_reason=exit_reason,
+                                closed_timestamp=closed_timestamp,
+                                holding_seconds=holding_seconds,
                             )
-                            learning_recorded = True
+                            execution_outcome_id = execution_outcome.outcome_id
                         except Exception as exc:
                             self.system_log.error(
-                                "RECON_CANDIDATE_OUTCOME_WRITE_FAILED | "
+                                "RECON_EXECUTION_OUTCOME_BUILD_FAILED | "
                                 f"symbol={existing['symbol']} | "
-                                f"error={exc}"
+                                f"error={type(exc).__name__}:{exc}"
                             )
+                    elif candidate_observation_id:
+                        self.system_log.error(
+                            "RECON_EXECUTION_OUTCOME_PUBLISHER_UNAVAILABLE | "
+                            f"symbol={existing['symbol']}"
+                        )
 
                     reconciled_last_trade = {
                         "symbol": existing.get("symbol"),
@@ -371,7 +331,7 @@ class ReconciliationLifecycle:
                         "r_multiple": r_multiple,
                         "holding_time": holding_seconds,
                         "entry_timestamp": entry_timestamp,
-                        "closed_timestamp": int(time.time() * 1000),
+                        "closed_timestamp": closed_timestamp,
                         "exit_reason": exit_reason,
                         "candidate_observation_id": (
                             candidate_observation_id
@@ -393,6 +353,10 @@ class ReconciliationLifecycle:
                         ),
                         "experiment_context": existing.get(
                             "experiment_context"
+                        ),
+                        "execution_outcome_id": execution_outcome_id,
+                        "outcome_delivery_status": (
+                            "DELIVERED" if outcome_delivered else "PENDING"
                         ),
                         "learning_recorded": learning_recorded,
                     }
@@ -456,6 +420,45 @@ class ReconciliationLifecycle:
                         reconciled_last_trade if existing else None
                     ),
                 )
+
+                if existing:
+                    # Persist the flat/accounting truth before attempting any
+                    # Observation-side learning delivery.
+                    self.state.save()
+
+                    if execution_outcome is not None:
+                        try:
+                            outcome_delivered = bool(
+                                self.outcome_publisher.publish(
+                                    execution_outcome
+                                )
+                            )
+                        except Exception as exc:
+                            self.system_log.error(
+                                "RECON_EXECUTION_OUTCOME_PUBLISH_FAILED | "
+                                f"symbol={existing['symbol']} | "
+                                f"error={type(exc).__name__}:{exc}"
+                            )
+
+                        reconciled_last_trade[
+                            "outcome_delivery_status"
+                        ] = (
+                            "DELIVERED"
+                            if outcome_delivered
+                            else "PENDING"
+                        )
+                        reconciled_last_trade["learning_recorded"] = bool(
+                            outcome_delivered
+                            and candidate_observation_id
+                        )
+                        self.state.update_after_trade(
+                            balance=self.state.get_state().get(
+                                "balance", 0.0
+                            ),
+                            open_position=None,
+                            last_trade=reconciled_last_trade,
+                        )
+                        self.state.save()
 
                 # --------------------------------------------------
                 # Governance Refresh on Flat Transition
@@ -557,6 +560,12 @@ class ReconciliationLifecycle:
                         if position.stop_loss is not None
                         else None
                     ),
+                    proposal_id=(
+                        previous_state.get("proposal_id")
+                        if previous_state else getattr(
+                            position, "proposal_id", None
+                        )
+                    ),
                     candidate_observation_id=(
                         previous_state.get("candidate_observation_id")
                         if previous_state else getattr(
@@ -593,6 +602,30 @@ class ReconciliationLifecycle:
                         previous_state.get("model_version")
                         if previous_state else getattr(
                             position, "model_version", None
+                        )
+                    ),
+                    selection_authority=(
+                        previous_state.get("selection_authority")
+                        if previous_state else getattr(
+                            position, "selection_authority", None
+                        )
+                    ),
+                    paper_canary_model_id=(
+                        previous_state.get("paper_canary_model_id")
+                        if previous_state else getattr(
+                            position, "paper_canary_model_id", None
+                        )
+                    ),
+                    paper_risk_multiplier=(
+                        previous_state.get("paper_risk_multiplier", 1.0)
+                        if previous_state else getattr(
+                            position, "paper_risk_multiplier", 1.0
+                        )
+                    ),
+                    paper_allocation_id=(
+                        previous_state.get("paper_allocation_id")
+                        if previous_state else getattr(
+                            position, "paper_allocation_id", None
                         )
                     ),
                     experiment_context=(

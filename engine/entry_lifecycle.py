@@ -458,6 +458,7 @@ class EntryLifecycle:
             ),
             "structure_fingerprint": intent.structure_fingerprint,
             "pattern": intent.pattern,
+            "proposal_id": getattr(intent, "proposal_id", None),
             "candidate_observation_id": (
                 intent.candidate_observation_id
             ),
@@ -540,6 +541,7 @@ class EntryLifecycle:
                     ack.client_order_id or client_order_id
                 ),
                 metadata={
+                    "proposal_id": getattr(intent, "proposal_id", None),
                     "candidate_observation_id": (
                         intent.candidate_observation_id
                     ),

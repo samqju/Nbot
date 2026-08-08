@@ -164,6 +164,14 @@ LIVE_LEARNING_RUNTIME_STATE_PATH = os.getenv(
     "LIVE_LEARNING_RUNTIME_STATE_PATH",
     "data/learning_runtime_state_live.json",
 ).strip()
+TESTNET_EXECUTION_OUTBOX_PATH = os.getenv(
+    "TESTNET_EXECUTION_OUTBOX_PATH",
+    "data/execution_outbox_testnet",
+).strip()
+LIVE_EXECUTION_OUTBOX_PATH = os.getenv(
+    "LIVE_EXECUTION_OUTBOX_PATH",
+    "data/execution_outbox_live",
+).strip()
 
 _DEFAULT_BOT_STATE_PATH = (
     TESTNET_BOT_STATE_PATH if TRADING_ENV == "TESTNET" else LIVE_BOT_STATE_PATH
@@ -208,6 +216,14 @@ VIRTUAL_TRADES_PATH = os.getenv(
 LEARNING_RUNTIME_STATE_PATH = os.getenv(
     "LEARNING_RUNTIME_STATE_PATH",
     _DEFAULT_LEARNING_RUNTIME_STATE_PATH,
+).strip()
+EXECUTION_OUTBOX_PATH = os.getenv(
+    "EXECUTION_OUTBOX_PATH",
+    (
+        TESTNET_EXECUTION_OUTBOX_PATH
+        if TRADING_ENV == "TESTNET"
+        else LIVE_EXECUTION_OUTBOX_PATH
+    ),
 ).strip()
 TRAINING_DATASET_PATH = os.getenv(
     "TRAINING_DATASET_PATH",
@@ -1206,6 +1222,8 @@ def _validate():
         raise ValueError(
             "CONFIG_INVALID: LEARNING_RUNTIME_STATE_PATH"
         )
+    if not EXECUTION_OUTBOX_PATH:
+        raise ValueError("CONFIG_INVALID: EXECUTION_OUTBOX_PATH")
     if LEARNING_RUNTIME_STATE_PATH in {
         PAPER_STATE_PATH,
         PAPER_TRADES_PATH,

@@ -18,6 +18,10 @@ from config import (
     RISK_TOLERANCE_PCT,
     SHADOW_MODE,
     BOT_STATE_PATH,
+    CANDIDATE_OUTCOMES_PATH,
+    EXECUTION_MODE,
+    EXECUTION_OUTBOX_PATH,
+    TRADING_ENV,
 )
 from execution.exchange_contract import validate_exchange_adapter
 from execution.exceptions import MarketStateError
@@ -35,6 +39,11 @@ from engine.reconciliation import ReconciliationLifecycle
 from engine.emergency import EmergencyHandler
 from engine.universe import UniverseManager
 from engine.throttle import LogThrottle
+from execution.outcome_outbox import ExecutionOutcomeOutbox
+from execution.outcome_publisher import ExecutionOutcomePublisher
+from observation.execution_outcome_receiver import (
+    LocalExecutionOutcomeReceiver,
+)
 from pnl_report import generate_daily_pnl_summary
 from learning.operator_status import build_configured_publisher
 
@@ -85,6 +94,24 @@ class TradingEngine:
 
         # Throttle
         self.throttle = LogThrottle(self.system_log)
+
+        # Phase 6A.0.3 local outcome bridge. Execution owns the durable
+        # outbox; the local receiver stands in for the future Observation
+        # HTTP endpoint while both responsibilities still share one process.
+        self.execution_outcome_outbox = ExecutionOutcomeOutbox(
+            EXECUTION_OUTBOX_PATH
+        )
+        self.execution_outcome_receiver = LocalExecutionOutcomeReceiver(
+            candidate_outcomes_path=CANDIDATE_OUTCOMES_PATH,
+            environment=TRADING_ENV,
+            execution_mode=EXECUTION_MODE,
+            system_log=self.system_log,
+        )
+        self.execution_outcome_publisher = ExecutionOutcomePublisher(
+            outbox=self.execution_outcome_outbox,
+            receiver=self.execution_outcome_receiver,
+            system_log=self.system_log,
+        )
 
         # Emergency
         self.emergency = EmergencyHandler(
@@ -138,6 +165,7 @@ class TradingEngine:
             universe=self.universe,
             system_log=self.system_log,
             trade_log=self.trade_log,
+            outcome_publisher=self.execution_outcome_publisher,
         )
 
         # Position Lifecycle
@@ -150,6 +178,7 @@ class TradingEngine:
             universe=self.universe,
             system_log=self.system_log,
             trade_log=self.trade_log,
+            outcome_publisher=self.execution_outcome_publisher,
         )
 
         self.system_log.info("ENGINE_INITIALIZED")
@@ -234,6 +263,18 @@ class TradingEngine:
             self._disable_trading(reason="RECONCILIATION_STARTUP_FAILED")
             self.state.save()
             return
+
+        pending_before_retry = (
+            self.execution_outcome_publisher.pending_count()
+        )
+        if pending_before_retry:
+            delivered = self.execution_outcome_publisher.retry_pending()
+            self.system_log.info(
+                "EXECUTION_OUTCOME_STARTUP_RETRY | "
+                f"pending_before={pending_before_retry} | "
+                f"delivered={delivered} | "
+                f"pending_after={self.execution_outcome_publisher.pending_count()}"
+            )
 
         self.universe.load()
 
@@ -454,6 +495,21 @@ class TradingEngine:
                     # ==================================================
                     # MODE B — NO POSITION
                     # ==================================================
+
+                    # Completed outcomes must be delivered before another
+                    # entry is allowed. This runs only while flat and is not
+                    # part of the open-position hot path.
+                    if self.execution_outcome_publisher.pending_count():
+                        self.execution_outcome_publisher.retry_pending()
+                        if self.execution_outcome_publisher.pending_count():
+                            self.throttle.log(
+                                key="execution_outcome_pending",
+                                level="warning",
+                                message=(
+                                    "NEW_ENTRY_BLOCKED_PENDING_EXECUTION_OUTCOME"
+                                ),
+                            )
+                            continue
 
                     # Daily lifecycle
                     result = self.daily_lifecycle.handle(
