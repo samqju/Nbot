@@ -976,6 +976,12 @@ class Strategy:
     # ======================================================
 
     def propose_intent(self) -> Optional[TradeIntent]:
+        """Consume the next execution intent using the legacy engine semantics.
+
+        The existing single-process engine treats proposal creation as the
+        point at which its trade-spacing governor advances. Keep that behavior
+        unchanged while Phase 6A.0 extracts the Observation Worker.
+        """
         if not self._warmed_up:
             return None
 
@@ -991,6 +997,25 @@ class Strategy:
                 paper_entry_allowed=True,
             )
 
+        return self._consume_pending_intent(update_trade_governor=True)
+
+    def consume_observation_recommendation(self) -> Optional[TradeIntent]:
+        """Consume the latest routed candidate without claiming execution.
+
+        Observation continuously maintains a recommendation even when the
+        future Execution Worker is busy or offline. Merely publishing that
+        recommendation must not mutate the legacy trade-spacing governor,
+        because publication is not proof that capital was entered.
+        """
+        if not self._warmed_up:
+            return None
+        return self._consume_pending_intent(update_trade_governor=False)
+
+    def _consume_pending_intent(
+        self,
+        *,
+        update_trade_governor: bool,
+    ) -> Optional[TradeIntent]:
         best_candidate = self._pending_paper_candidate
         paper_route = self._pending_paper_route
         self._pending_paper_candidate = None
@@ -1025,11 +1050,12 @@ class Strategy:
                 f"location={breakdown.location_quality:.6f}"
             )
 
-        bucket = self._current_candle[best_symbol]["bucket"]
-        self._last_trade_info[best_symbol] = (
-            bucket,
-            best_direction,
-        )
+        if update_trade_governor:
+            bucket = self._current_candle[best_symbol]["bucket"]
+            self._last_trade_info[best_symbol] = (
+                bucket,
+                best_direction,
+            )
 
         intent_context = copy_experiment_context(
             best_candidate.experiment_context
