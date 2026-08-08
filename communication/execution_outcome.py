@@ -59,6 +59,9 @@ class ExecutionOutcome:
     strategy_variant_id: str | None = None
     model_version: str | None = None
     selection_authority: str | None = None
+    paper_canary_model_id: str | None = None
+    paper_risk_multiplier: float | None = None
+    paper_allocation_id: str | None = None
     experiment_context: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
@@ -164,6 +167,8 @@ class ExecutionOutcome:
             "strategy_version",
             "strategy_variant_id",
             "model_version",
+            "paper_canary_model_id",
+            "paper_allocation_id",
         ):
             object.__setattr__(
                 self,
@@ -189,6 +194,17 @@ class ExecutionOutcome:
                 "selection_authority",
                 validate_selection_authority(self.selection_authority),
             )
+
+        multiplier = finite_number(
+            self.paper_risk_multiplier,
+            field="paper_risk_multiplier",
+            allow_none=True,
+        )
+        if multiplier is not None and not (0.0 < multiplier <= 1.0):
+            raise ProtocolValidationError(
+                "PROTOCOL_PAPER_RISK_MULTIPLIER_INVALID"
+            )
+        object.__setattr__(self, "paper_risk_multiplier", multiplier)
 
         object.__setattr__(
             self,
@@ -247,6 +263,9 @@ class ExecutionOutcome:
                 "strategy_variant_id",
                 "model_version",
                 "selection_authority",
+                "paper_canary_model_id",
+                "paper_risk_multiplier",
+                "paper_allocation_id",
                 "experiment_context",
             },
         )

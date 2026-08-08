@@ -99,6 +99,13 @@ class LocalExecutionOutcomeReceiver:
                 paper_variant = (
                     (context or {}).get("paper_policy", {}).get("variant_id")
                 )
+                paper_model_id = outcome.paper_canary_model_id
+                if (
+                    paper_model_id is None
+                    and outcome.selection_authority
+                    in {"PAPER_CANARY", "PAPER_CHAMPION"}
+                ):
+                    paper_model_id = outcome.model_version
                 self.writer.append(
                     observation_id=outcome.candidate_observation_id,
                     outcome_type="EXECUTED_TRADE",
@@ -110,9 +117,17 @@ class LocalExecutionOutcomeReceiver:
                         "qty": outcome.quantity,
                         "realized_pnl_usd": outcome.realized_pnl_usd,
                         "r_multiple": outcome.r_multiple,
+                        "net_r": outcome.r_multiple,
                         "mae_r": outcome.mae_r,
                         "mfe_r": outcome.mfe_r,
                         "holding_seconds": outcome.holding_seconds,
+                        "closed_at_ms": outcome.closed_timestamp,
+                        "decision_batch_id": outcome.decision_batch_id,
+                        "market_event_id": outcome.market_event_id,
+                        "selection_authority": outcome.selection_authority,
+                        "paper_canary_model_id": paper_model_id,
+                        "paper_risk_multiplier": outcome.paper_risk_multiplier,
+                        "paper_allocation_id": outcome.paper_allocation_id,
                         "profitable": bool(outcome.realized_pnl_usd > 0),
                         "exit_reason": outcome.exit_reason,
                         "pattern": outcome.pattern,

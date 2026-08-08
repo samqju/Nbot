@@ -1,0 +1,17 @@
+[Unit]
+Description=NBOT Automatic Paper Canary Controller
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=@NBOT_USER@
+WorkingDirectory=@NBOT_REPO@
+ExecStart=@NBOT_PYTHON@ -m scripts.learning.paper_canary_controller --watch
+Restart=on-failure
+RestartSec=5
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

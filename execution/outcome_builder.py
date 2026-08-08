@@ -189,5 +189,16 @@ def build_execution_outcome(
         selection_authority=_optional_text(
             open_position.get("selection_authority")
         ),
+        paper_canary_model_id=_optional_text(
+            open_position.get("paper_canary_model_id")
+        ),
+        paper_risk_multiplier=(
+            float(open_position.get("paper_risk_multiplier"))
+            if open_position.get("paper_risk_multiplier") is not None
+            else None
+        ),
+        paper_allocation_id=_optional_text(
+            open_position.get("paper_allocation_id")
+        ),
         experiment_context=open_position.get("experiment_context"),
     )

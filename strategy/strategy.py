@@ -37,7 +37,6 @@ from config import (
     PAPER_CANARY_MAX_TRADES_PER_UTC_DAY,
     PAPER_CANARY_MIN_MODEL_PROBABILITY,
     PAPER_CANARY_DECISIONS_PATH,
-    PAPER_TRADES_PATH,
 )
 from strategy.structure_classifier import StructureClassifier
 from strategy.candidate import rank_candidates
@@ -184,7 +183,7 @@ class Strategy:
             registry_path=MODEL_REGISTRY_PATH,
             default_champion_model_id=RULE_MODEL_VERSION,
             decisions_path=PAPER_CANARY_DECISIONS_PATH,
-            trades_path=PAPER_TRADES_PATH,
+            trades_path=CANDIDATE_OUTCOMES_PATH,
             allocation_fraction=PAPER_CANARY_ALLOCATION_FRACTION,
             risk_multiplier=PAPER_CANARY_RISK_MULTIPLIER,
             max_trades_per_utc_day=(

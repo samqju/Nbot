@@ -20,6 +20,9 @@ from learning.model_artifact_scorer import (
     RegisteredModelScoringError,
 )
 from learning.automatic_rollback import RuntimeRollbackEvidenceEvaluator
+from learning.paper_execution_evidence import (
+    iter_paper_execution_evidence,
+)
 from learning.model_registry import (
     ModelRegistry,
     ModelRegistryError,
@@ -405,29 +408,20 @@ class PaperCanaryRouter:
         return scorer
 
     def _completed_today(self, model_id: str) -> int:
-        if not self.trades_path.exists():
-            return 0
         today = datetime.now(timezone.utc).date()
         count = 0
-        with self.trades_path.open() as handle:
-            for line in handle:
-                try:
-                    row = json.loads(line)
-                    closed_at_ms = int(row.get("closed_at_ms", 0) or 0)
-                except (json.JSONDecodeError, TypeError, ValueError):
-                    continue
-                if (
-                    row.get("selection_authority") != "PAPER_CANARY"
-                    or row.get("paper_canary_model_id") != model_id
-                    or closed_at_ms <= 0
-                ):
-                    continue
-                closed_date = datetime.fromtimestamp(
-                    closed_at_ms / 1000.0,
-                    tz=timezone.utc,
-                ).date()
-                if closed_date == today:
-                    count += 1
+        for row in iter_paper_execution_evidence(self.trades_path):
+            if (
+                row.get("selection_authority") != "PAPER_CANARY"
+                or row.get("paper_canary_model_id") != model_id
+            ):
+                continue
+            closed_date = datetime.fromtimestamp(
+                row["closed_at_ms"] / 1000.0,
+                tz=timezone.utc,
+            ).date()
+            if closed_date == today:
+                count += 1
         return count
 
     def _allocation(self, *, model_id: str, decision_batch_id: str):
@@ -1036,31 +1030,21 @@ class AutomaticPaperCanaryController:
 
     def _metrics(self, model_id: str) -> dict:
         rows = []
-        if self.trades_path.exists():
-            with self.trades_path.open() as handle:
-                for line in handle:
-                    try:
-                        row = json.loads(line)
-                        net_r = float(row.get("net_r"))
-                    except (json.JSONDecodeError, TypeError, ValueError):
-                        continue
-                    if (
-                        row.get("selection_authority") != "PAPER_CANARY"
-                        or row.get("paper_canary_model_id") != model_id
-                        or not math.isfinite(net_r)
-                    ):
-                        continue
-                    event_id = str(
-                        row.get("market_event_id")
-                        or row.get("decision_batch_id")
-                        or row.get("trade_id")
-                        or "UNKNOWN"
-                    )
-                    rows.append((
-                        int(row.get("closed_at_ms", 0) or 0),
-                        net_r,
-                        event_id,
-                    ))
+        for row in iter_paper_execution_evidence(self.trades_path):
+            net_r = float(row["net_r"])
+            if (
+                row.get("selection_authority") != "PAPER_CANARY"
+                or row.get("paper_canary_model_id") != model_id
+                or not math.isfinite(net_r)
+            ):
+                continue
+            event_id = str(
+                row.get("market_event_id")
+                or row.get("decision_batch_id")
+                or row.get("trade_id")
+                or "UNKNOWN"
+            )
+            rows.append((row["closed_at_ms"], net_r, event_id))
         rows.sort(key=lambda item: (item[0], item[2]))
         values = [value for _, value, _ in rows]
         cumulative = 0.0

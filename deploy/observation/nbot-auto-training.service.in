@@ -1,0 +1,17 @@
+[Unit]
+Description=NBOT Automatic Training Supervisor
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=@NBOT_USER@
+WorkingDirectory=@NBOT_REPO@
+ExecStart=@NBOT_PYTHON@ -m scripts.learning.auto_train --watch
+Restart=on-failure
+RestartSec=5
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

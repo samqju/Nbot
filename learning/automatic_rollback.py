@@ -18,6 +18,9 @@ from learning.model_artifact_scorer import (
     RegisteredModelArtifactScorer,
     RegisteredModelScoringError,
 )
+from learning.paper_execution_evidence import (
+    iter_paper_execution_evidence,
+)
 
 
 ROLLBACK_EVIDENCE_SCHEMA_VERSION = 1
@@ -235,12 +238,9 @@ class RuntimeRollbackEvidenceEvaluator:
     def _paper_metrics(self, model_id: str, role: str, started_at_ms: int):
         authority = "PAPER_CANARY" if role == "PAPER_CANARY" else "PAPER_CHAMPION"
         rows = []
-        for row in self._read_jsonl(self.trades_path):
-            try:
-                closed = int(row.get("closed_at_ms", 0) or 0)
-                value = float(row.get("net_r"))
-            except (TypeError, ValueError):
-                continue
+        for row in iter_paper_execution_evidence(self.trades_path):
+            closed = int(row["closed_at_ms"])
+            value = float(row["net_r"])
             if (
                 closed < int(started_at_ms)
                 or row.get("selection_authority") != authority
