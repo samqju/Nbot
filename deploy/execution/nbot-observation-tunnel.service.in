@@ -1,0 +1,23 @@
+[Unit]
+Description=NBOT Encrypted Observation Control Tunnel
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=@NBOT_USER@
+ExecStart=@NBOT_SSH_BIN@ -NT \
+    -i @NBOT_IDENTITY_FILE@ \
+    -o IdentitiesOnly=yes \
+    -o UserKnownHostsFile=@NBOT_KNOWN_HOSTS_FILE@ \
+    -o StrictHostKeyChecking=yes \
+    -o ExitOnForwardFailure=yes \
+    -o ServerAliveInterval=15 \
+    -o ServerAliveCountMax=3 \
+    -L 127.0.0.1:@NBOT_LOCAL_PORT@:127.0.0.1:@NBOT_REMOTE_PORT@ \
+    @NBOT_OBSERVER_SSH_USER@@@NBOT_OBSERVER_HOST@
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
