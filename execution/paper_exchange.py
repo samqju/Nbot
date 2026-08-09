@@ -18,10 +18,8 @@ from config import (
     PAPER_ENTRY_SLIPPAGE_PCT,
     PAPER_EXIT_SLIPPAGE_PCT,
     PAPER_HEARTBEAT_INTERVAL_SECONDS,
-    PAPER_POSITION_PRICE_MAX_AGE_SECONDS,
     PAPER_PREFLIGHT_CANDLE_LIMIT,
     PAPER_PREFLIGHT_SYMBOL,
-    PAPER_REST_POLL_INTERVAL_SECONDS,
     PAPER_TAKER_FEE_RATE,
 )
 from execution.exceptions import EntryValidationError, OperationalExchangeError
@@ -58,7 +56,6 @@ class PaperExchange:
         self._last_heartbeat_monotonic = 0.0
         self._latest_price_by_symbol: dict[str, float] = {}
         self._latest_price_timestamp_ms_by_symbol: dict[str, int] = {}
-        self._last_position_rest_refresh_attempt_monotonic = 0.0
         self.execution_health_monitor = None
 
     def set_execution_health_monitor(self, monitor) -> None:
@@ -68,6 +65,13 @@ class PaperExchange:
             self.account.execution_health_monitor = monitor
         except Exception:
             pass
+        attach_market_health = getattr(
+            self.market_client,
+            "set_execution_health_monitor",
+            None,
+        )
+        if callable(attach_market_health):
+            attach_market_health(monitor)
 
     # ---------------- Market-data delegation ----------------
 
@@ -126,16 +130,50 @@ class PaperExchange:
         return self.market_client.disconnect()
 
     def price_stream(self):
-        """Yield real market ticks while advancing local paper execution."""
+        """Compatibility all-market stream; Execution no longer uses this."""
         for tick in self.market_client.price_stream():
             self.on_market_tick(
                 symbol=tick.symbol,
                 price=tick.price,
                 timestamp=tick.timestamp,
             )
-            self._refresh_open_position_price_if_stale()
             self._maybe_log_heartbeat(tick=tick)
             yield tick
+
+    def position_price_stream(self, symbol: str):
+        """Yield only the currently Execution-owned symbol.
+
+        Feed liveness belongs to the market client.  Quiet prices are not
+        treated as stale here, and any REST recovery tick from the market
+        client follows the exact same paper-stop and worker path as a normal
+        WebSocket tick.
+        """
+        stream_factory = getattr(
+            self.market_client,
+            "position_price_stream",
+            None,
+        )
+        if not callable(stream_factory):
+            raise OperationalExchangeError(
+                "PUBLIC_POSITION_STREAM_UNAVAILABLE"
+            )
+        stream = stream_factory(symbol)
+        try:
+            for tick in stream:
+                self.on_market_tick(
+                    symbol=tick.symbol,
+                    price=tick.price,
+                    timestamp=tick.timestamp,
+                )
+                self._maybe_log_heartbeat(tick=tick)
+                yield tick
+        finally:
+            close = getattr(stream, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
 
     def on_market_tick(self, *, symbol: str, price: float, timestamp: int):
         """Apply one real market tick to the local paper position.
@@ -180,84 +218,6 @@ class PaperExchange:
             f"observed_price={price}"
         )
         return trade
-
-
-    def _refresh_open_position_price_if_stale(self):
-        """Refresh stale open-position supervision from public REST.
-
-        The all-market ticker WebSocket only emits symbols present in each
-        update. A quiet or missed position symbol must therefore not leave
-        paper stop supervision dependent on an indefinitely cached price.
-
-        The refreshed REST price is deliberately fed through on_market_tick()
-        so paper MAE/MFE, simulated stop detection, and the heartbeat all use
-        the same execution path. This method has no real-order authority.
-        """
-        position = self.account.get_open_position()
-        if position is None:
-            return None
-
-        symbol = str(position.symbol).strip().upper()
-        now_ms = int(time.time() * 1000)
-        last_tick_ms = self._latest_price_timestamp_ms_by_symbol.get(symbol)
-        age_seconds = None
-        if last_tick_ms is not None:
-            age_seconds = max(0.0, (now_ms - int(last_tick_ms)) / 1000.0)
-            if age_seconds <= PAPER_POSITION_PRICE_MAX_AGE_SECONDS:
-                return None
-
-        attempt_now = time.monotonic()
-        if (
-            self._last_position_rest_refresh_attempt_monotonic > 0
-            and attempt_now
-            - self._last_position_rest_refresh_attempt_monotonic
-            < PAPER_REST_POLL_INTERVAL_SECONDS
-        ):
-            return None
-        self._last_position_rest_refresh_attempt_monotonic = attempt_now
-
-        age_text = "MISSING" if age_seconds is None else f"{age_seconds:.3f}"
-        self.system_log.warning(
-            "PAPER_POSITION_PRICE_STALE | "
-            f"symbol={symbol} | age_seconds={age_text} | "
-            f"max_age_seconds={PAPER_POSITION_PRICE_MAX_AGE_SECONDS}"
-        )
-
-        refresh_started = time.perf_counter()
-        try:
-            price = float(self.market_client.get_last_price(symbol))
-        except OperationalExchangeError as exc:
-            monitor = self.execution_health_monitor
-            if monitor is not None:
-                monitor.increment("stale_rest_failure")
-                monitor.observe_ms(
-                    "stale_rest_refresh_ms",
-                    (time.perf_counter() - refresh_started) * 1000.0,
-                )
-            self.system_log.warning(
-                "PAPER_POSITION_REST_REFRESH_FAILED | "
-                f"symbol={symbol} | error={exc}"
-            )
-            return None
-
-        monitor = self.execution_health_monitor
-        if monitor is not None:
-            monitor.increment("stale_rest_success")
-            monitor.observe_ms(
-                "stale_rest_refresh_ms",
-                (time.perf_counter() - refresh_started) * 1000.0,
-            )
-
-        refresh_timestamp_ms = int(time.time() * 1000)
-        self.system_log.info(
-            "PAPER_POSITION_REST_REFRESH | "
-            f"symbol={symbol} | price={price} | auth=NONE"
-        )
-        return self.on_market_tick(
-            symbol=symbol,
-            price=price,
-            timestamp=refresh_timestamp_ms,
-        )
 
 
     def _maybe_log_heartbeat(self, *, tick: Any) -> None:

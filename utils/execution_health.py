@@ -42,12 +42,14 @@ class ExecutionHealthMonitor:
     """Aggregate execution timings and emit one compact periodic summary."""
 
     _COUNTERS = (
+        "control_cycles",
         "total_ticks",
         "open_position_ticks",
         "position_symbol_ticks",
         "irrelevant_open_ticks",
-        "stale_rest_success",
-        "stale_rest_failure",
+        "position_rest_fallback_success",
+        "position_rest_fallback_failure",
+        "position_ws_disconnects",
         "sl_update_attempts",
     )
 
@@ -57,7 +59,7 @@ class ExecutionHealthMonitor:
         "exchange_get_position_ms",
         "bot_state_save_ms",
         "paper_state_save_ms",
-        "stale_rest_refresh_ms",
+        "position_rest_fallback_ms",
         "sl_update_ms",
         "sl_verify_ms",
         "sl_roundtrip_ms",

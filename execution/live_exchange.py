@@ -136,6 +136,14 @@ class LiveExchange:
     def price_stream(self):
         return self.market_client.price_stream()
 
+    def position_price_stream(self, symbol):
+        return self.market_client.position_price_stream(symbol)
+
+    def set_execution_health_monitor(self, monitor):
+        attach = getattr(self.market_client, "set_execution_health_monitor", None)
+        if callable(attach):
+            attach(monitor)
+
     def get_historical_candles(self, *, symbol, interval, limit):
         return self.market_client.get_historical_candles(
             symbol=symbol, interval=interval, limit=limit

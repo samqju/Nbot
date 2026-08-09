@@ -11,6 +11,7 @@ from communication.observation_client import ObservationClientError
 from config import (
     BOT_STATE_PATH,
     EXECUTION_MODE,
+    EXECUTION_CONTROL_LOOP_INTERVAL_SECONDS,
     EXECUTION_HEALTH_INTERVAL_SECONDS,
     EXECUTION_OUTBOX_PATH,
     EXECUTION_OUTCOME_RETRY_INTERVAL_SECONDS,
@@ -76,6 +77,9 @@ class ExecutionWorker:
         reconciliation=None,
         position_lifecycle=None,
         request_interval_seconds: float = 1.0,
+        control_loop_interval_seconds: float = (
+            EXECUTION_CONTROL_LOOP_INTERVAL_SECONDS
+        ),
         outcome_retry_interval_seconds: float = (
             EXECUTION_OUTCOME_RETRY_INTERVAL_SECONDS
         ),
@@ -93,6 +97,9 @@ class ExecutionWorker:
         interval = float(request_interval_seconds)
         if interval < 0:
             raise ValueError("EXECUTION_REQUEST_INTERVAL_INVALID")
+        control_interval = float(control_loop_interval_seconds)
+        if not (0.05 <= control_interval <= 5.0):
+            raise ValueError("EXECUTION_CONTROL_LOOP_INTERVAL_INVALID")
         outcome_retry_interval = float(outcome_retry_interval_seconds)
         if outcome_retry_interval < 0.1:
             raise ValueError("EXECUTION_OUTCOME_RETRY_INTERVAL_INVALID")
@@ -190,6 +197,7 @@ class ExecutionWorker:
                 pass
 
         self.request_interval_seconds = interval
+        self.control_loop_interval_seconds = control_interval
         self.outcome_retry_interval_seconds = outcome_retry_interval
         self.proposal_max_future_skew_seconds = future_skew
         self._last_request_monotonic = float("-inf")
@@ -235,18 +243,25 @@ class ExecutionWorker:
         self.run_forever()
 
     def run_forever(self) -> None:
+        """Run a control loop while flat and one-symbol market data while open."""
         if not self._prepared:
             self.prepare()
 
         while True:
             try:
-                stream = self.exchange.price_stream()
-                for tick in stream:
-                    self.process_tick(tick)
-                self.system_log.error(
-                    "EXECUTION_PRICE_STREAM_ENDED | restarting=true"
-                )
-                time.sleep(2)
+                open_position = self.state.get_open_position()
+                if open_position is not None:
+                    self._run_open_position_stream(
+                        symbol=open_position["symbol"]
+                    )
+                    continue
+
+                self.process_control_cycle()
+                if self.state.get_open_position() is not None:
+                    # Entry just opened: connect the dedicated position feed
+                    # immediately rather than sleeping through a control tick.
+                    continue
+                time.sleep(self.control_loop_interval_seconds)
             except KeyboardInterrupt:
                 raise
             except MarketStateError as exc:
@@ -276,6 +291,69 @@ class ExecutionWorker:
                 self._disable_trading(reason=str(exc))
                 self.state.save()
                 time.sleep(2)
+
+    def _run_open_position_stream(self, *, symbol: str) -> None:
+        """Manage one open position from a dedicated symbol-only feed."""
+        stream_factory = getattr(
+            self.exchange,
+            "position_price_stream",
+            None,
+        )
+        if not callable(stream_factory):
+            raise OperationalExchangeError(
+                "EXECUTION_POSITION_STREAM_CAPABILITY_MISSING"
+            )
+
+        symbol = str(symbol).strip().upper()
+        self.system_log.info(
+            "EXECUTION_POSITION_STREAM_START | "
+            f"symbol={symbol} | scope=POSITION_ONLY"
+        )
+        stream = stream_factory(symbol)
+        try:
+            for tick in stream:
+                current = self.state.get_open_position()
+                if current is None:
+                    return
+                if str(current.get("symbol", "")).upper() != symbol:
+                    raise OperationalExchangeError(
+                        "EXECUTION_POSITION_SYMBOL_CHANGED_UNEXPECTEDLY | "
+                        f"expected={symbol} | "
+                        f"current={current.get('symbol')}"
+                    )
+                if str(tick.symbol).upper() != symbol:
+                    raise OperationalExchangeError(
+                        "EXECUTION_POSITION_STREAM_SYMBOL_MISMATCH | "
+                        f"expected={symbol} | received={tick.symbol}"
+                    )
+
+                self.process_tick(tick)
+                if self.state.get_open_position() is None:
+                    self.system_log.info(
+                        "EXECUTION_POSITION_STREAM_STOP | "
+                        f"symbol={symbol} | reason=POSITION_CLOSED"
+                    )
+                    return
+
+            if self.state.get_open_position() is not None:
+                raise OperationalExchangeError(
+                    "WS_PRICE_STREAM_FAILED | "
+                    f"symbol={symbol} | reason=STREAM_ENDED"
+                )
+        finally:
+            close = getattr(stream, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
+
+    def process_control_cycle(self):
+        """Advance flat-state control work without requiring a market tick."""
+        self._process_operator_command()
+        self.execution_health.maybe_log(position_symbol=None)
+        self.execution_health.increment("control_cycles")
+        return self._process_flat_cycle(timestamp=int(time.time() * 1000))
 
     def process_tick(self, tick):
         """Process one Execution-owned market tick.
@@ -327,6 +405,10 @@ class ExecutionWorker:
             self._heartbeat_and_persist()
             return "POSITION_MANAGED"
 
+        return self._process_flat_cycle(timestamp=tick.timestamp)
+
+    def _process_flat_cycle(self, *, timestamp: int):
+        """Run flat-only delivery, risk, and proposal work."""
         if self.execution_outcome_publisher.pending_count():
             now_monotonic = time.monotonic()
             if (
@@ -351,7 +433,7 @@ class ExecutionWorker:
         if engine_state != RUNNING:
             return "ENTRY_DISABLED"
 
-        if self.daily_lifecycle.handle(timestamp=tick.timestamp) is False:
+        if self.daily_lifecycle.handle(timestamp=timestamp) is False:
             return "DAILY_BLOCKED"
 
         now_monotonic = time.monotonic()

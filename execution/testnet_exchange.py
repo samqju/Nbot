@@ -529,6 +529,54 @@ class TestnetExchange:
     # SECTION F — MARKET DATA
     # ========================================================
 
+    def position_price_stream(self, symbol: str):
+        """Dedicated last-price stream for the one Execution-owned symbol."""
+        symbol = str(symbol or "").strip().upper()
+        if not symbol or not symbol.endswith("USDT"):
+            raise ValueError("TESTNET_POSITION_STREAM_SYMBOL_INVALID")
+        token = "!ticker@arr"
+        if token not in MARKET_WS_URL:
+            raise RuntimeError("TESTNET_MARKET_WS_URL_STREAM_TOKEN_UNEXPECTED")
+        url = MARKET_WS_URL.replace(token, f"{symbol.lower()}@ticker", 1)
+        ws = websocket.create_connection(url)
+        try:
+            while True:
+                message = ws.recv()
+                data = json.loads(message)
+                if isinstance(data, dict) and isinstance(data.get("data"), dict):
+                    data = data["data"]
+                if not isinstance(data, dict):
+                    raise OperationalExchangeError(
+                        "WS_POSITION_STREAM_SCHEMA_INVALID"
+                    )
+                received_symbol = str(data.get("s", "")).upper()
+                if received_symbol != symbol:
+                    raise OperationalExchangeError(
+                        "WS_POSITION_STREAM_SYMBOL_MISMATCH | "
+                        f"expected={symbol} | received={received_symbol}"
+                    )
+                price = float(data.get("c", 0))
+                if price <= 0:
+                    raise OperationalExchangeError(
+                        f"WS_POSITION_STREAM_PRICE_INVALID | symbol={symbol}"
+                    )
+                yield PriceTick(
+                    symbol=symbol,
+                    price=price,
+                    timestamp=int(time.time() * 1000),
+                )
+        except OperationalExchangeError:
+            raise
+        except Exception as e:
+            raise OperationalExchangeError(
+                f"WS_PRICE_STREAM_FAILED | symbol={symbol} | {e}"
+            )
+        finally:
+            try:
+                ws.close()
+            except Exception:
+                pass
+
     def price_stream(self):
         """
         WebSocket-driven price stream.

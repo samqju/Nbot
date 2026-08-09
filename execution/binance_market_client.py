@@ -54,7 +54,11 @@ class BinanceMarketClient:
         self._validate_endpoints()
         self.session = requests.Session()
         self._symbol_filters = {}
+        self.execution_health_monitor = None
 
+    def set_execution_health_monitor(self, monitor) -> None:
+        """Attach optional execution-only measurement instrumentation."""
+        self.execution_health_monitor = monitor
 
     def _normalize_market_ws_url(self, configured_url: str) -> str:
         """Migrate the retired LIVE ticker path without touching TESTNET.
@@ -213,6 +217,220 @@ class BinanceMarketClient:
         tick_dec = Decimal(str(item["tickSize"]))
         quantized = (price_dec // tick_dec) * tick_dec
         return float(quantized.quantize(tick_dec, rounding=ROUND_DOWN))
+
+    def position_price_stream(self, symbol: str):
+        """Yield last-price ticks for exactly one Execution-owned symbol.
+
+        A quiet symbol is not considered stale merely because its last traded
+        price has not changed.  Liveness is instead determined by the dedicated
+        symbol WebSocket connection itself.  Only when that connection times
+        out or becomes unavailable do we poll public REST until the next
+        WebSocket retry.
+        """
+        from config import (
+            PAPER_REST_POLL_INTERVAL_SECONDS,
+            PAPER_WS_FIRST_TICK_TIMEOUT_SECONDS,
+            PAPER_WS_RETRY_INTERVAL_SECONDS,
+        )
+
+        symbol = str(symbol or "").strip().upper()
+        if not symbol or not symbol.endswith("USDT"):
+            raise ValueError("PUBLIC_POSITION_STREAM_SYMBOL_INVALID")
+        stream_url = self._position_stream_url(symbol)
+
+        while True:
+            ws = None
+            received_first = False
+            try:
+                self.system_log.info(
+                    "PUBLIC_POSITION_WS_CONNECT_ATTEMPT | "
+                    f"environment={self.environment} | auth=NONE | "
+                    f"symbol={symbol} | url={stream_url}"
+                )
+                ws = websocket.create_connection(
+                    stream_url,
+                    timeout=PAPER_WS_FIRST_TICK_TIMEOUT_SECONDS,
+                )
+                self.system_log.info(
+                    "PUBLIC_POSITION_WS_CONNECTED | "
+                    f"environment={self.environment} | auth=NONE | "
+                    f"symbol={symbol}"
+                )
+
+                while True:
+                    message = ws.recv()
+                    tick = self._parse_ws_symbol_ticker_message(
+                        message,
+                        expected_symbol=symbol,
+                    )
+                    if not received_first:
+                        received_first = True
+                        self.system_log.info(
+                            "PUBLIC_POSITION_WS_FIRST_TICK_OK | "
+                            f"environment={self.environment} | auth=NONE | "
+                            f"symbol={symbol}"
+                        )
+                    yield tick
+            except websocket.WebSocketTimeoutException:
+                self._record_position_ws_disconnect()
+                phase = "ACTIVE" if received_first else "FIRST_TICK"
+                self.system_log.warning(
+                    "PUBLIC_POSITION_WS_TIMEOUT | "
+                    f"environment={self.environment} | symbol={symbol} | "
+                    f"phase={phase} | "
+                    f"timeout_seconds={PAPER_WS_FIRST_TICK_TIMEOUT_SECONDS}"
+                )
+            except OperationalExchangeError as exc:
+                self._record_position_ws_disconnect()
+                self.system_log.warning(
+                    "PUBLIC_POSITION_WS_UNAVAILABLE | "
+                    f"environment={self.environment} | symbol={symbol} | "
+                    f"error={exc}"
+                )
+            except Exception as exc:
+                self._record_position_ws_disconnect()
+                self.system_log.warning(
+                    "PUBLIC_POSITION_WS_UNAVAILABLE | "
+                    f"environment={self.environment} | symbol={symbol} | "
+                    f"error={type(exc).__name__}:{exc}"
+                )
+            finally:
+                if ws is not None:
+                    try:
+                        ws.close()
+                    except Exception:
+                        pass
+
+            yield from self._position_rest_fallback_ticks(
+                symbol=symbol,
+                poll_interval_seconds=PAPER_REST_POLL_INTERVAL_SECONDS,
+                retry_after_seconds=PAPER_WS_RETRY_INTERVAL_SECONDS,
+            )
+
+    def _position_stream_url(self, symbol: str) -> str:
+        token = "!ticker@arr"
+        if token not in self.market_ws_url:
+            raise RuntimeError(
+                "PUBLIC_MARKET_WS_URL_STREAM_TOKEN_UNEXPECTED | "
+                f"url={self.market_ws_url}"
+            )
+        return self.market_ws_url.replace(
+            token,
+            f"{str(symbol).lower()}@ticker",
+            1,
+        )
+
+    @staticmethod
+    def _parse_ws_symbol_ticker_message(
+        message,
+        *,
+        expected_symbol: str,
+    ) -> PriceTick:
+        try:
+            data = json.loads(message)
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise OperationalExchangeError(
+                "PUBLIC_POSITION_WS_JSON_INVALID"
+            ) from exc
+        if isinstance(data, dict) and isinstance(data.get("data"), dict):
+            data = data["data"]
+        if not isinstance(data, dict):
+            raise OperationalExchangeError(
+                "PUBLIC_POSITION_WS_SCHEMA_INVALID | expected=ticker_object"
+            )
+        symbol = str(data.get("s", "")).upper()
+        if symbol != str(expected_symbol).upper():
+            raise OperationalExchangeError(
+                "PUBLIC_POSITION_WS_SYMBOL_MISMATCH | "
+                f"expected={expected_symbol} | received={symbol or 'MISSING'}"
+            )
+        try:
+            price = float(data.get("c", 0))
+        except (TypeError, ValueError) as exc:
+            raise OperationalExchangeError(
+                f"PUBLIC_POSITION_WS_PRICE_INVALID | symbol={symbol}"
+            ) from exc
+        if price <= 0:
+            raise OperationalExchangeError(
+                f"PUBLIC_POSITION_WS_PRICE_INVALID | symbol={symbol}"
+            )
+        return PriceTick(
+            symbol=symbol,
+            price=price,
+            timestamp=int(time.time() * 1000),
+        )
+
+    def _position_rest_fallback_ticks(
+        self,
+        *,
+        symbol: str,
+        poll_interval_seconds: float,
+        retry_after_seconds: float,
+    ):
+        """Poll one symbol only while its dedicated WebSocket is unavailable."""
+        self.system_log.warning(
+            "PUBLIC_POSITION_REST_FALLBACK_ACTIVE | "
+            f"environment={self.environment} | auth=NONE | "
+            f"symbol={symbol} | poll_interval_seconds={poll_interval_seconds} | "
+            f"ws_retry_seconds={retry_after_seconds}"
+        )
+        retry_deadline = time.monotonic() + retry_after_seconds
+        while time.monotonic() < retry_deadline:
+            cycle_started = time.monotonic()
+            refresh_started = time.perf_counter()
+            try:
+                price = float(self.get_last_price(symbol))
+            except OperationalExchangeError as exc:
+                self._record_position_rest_result(
+                    success=False,
+                    elapsed_ms=(time.perf_counter() - refresh_started) * 1000.0,
+                )
+                self.system_log.warning(
+                    "PUBLIC_POSITION_REST_POLL_FAILED | "
+                    f"environment={self.environment} | symbol={symbol} | "
+                    f"error={exc}"
+                )
+            else:
+                self._record_position_rest_result(
+                    success=True,
+                    elapsed_ms=(time.perf_counter() - refresh_started) * 1000.0,
+                )
+                yield PriceTick(
+                    symbol=symbol,
+                    price=price,
+                    timestamp=int(time.time() * 1000),
+                )
+
+            elapsed = time.monotonic() - cycle_started
+            sleep_for = max(0.0, poll_interval_seconds - elapsed)
+            if sleep_for:
+                time.sleep(sleep_for)
+
+        self.system_log.info(
+            "PUBLIC_POSITION_WS_RETRY_DUE | "
+            f"environment={self.environment} | auth=NONE | symbol={symbol}"
+        )
+
+    def _record_position_ws_disconnect(self) -> None:
+        monitor = self.execution_health_monitor
+        if monitor is not None:
+            monitor.increment("position_ws_disconnects")
+
+    def _record_position_rest_result(
+        self,
+        *,
+        success: bool,
+        elapsed_ms: float,
+    ) -> None:
+        monitor = self.execution_health_monitor
+        if monitor is None:
+            return
+        monitor.increment(
+            "position_rest_fallback_success"
+            if success
+            else "position_rest_fallback_failure"
+        )
+        monitor.observe_ms("position_rest_fallback_ms", elapsed_ms)
 
     def price_stream(self):
         """Yield public futures ticks with a fail-safe REST fallback.

@@ -40,6 +40,9 @@ class FakeExchange:
         self.price = price
         self.connected = False
         self.disconnected = False
+        self.price_stream_calls = 0
+        self.position_stream_symbols = []
+        self.position_stream_ticks = []
 
     def connect(self):
         self.connected = True
@@ -48,7 +51,12 @@ class FakeExchange:
         self.disconnected = True
 
     def price_stream(self):
+        self.price_stream_calls += 1
         return iter(())
+
+    def position_price_stream(self, symbol):
+        self.position_stream_symbols.append(symbol)
+        return iter(self.position_stream_ticks)
 
     def get_position(self):
         return self.position
@@ -381,6 +389,42 @@ class ExecutionWorkerTests(unittest.TestCase):
         worker.prepare()
         self.assertEqual(publisher.retry_calls, 1)
         self.assertEqual(publisher.pending_count(), 0)
+
+    def test_flat_control_cycle_does_not_require_market_stream(self):
+        worker, _, client, _, _, _, _, _, exchange = make_worker()
+        worker.prepare()
+
+        with patch(
+            "workers.execution_worker.time.sleep",
+            side_effect=KeyboardInterrupt,
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                worker.run_forever()
+
+        self.assertEqual(exchange.price_stream_calls, 0)
+        self.assertEqual(exchange.position_stream_symbols, [])
+        self.assertGreaterEqual(len(client.calls), 1)
+
+    def test_open_runtime_requests_only_position_symbol_stream(self):
+        open_position = {"symbol": "BTCUSDT", "side": "LONG", "qty": 1.0}
+        state = FakeState(open_position=open_position)
+        exchange = FakeExchange(position=open_position)
+        exchange.position_stream_ticks = [self.tick("BTCUSDT")]
+
+        class ClosingPositionLifecycle:
+            def manage(self, *, market_state):
+                state.open_position = None
+
+        worker, _, client, _, _, _, _, _, _ = make_worker(
+            state=state,
+            exchange=exchange,
+            position=ClosingPositionLifecycle(),
+        )
+        worker._run_open_position_stream(symbol="BTCUSDT")
+
+        self.assertEqual(exchange.position_stream_symbols, ["BTCUSDT"])
+        self.assertEqual(exchange.price_stream_calls, 0)
+        self.assertEqual(client.calls, [])
 
     def test_open_position_tick_never_requests_trade_or_retries_outcome(self):
         open_position = {"symbol": "BTCUSDT", "side": "LONG", "qty": 1.0}

@@ -1,9 +1,8 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
 
-from execution.exceptions import OperationalExchangeError
 from execution.paper_account import PaperAccount
 from execution.paper_exchange import PaperExchange
 
@@ -21,16 +20,18 @@ class Log:
 
 
 class Market:
-    def __init__(self, *, last_price=95.0, error=None):
-        self.last_price = float(last_price)
-        self.error = error
+    def __init__(self, ticks):
+        self.ticks = list(ticks)
+        self.requested_symbols = []
         self.last_price_calls = []
+
+    def position_price_stream(self, symbol):
+        self.requested_symbols.append(symbol)
+        return iter(self.ticks)
 
     def get_last_price(self, symbol):
         self.last_price_calls.append(symbol)
-        if self.error is not None:
-            raise self.error
-        return self.last_price
+        raise AssertionError("paper layer must not run its own stale REST watchdog")
 
 
 class Phase60OpenPositionPriceFreshnessTests(unittest.TestCase):
@@ -56,126 +57,65 @@ class Phase60OpenPositionPriceFreshnessTests(unittest.TestCase):
             trade_id="phase6-price-watchdog",
         )
 
-    def test_fresh_open_position_tick_does_not_call_rest(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            account = self._account(Path(tmp))
-            self._open_short(account)
-            market = Market(last_price=95.0)
-            exchange = PaperExchange(
-                market_client=market,
-                account=account,
-                system_log=Log(),
-            )
-            exchange.on_market_tick(
-                symbol="DODOXUSDT",
-                price=96.0,
-                timestamp=99_000,
-            )
-            with patch("execution.paper_exchange.time.time", return_value=100.0):
-                exchange._refresh_open_position_price_if_stale()
-            self.assertEqual(market.last_price_calls, [])
-            self.assertEqual(
-                exchange._latest_price_by_symbol["DODOXUSDT"],
-                96.0,
-            )
+    @staticmethod
+    def _tick(price, timestamp=100_000):
+        return SimpleNamespace(
+            symbol="DODOXUSDT",
+            price=float(price),
+            timestamp=int(timestamp),
+        )
 
-    def test_stale_open_position_tick_refreshes_through_rest(self):
+    def test_position_stream_delegates_only_owned_symbol_without_stale_watchdog(self):
         with tempfile.TemporaryDirectory() as tmp:
             account = self._account(Path(tmp))
             self._open_short(account)
-            market = Market(last_price=95.0)
+            market = Market([self._tick(99.0), self._tick(99.0, 102_000)])
             log = Log()
             exchange = PaperExchange(
                 market_client=market,
                 account=account,
                 system_log=log,
             )
-            exchange.on_market_tick(
-                symbol="DODOXUSDT",
-                price=99.0,
-                timestamp=90_000,
-            )
-            with patch("execution.paper_exchange.time.time", return_value=100.0), \
-                 patch(
-                     "execution.paper_exchange.time.monotonic",
-                     return_value=50.0,
-                 ):
-                exchange._refresh_open_position_price_if_stale()
-            self.assertEqual(market.last_price_calls, ["DODOXUSDT"])
-            self.assertEqual(
-                exchange._latest_price_by_symbol["DODOXUSDT"],
-                95.0,
-            )
-            self.assertTrue(
+
+            ticks = list(exchange.position_price_stream("DODOXUSDT"))
+
+            self.assertEqual(market.requested_symbols, ["DODOXUSDT"])
+            self.assertEqual([tick.symbol for tick in ticks], ["DODOXUSDT"] * 2)
+            self.assertEqual(market.last_price_calls, [])
+            self.assertFalse(
                 any("PAPER_POSITION_PRICE_STALE" in x for x in log.warnings)
             )
-            self.assertTrue(
+            self.assertFalse(
                 any("PAPER_POSITION_REST_REFRESH" in x for x in log.infos)
             )
 
-    def test_rest_refresh_can_fill_simulated_stop(self):
+    def test_recovery_tick_uses_same_path_and_can_fill_simulated_stop(self):
         with tempfile.TemporaryDirectory() as tmp:
             account = self._account(Path(tmp))
             self._open_short(account, stop_loss=105.0)
-            market = Market(last_price=106.0)
+            market = Market([self._tick(106.0)])
             log = Log()
             exchange = PaperExchange(
                 market_client=market,
                 account=account,
                 system_log=log,
-            )
-            exchange.on_market_tick(
-                symbol="DODOXUSDT",
-                price=100.0,
-                timestamp=90_000,
-            )
-            with patch("execution.paper_exchange.time.time", return_value=100.0), \
-                 patch(
-                     "execution.paper_exchange.time.monotonic",
-                     return_value=50.0,
-                 ):
-                exchange._refresh_open_position_price_if_stale()
-            self.assertIsNone(account.get_open_position())
-            self.assertTrue(
-                any("PAPER_STOP_FILLED" in x for x in log.infos)
             )
 
-    def test_rest_failure_is_rate_limited_and_does_not_crash(self):
+            ticks = list(exchange.position_price_stream("DODOXUSDT"))
+
+            self.assertEqual(len(ticks), 1)
+            self.assertIsNone(account.get_open_position())
+            self.assertTrue(any("PAPER_STOP_FILLED" in x for x in log.infos))
+
+    def test_legacy_stale_refresh_hook_is_removed(self):
         with tempfile.TemporaryDirectory() as tmp:
-            account = self._account(Path(tmp))
-            self._open_short(account)
-            market = Market(
-                error=OperationalExchangeError("synthetic timeout")
-            )
-            log = Log()
             exchange = PaperExchange(
-                market_client=market,
-                account=account,
-                system_log=log,
+                market_client=Market([]),
+                account=self._account(Path(tmp)),
+                system_log=Log(),
             )
-            exchange.on_market_tick(
-                symbol="DODOXUSDT",
-                price=99.0,
-                timestamp=90_000,
-            )
-            with patch("execution.paper_exchange.time.time", return_value=100.0), \
-                 patch(
-                     "execution.paper_exchange.time.monotonic",
-                     side_effect=[50.0, 51.0],
-                 ):
-                self.assertIsNone(
-                    exchange._refresh_open_position_price_if_stale()
-                )
-                self.assertIsNone(
-                    exchange._refresh_open_position_price_if_stale()
-                )
-            self.assertEqual(market.last_price_calls, ["DODOXUSDT"])
-            self.assertIsNotNone(account.get_open_position())
-            self.assertTrue(
-                any(
-                    "PAPER_POSITION_REST_REFRESH_FAILED" in x
-                    for x in log.warnings
-                )
+            self.assertFalse(
+                hasattr(exchange, "_refresh_open_position_price_if_stale")
             )
 
 

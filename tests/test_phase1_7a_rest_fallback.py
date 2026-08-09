@@ -16,6 +16,18 @@ class Log:
         self.warnings.append(message)
 
 
+class Monitor:
+    def __init__(self):
+        self.counters = []
+        self.timings = []
+
+    def increment(self, name, amount=1):
+        self.counters.append((name, amount))
+
+    def observe_ms(self, name, value):
+        self.timings.append((name, float(value)))
+
+
 class TimeoutSocket:
     def recv(self):
         import websocket
@@ -69,6 +81,82 @@ class Phase17ARestFallbackTests(unittest.TestCase):
         self.assertTrue(any("PUBLIC_WS_FIRST_TICK_TIMEOUT" in x for x in log.warnings))
         self.assertTrue(any("PUBLIC_MARKET_REST_FALLBACK_ACTIVE" in x for x in log.warnings))
         self.assertTrue(any("PUBLIC_REST_FIRST_TICK_OK" in x for x in log.infos))
+
+
+    def test_position_stream_url_targets_exact_symbol(self):
+        client = self.module.BinanceMarketClient(system_log=Log())
+        self.assertEqual(
+            client._position_stream_url("MMTUSDT"),
+            "wss://fstream.binance.com/market/ws/mmtusdt@ticker",
+        )
+
+    def test_position_stream_parses_single_symbol_ticker(self):
+        import json
+
+        class OneTickSocket:
+            def __init__(self):
+                self.closed = False
+
+            def recv(self):
+                return json.dumps({"s": "MMTUSDT", "c": "0.2143"})
+
+            def close(self):
+                self.closed = True
+
+        socket = OneTickSocket()
+        log = Log()
+        client = self.module.BinanceMarketClient(system_log=log)
+        with patch.object(
+            self.module.websocket,
+            "create_connection",
+            return_value=socket,
+        ) as create:
+            stream = client.position_price_stream("MMTUSDT")
+            tick = next(stream)
+            stream.close()
+
+        self.assertEqual(tick.symbol, "MMTUSDT")
+        self.assertEqual(tick.price, 0.2143)
+        self.assertIn("mmtusdt@ticker", create.call_args.args[0])
+        self.assertTrue(
+            any("PUBLIC_POSITION_WS_FIRST_TICK_OK" in x for x in log.infos)
+        )
+
+    def test_position_ws_timeout_falls_back_to_target_symbol_only(self):
+        log = Log()
+        monitor = Monitor()
+        client = self.module.BinanceMarketClient(system_log=log)
+        client.set_execution_health_monitor(monitor)
+        client.get_last_price = Mock(return_value=0.2141)
+
+        with patch.object(
+            self.module.websocket,
+            "create_connection",
+            return_value=TimeoutSocket(),
+        ):
+            stream = client.position_price_stream("MMTUSDT")
+            tick = next(stream)
+            stream.close()
+
+        self.assertEqual((tick.symbol, tick.price), ("MMTUSDT", 0.2141))
+        client.get_last_price.assert_called_once_with("MMTUSDT")
+        self.assertTrue(
+            any("PUBLIC_POSITION_WS_TIMEOUT" in x for x in log.warnings)
+        )
+        self.assertTrue(
+            any(
+                "PUBLIC_POSITION_REST_FALLBACK_ACTIVE" in x
+                for x in log.warnings
+            )
+        )
+        self.assertFalse(
+            any("REST_REFRESH" in x for x in log.infos)
+        )
+        self.assertIn(("position_ws_disconnects", 1), monitor.counters)
+        self.assertIn(("position_rest_fallback_success", 1), monitor.counters)
+        self.assertTrue(
+            any(name == "position_rest_fallback_ms" for name, _ in monitor.timings)
+        )
 
     def test_rest_parser_filters_invalid_rows(self):
         ticks = self.module.BinanceMarketClient._parse_rest_price_rows([
