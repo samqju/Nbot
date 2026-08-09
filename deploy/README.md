@@ -1,5 +1,30 @@
 # NBOT two-VPS deployment guide
 
+## Start here
+
+For a completely new pair of VPSs:
+
+- `deploy/FRESH_INSTALL.md`
+
+For everyday start/stop/restart/status commands:
+
+- `deploy/OPERATIONS.md`
+
+For replacement/disaster recovery:
+
+- `deploy/recovery/BACKUP_RESTORE.md`
+- `deploy/recovery/DISASTER_RECOVERY.md`
+
+The immutable final Phase 6A.0 rebuild/deployment release is:
+
+```text
+phase6a0-final
+```
+
+Both VPSs must deploy that same exact release (or a later explicitly approved
+release). Do not move or rewrite the final tag after it is published.
+
+
 This is the canonical deployment guide for the Phase 6A.0 two-worker NBOT
 architecture.
 
@@ -98,7 +123,7 @@ release tag selected for both machines:
 
 ```bash
 export NBOT_REPO=/path/to/Nbot
-export NBOT_VERSION=phase6a0-9-execution-deployment-complete
+export NBOT_VERSION=phase6a0-final
 
 git clone git@github.com:OWNER/Nbot.git "$NBOT_REPO"
 cd "$NBOT_REPO"

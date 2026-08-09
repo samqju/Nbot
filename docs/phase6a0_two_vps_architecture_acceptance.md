@@ -164,3 +164,23 @@ The following properties have been physically demonstrated:
 - Heavy Observation workload does not materially affect Execution.
 
 The next phase is Phase 6A Execution Stabilization After the Split.
+
+## Final reproducible deployment closeout
+
+The `phase6a0-complete` tag records the architecture/physical-acceptance point.
+
+A documentation-only closeout then adds beginner-safe fresh-install,
+operations and environment guidance.
+
+The canonical immutable final Phase 6A.0 rebuild/deployment tag is:
+
+```text
+phase6a0-final
+```
+
+A replacement deployment must use the same tagged Git revision on both VPSs
+and separately restore each role's owned runtime state/secrets when recovery is
+required.
+
+Phase 6A.0 is frozen after this final deployment closeout. The next development
+work is Phase 6A Execution Stabilization After the Split.
