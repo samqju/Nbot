@@ -14,6 +14,7 @@
 import json
 import os
 import copy
+import time
 
 class StateManager:
     """
@@ -139,18 +140,30 @@ class StateManager:
         Validation occurs before persistence.
         """
 
-        self._validate_state()
-
-        tmp_file = self.filename + ".tmp"
-
+        started = time.perf_counter()
         try:
-            with open(tmp_file, "w") as f:
-                json.dump(self.state, f, indent=2, sort_keys=True)
+            self._validate_state()
 
-            os.replace(tmp_file, self.filename)
+            tmp_file = self.filename + ".tmp"
 
-        except Exception as e:
-            raise RuntimeError(f"Failed to save state: {e}")
+            try:
+                with open(tmp_file, "w") as f:
+                    json.dump(self.state, f, indent=2, sort_keys=True)
+
+                os.replace(tmp_file, self.filename)
+
+            except Exception as e:
+                raise RuntimeError(f"Failed to save state: {e}")
+        finally:
+            monitor = getattr(self, "execution_health_monitor", None)
+            if monitor is not None:
+                try:
+                    monitor.observe_ms(
+                        "bot_state_save_ms",
+                        (time.perf_counter() - started) * 1000.0,
+                    )
+                except Exception:
+                    pass
 
     # ==================================================
     # TRADE UPDATE

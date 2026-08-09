@@ -11,6 +11,7 @@ from communication.observation_client import ObservationClientError
 from config import (
     BOT_STATE_PATH,
     EXECUTION_MODE,
+    EXECUTION_HEALTH_INTERVAL_SECONDS,
     EXECUTION_OUTBOX_PATH,
     EXECUTION_OUTCOME_RETRY_INTERVAL_SECONDS,
     EXECUTION_PROPOSAL_MAX_FUTURE_SKEW_SECONDS,
@@ -35,6 +36,7 @@ from execution.proposal_adapter import proposal_to_execution_intent
 from pnl_report import generate_daily_pnl_summary
 from risk.risk import RiskManager
 from state.state import StateManager
+from utils.execution_health import ExecutionHealthMonitor
 from utils.telegram_notifier import (
     send_critical,
     send_info,
@@ -111,6 +113,21 @@ class ExecutionWorker:
         )
         self.market_state = market_state or MarketState()
         self.throttle = throttle or LogThrottle(self.system_log)
+        self.execution_health = ExecutionHealthMonitor(
+            system_log=self.system_log,
+            interval_seconds=EXECUTION_HEALTH_INTERVAL_SECONDS,
+        )
+        try:
+            self.state.execution_health_monitor = self.execution_health
+        except Exception:
+            pass
+        attach_health = getattr(
+            self.exchange,
+            "set_execution_health_monitor",
+            None,
+        )
+        if callable(attach_health):
+            attach_health(self.execution_health)
 
         if outcome_publisher is None:
             outbox = ExecutionOutcomeOutbox(EXECUTION_OUTBOX_PATH)
@@ -162,7 +179,15 @@ class ExecutionWorker:
             system_log=self.system_log,
             trade_log=self.trade_log,
             outcome_publisher=self.execution_outcome_publisher,
+            execution_health_monitor=self.execution_health,
         )
+        if position_lifecycle is not None:
+            try:
+                self.position_lifecycle.execution_health_monitor = (
+                    self.execution_health
+                )
+            except Exception:
+                pass
 
         self.request_interval_seconds = interval
         self.outcome_retry_interval_seconds = outcome_retry_interval
@@ -267,10 +292,37 @@ class ExecutionWorker:
         )
 
         open_position = self.state.get_open_position()
+        self.execution_health.maybe_log(
+            position_symbol=(
+                open_position.get("symbol") if open_position else None
+            )
+        )
+        self.execution_health.increment("total_ticks")
+
         if open_position is not None:
+            self.execution_health.increment("open_position_ticks")
             if tick.symbol != open_position["symbol"]:
+                self.execution_health.increment("irrelevant_open_ticks")
                 return "POSITION_OPEN_OTHER_SYMBOL"
-            self.position_lifecycle.manage(market_state=self.market_state)
+
+            self.execution_health.increment("position_symbol_ticks")
+            self.execution_health.observe_ms(
+                "internal_tick_age_ms",
+                max(
+                    0.0,
+                    (time.time() * 1000.0) - float(tick.timestamp),
+                ),
+            )
+            manage_started = time.perf_counter()
+            try:
+                self.position_lifecycle.manage(
+                    market_state=self.market_state
+                )
+            finally:
+                self.execution_health.observe_ms(
+                    "position_manage_ms",
+                    (time.perf_counter() - manage_started) * 1000.0,
+                )
             self.daily_lifecycle.handle(timestamp=tick.timestamp)
             self._heartbeat_and_persist()
             return "POSITION_MANAGED"

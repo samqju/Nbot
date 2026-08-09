@@ -9,6 +9,7 @@ import json
 import math
 import os
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -96,30 +97,42 @@ class PaperAccount:
             self._persist_state()
 
     def _persist_state(self) -> None:
-        self._validate_state(self._state)
-        self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = self.state_path.with_name(self.state_path.name + ".tmp")
-
+        started = time.perf_counter()
         try:
-            with tmp_path.open("w", encoding="utf-8") as handle:
-                json.dump(
-                    self._state,
-                    handle,
-                    indent=2,
-                    sort_keys=True,
-                )
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(tmp_path, self.state_path)
-        except Exception as exc:
+            self._validate_state(self._state)
+            self.state_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = self.state_path.with_name(self.state_path.name + ".tmp")
+
             try:
-                tmp_path.unlink(missing_ok=True)
-            except Exception:
-                pass
-            raise RuntimeError(
-                f"PAPER_STATE_SAVE_FAILED | path={self.state_path} | "
-                f"error={exc}"
-            ) from exc
+                with tmp_path.open("w", encoding="utf-8") as handle:
+                    json.dump(
+                        self._state,
+                        handle,
+                        indent=2,
+                        sort_keys=True,
+                    )
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(tmp_path, self.state_path)
+            except Exception as exc:
+                try:
+                    tmp_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                raise RuntimeError(
+                    f"PAPER_STATE_SAVE_FAILED | path={self.state_path} | "
+                    f"error={exc}"
+                ) from exc
+        finally:
+            monitor = getattr(self, "execution_health_monitor", None)
+            if monitor is not None:
+                try:
+                    monitor.observe_ms(
+                        "paper_state_save_ms",
+                        (time.perf_counter() - started) * 1000.0,
+                    )
+                except Exception:
+                    pass
 
     def _append_trade(self, trade: PaperTrade) -> None:
         self.trades_path.parent.mkdir(parents=True, exist_ok=True)

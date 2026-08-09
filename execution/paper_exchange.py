@@ -59,6 +59,15 @@ class PaperExchange:
         self._latest_price_by_symbol: dict[str, float] = {}
         self._latest_price_timestamp_ms_by_symbol: dict[str, int] = {}
         self._last_position_rest_refresh_attempt_monotonic = 0.0
+        self.execution_health_monitor = None
+
+    def set_execution_health_monitor(self, monitor) -> None:
+        """Attach optional measurement-only instrumentation."""
+        self.execution_health_monitor = monitor
+        try:
+            self.account.execution_health_monitor = monitor
+        except Exception:
+            pass
 
     # ---------------- Market-data delegation ----------------
 
@@ -214,14 +223,30 @@ class PaperExchange:
             f"max_age_seconds={PAPER_POSITION_PRICE_MAX_AGE_SECONDS}"
         )
 
+        refresh_started = time.perf_counter()
         try:
             price = float(self.market_client.get_last_price(symbol))
         except OperationalExchangeError as exc:
+            monitor = self.execution_health_monitor
+            if monitor is not None:
+                monitor.increment("stale_rest_failure")
+                monitor.observe_ms(
+                    "stale_rest_refresh_ms",
+                    (time.perf_counter() - refresh_started) * 1000.0,
+                )
             self.system_log.warning(
                 "PAPER_POSITION_REST_REFRESH_FAILED | "
                 f"symbol={symbol} | error={exc}"
             )
             return None
+
+        monitor = self.execution_health_monitor
+        if monitor is not None:
+            monitor.increment("stale_rest_success")
+            monitor.observe_ms(
+                "stale_rest_refresh_ms",
+                (time.perf_counter() - refresh_started) * 1000.0,
+            )
 
         refresh_timestamp_ms = int(time.time() * 1000)
         self.system_log.info(

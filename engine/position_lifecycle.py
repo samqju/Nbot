@@ -39,6 +39,7 @@ class PositionLifecycle:
         system_log,
         trade_log,
         outcome_publisher=None,
+        execution_health_monitor=None,
     ):
         self.exchange = exchange
         self.state = state
@@ -49,7 +50,47 @@ class PositionLifecycle:
         self.system_log = system_log
         self.trade_log = trade_log
         self.outcome_publisher = outcome_publisher
+        self.execution_health_monitor = execution_health_monitor
         self.exit_in_progress = False
+
+    def _health_increment(self, name: str, amount: int = 1) -> None:
+        monitor = self.execution_health_monitor
+        if monitor is None:
+            return
+        try:
+            monitor.increment(name, amount)
+        except Exception:
+            pass
+
+    def _health_observe_ms(self, name: str, value_ms: float) -> None:
+        monitor = self.execution_health_monitor
+        if monitor is None:
+            return
+        try:
+            monitor.observe_ms(name, value_ms)
+        except Exception:
+            pass
+
+    def _timed_get_position(self, *, extra_metric: str | None = None):
+        started = time.perf_counter()
+        try:
+            return self.exchange.get_position()
+        finally:
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
+            self._health_observe_ms("exchange_get_position_ms", elapsed_ms)
+            if extra_metric is not None:
+                self._health_observe_ms(extra_metric, elapsed_ms)
+
+    def _timed_update_sl(self, **kwargs):
+        self._health_increment("sl_update_attempts")
+        started = time.perf_counter()
+        try:
+            return self.exchange.update_sl(**kwargs)
+        finally:
+            self._health_observe_ms(
+                "sl_update_ms",
+                (time.perf_counter() - started) * 1000.0,
+            )
 
     # --------------------------------------------------
     # Public
@@ -83,7 +124,7 @@ class PositionLifecycle:
         # update MAE (max adverse excursion)
         open_position["mae"] = min(open_position.get("mae", pnl_move), pnl_move)
 
-        exchange_position = self.exchange.get_position()
+        exchange_position = self._timed_get_position()
 
         # --------------------------------------------------
         # Live SL Missing → reconciliation recovery
@@ -103,7 +144,7 @@ class PositionLifecycle:
                     deadline = time.monotonic() + STOP_TRIGGER_GRACE_SECONDS
                     while time.monotonic() < deadline:
                         time.sleep(STOP_TRIGGER_POLL_INTERVAL_SECONDS)
-                        settled = self.exchange.get_position()
+                        settled = self._timed_get_position()
                         if settled is None:
                             self.system_log.info(
                                 f"STOP_TRIGGER_SETTLED | symbol={symbol}"
@@ -174,15 +215,18 @@ class PositionLifecycle:
             expected_sl = None
 
             for attempt in range(2):
+                roundtrip_started = time.perf_counter()
                 try:
-                    sl_ref = self.exchange.update_sl(
+                    sl_ref = self._timed_update_sl(
                         symbol=open_position["symbol"],
                         side=open_position["side"],
                         qty=open_position["qty"],
                         new_stop_price=intended_sl,
                     )
 
-                    verified = self.exchange.get_position()
+                    verified = self._timed_get_position(
+                        extra_metric="sl_verify_ms"
+                    )
 
                     if verified is None:
                         self.system_log.error(
@@ -229,6 +273,11 @@ class PositionLifecycle:
                         f"error={type(e).__name__}:{e}"
                     )
                     time.sleep(0.5)
+                finally:
+                    self._health_observe_ms(
+                        "sl_roundtrip_ms",
+                        (time.perf_counter() - roundtrip_started) * 1000.0,
+                    )
 
             if not update_ok:
 
@@ -238,7 +287,7 @@ class PositionLifecycle:
                 )
 
                 try:
-                    exchange_pos = self.exchange.get_position()
+                    exchange_pos = self._timed_get_position()
                 except Exception as verify_error:
                     self.system_log.error(
                         f"SL_UPDATE_FINAL_POSITION_CHECK_FAILED | "
