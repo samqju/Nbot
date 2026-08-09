@@ -3,7 +3,6 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
 
 from execution.paper_account import PaperAccount
 from execution.paper_exchange import PaperExchange
@@ -99,7 +98,7 @@ class Phase16RecoveryTests(unittest.TestCase):
             self.assertTrue(any("PAPER_ACCOUNT_READY" in x for x in log.infos))
             self.assertTrue(any("position=FLAT" in x for x in log.infos))
 
-    def test_price_stream_emits_periodic_paper_heartbeat(self):
+    def test_price_stream_does_not_emit_periodic_paper_heartbeat(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             ticks = [
@@ -113,42 +112,11 @@ class Phase16RecoveryTests(unittest.TestCase):
                 system_log=log,
             )
             exchange.connect()
-            with patch(
-                "execution.paper_exchange.PAPER_HEARTBEAT_INTERVAL_SECONDS",
-                60.0,
-            ), patch(
-                "execution.paper_exchange.time.monotonic",
-                side_effect=[100.0, 101.0],
-            ):
-                self.assertEqual(len(list(exchange.price_stream())), 2)
+            self.assertEqual(len(list(exchange.price_stream())), 2)
             heartbeats = [x for x in log.infos if "PAPER_HEARTBEAT" in x]
-            self.assertEqual(len(heartbeats), 1)
-            self.assertIn("position=FLAT", heartbeats[0])
+            self.assertEqual(heartbeats, [])
 
-    def test_invalid_heartbeat_interval_is_rejected(self):
-        env = os.environ.copy()
-        env.update(
-            {
-                "TRADING_ENV": "LIVE",
-                "EXECUTION_MODE": "SHADOW",
-                "PAPER_HEARTBEAT_INTERVAL_SECONDS": "1",
-            }
-        )
-        import subprocess
-        import sys
-
-        result = subprocess.run(
-            [sys.executable, "-c", "import config"],
-            cwd=Path(__file__).resolve().parents[1],
-            env=env,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("PAPER_HEARTBEAT_INTERVAL_SECONDS", result.stderr)
-
-    def test_heartbeat_uses_cached_open_symbol_price(self):
+    def test_market_tick_still_caches_open_symbol_price_without_heartbeat_log(self):
         with tempfile.TemporaryDirectory() as root:
             account = self._account(Path(root))
             account.load_or_create()
@@ -174,16 +142,8 @@ class Phase16RecoveryTests(unittest.TestCase):
                 price=0.0041,
                 timestamp=2,
             )
-            exchange._last_heartbeat_monotonic = 0.0
-            exchange._maybe_log_heartbeat(
-                tick=SimpleNamespace(
-                    symbol="BTCUSDT",
-                    price=62000.0,
-                )
-            )
-            heartbeat = [x for x in log.infos if "PAPER_HEARTBEAT" in x][-1]
-            self.assertIn("observed_price=0.0041", heartbeat)
-            self.assertNotIn("observed_price=None", heartbeat)
+            self.assertEqual(exchange._latest_price_by_symbol["WAXPUSDT"], 0.0041)
+            self.assertFalse(any("PAPER_HEARTBEAT" in x for x in log.infos))
 
 
 if __name__ == "__main__":

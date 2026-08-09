@@ -1,12 +1,15 @@
 """Low-overhead execution hot-path instrumentation for Phase 6A.
 
-The monitor is observational only.  It must never influence trading decisions,
-raise into the execution path, or persist trading state.
+The monitor is observational only. It must never influence trading decisions,
+raise into the execution path, or persist trading state. Metrics are retained
+in memory and exposed on demand to the operator; normal operation does not
+periodically write execution-health telemetry to ``system.txt``.
 """
 
 from __future__ import annotations
 
 import math
+import threading
 import time
 from collections import deque
 
@@ -37,9 +40,17 @@ class _TimingSeries:
         index = max(0, math.ceil(0.95 * len(ordered)) - 1)
         return float(ordered[index])
 
+    def snapshot(self) -> dict[str, float | int]:
+        return {
+            "count": int(self.count),
+            "avg": float(self.average()),
+            "p95": float(self.p95()),
+            "max": float(self.maximum),
+        }
+
 
 class ExecutionHealthMonitor:
-    """Aggregate execution timings and emit one compact periodic summary."""
+    """Retain bounded execution diagnostics for on-demand operator queries."""
 
     _COUNTERS = (
         "control_cycles",
@@ -65,69 +76,70 @@ class ExecutionHealthMonitor:
         "sl_roundtrip_ms",
     )
 
-    def __init__(self, *, system_log, interval_seconds: float = 60.0):
-        interval = float(interval_seconds)
-        if not math.isfinite(interval) or interval < 5.0:
-            raise ValueError("EXECUTION_HEALTH_INTERVAL_INVALID")
+    def __init__(self, *, system_log=None, interval_seconds: float | None = None):
+        # ``interval_seconds`` remains accepted for compatibility with older
+        # tests/callers, but periodic logging is intentionally disabled.
+        if interval_seconds is not None:
+            interval = float(interval_seconds)
+            if not math.isfinite(interval) or interval < 5.0:
+                raise ValueError("EXECUTION_HEALTH_INTERVAL_INVALID")
         self.system_log = system_log
-        self.interval_seconds = interval
-        self._period_started = time.monotonic()
-        self._last_log = self._period_started
-        self._counters = {}
-        self._timings = {}
-        self._reset_period()
+        self._started_monotonic = time.monotonic()
+        self._last_activity_monotonic = self._started_monotonic
+        self._lock = threading.Lock()
+        self._counters = {name: 0 for name in self._COUNTERS}
+        self._timings = {name: _TimingSeries() for name in self._TIMINGS}
 
     def increment(self, name: str, amount: int = 1) -> None:
         try:
             if name not in self._counters:
                 return
-            self._counters[name] += int(amount)
+            with self._lock:
+                self._counters[name] += int(amount)
+                if name in {"control_cycles", "total_ticks"}:
+                    self._last_activity_monotonic = time.monotonic()
         except Exception:
             return
 
     def observe_ms(self, name: str, value_ms: float) -> None:
         try:
-            series = self._timings.get(name)
-            if series is not None:
-                series.add(float(value_ms))
+            with self._lock:
+                series = self._timings.get(name)
+                if series is not None:
+                    series.add(float(value_ms))
         except Exception:
             return
 
-    def maybe_log(self, *, position_symbol: str | None = None) -> None:
-        """Emit at most once per interval; instrumentation failures are ignored."""
+    def snapshot(self, *, position_symbol: str | None = None) -> dict:
+        """Return an in-memory diagnostic snapshot without logging or I/O."""
         try:
             now = time.monotonic()
-            if now - self._last_log < self.interval_seconds:
-                return
-
-            period_seconds = max(0.0, now - self._period_started)
-            fields = [
-                "EXECUTION_HEALTH",
-                f"period_seconds={period_seconds:.3f}",
-                f"position_symbol={position_symbol or 'FLAT'}",
-            ]
-
-            for name in self._COUNTERS:
-                fields.append(f"{name}={self._counters[name]}")
-
-            for name in self._TIMINGS:
-                series = self._timings[name]
-                fields.extend(
-                    (
-                        f"{name}_count={series.count}",
-                        f"{name}_avg={series.average():.3f}",
-                        f"{name}_p95={series.p95():.3f}",
-                        f"{name}_max={series.maximum:.3f}",
-                    )
-                )
-
-            self.system_log.info(" | ".join(fields))
-            self._last_log = now
-            self._period_started = now
-            self._reset_period()
+            with self._lock:
+                return {
+                    "uptime_seconds": max(0.0, now - self._started_monotonic),
+                    "activity_age_seconds": max(
+                        0.0,
+                        now - self._last_activity_monotonic,
+                    ),
+                    "position_symbol": position_symbol or "FLAT",
+                    "counters": dict(self._counters),
+                    "timings": {
+                        name: series.snapshot()
+                        for name, series in self._timings.items()
+                    },
+                }
         except Exception:
-            return
+            return {
+                "uptime_seconds": 0.0,
+                "activity_age_seconds": 0.0,
+                "position_symbol": position_symbol or "FLAT",
+                "counters": {name: 0 for name in self._COUNTERS},
+                "timings": {
+                    name: {"count": 0, "avg": 0.0, "p95": 0.0, "max": 0.0}
+                    for name in self._TIMINGS
+                },
+            }
 
-    def _reset_period(self) -> None:
-        self._counters = {name: 0 for name in self._COUNTERS}
-        self._timings = {name: _TimingSeries() for name in self._TIMINGS}
+    def maybe_log(self, *, position_symbol: str | None = None) -> None:
+        """Backward-compatible no-op: health is operator-requested only."""
+        return None

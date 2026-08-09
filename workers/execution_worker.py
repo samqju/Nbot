@@ -12,7 +12,6 @@ from config import (
     BOT_STATE_PATH,
     EXECUTION_MODE,
     EXECUTION_CONTROL_LOOP_INTERVAL_SECONDS,
-    EXECUTION_HEALTH_INTERVAL_SECONDS,
     EXECUTION_OUTBOX_PATH,
     EXECUTION_OUTCOME_RETRY_INTERVAL_SECONDS,
     EXECUTION_PROPOSAL_MAX_FUTURE_SKEW_SECONDS,
@@ -33,6 +32,10 @@ from execution.exceptions import MarketStateError, OperationalExchangeError
 from execution.exchange_contract import validate_exchange_adapter
 from execution.outcome_outbox import ExecutionOutcomeOutbox
 from execution.outcome_publisher import ExecutionOutcomePublisher
+from execution.operator_status import (
+    build_execution_operator_status,
+    build_heartbeat_operator_status,
+)
 from execution.proposal_adapter import proposal_to_execution_intent
 from pnl_report import generate_daily_pnl_summary
 from risk.risk import RiskManager
@@ -122,7 +125,6 @@ class ExecutionWorker:
         self.throttle = throttle or LogThrottle(self.system_log)
         self.execution_health = ExecutionHealthMonitor(
             system_log=self.system_log,
-            interval_seconds=EXECUTION_HEALTH_INTERVAL_SECONDS,
         )
         try:
             self.state.execution_health_monitor = self.execution_health
@@ -236,10 +238,13 @@ class ExecutionWorker:
         )
 
     def start(self) -> None:
-        start_operator_listener(self._handle_operator_command)
+        # Capital-first startup: load/connect/reconcile before accepting any
+        # Telegram command. The listener discards commands queued while the
+        # process was offline, so a stale /enable cannot arm a restarted bot.
         if not self._prepared:
             self.prepare()
         self._notify_started()
+        start_operator_listener(self._handle_operator_command)
         self.run_forever()
 
     def run_forever(self) -> None:
@@ -351,7 +356,6 @@ class ExecutionWorker:
     def process_control_cycle(self):
         """Advance flat-state control work without requiring a market tick."""
         self._process_operator_command()
-        self.execution_health.maybe_log(position_symbol=None)
         self.execution_health.increment("control_cycles")
         return self._process_flat_cycle(timestamp=int(time.time() * 1000))
 
@@ -370,11 +374,6 @@ class ExecutionWorker:
         )
 
         open_position = self.state.get_open_position()
-        self.execution_health.maybe_log(
-            position_symbol=(
-                open_position.get("symbol") if open_position else None
-            )
-        )
         self.execution_health.increment("total_ticks")
 
         if open_position is not None:
@@ -613,20 +612,41 @@ class ExecutionWorker:
         self.state.save()
         self._last_persist_ms = now_ms
 
-    def _disable_trading(self, *, reason: str) -> None:
+    def _disable_trading(
+        self,
+        *,
+        reason: str,
+        operator_initiated: bool = False,
+        notify: bool = True,
+    ) -> bool:
         if not reason:
             raise ValueError("DISABLE_TRADING_REQUIRES_REASON")
         current_state = self.state.get_state().get("engine_state")
         if current_state == TRADING_DISABLED:
-            return
-        self.system_log.error(
-            "EXECUTION_TRADING_DISABLED | "
-            f"reason={reason} | "
-            f"utc={datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}"
-        )
+            return False
+
+        if operator_initiated:
+            self.system_log.info(
+                "OPERATOR_DISABLE | "
+                f"reason={reason} | "
+                f"utc={datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+        else:
+            self.system_log.error(
+                "EXECUTION_TRADING_DISABLED | "
+                f"reason={reason} | "
+                f"utc={datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+
         self.state.set_engine_state(TRADING_DISABLED, reason)
         self.state.save()
-        send_critical("TRADING DISABLED", f"Reason: {reason}")
+
+        if notify:
+            if operator_initiated:
+                send_info("TRADING DISABLED", "Operator command accepted.")
+            else:
+                send_critical("TRADING DISABLED", f"Reason: {reason}")
+        return True
 
     def _process_operator_command(self) -> None:
         if not os.path.exists(OPERATOR_COMMAND_FILE):
@@ -634,18 +654,27 @@ class ExecutionWorker:
         try:
             with open(OPERATOR_COMMAND_FILE, "r", encoding="utf-8") as handle:
                 command = json.load(handle)
-            action = command.get("action")
+            action = str(command.get("action") or "").strip().upper()
             if action == "ENABLE_TRADING":
                 self.reconciliation.run(reason="OPERATOR_RESUME")
                 self.state.set_engine_state(RUNNING, reason=None)
                 self.state.save()
-                self.system_log.info("EXECUTION_OPERATOR_ENABLE")
+                self.system_log.info("OPERATOR_ENABLE | source=FILE")
             elif action == "DISABLE_TRADING":
-                self._disable_trading(reason="OPERATOR_DISABLE")
+                self._disable_trading(
+                    reason="OPERATOR_DISABLE",
+                    operator_initiated=True,
+                    notify=False,
+                )
             elif action == "STATUS":
                 self.system_log.info(
-                    "EXECUTION_OPERATOR_STATUS | "
+                    "OPERATOR_STATUS | source=FILE | "
                     f"state={self.state.get_state().get('engine_state')}"
+                )
+            else:
+                self.system_log.warning(
+                    "EXECUTION_OPERATOR_COMMAND_UNKNOWN | "
+                    f"action={action or 'MISSING'}"
                 )
         except Exception as exc:
             self.system_log.error(
@@ -658,36 +687,135 @@ class ExecutionWorker:
             except Exception:
                 pass
 
+    @staticmethod
+    def _operator_command_parts(text: str) -> tuple[str, list[str]]:
+        parts = str(text or "").strip().split()
+        if not parts:
+            return "", []
+        command = parts[0].split("@", 1)[0].lower()
+        return command, parts[1:]
+
     def _handle_operator_command(self, text: str) -> None:
-        if text == "/enable":
-            self.reconciliation.run(reason="OPERATOR_RESUME")
-            self.state.set_engine_state(RUNNING, reason=None)
-            self.state.save()
-            send_info("TRADING ENABLED", "Operator command accepted.")
-        elif text == "/disable":
-            self._disable_trading(reason="OPERATOR_DISABLE")
-            send_info("TRADING DISABLED", "Operator command accepted.")
-        elif text == "/status":
-            state = self.state.get_state().get("engine_state")
-            send_info("ENGINE STATUS", f"State: {state}")
-        elif text.startswith("/pnl"):
-            parts = text.split()
-            summary = (
-                generate_daily_pnl_summary()
-                if len(parts) == 1
-                else generate_daily_pnl_summary(parts[1])
+        command, args = self._operator_command_parts(text)
+
+        try:
+            if command == "/enable":
+                self.reconciliation.run(reason="OPERATOR_RESUME")
+                self.state.set_engine_state(RUNNING, reason=None)
+                self.state.save()
+                self.system_log.info("OPERATOR_ENABLE | source=TELEGRAM")
+                send_info("TRADING ENABLED", "Operator command accepted.")
+
+            elif command == "/disable":
+                changed = self._disable_trading(
+                    reason="OPERATOR_DISABLE",
+                    operator_initiated=True,
+                    notify=False,
+                )
+                if not changed:
+                    self.system_log.info(
+                        "OPERATOR_DISABLE | source=TELEGRAM | already_disabled=true"
+                    )
+                send_info(
+                    "TRADING DISABLED",
+                    "Operator command accepted."
+                    if changed
+                    else "Trading was already disabled.",
+                )
+
+            elif command == "/status":
+                state = self.state.get_state()
+                position = self.state.get_open_position()
+                self.system_log.info(
+                    "OPERATOR_STATUS | source=TELEGRAM | "
+                    f"state={state.get('engine_state')} | "
+                    f"halt_reason={state.get('engine_halt_reason')} | "
+                    f"position={'OPEN' if position else 'FLAT'}"
+                )
+                send_info(
+                    "ENGINE STATUS",
+                    f"State: {state.get('engine_state')}\n"
+                    f"Halt reason: {state.get('engine_halt_reason') or 'NONE'}\n"
+                    f"Position: {'OPEN' if position else 'FLAT'}",
+                )
+
+            elif command == "/pnl":
+                if len(args) > 1:
+                    send_warning(
+                        "PNL COMMAND INVALID",
+                        "Use /pnl or /pnl YYYY-MM-DD",
+                    )
+                    return
+                summary = (
+                    generate_daily_pnl_summary()
+                    if not args
+                    else generate_daily_pnl_summary(args[0])
+                )
+                self.system_log.info(
+                    "OPERATOR_PNL_STATUS | source=TELEGRAM | "
+                    f"day={args[0] if args else 'CURRENT'}"
+                )
+                send_info("DAILY PNL REPORT", summary)
+
+            elif command == "/execution":
+                body, log_line = build_execution_operator_status(
+                    state=self.state,
+                    execution_health=self.execution_health,
+                    outcome_publisher=self.execution_outcome_publisher,
+                )
+                self.system_log.info(log_line)
+                send_info("EXECUTION HEALTH", body)
+
+            elif command == "/heartbeat":
+                body, log_line = build_heartbeat_operator_status(
+                    state=self.state,
+                    exchange=self.exchange,
+                    market_state=self.market_state,
+                    execution_health=self.execution_health,
+                )
+                self.system_log.info(log_line)
+                send_info("EXECUTION HEARTBEAT", body)
+
+            elif command == "/help":
+                self.system_log.info(
+                    f"OPERATOR_HELP | source=TELEGRAM | command={command}"
+                )
+                send_info(
+                    "EXECUTION COMMANDS",
+                    "/status — engine/position state\n"
+                    "/execution — technical execution health\n"
+                    "/heartbeat — cached position/account snapshot\n"
+                    "/pnl [YYYY-MM-DD] — daily PnL\n"
+                    "/enable — enable new entries after reconciliation\n"
+                    "/disable — disable new entries\n"
+                    "/help — show this command list",
+                )
+
+            elif command:
+                self.system_log.info(
+                    "OPERATOR_UNKNOWN_COMMAND | source=TELEGRAM | "
+                    f"command={command}"
+                )
+                send_warning(
+                    "UNKNOWN COMMAND",
+                    f"Unknown command: {command}\nUse /help for active Execution commands.",
+                )
+        except Exception as exc:
+            self.system_log.error(
+                "OPERATOR_TELEGRAM_COMMAND_FAILED | "
+                f"command={command or 'EMPTY'} | "
+                f"error={type(exc).__name__}:{exc}"
             )
-            send_info("DAILY PNL REPORT", summary)
+            send_warning(
+                "COMMAND FAILED",
+                f"{command or 'Command'} could not be completed. "
+                "Execution safety state was not bypassed.",
+            )
 
     def _notify_started(self) -> None:
-        engine_state = self.state.get_state().get("engine_state")
-        halt_reason = self.state.get_state().get("engine_halt_reason")
-        if engine_state == TRADING_DISABLED:
-            send_warning(
-                "EXECUTION STARTED — TRADING DISABLED",
-                f"Reason: {halt_reason}",
-            )
-
+        state = self.state.get_state()
+        engine_state = state.get("engine_state")
+        halt_reason = state.get("engine_halt_reason")
         position = self.state.get_open_position()
         position_text = "FLAT"
         if position is not None:
@@ -695,10 +823,28 @@ class ExecutionWorker:
                 f"OPEN {position.get('symbol')} {position.get('side')} "
                 f"qty={position.get('qty')}"
             )
-        send_info(
-            "EXECUTION WORKER STARTED",
-            f"UTC: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}\n"
+
+        utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        self.system_log.info(
+            "EXECUTION_STARTED | "
+            f"utc={utc} | environment={TRADING_ENV} | mode={EXECUTION_MODE} | "
+            f"engine_state={engine_state} | "
+            f"halt_reason={halt_reason or 'NONE'} | "
+            f"position={position_text.replace(' ', '_')} | reconciliation=OK"
+        )
+
+        body = (
+            f"UTC: {utc}\n"
             f"Environment: {TRADING_ENV}\n"
             f"Execution mode: {EXECUTION_MODE}\n"
-            f"Position: {position_text}",
+            f"Engine: {engine_state}\n"
+            f"Position: {position_text}\n"
+            "Reconciliation: OK"
         )
+        if engine_state == TRADING_DISABLED:
+            send_warning(
+                "EXECUTION WORKER STARTED — TRADING DISABLED",
+                body + f"\nReason: {halt_reason or 'UNKNOWN'}",
+            )
+        else:
+            send_info("EXECUTION WORKER STARTED", body)

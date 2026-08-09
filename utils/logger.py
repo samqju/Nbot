@@ -36,6 +36,33 @@ def _build_logger(name, filename):
     return logger
 
 
+class _InfoPrefixFilter(logging.Filter):
+    """Keep warnings/errors while allowing only selected INFO event prefixes."""
+
+    def __init__(self, prefixes):
+        super().__init__()
+        self.prefixes = tuple(str(value) for value in prefixes if str(value))
+
+    def filter(self, record):
+        if record.levelno >= logging.WARNING:
+            return True
+        if record.levelno != logging.INFO:
+            return False
+        message = record.getMessage()
+        return any(message.startswith(prefix) for prefix in self.prefixes)
+
+
+def restrict_info_to_prefixes(logger, prefixes):
+    """Restrict one process logger to warnings/errors plus approved INFO events."""
+    normalized = tuple(str(value) for value in prefixes if str(value))
+    marker = ("NBOT_INFO_PREFIX_FILTER", normalized)
+    if getattr(logger, "_nbot_info_filter_marker", None) == marker:
+        return logger
+    logger.addFilter(_InfoPrefixFilter(normalized))
+    logger._nbot_info_filter_marker = marker
+    return logger
+
+
 # ==========================================================
 # PUBLIC LOGGERS
 # ==========================================================

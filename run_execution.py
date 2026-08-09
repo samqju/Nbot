@@ -9,7 +9,11 @@ import sys
 from communication.observation_client import ObservationClient
 from config import EXECUTION_MODE, OBSERVATION_CONTROL_TOKEN, TRADING_ENV
 from execution.exchange_factory import build_exchange
-from utils.logger import system_logger, trade_logger
+from utils.logger import (
+    restrict_info_to_prefixes,
+    system_logger,
+    trade_logger,
+)
 from utils.process_lock import BotAlreadyRunningError, SingleInstanceLock
 from utils.telegram_notifier import configure, inject_loggers, send_message
 from workers.execution_worker import ExecutionWorker
@@ -63,6 +67,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     system_log = system_logger()
+    restrict_info_to_prefixes(
+        system_log,
+        (
+            "EXECUTION_STARTED",
+            "OPERATOR_",
+            "PUBLIC_POSITION_WS_RECOVERED",
+        ),
+    )
     trade_log = trade_logger()
     inject_loggers(system_log)
 

@@ -238,6 +238,7 @@ class BinanceMarketClient:
             raise ValueError("PUBLIC_POSITION_STREAM_SYMBOL_INVALID")
         stream_url = self._position_stream_url(symbol)
 
+        recovering_from_failure = False
         while True:
             ws = None
             received_first = False
@@ -251,11 +252,19 @@ class BinanceMarketClient:
                     stream_url,
                     timeout=PAPER_WS_FIRST_TICK_TIMEOUT_SECONDS,
                 )
-                self.system_log.info(
-                    "PUBLIC_POSITION_WS_CONNECTED | "
-                    f"environment={self.environment} | auth=NONE | "
-                    f"symbol={symbol}"
-                )
+                if recovering_from_failure:
+                    self.system_log.info(
+                        "PUBLIC_POSITION_WS_RECOVERED | "
+                        f"environment={self.environment} | auth=NONE | "
+                        f"symbol={symbol}"
+                    )
+                    recovering_from_failure = False
+                else:
+                    self.system_log.info(
+                        "PUBLIC_POSITION_WS_CONNECTED | "
+                        f"environment={self.environment} | auth=NONE | "
+                        f"symbol={symbol}"
+                    )
 
                 while True:
                     message = ws.recv()
@@ -272,6 +281,7 @@ class BinanceMarketClient:
                         )
                     yield tick
             except websocket.WebSocketTimeoutException:
+                recovering_from_failure = True
                 self._record_position_ws_disconnect()
                 phase = "ACTIVE" if received_first else "FIRST_TICK"
                 self.system_log.warning(
@@ -281,6 +291,7 @@ class BinanceMarketClient:
                     f"timeout_seconds={PAPER_WS_FIRST_TICK_TIMEOUT_SECONDS}"
                 )
             except OperationalExchangeError as exc:
+                recovering_from_failure = True
                 self._record_position_ws_disconnect()
                 self.system_log.warning(
                     "PUBLIC_POSITION_WS_UNAVAILABLE | "
@@ -288,6 +299,7 @@ class BinanceMarketClient:
                     f"error={exc}"
                 )
             except Exception as exc:
+                recovering_from_failure = True
                 self._record_position_ws_disconnect()
                 self.system_log.warning(
                     "PUBLIC_POSITION_WS_UNAVAILABLE | "

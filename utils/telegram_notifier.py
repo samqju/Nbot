@@ -14,7 +14,7 @@ import os
 import requests
 from typing import Optional
 import time
-import hashlib
+import threading
 
 # ----------------------------------------------------------
 # Internal Configuration
@@ -42,33 +42,6 @@ def _log_error(msg: str):
 def _log_info(msg: str):
     if _system_log:
         _system_log.info(msg)
-
-# ----------------------------------------------------------
-# Spam Protection Controls
-# ----------------------------------------------------------
-
-# Default cooldown per identical message (seconds)
-DEFAULT_MESSAGE_COOLDOWN = 60
-
-# Store: { message_hash: last_sent_timestamp }
-_LAST_SENT_CACHE = {}
-
-def _should_send(text: str, cooldown: int = DEFAULT_MESSAGE_COOLDOWN) -> bool:
-    """
-    Prevent repeated identical messages within cooldown window.
-    """
-    now = time.time()
-
-    message_hash = hashlib.sha256(text.encode()).hexdigest()
-
-    last_sent = _LAST_SENT_CACHE.get(message_hash)
-
-    if last_sent and (now - last_sent) < cooldown:
-        _log_info("TELEGRAM_SUPPRESSED_DUPLICATE")
-        return False
-
-    _LAST_SENT_CACHE[message_hash] = now
-    return True
 
 # ----------------------------------------------------------
 # Configuration
@@ -286,6 +259,8 @@ def send_trade_panel(text: str) -> Optional[int]:
 # ==========================================================
 
 _LAST_UPDATE_ID = None
+_LISTENER_STARTED = False
+_LISTENER_LOCK = threading.Lock()
 
 def start_operator_listener(command_callback):
     """
@@ -293,24 +268,65 @@ def start_operator_listener(command_callback):
     Only processes commands from AUTHORIZED_USER_ID.
     """
 
+    global _LISTENER_STARTED, _LAST_UPDATE_ID
+
     if not _is_configured():
-        return
+        return False
 
     if not AUTHORIZED_USER_ID:
         _log_error("AUTHORIZED_USER_ID_NOT_SET")
-        return
+        return False
 
-    import threading
+    with _LISTENER_LOCK:
+        if _LISTENER_STARTED:
+            _log_info("TELEGRAM_OPERATOR_LISTENER_ALREADY_STARTED")
+            return False
+        _LISTENER_STARTED = True
+
+    url = f"https://api.telegram.org/bot{_TELEGRAM_BOT_TOKEN}/getUpdates"
+
+    # Fail closed on commands queued while Execution was offline. A stale
+    # /enable must never arm trading after a restart merely because Telegram
+    # retained the update. Commands sent after this listener starts are handled
+    # normally.
+    try:
+        discarded = 0
+        while True:
+            params = {"timeout": 0}
+            if _LAST_UPDATE_ID is not None:
+                params["offset"] = _LAST_UPDATE_ID + 1
+            resp = requests.get(url, params=params, timeout=10)
+            data = resp.json()
+            if not isinstance(data, dict) or data.get("ok") is False:
+                raise RuntimeError("TELEGRAM_GET_UPDATES_PRIME_FAILED")
+            updates = data.get("result", [])
+            if not updates:
+                break
+            discarded += len(updates)
+            _LAST_UPDATE_ID = max(int(item["update_id"]) for item in updates)
+            if len(updates) < 100:
+                break
+        if discarded:
+            _log_info(
+                "TELEGRAM_OPERATOR_BACKLOG_DISCARDED | "
+                f"count={discarded}"
+            )
+    except Exception as exc:
+        # Fail closed for operator control: if we cannot establish a safe
+        # Telegram offset, do not consume potentially stale queued commands.
+        # Execution itself continues normally.
+        _log_error(f"OPERATOR_LISTENER_PRIME_ERROR | {exc}")
+        with _LISTENER_LOCK:
+            _LISTENER_STARTED = False
+        return False
 
     def _poll():
         global _LAST_UPDATE_ID
 
-        url = f"https://api.telegram.org/bot{_TELEGRAM_BOT_TOKEN}/getUpdates"
-
         while True:
             try:
                 params = {"timeout": 60}
-                if _LAST_UPDATE_ID:
+                if _LAST_UPDATE_ID is not None:
                     params["offset"] = _LAST_UPDATE_ID + 1
 
                 resp = requests.get(url, params=params, timeout=70)
@@ -327,10 +343,9 @@ def start_operator_listener(command_callback):
                     user_id = str(user.get("id"))
 
                     if user_id != str(AUTHORIZED_USER_ID):
-                        continue  # Ignore non-authorized users
+                        continue
 
                     text = message.get("text", "")
-
                     if text:
                         command_callback(text.strip())
 
@@ -338,4 +353,9 @@ def start_operator_listener(command_callback):
                 _log_error(f"OPERATOR_LISTENER_ERROR | {e}")
                 time.sleep(5)
 
-    threading.Thread(target=_poll, daemon=True).start()
+    threading.Thread(
+        target=_poll,
+        name="nbot-telegram-operator",
+        daemon=True,
+    ).start()
+    return True

@@ -17,7 +17,6 @@ from config import (
     LEVERAGE,
     PAPER_ENTRY_SLIPPAGE_PCT,
     PAPER_EXIT_SLIPPAGE_PCT,
-    PAPER_HEARTBEAT_INTERVAL_SECONDS,
     PAPER_PREFLIGHT_CANDLE_LIMIT,
     PAPER_PREFLIGHT_SYMBOL,
     PAPER_TAKER_FEE_RATE,
@@ -53,7 +52,6 @@ class PaperExchange:
         self._last_trade = None
         self._leverage_by_symbol: dict[str, int] = {}
         self._active_sl_order_id: Optional[int] = None
-        self._last_heartbeat_monotonic = 0.0
         self._latest_price_by_symbol: dict[str, float] = {}
         self._latest_price_timestamp_ms_by_symbol: dict[str, int] = {}
         self.execution_health_monitor = None
@@ -137,7 +135,6 @@ class PaperExchange:
                 price=tick.price,
                 timestamp=tick.timestamp,
             )
-            self._maybe_log_heartbeat(tick=tick)
             yield tick
 
     def position_price_stream(self, symbol: str):
@@ -165,7 +162,6 @@ class PaperExchange:
                     price=tick.price,
                     timestamp=tick.timestamp,
                 )
-                self._maybe_log_heartbeat(tick=tick)
                 yield tick
         finally:
             close = getattr(stream, "close", None)
@@ -219,45 +215,6 @@ class PaperExchange:
         )
         return trade
 
-
-    def _maybe_log_heartbeat(self, *, tick: Any) -> None:
-        now = time.monotonic()
-        if (
-            self._last_heartbeat_monotonic > 0
-            and now - self._last_heartbeat_monotonic
-            < PAPER_HEARTBEAT_INTERVAL_SECONDS
-        ):
-            return
-        self._last_heartbeat_monotonic = now
-        state = self.account.snapshot()
-        position = self.account.get_open_position()
-        if position is None:
-            self.system_log.info(
-                "PAPER_HEARTBEAT | "
-                f"source={state['source']} | position=FLAT | "
-                f"balance_usd={state['balance_usd']:.8f} | "
-                f"realized_pnl_usd={state['realized_pnl_usd']:.8f} | "
-                f"fees_paid_usd={state['fees_paid_usd']:.8f} | "
-                f"completed_trades={state['completed_trade_count']}"
-            )
-            return
-        observed_price = self._latest_price_by_symbol.get(position.symbol)
-        if observed_price is None and str(tick.symbol).upper() == position.symbol:
-            observed_price = float(tick.price)
-        unrealized = None
-        if observed_price is not None:
-            direction = 1.0 if position.side == "LONG" else -1.0
-            unrealized = (observed_price - position.entry_price) * position.qty * direction
-        self.system_log.info(
-            "PAPER_HEARTBEAT | "
-            f"source={state['source']} | position=OPEN | "
-            f"trade_id={position.trade_id} | symbol={position.symbol} | "
-            f"side={position.side} | qty={position.qty} | "
-            f"entry={position.entry_price} | stop={position.stop_loss} | "
-            f"observed_price={observed_price} | "
-            f"unrealized_pnl_usd={unrealized} | "
-            f"balance_usd={state['balance_usd']:.8f}"
-        )
 
     def get_historical_candles(self, *, symbol: str, interval: str, limit: int):
         return self.market_client.get_historical_candles(

@@ -423,3 +423,58 @@ Never:
 - copy mutable Execution state onto Observation;
 - put future order-writing credentials on Observation;
 - stop Execution casually during an open position.
+
+---
+
+## Execution Telegram operator commands
+
+The split Execution Worker accepts commands only from the configured
+`TELEGRAM_OPERATOR_USER_ID`.
+
+Active Execution commands:
+
+```text
+/status
+/execution
+/heartbeat
+/pnl [YYYY-MM-DD]
+/enable
+/disable
+/help
+```
+
+`/execution` returns the in-memory Execution health snapshot: worker uptime,
+position-feed counters, WebSocket disconnect/REST-fallback counters, tick and
+position-management latency, stop-update timing and persistence timing. The
+request also writes one `OPERATOR_EXECUTION_STATUS` INFO record to
+`logs/system.txt`.
+
+`/heartbeat` returns a cached execution/account/position snapshot. In SHADOW it
+includes paper balance, realized PnL, fees and completed-trade count. When a
+position is open it also includes the latest price already held by Execution,
+tick age and unrealized PnL. It does not make a Binance or Observation request
+just to answer the operator. The request writes one
+`OPERATOR_HEARTBEAT_STATUS` INFO record to `logs/system.txt`.
+
+The legacy `/learning` command is intentionally not part of the split
+Execution Worker. Learning status belongs to Observation and must not add a
+learning dependency to Execution.
+
+### Execution `system.txt` policy
+
+For the split Execution process, routine INFO/DEBUG telemetry is suppressed.
+`logs/system.txt` retains:
+
+- one `EXECUTION_STARTED` INFO record after successful startup/reconciliation;
+- operator-requested `OPERATOR_*` INFO records;
+- one `PUBLIC_POSITION_WS_RECOVERED` INFO confirmation after a real feed fault;
+- WARNING, ERROR and CRITICAL records.
+
+Periodic `EXECUTION_HEALTH` and `PAPER_HEARTBEAT` records are not emitted.
+Their useful data remains available on demand through `/execution` and
+`/heartbeat`.
+
+Telegram commands queued while Execution is offline are discarded at listener
+startup. This is fail-closed behavior: an old `/enable` must never arm a
+restarted worker. Send a fresh command after startup if an operator action is
+still intended.
