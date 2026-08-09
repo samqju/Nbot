@@ -2,6 +2,7 @@
 Description=NBOT Automatic Training Supervisor
 Wants=network-online.target
 After=network-online.target
+PartOf=nbot-observer.target
 
 [Service]
 Type=simple

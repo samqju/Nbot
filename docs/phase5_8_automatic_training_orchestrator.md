@@ -204,7 +204,7 @@ Install the service as a user service:
 
 ```bash
 mkdir -p ~/.config/systemd/user
-cp deploy/systemd/nbot-auto-training.service \
+cp deploy/observation/install_services.py (canonical Phase 6A.0+ deployment; see deploy/README.md) \
   ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now nbot-auto-training.service

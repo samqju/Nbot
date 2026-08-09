@@ -12,6 +12,7 @@ UNIT_NAMES = (
     "nbot-observation-tunnel.service",
     "nbot-execution.service",
 )
+TARGET_NAME = "nbot-execution.target"
 
 
 def _launcher_path(path: Path) -> Path:
@@ -113,6 +114,11 @@ def render_units(
         target = destination / unit
         target.write_text(rendered, encoding="utf-8")
         written.append(target)
+
+    target_source = template_root / f"{TARGET_NAME}.in"
+    (destination / TARGET_NAME).write_text(
+        target_source.read_text(encoding="utf-8"), encoding="utf-8"
+    )
     return written
 
 
@@ -160,16 +166,12 @@ def main() -> int:
         subprocess.run(["systemctl", "daemon-reload"], check=True)
         if args.enable or args.start:
             subprocess.run(
-                ["systemctl", "enable", *UNIT_NAMES],
+                ["systemctl", "enable", TARGET_NAME],
                 check=True,
             )
         if args.start:
             subprocess.run(
-                ["systemctl", "start", UNIT_NAMES[0]],
-                check=True,
-            )
-            subprocess.run(
-                ["systemctl", "start", UNIT_NAMES[1]],
+                ["systemctl", "start", TARGET_NAME],
                 check=True,
             )
     elif args.enable or args.start:

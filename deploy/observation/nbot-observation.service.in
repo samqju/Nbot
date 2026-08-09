@@ -2,6 +2,7 @@
 Description=NBOT Observation Worker
 Wants=network-online.target
 After=network-online.target
+PartOf=nbot-observer.target
 
 [Service]
 Type=simple

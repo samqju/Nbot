@@ -352,7 +352,7 @@ class Phase58AutomaticTrainingTests(unittest.TestCase):
 
     def test_systemd_template_runs_separate_supervisor(self):
         service = Path(
-            "deploy/systemd/nbot-auto-training.service"
+            "deploy/observation/nbot-auto-training.service.in"
         ).read_text()
         self.assertIn("scripts.learning.auto_train --watch", service)
         self.assertIn("Nice=10", service)

@@ -2,6 +2,7 @@
 Description=NBOT Execution Worker
 Wants=network-online.target nbot-observation-tunnel.service
 After=network-online.target nbot-observation-tunnel.service
+PartOf=nbot-execution.target
 
 [Service]
 Type=simple

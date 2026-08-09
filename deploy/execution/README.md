@@ -58,3 +58,19 @@ proposal IDs, and the durable pending execution-outcome outbox.
 
 A replacement VPS may use different repository, virtualenv, user, SSH-key, and
 Observer host paths by changing installer arguments only.
+
+The installer also writes `nbot-execution.target`, which groups the tunnel and
+Execution Worker so a fresh/replacement VPS has one role start command:
+
+```bash
+sudo systemctl start nbot-execution.target
+```
+
+The Execution service still only **Wants** the tunnel. It does not Require or
+BindTo it. `PartOf=nbot-execution.target` exists only so an explicit operator
+stop/restart of the role target can control both units; a tunnel failure does
+not stop Execution.
+
+Do not stop/restart the Execution target while a position is open merely for
+routine maintenance. See `deploy/README.md` and `deploy/recovery/` for the full
+deployment and disaster-recovery procedures.

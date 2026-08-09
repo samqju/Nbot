@@ -104,7 +104,7 @@ the registry.
 The included user service is:
 
 ```text
-deploy/systemd/nbot-promotion-controller.service
+deploy/observation/install_services.py (canonical Phase 6A.0+ deployment; see deploy/README.md)
 ```
 
 ## Files

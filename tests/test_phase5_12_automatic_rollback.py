@@ -376,7 +376,7 @@ class Phase512AutomaticRollbackTests(unittest.TestCase):
 
     def test_phase512_service_remains_outside_trading_engine(self):
         service = Path(
-            "deploy/systemd/nbot-paper-canary-controller.service"
+            "deploy/observation/nbot-paper-canary-controller.service.in"
         ).read_text()
         self.assertIn("scripts.learning.paper_canary_controller --watch", service)
         self.assertNotIn("run.py", service)

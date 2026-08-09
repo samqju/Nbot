@@ -356,7 +356,7 @@ class Phase511PaperCanaryExecutionTests(unittest.TestCase):
 
     def test_systemd_controller_is_separate_from_trading_engine(self):
         service = Path(
-            "deploy/systemd/nbot-paper-canary-controller.service"
+            "deploy/observation/nbot-paper-canary-controller.service.in"
         ).read_text()
         self.assertIn(
             "scripts.learning.paper_canary_controller --watch",

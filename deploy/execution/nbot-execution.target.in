@@ -1,0 +1,9 @@
+[Unit]
+Description=NBOT Execution Role
+Wants=network-online.target
+Wants=nbot-observation-tunnel.service
+Wants=nbot-execution.service
+After=network-online.target
+
+[Install]
+WantedBy=multi-user.target
