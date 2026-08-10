@@ -542,6 +542,10 @@ class Strategy:
             | self._virtual_trade_engine.active_symbols()
         )
 
+    def get_virtual_trade_metrics(self) -> dict:
+        """Expose virtual-trade telemetry without changing virtual state."""
+        return self._virtual_trade_engine.metrics_snapshot()
+
     def get_structure(self, symbol):
         return self._latest_structure.get(symbol)
 
@@ -954,6 +958,7 @@ class Strategy:
             "market_event_id": market_event_id,
             "candle_bucket": effective_bucket,
             "candidate_count": len(ranked_candidates),
+            "cycle_coverage": dict(cycle_coverage or {}),
             "paper_candidate_id": (
                 paper_candidate.observation_id
                 if paper_candidate is not None

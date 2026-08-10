@@ -66,14 +66,19 @@ class ObservationHTTPServer:
                     self._send(404, {"error": "NOT_FOUND"})
                     return
                 ready, reason = target.recommendation_store.readiness()
-                self._send(
-                    200,
-                    {
-                        "status": "READY" if ready else "NOT_READY",
-                        "reason": reason,
-                        "order_authority": "NONE",
-                    },
+                payload = {
+                    "status": "READY" if ready else "NOT_READY",
+                    "reason": reason,
+                    "order_authority": "NONE",
+                }
+                health_getter = getattr(
+                    target,
+                    "observation_health_snapshot",
+                    None,
                 )
+                if callable(health_getter):
+                    payload["health"] = health_getter()
+                self._send(200, payload)
 
             def do_POST(self):
                 if not outer._is_authorized(

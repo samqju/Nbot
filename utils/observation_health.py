@@ -1,0 +1,227 @@
+"""Low-overhead Observation Worker instrumentation for Phase 6B.
+
+The monitor is observational only. It must never influence recommendation
+readiness, candidate selection, learning decisions, or execution authority.
+Metrics are retained in memory and exposed only on demand.
+"""
+
+from __future__ import annotations
+
+import os
+import threading
+import time
+
+
+class ObservationHealthMonitor:
+    """Retain bounded realtime Observation diagnostics in memory."""
+
+    _COUNTERS = (
+        "total_ticks",
+        "selected_universe_ticks",
+        "decision_cycles",
+        "candidates_seen",
+    )
+
+    def __init__(self):
+        self._started_monotonic = time.monotonic()
+        self._last_activity_monotonic = self._started_monotonic
+        self._last_decision_monotonic = None
+        self._lock = threading.Lock()
+        self._counters = {name: 0 for name in self._COUNTERS}
+        self._execution_symbols: set[str] = set()
+        self._observation_symbols: set[str] = set()
+        self._observation_target_count = 0
+        self._last_tick_monotonic: dict[str, float] = {}
+        self._latest_cycle: dict = {}
+
+    def set_universes(
+        self,
+        *,
+        execution_symbols,
+        observation_symbols,
+        observation_target_count: int,
+    ) -> None:
+        """Update current selected universes without resetting runtime counters."""
+        try:
+            execution = {
+                str(symbol).strip().upper()
+                for symbol in execution_symbols
+                if str(symbol).strip()
+            }
+            observation = {
+                str(symbol).strip().upper()
+                for symbol in observation_symbols
+                if str(symbol).strip()
+            }
+            target = max(0, int(observation_target_count))
+            with self._lock:
+                self._execution_symbols = execution
+                self._observation_symbols = observation
+                self._observation_target_count = target
+                self._last_tick_monotonic = {
+                    symbol: seen_at
+                    for symbol, seen_at in self._last_tick_monotonic.items()
+                    if symbol in observation
+                }
+        except Exception:
+            return
+
+    def record_tick(self, symbol: str) -> None:
+        """Record one incoming public-market tick."""
+        try:
+            symbol = str(symbol or "").strip().upper()
+            now = time.monotonic()
+            with self._lock:
+                self._counters["total_ticks"] += 1
+                self._last_activity_monotonic = now
+                if symbol in self._observation_symbols:
+                    self._counters["selected_universe_ticks"] += 1
+                    self._last_tick_monotonic[symbol] = now
+        except Exception:
+            return
+
+    def record_decision_cycles(self, rows) -> None:
+        """Record already-computed decision-cycle results."""
+        try:
+            if not rows:
+                return
+            now = time.monotonic()
+            with self._lock:
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    self._counters["decision_cycles"] += 1
+                    try:
+                        candidates = max(
+                            0,
+                            int(row.get("candidate_count", 0) or 0),
+                        )
+                    except (TypeError, ValueError):
+                        candidates = 0
+                    self._counters["candidates_seen"] += candidates
+
+                    coverage = row.get("cycle_coverage")
+                    if not isinstance(coverage, dict):
+                        coverage = {}
+
+                    self._latest_cycle = {
+                        "candle_bucket": int(
+                            row.get("candle_bucket", 0) or 0
+                        ),
+                        "decision_batch_id": (
+                            row.get("decision_batch_id")
+                        ),
+                        "candidate_count": candidates,
+                        "symbols_completed": int(
+                            coverage.get("symbols_completed", 0) or 0
+                        ),
+                        "symbols_expected": int(
+                            coverage.get("symbols_expected", 0) or 0
+                        ),
+                        "coverage": float(
+                            coverage.get("coverage", 0.0) or 0.0
+                        ),
+                        "settled_seconds": float(
+                            coverage.get("settled_seconds", 0.0) or 0.0
+                        ),
+                    }
+                    self._last_decision_monotonic = now
+                self._last_activity_monotonic = now
+        except Exception:
+            return
+
+    def snapshot(
+        self,
+        *,
+        virtual_metrics: dict | None = None,
+        recommendation: dict | None = None,
+    ) -> dict:
+        """Return a read-only diagnostic snapshot."""
+        try:
+            now = time.monotonic()
+            with self._lock:
+                seen = (
+                    set(self._last_tick_monotonic)
+                    & self._observation_symbols
+                )
+                latest_cycle = dict(self._latest_cycle)
+                decision_age = (
+                    None
+                    if self._last_decision_monotonic is None
+                    else max(
+                        0.0,
+                        now - self._last_decision_monotonic,
+                    )
+                )
+                result = {
+                    "uptime_seconds": max(
+                        0.0,
+                        now - self._started_monotonic,
+                    ),
+                    "activity_age_seconds": max(
+                        0.0,
+                        now - self._last_activity_monotonic,
+                    ),
+                    "process": {
+                        "cpu_seconds": max(0.0, time.process_time()),
+                        "rss_mb": self._current_rss_mb(),
+                    },
+                    "counters": dict(self._counters),
+                    "universe": {
+                        "execution_symbol_count": len(
+                            self._execution_symbols
+                        ),
+                        "observation_symbol_count": len(
+                            self._observation_symbols
+                        ),
+                        "observation_target_count": (
+                            self._observation_target_count
+                        ),
+                        "symbols_seen": len(seen),
+                        "symbols_unseen": max(
+                            0,
+                            len(self._observation_symbols) - len(seen),
+                        ),
+                    },
+                    "latest_decision_cycle": latest_cycle,
+                    "latest_decision_age_seconds": decision_age,
+                    "virtual": dict(virtual_metrics or {}),
+                    "recommendation": dict(recommendation or {}),
+                }
+                return result
+        except Exception:
+            return {
+                "uptime_seconds": 0.0,
+                "activity_age_seconds": 0.0,
+                "process": {
+                    "cpu_seconds": 0.0,
+                    "rss_mb": 0.0,
+                },
+                "counters": {
+                    name: 0 for name in self._COUNTERS
+                },
+                "universe": {
+                    "execution_symbol_count": 0,
+                    "observation_symbol_count": 0,
+                    "observation_target_count": 0,
+                    "symbols_seen": 0,
+                    "symbols_unseen": 0,
+                },
+                "latest_decision_cycle": {},
+                "latest_decision_age_seconds": None,
+                "virtual": dict(virtual_metrics or {}),
+                "recommendation": dict(recommendation or {}),
+            }
+
+    @staticmethod
+    def _current_rss_mb() -> float:
+        """Read current resident memory on Linux; return zero on failure."""
+        try:
+            with open("/proc/self/statm", "r", encoding="utf-8") as handle:
+                resident_pages = int(handle.read().split()[1])
+            page_size = int(os.sysconf("SC_PAGE_SIZE"))
+            return (
+                resident_pages * page_size
+            ) / (1024.0 * 1024.0)
+        except Exception:
+            return 0.0

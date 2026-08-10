@@ -114,6 +114,56 @@ class LatestRecommendationStore:
         with self._lock:
             return self._ready, self._reason
 
+    def status_snapshot(self, *, now_ms: int | None = None) -> dict:
+        """Return recommendation telemetry without changing recommendation state."""
+        now_ms = int(time.time() * 1000) if now_ms is None else int(now_ms)
+        with self._lock:
+            ready = self._ready
+            reason = self._reason
+            proposal = self._proposal
+
+            if not ready:
+                return {
+                    "status": "NOT_READY",
+                    "reason": reason or "OBSERVATION_NOT_READY",
+                    "proposal_present": False,
+                    "proposal_id": None,
+                    "proposal_age_seconds": None,
+                    "expires_in_seconds": None,
+                }
+
+            if proposal is None:
+                return {
+                    "status": "NO_TRADE",
+                    "reason": reason or "NO_EXECUTION_ELIGIBLE_CANDIDATE",
+                    "proposal_present": False,
+                    "proposal_id": None,
+                    "proposal_age_seconds": None,
+                    "expires_in_seconds": None,
+                }
+
+            expired = proposal.is_expired(now_ms=now_ms)
+            return {
+                "status": "NO_TRADE" if expired else "PROPOSAL",
+                "reason": (
+                    "RECOMMENDATION_EXPIRED"
+                    if expired
+                    else "RECOMMENDATION_AVAILABLE"
+                ),
+                "proposal_present": not expired,
+                "proposal_id": (
+                    None if expired else proposal.proposal_id
+                ),
+                "proposal_age_seconds": max(
+                    0.0,
+                    (now_ms - proposal.generated_at) / 1000.0,
+                ),
+                "expires_in_seconds": max(
+                    0.0,
+                    (proposal.expires_at - now_ms) / 1000.0,
+                ),
+            }
+
     def reject(self, proposal_id: str, *, reason: str | None = None) -> bool:
         proposal_id = str(proposal_id or "").strip()
         with self._lock:

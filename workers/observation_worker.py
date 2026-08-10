@@ -9,6 +9,7 @@ from config import (
     CANDIDATE_OUTCOMES_PATH,
     EXECUTION_MODE,
     OBSERVATION_UNIVERSE_REFRESH_SECONDS,
+    OBSERVATION_UNIVERSE_SIZE,
     STRATEGY_MODE,
     TRADING_ENV,
 )
@@ -18,6 +19,7 @@ from observation.execution_outcome_receiver import LocalExecutionOutcomeReceiver
 from observation.recommendation import LatestRecommendationStore
 from observation.trade_service import ObservationTradeService
 from strategy.strategy_factory import build_strategy
+from utils.observation_health import ObservationHealthMonitor
 
 
 class ObservationWorker:
@@ -36,6 +38,7 @@ class ObservationWorker:
         universe=None,
         recommendation_store=None,
         outcome_receiver=None,
+        health_monitor=None,
     ):
         self.system_log = system_log
         if strategy is None:
@@ -68,6 +71,7 @@ class ObservationWorker:
             execution_mode=EXECUTION_MODE,
             system_log=system_log,
         )
+        self.health_monitor = health_monitor or ObservationHealthMonitor()
         self._prepared = False
         self._last_universe_refresh_monotonic = 0.0
 
@@ -84,6 +88,7 @@ class ObservationWorker:
             force=True,
         )
         self.universe.warmup(self.market_client)
+        self._sync_health_universes()
         self._prepared = True
         self._last_universe_refresh_monotonic = time.monotonic()
         if self.strategy.is_warmed_up():
@@ -111,6 +116,7 @@ class ObservationWorker:
             raise RuntimeError("OBSERVATION_WORKER_NOT_PREPARED")
 
         self._maybe_refresh_universe()
+        self.health_monitor.record_tick(tick.symbol)
         self.strategy.on_price(
             symbol=tick.symbol,
             price=tick.price,
@@ -135,6 +141,7 @@ class ObservationWorker:
             paper_entry_allowed=True,
         )
         if processed:
+            self.health_monitor.record_decision_cycles(processed)
             intent = self.strategy.consume_observation_recommendation()
             if intent is None:
                 self.recommendation_store.clear(
@@ -143,6 +150,37 @@ class ObservationWorker:
             else:
                 self.recommendation_store.publish_intent(intent)
         return processed
+
+    def observation_health_snapshot(self) -> dict:
+        """Return read-only Observation metrics for local operator health."""
+        virtual_metrics = {}
+        getter = getattr(
+            self.strategy,
+            "get_virtual_trade_metrics",
+            None,
+        )
+        if callable(getter):
+            try:
+                virtual_metrics = getter()
+            except Exception:
+                virtual_metrics = {}
+
+        recommendation = {}
+        status_getter = getattr(
+            self.recommendation_store,
+            "status_snapshot",
+            None,
+        )
+        if callable(status_getter):
+            try:
+                recommendation = status_getter()
+            except Exception:
+                recommendation = {}
+
+        return self.health_monitor.snapshot(
+            virtual_metrics=virtual_metrics,
+            recommendation=recommendation,
+        )
 
     def handle_trade_request(
         self,
@@ -195,4 +233,12 @@ class ObservationWorker:
             exchange=self.market_client,
             force=False,
         )
+        self._sync_health_universes()
         self._last_universe_refresh_monotonic = time.monotonic()
+
+    def _sync_health_universes(self) -> None:
+        self.health_monitor.set_universes(
+            execution_symbols=self.universe.symbols,
+            observation_symbols=self.universe.observation_symbols,
+            observation_target_count=OBSERVATION_UNIVERSE_SIZE,
+        )

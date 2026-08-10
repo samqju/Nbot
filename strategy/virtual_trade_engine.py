@@ -84,6 +84,8 @@ class VirtualTradeEngine:
         self.target_r = VIRTUAL_TRADE_TARGET_R
         self._active: dict[str, dict] = {}
         self._lock = threading.Lock()
+        self._runtime_enrollments = 0
+        self._runtime_closures = 0
         self._restore_active_trades()
 
     @staticmethod
@@ -197,6 +199,7 @@ class VirtualTradeEngine:
                 "strategy_lab_baseline": variant.baseline,
                 "experiment_context": variant_context,
             }
+            self._runtime_enrollments += 1
             self._persist_active_locked()
         return True
 
@@ -276,6 +279,7 @@ class VirtualTradeEngine:
                     finished.append(result)
                     del self._active[key]
 
+            self._runtime_closures += len(finished)
             self._persist_active_locked()
 
         for result in finished:
@@ -366,6 +370,19 @@ class VirtualTradeEngine:
                 trade["symbol"]
                 for trade in self._active.values()
                 if trade.get("symbol")
+            }
+
+    def metrics_snapshot(self) -> dict:
+        """Return in-memory virtual-trade telemetry."""
+        with self._lock:
+            return {
+                "active_experiments": len(self._active),
+                "active_candidates": len({
+                    row["candidate_observation_id"]
+                    for row in self._active.values()
+                }),
+                "runtime_enrollments": int(self._runtime_enrollments),
+                "runtime_closures": int(self._runtime_closures),
             }
 
     def _restore_active_trades(self) -> None:
