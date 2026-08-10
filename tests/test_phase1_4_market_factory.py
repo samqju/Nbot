@@ -140,6 +140,8 @@ with patch("execution.exchange_factory.BinanceMarketClient", Market), \
             "TRADING_ENV": "LIVE",
             "EXECUTION_MODE": "TRADE",
             "LIVE_TRADING_CONFIRMATION": "I_ACCEPT_REAL_MONEY_EXECUTION",
+            "LIVE_API_KEY": "NBOT_UNIT_TEST_KEY",
+            "LIVE_API_SECRET": "NBOT_UNIT_TEST_SECRET",
             "STRATEGY_MODE": "STRUCTURE",
         })
         result = subprocess.run(
