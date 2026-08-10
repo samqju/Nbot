@@ -152,5 +152,94 @@ class Phase6B2MarketDataIntegrityTests(unittest.TestCase):
         self.assertIsNotNone(snapshot["last_ws_message_age_seconds"])
 
 
+    def test_decision_cycle_separates_execution_coverage(self):
+        coordinator = FiveMinuteDecisionCycleCoordinator(
+            minimum_coverage=0.75,
+            settle_seconds=1.0,
+        )
+        coordinator.set_symbols(
+            ["BTCUSDT", "ETHUSDT", "XRPUSDT", "QUIETUSDT"],
+            execution_symbols=["BTCUSDT", "ETHUSDT"],
+        )
+        for symbol in ["BTCUSDT", "ETHUSDT", "XRPUSDT"]:
+            coordinator.mark_rollover(
+                symbol=symbol,
+                new_bucket=200,
+                now_monotonic=10.0,
+            )
+
+        ready = coordinator.ready_buckets(now_monotonic=12.0)
+
+        self.assertEqual(len(ready), 1)
+        row = ready[0]
+        self.assertEqual(row["symbols_completed"], 3)
+        self.assertEqual(row["execution_symbols_completed"], 2)
+        self.assertEqual(row["execution_symbols_expected"], 2)
+        self.assertEqual(row["execution_coverage"], 1.0)
+        self.assertEqual(row["missing_execution_symbols_count"], 0)
+        self.assertEqual(row["missing_observation_only_symbols_count"], 1)
+        self.assertEqual(
+            row["missing_observation_only_symbols_sample"],
+            ["QUIETUSDT"],
+        )
+
+    def test_late_rollover_is_measured_after_cycle_release(self):
+        coordinator = FiveMinuteDecisionCycleCoordinator(
+            minimum_coverage=0.75,
+            settle_seconds=1.0,
+        )
+        coordinator.set_symbols(
+            ["BTCUSDT", "ETHUSDT", "XRPUSDT", "QUIETUSDT"],
+            execution_symbols=["BTCUSDT", "ETHUSDT"],
+        )
+        for symbol in ["BTCUSDT", "ETHUSDT", "XRPUSDT"]:
+            coordinator.mark_rollover(
+                symbol=symbol,
+                new_bucket=300,
+                now_monotonic=10.0,
+            )
+        ready = coordinator.ready_buckets(now_monotonic=12.0)
+        self.assertEqual(len(ready), 1)
+        coordinator.mark_processed(300)
+
+        coordinator.mark_rollover(
+            symbol="QUIETUSDT",
+            new_bucket=300,
+            now_monotonic=27.5,
+        )
+
+        metrics = coordinator.integrity_snapshot()
+        self.assertEqual(metrics["late_rollover_events"], 1)
+        self.assertEqual(metrics["late_rollover_symbols_count"], 1)
+        self.assertEqual(metrics["pending_late_rollovers_count"], 0)
+        late = metrics["late_rollover_symbols_sample"][0]
+        self.assertEqual(late["symbol"], "QUIETUSDT")
+        self.assertEqual(late["late_rollover_count"], 1)
+        self.assertAlmostEqual(late["latest_delay_seconds"], 15.5)
+        self.assertFalse(late["execution_eligible"])
+
+    def test_health_reports_execution_freshness_separately(self):
+        monitor = ObservationHealthMonitor()
+        monitor.set_universes(
+            execution_symbols=["BTCUSDT", "ETHUSDT"],
+            observation_symbols=["BTCUSDT", "ETHUSDT", "QUIETUSDT"],
+            observation_target_count=200,
+        )
+        monitor.record_tick("BTCUSDT", now_monotonic=99.0)
+        monitor.record_tick("ETHUSDT", now_monotonic=80.0)
+        monitor.record_tick("QUIETUSDT", now_monotonic=50.0)
+
+        universe = monitor.snapshot(now_monotonic=100.0)["universe"]
+
+        self.assertEqual(universe["execution_symbols_seen"], 2)
+        self.assertEqual(universe["execution_symbols_fresh"], 1)
+        self.assertEqual(universe["execution_symbols_delayed"], 1)
+        self.assertEqual(universe["execution_symbols_stale"], 0)
+        self.assertEqual(
+            universe["ticker_stream_semantics"],
+            "CHANGED_TICKERS_ONLY",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

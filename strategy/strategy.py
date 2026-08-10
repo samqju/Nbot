@@ -523,6 +523,16 @@ class Strategy:
         while len(rows) > self._market_data_symbol_sample_limit:
             rows.pop(next(iter(rows)))
 
+    def _decision_cycle_integrity_snapshot(self) -> dict:
+        coordinator = getattr(self, "_decision_cycle_coordinator", None)
+        getter = getattr(coordinator, "integrity_snapshot", None)
+        if not callable(getter):
+            return {}
+        try:
+            return getter()
+        except Exception:
+            return {}
+
     def get_market_data_integrity_metrics(self) -> dict:
         """Return read-only live candle-continuity diagnostics."""
         try:
@@ -549,6 +559,9 @@ class Strategy:
                             self._latest_out_of_order_by_symbol.values()
                         )
                     ],
+                    "decision_cycle_quality": (
+                        self._decision_cycle_integrity_snapshot()
+                    ),
                 }
         except Exception:
             return {}
@@ -708,7 +721,10 @@ class Strategy:
         # B.1. B.2 will intentionally point scanning at the expanded
         # observation universe.
         self._universe = set(observation)
-        self._decision_cycle_coordinator.set_symbols(observation)
+        self._decision_cycle_coordinator.set_symbols(
+            observation,
+            execution_symbols=execution,
+        )
         self._warmed_up = False
 
     def get_execution_universe(self):

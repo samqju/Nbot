@@ -149,6 +149,48 @@ class ObservationHealthMonitor:
                             coverage.get("missing_symbols_count", 0) or 0
                         ),
                         "missing_symbols_sample": missing_sample,
+                        "execution_symbols_completed": int(
+                            coverage.get(
+                                "execution_symbols_completed", 0
+                            ) or 0
+                        ),
+                        "execution_symbols_expected": int(
+                            coverage.get(
+                                "execution_symbols_expected", 0
+                            ) or 0
+                        ),
+                        "execution_coverage": float(
+                            coverage.get("execution_coverage", 0.0) or 0.0
+                        ),
+                        "missing_execution_symbols_count": int(
+                            coverage.get(
+                                "missing_execution_symbols_count", 0
+                            ) or 0
+                        ),
+                        "missing_execution_symbols_sample": [
+                            str(symbol).strip().upper()
+                            for symbol in (
+                                coverage.get(
+                                    "missing_execution_symbols_sample", []
+                                ) or []
+                            )
+                            if str(symbol).strip()
+                        ][: self._SYMBOL_SAMPLE_LIMIT],
+                        "missing_observation_only_symbols_count": int(
+                            coverage.get(
+                                "missing_observation_only_symbols_count", 0
+                            ) or 0
+                        ),
+                        "missing_observation_only_symbols_sample": [
+                            str(symbol).strip().upper()
+                            for symbol in (
+                                coverage.get(
+                                    "missing_observation_only_symbols_sample",
+                                    [],
+                                ) or []
+                            )
+                            if str(symbol).strip()
+                        ][: self._SYMBOL_SAMPLE_LIMIT],
                     }
                     self._last_decision_monotonic = now
                 self._last_activity_monotonic = now
@@ -213,6 +255,19 @@ class ObservationHealthMonitor:
                     key=lambda symbol: ages[symbol],
                     reverse=True,
                 )
+                execution_seen = seen & self._execution_symbols
+                execution_unseen = sorted(
+                    self._execution_symbols - execution_seen
+                )
+                execution_fresh = sorted(
+                    set(fresh) & self._execution_symbols
+                )
+                execution_delayed = sorted(
+                    set(delayed) & self._execution_symbols
+                )
+                execution_stale = sorted(
+                    set(stale) & self._execution_symbols
+                )
                 latest_cycle = dict(self._latest_cycle)
                 decision_age = (
                     None
@@ -240,6 +295,20 @@ class ObservationHealthMonitor:
                         "execution_symbol_count": len(
                             self._execution_symbols
                         ),
+                        "execution_symbols_seen": len(execution_seen),
+                        "execution_symbols_unseen": len(execution_unseen),
+                        "execution_symbols_fresh": len(execution_fresh),
+                        "execution_symbols_delayed": len(execution_delayed),
+                        "execution_symbols_stale": len(execution_stale),
+                        "execution_unseen_symbols_sample": execution_unseen[
+                            : self._SYMBOL_SAMPLE_LIMIT
+                        ],
+                        "execution_delayed_symbols_sample": (
+                            execution_delayed[: self._SYMBOL_SAMPLE_LIMIT]
+                        ),
+                        "execution_stale_symbols_sample": (
+                            execution_stale[: self._SYMBOL_SAMPLE_LIMIT]
+                        ),
                         "observation_symbol_count": len(
                             self._observation_symbols
                         ),
@@ -253,6 +322,10 @@ class ObservationHealthMonitor:
                         "symbols_stale": len(stale),
                         "tick_fresh_seconds": self._TICK_FRESH_SECONDS,
                         "tick_stale_seconds": self._TICK_STALE_SECONDS,
+                        "ticker_stream_semantics": "CHANGED_TICKERS_ONLY",
+                        "symbol_silence_interpretation": (
+                            "QUIET_OR_STALE_REQUIRES_TRANSPORT_CONTEXT"
+                        ),
                         "newest_tick_age_seconds": (
                             min(ages.values()) if ages else None
                         ),
@@ -304,6 +377,14 @@ class ObservationHealthMonitor:
                 },
                 "universe": {
                     "execution_symbol_count": 0,
+                    "execution_symbols_seen": 0,
+                    "execution_symbols_unseen": 0,
+                    "execution_symbols_fresh": 0,
+                    "execution_symbols_delayed": 0,
+                    "execution_symbols_stale": 0,
+                    "execution_unseen_symbols_sample": [],
+                    "execution_delayed_symbols_sample": [],
+                    "execution_stale_symbols_sample": [],
                     "observation_symbol_count": 0,
                     "observation_target_count": 0,
                     "symbols_seen": 0,
@@ -313,6 +394,10 @@ class ObservationHealthMonitor:
                     "symbols_stale": 0,
                     "tick_fresh_seconds": self._TICK_FRESH_SECONDS,
                     "tick_stale_seconds": self._TICK_STALE_SECONDS,
+                    "ticker_stream_semantics": "CHANGED_TICKERS_ONLY",
+                    "symbol_silence_interpretation": (
+                        "QUIET_OR_STALE_REQUIRES_TRANSPORT_CONTEXT"
+                    ),
                     "newest_tick_age_seconds": None,
                     "oldest_tick_age_seconds": None,
                     "unseen_symbols_sample": [],
