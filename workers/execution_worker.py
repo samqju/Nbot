@@ -643,6 +643,49 @@ class ExecutionWorker:
                 send_critical("TRADING DISABLED", f"Reason: {reason}")
         return True
 
+    def _run_emergency_exit_test(self) -> None:
+        """Run the real emergency handler under non-production test gates."""
+        environment = str(TRADING_ENV).strip().upper()
+        mode = str(EXECUTION_MODE).strip().upper()
+        if mode != "SHADOW" and environment != "TESTNET":
+            raise RuntimeError(
+                "EMERGENCY_EXIT_TEST_FORBIDDEN_IN_LIVE_TRADE"
+            )
+
+        engine_state = self.state.get_state().get("engine_state")
+        if engine_state != TRADING_DISABLED:
+            raise RuntimeError(
+                "EMERGENCY_EXIT_TEST_REQUIRES_TRADING_DISABLED"
+            )
+
+        open_position = self.state.get_open_position()
+        if open_position is None:
+            raise RuntimeError(
+                "EMERGENCY_EXIT_TEST_REQUIRES_OPEN_POSITION"
+            )
+
+        symbol = str(open_position.get("symbol") or "").strip().upper()
+        self.system_log.warning(
+            "EMERGENCY_EXIT_TEST_REQUESTED | "
+            f"environment={environment} | mode={mode} | symbol={symbol}"
+        )
+
+        self.emergency.execute(
+            reason=f"PHASE6A_EMERGENCY_EXIT_TEST:{symbol}"
+        )
+
+        remaining = self.exchange.get_position()
+        if remaining is not None:
+            raise RuntimeError(
+                "EMERGENCY_EXIT_TEST_NOT_FLAT_AFTER_HANDLER | "
+                f"symbol={getattr(remaining, 'symbol', symbol)}"
+            )
+
+        self.system_log.warning(
+            "EMERGENCY_EXIT_TEST_CONFIRMED_FLAT | "
+            f"symbol={symbol} | exchange_position=FLAT"
+        )
+
     def _process_operator_command(self) -> None:
         if not os.path.exists(OPERATOR_COMMAND_FILE):
             return
@@ -661,6 +704,8 @@ class ExecutionWorker:
                     operator_initiated=True,
                     notify=False,
                 )
+            elif action == "EMERGENCY_EXIT_TEST":
+                self._run_emergency_exit_test()
             elif action == "STATUS":
                 self.system_log.info(
                     "OPERATOR_STATUS | source=FILE | "

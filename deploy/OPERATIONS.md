@@ -461,7 +461,6 @@ Execution Worker. Learning status belongs to Observation and must not add a
 learning dependency to Execution.
 
 ### Execution `system.txt` policy
-
 For the split Execution process, routine INFO/DEBUG telemetry is suppressed.
 `logs/system.txt` retains:
 
@@ -478,3 +477,30 @@ Telegram commands queued while Execution is offline are discarded at listener
 startup. This is fail-closed behavior: an old `/enable` must never arm a
 restarted worker. Send a fresh command after startup if an operator action is
 still intended.
+
+#Emergency Exit Validation
+
+Execution supports a local EMERGENCY_EXIT_TEST operator-file action for
+controlled emergency-exit regression testing.
+
+Safety gates:
+- allowed in LIVE + SHADOW
+- allowed in TESTNET
+- forbidden in LIVE + TRADE
+- trading must already be disabled
+- an execution position must already be open
+- not exposed as a Telegram command
+
+Trigger locally on the Execution VPS:
+
+printf '%s\n' '{"action":"EMERGENCY_EXIT_TEST"}' \
+  > operator_command.json.tmp
+mv operator_command.json.tmp operator_command.json
+
+Expected successful sequence:
+EMERGENCY_EXIT_TEST_REQUESTED
+EMERGENCY_EXIT_TRIGGERED
+EMERGENCY_POSITION
+EMERGENCY_EXIT_TEST_CONFIRMED_FLAT
+POSITION_CLOSED_CONFIRMED
+POSITION_CLOSE_DETAILS ... exit_reason=EMERGENCY_EXIT
