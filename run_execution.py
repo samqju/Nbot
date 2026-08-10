@@ -73,6 +73,11 @@ def main(argv: list[str] | None = None) -> int:
             "EXECUTION_STARTED",
             "OPERATOR_",
             "PUBLIC_POSITION_WS_RECOVERED",
+            "POSITION_OPENED",
+            "SL_UPDATE_ATTEMPT",
+            "SL_UPDATE_VERIFIED",
+            "POSITION_CLOSED_CONFIRMED",
+            "POSITION_CLOSE_DETAILS",
         ),
     )
     trade_log = trade_logger()

@@ -541,11 +541,6 @@ class ExecutionWorker:
             market_state=self.market_state,
         )
         if executed:
-            self.system_log.info(
-                "EXECUTION_PROPOSAL_EXECUTED | "
-                f"proposal_id={proposal.proposal_id} | "
-                f"symbol={proposal.symbol}"
-            )
             return "ENTRY_OPENED"
 
         self._remember_rejection(

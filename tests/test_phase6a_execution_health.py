@@ -71,13 +71,27 @@ class ExecutionHealthMonitorTests(unittest.TestCase):
         logger.addHandler(handler)
         restrict_info_to_prefixes(
             logger,
-            ("EXECUTION_STARTED", "OPERATOR_"),
+            (
+                "EXECUTION_STARTED",
+                "OPERATOR_",
+                "PUBLIC_POSITION_WS_RECOVERED",
+                "POSITION_OPENED",
+                "SL_UPDATE_ATTEMPT",
+                "SL_UPDATE_VERIFIED",
+                "POSITION_CLOSED_CONFIRMED",
+                "POSITION_CLOSE_DETAILS",
+            ),
         )
 
         logger.info("NOISY_ROUTINE_INFO")
         logger.debug("NOISY_DEBUG")
         logger.info("EXECUTION_STARTED | position=FLAT")
         logger.info("OPERATOR_EXECUTION_STATUS | position=FLAT")
+        logger.info("POSITION_OPENED | symbol=BTCUSDT")
+        logger.info("SL_UPDATE_ATTEMPT | symbol=BTCUSDT")
+        logger.info("SL_UPDATE_VERIFIED | symbol=BTCUSDT")
+        logger.info("POSITION_CLOSED_CONFIRMED")
+        logger.info("POSITION_CLOSE_DETAILS | symbol=BTCUSDT")
         logger.warning("REAL_WARNING")
         logger.error("REAL_ERROR")
 
@@ -86,6 +100,11 @@ class ExecutionHealthMonitorTests(unittest.TestCase):
             [
                 ("INFO", "EXECUTION_STARTED | position=FLAT"),
                 ("INFO", "OPERATOR_EXECUTION_STATUS | position=FLAT"),
+                ("INFO", "POSITION_OPENED | symbol=BTCUSDT"),
+                ("INFO", "SL_UPDATE_ATTEMPT | symbol=BTCUSDT"),
+                ("INFO", "SL_UPDATE_VERIFIED | symbol=BTCUSDT"),
+                ("INFO", "POSITION_CLOSED_CONFIRMED"),
+                ("INFO", "POSITION_CLOSE_DETAILS | symbol=BTCUSDT"),
                 ("WARNING", "REAL_WARNING"),
                 ("ERROR", "REAL_ERROR"),
             ],

@@ -674,6 +674,24 @@ class EntryLifecycle:
 
         self.state.save()
 
+        # One compact execution-audit record after the entry is filled, the
+        # protective stop is exchange-verified, and the open position is
+        # durable. Use the verified/quantized stop, not the pre-quantization
+        # calculated stop held in the entry plan.
+        self.system_log.info(
+            "POSITION_OPENED | "
+            f"proposal_id={open_position.get('proposal_id')} | "
+            f"symbol={symbol} | "
+            f"side={intent.direction} | "
+            f"entry={ack.avg_price} | "
+            f"qty={ack.filled_qty} | "
+            f"leverage={LEVERAGE} | "
+            f"initial_sl={verified.stop_loss} | "
+            f"sl_status={open_position.get('sl_status')} | "
+            f"entry_order_id={open_position.get('entry_order_id')} | "
+            f"sl_order_id={open_position.get('sl_order_id')}"
+        )
+
         panel_text = format_trade_panel(
             symbol=symbol,
             side=intent.direction,
