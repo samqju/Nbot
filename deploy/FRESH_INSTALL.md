@@ -196,6 +196,10 @@ sudo "$NBOT_VENV/bin/python" \
 
 `pip check` must finish without dependency errors.
 
+`requirements.lock.txt` is the production/runtime dependency lock used on both
+VPSs. Development-only lint tooling lives in `requirements-dev.lock.txt` and
+is not required by either production service.
+
 ---
 
 # OBSERVATION VPS

@@ -157,6 +157,10 @@ sudo "$NBOT_VENV/bin/python" -m pip install -r "$NBOT_REPO/requirements.lock.txt
 The service installer deliberately preserves the supplied virtualenv launcher
 path rather than resolving it to the system interpreter.
 
+`requirements.lock.txt` is the production/runtime lock. The separate
+`requirements-dev.lock.txt` layers lint/development tooling on top of it and
+should not be installed merely to run either VPS role.
+
 ## 5. Runtime `.env`
 
 `.env` is machine-local and must never be committed.
