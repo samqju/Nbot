@@ -1,8 +1,9 @@
-"""Formal runtime contract for exchange adapters.
+"""Formal runtime contract for Execution exchange adapters.
 
-The trading engine depends on this complete method surface. Keeping the
-contract centralized prevents an adapter from passing startup validation and
-then failing later in an entry, position, reconciliation, or emergency path.
+The split Execution Worker validates the capabilities it may need for entry,
+position management, reconciliation, and emergency handling. Observation owns
+its separate all-market stream; Execution requires a dedicated position-symbol
+stream while capital is open.
 """
 
 from __future__ import annotations
@@ -14,7 +15,10 @@ from typing import Any, Protocol, runtime_checkable
 CONNECTION_METHODS = (
     "connect",
     "disconnect",
-    "price_stream",
+)
+
+POSITION_FEED_METHODS = (
+    "position_price_stream",
 )
 
 MARKET_DATA_METHODS = (
@@ -61,6 +65,7 @@ CANCELLATION_METHODS = (
 
 REQUIRED_EXCHANGE_METHODS = (
     CONNECTION_METHODS
+    + POSITION_FEED_METHODS
     + MARKET_DATA_METHODS
     + STREAM_HEALTH_METHODS
     + ACCOUNT_STATE_METHODS
@@ -88,7 +93,7 @@ class ExchangeAdapter(Protocol):
 
     def connect(self) -> Any: ...
     def disconnect(self) -> Any: ...
-    def price_stream(self) -> Any: ...
+    def position_price_stream(self, symbol: str) -> Any: ...
 
     def get_historical_candles(self, *args: Any, **kwargs: Any) -> Any: ...
     def get_current_spread_pct(self, *args: Any, **kwargs: Any) -> Any: ...
@@ -134,7 +139,7 @@ def inspect_exchange_adapter(exchange: Any) -> ExchangeContractReport:
 
 
 def validate_exchange_adapter(exchange: Any) -> ExchangeContractReport:
-    """Fail fast when an adapter does not implement the full engine contract."""
+    """Fail fast when an adapter lacks the split Execution contract."""
     report = inspect_exchange_adapter(exchange)
     if not report.valid:
         raise RuntimeError(

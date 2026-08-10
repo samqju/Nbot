@@ -27,6 +27,8 @@ class Phase21ExchangeContractTests(unittest.TestCase):
     def test_contract_contains_complete_current_surface(self):
         self.assertEqual(len(REQUIRED_EXCHANGE_METHODS), 24)
         self.assertEqual(len(set(REQUIRED_EXCHANGE_METHODS)), 24)
+        self.assertIn("position_price_stream", REQUIRED_EXCHANGE_METHODS)
+        self.assertNotIn("price_stream", REQUIRED_EXCHANGE_METHODS)
         self.assertIn("get_historical_candles", REQUIRED_EXCHANGE_METHODS)
         self.assertIn("resolve_ambiguous_entry", REQUIRED_EXCHANGE_METHODS)
         self.assertIn("recover_active_stop_loss", REQUIRED_EXCHANGE_METHODS)
