@@ -1,7 +1,7 @@
 # NBOT Fresh Two-VPS Installation
 
-This is the beginner-friendly rebuild guide for the final Phase 6A.0
-two-worker architecture.
+This is the beginner-friendly rebuild guide for the current two-worker
+architecture after the Phase 6 Plan Audit.
 
 Use this guide when starting from two fresh Ubuntu VPSs.
 
@@ -17,11 +17,15 @@ NBOT uses two machines:
 
 Both machines use the **same Git repository and same exact release**.
 
-The final Phase 6A.0 release is:
+The clean pre-Phase-6B release is:
 
 ```text
-phase6a0-final
+pre-phase6b-clean
 ```
+
+The immutable `phase6a-final` tag remains the proven Phase 6A rollback anchor.
+The `pre-phase6b-clean` tag is created only after the final Plan Audit checks
+pass and must never be moved afterward.
 
 Do not expose TCP port `8765` publicly. Execution reaches Observation through
 an encrypted SSH tunnel.
@@ -149,7 +153,7 @@ On **both VPSs**:
 
 ```bash
 export NBOT_REPO="$HOME/Nbot"
-export NBOT_VERSION="phase6a0-final"
+export NBOT_VERSION="pre-phase6b-clean"
 export NBOT_GIT_URL="git@github.com:OWNER/Nbot.git"
 
 git clone "$NBOT_GIT_URL" "$NBOT_REPO"
@@ -218,7 +222,11 @@ with a strong random secret of at least 32 characters.
 
 Do not post that secret in chat and do not commit `.env`.
 
-The same exact token must later be installed on Execution.
+The same exact token must later be installed on Execution. Observation's
+`.env` may contain both LIVE and TESTNET **public** market endpoints, but it
+must not contain private Binance API keys, Telegram execution credentials, or
+trade-arming controls. Keep `TRADING_ENV` and `EXECUTION_MODE` identical on
+both VPSs so proposal/outcome protocol identities match.
 
 Verify without printing the token:
 
@@ -467,7 +475,12 @@ nano .env
 ```
 
 Replace `CHANGE_ME` with the exact same `OBSERVATION_CONTROL_TOKEN` used on
-Observation.
+Observation. The Execution template intentionally contains both LIVE and
+TESTNET connection/credential slots in this one machine-local file. Normal
+mode changes are made by changing `TRADING_ENV` / `EXECUTION_MODE` and then
+restarting only after the relevant safety gates are satisfied. TESTNET+TRADE
+requires its explicit confirmation and arm file; LIVE+TRADE order writing
+remains intentionally unavailable.
 
 Verify without printing the token:
 
@@ -614,7 +627,7 @@ deploy/OPERATIONS.md
 
 Never:
 
-- run legacy `run.py` beside the split workers;
+- restore or run the deleted legacy single-process runtime beside the split workers;
 - run two Execution Workers;
 - expose TCP `8765` publicly;
 - disable SSH host-key checking;

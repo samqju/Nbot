@@ -1,6 +1,6 @@
 # NBOT Execution VPS deployment
 
-Phase 6A.0 final deployment runs only the capital-owning Execution Worker on the Execution VPS.
+The current two-worker deployment runs only the capital-owning Execution Worker on the Execution VPS.
 Observation remains reachable to Execution only through a loopback SSH tunnel:
 
     Execution 127.0.0.1:8765

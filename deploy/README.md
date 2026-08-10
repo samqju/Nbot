@@ -15,17 +15,24 @@ For replacement/disaster recovery:
 - `deploy/recovery/BACKUP_RESTORE.md`
 - `deploy/recovery/DISASTER_RECOVERY.md`
 
-The immutable final Phase 6A.0 rebuild/deployment release is:
+The immutable Phase 6A rollback anchor remains:
 
 ```text
-phase6a0-final
+phase6a-final
 ```
 
-Both VPSs must deploy that same exact release (or a later explicitly approved
-release). Do not move or rewrite the final tag after it is published.
+The clean pre-Phase-6B deployment checkpoint produced by the Phase 6 Plan
+Audit is:
 
+```text
+pre-phase6b-clean
+```
 
-This is the canonical deployment guide for the Phase 6A.0 two-worker NBOT
+Both VPSs must deploy the same exact approved tag/commit. The
+`pre-phase6b-clean` tag is created only after the final Plan Audit acceptance
+checks pass. Never move or rewrite an immutable release tag after publication.
+
+This is the canonical deployment guide for the current two-worker NBOT
 architecture.
 
 NBOT uses **one Git repository and one exact Git version on both machines**.
@@ -123,7 +130,7 @@ release tag selected for both machines:
 
 ```bash
 export NBOT_REPO=/path/to/Nbot
-export NBOT_VERSION=phase6a0-final
+export NBOT_VERSION=pre-phase6b-clean
 
 git clone git@github.com:OWNER/Nbot.git "$NBOT_REPO"
 cd "$NBOT_REPO"
@@ -160,9 +167,20 @@ Restore it through a secure channel and set restrictive permissions:
 chmod 600 "$NBOT_REPO/.env"
 ```
 
-Both workers must use the same environment identity and the same
-`OBSERVATION_CONTROL_TOKEN`. Exchange/order-writing credentials belong only on
-Execution when they are eventually required.
+Each VPS has one role-specific `.env`; do not copy one role's file onto the
+other machine. Start from the tracked templates:
+
+- Execution: `deploy/examples/execution.env.example`
+- Observation: `deploy/examples/observation.env.example`
+
+Both workers must use the same `TRADING_ENV`, `EXECUTION_MODE`, and
+`OBSERVATION_CONTROL_TOKEN`. One Execution `.env` contains both LIVE and
+TESTNET surfaces so the operator can deliberately switch between LIVE+SHADOW,
+TESTNET+SHADOW, and armed TESTNET+TRADE without maintaining multiple files.
+One Observation `.env` contains both public LIVE/TESTNET market endpoints and
+Observation/learning controls, but no private Binance credentials or
+trade-arming authority. LIVE+TRADE order writing remains intentionally
+fail-closed until the later real-capital roadmap stage.
 
 Never print secrets to terminal history while validating deployment. Compare a
 SHA-256 fingerprint of the control token instead of displaying its value.

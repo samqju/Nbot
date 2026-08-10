@@ -1,46 +1,34 @@
 # ===============================
-# Secrets & environment
+# Secrets & machine-local environment
 .env
+.env.*
+!.env.example
 
 # Runtime / state
 logs/
+runtime/
+data/
 bot_state.json
 universe_snapshot.json
-# Python
+*.log
+
+# Python environments and caches
 __pycache__/
-*.pyc
-# Virtual environments
+*.py[cod]
+.pytest_cache/
 venv/
 .venv/
 env/
-# Machine learning
+
+# Machine-learning outputs
 ml_dataset*.jsonl
 models/
-# Generated review files
+
+# Generated reviews, backups, and local patches
 live_review_codebase*.txt
-# Credentials
-.env.*
-!.env.example
-# Python environments and caches
-*.py[cod]
-.pytest_cache/
-# Runtime-generated files
-runtime/
-data/
-# Local backups and patches
+nbot_*_audit.txt
 phase5_*_backup/
 *.patch
-/data/
-/logs/*.txt
-/runtime/*.lock
-/models/archive/
-/models/model_registry_*.json
 *.bak
 *.orig
 old_vps_system.txt
-# Local Python
-*.pyo
-# Secrets
-# Runtime
-*.log
-runtime/*.lock

@@ -1,6 +1,6 @@
 # Observation VPS deployment
 
-These files are the reproducible Phase 6A.0 Observation-role deployment.
+These files are the reproducible current Observation-role deployment.
 They intentionally contain no provider username, home directory, or repository
 path. Render them for the current machine with explicit values.
 

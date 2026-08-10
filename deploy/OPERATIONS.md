@@ -467,6 +467,9 @@ For the split Execution process, routine INFO/DEBUG telemetry is suppressed.
 - one `EXECUTION_STARTED` INFO record after successful startup/reconciliation;
 - operator-requested `OPERATOR_*` INFO records;
 - one `PUBLIC_POSITION_WS_RECOVERED` INFO confirmation after a real feed fault;
+- `POSITION_OPENED` when capital exposure is established;
+- `SL_UPDATE_ATTEMPT` and `SL_UPDATE_VERIFIED` for protective-stop changes;
+- `POSITION_CLOSED_CONFIRMED` and `POSITION_CLOSE_DETAILS` for confirmed closes;
 - WARNING, ERROR and CRITICAL records.
 
 Periodic `EXECUTION_HEALTH` and `PAPER_HEARTBEAT` records are not emitted.
@@ -478,7 +481,7 @@ startup. This is fail-closed behavior: an old `/enable` must never arm a
 restarted worker. Send a fresh command after startup if an operator action is
 still intended.
 
-#Emergency Exit Validation
+## Emergency Exit Validation
 
 Execution supports a local EMERGENCY_EXIT_TEST operator-file action for
 controlled emergency-exit regression testing.
@@ -493,14 +496,19 @@ Safety gates:
 
 Trigger locally on the Execution VPS:
 
+```bash
 printf '%s\n' '{"action":"EMERGENCY_EXIT_TEST"}' \
   > operator_command.json.tmp
 mv operator_command.json.tmp operator_command.json
+```
 
 Expected successful sequence:
+
+```text
 EMERGENCY_EXIT_TEST_REQUESTED
 EMERGENCY_EXIT_TRIGGERED
 EMERGENCY_POSITION
 EMERGENCY_EXIT_TEST_CONFIRMED_FLAT
 POSITION_CLOSED_CONFIRMED
 POSITION_CLOSE_DETAILS ... exit_reason=EMERGENCY_EXIT
+```
