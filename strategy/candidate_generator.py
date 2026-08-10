@@ -194,7 +194,11 @@ class StructureCandidateGenerator:
                     "directional_consistency": float(features[8]),
                 }
 
-                s.add_pending_simulation(simulation)
+                # Candidate discovery can create dozens of forward
+                # simulations in one market evaluation. Persist them with the
+                # strategy's batch checkpoint instead of rewriting the full
+                # learning-runtime document once per candidate.
+                s.add_pending_simulation(simulation, persist=False)
 
                 candidates.append(candidate)
 

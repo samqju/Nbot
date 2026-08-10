@@ -68,17 +68,27 @@ class LearningRuntimeStateStore:
             return deepcopy(self._document[section])
 
     def replace_section(self, section: str, rows: list) -> None:
-        if section not in self._SECTIONS:
+        self.replace_sections({section: rows})
+
+    def replace_sections(self, sections: dict[str, list]) -> None:
+        """Atomically replace one or more runtime sections in one disk write."""
+        if not isinstance(sections, dict) or not sections:
+            raise ValueError("LEARNING_RUNTIME_STATE_SECTIONS_INVALID")
+
+        unknown = set(sections) - self._SECTIONS
+        if unknown:
+            section = sorted(unknown)[0]
             raise ValueError(
                 f"LEARNING_RUNTIME_STATE_SECTION_UNKNOWN | {section}"
             )
-        if not isinstance(rows, list):
+        if any(not isinstance(rows, list) for rows in sections.values()):
             raise ValueError(
                 "LEARNING_RUNTIME_STATE_ROWS_NOT_LIST"
             )
 
         with self._lock:
-            self._document[section] = deepcopy(rows)
+            for section, rows in sections.items():
+                self._document[section] = deepcopy(rows)
             self._document["updated_at_ms"] = int(time.time() * 1000)
             self._write_atomic(self._document)
 

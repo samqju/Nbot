@@ -84,6 +84,7 @@ class VirtualTradeEngine:
         self.target_r = VIRTUAL_TRADE_TARGET_R
         self._active: dict[str, dict] = {}
         self._lock = threading.Lock()
+        self._active_state_dirty = False
         self._runtime_enrollments = 0
         self._runtime_closures = 0
         self._restore_active_trades()
@@ -96,8 +97,8 @@ class VirtualTradeEngine:
         """Backward-compatible baseline-only enrollment."""
         return self._enroll_variant(candidate, self._baseline_variant)
 
-    def enroll_all(self, candidates) -> int:
-        """Enroll approved variants and return experiments created."""
+    def enroll_all(self, candidates, *, persist: bool = True) -> int:
+        """Enroll approved variants and persist the batch at most once."""
         created = 0
         for candidate in candidates:
             variants = (
@@ -109,7 +110,15 @@ class VirtualTradeEngine:
                 else (self._baseline_variant,)
             )
             for variant in variants:
-                created += int(self._enroll_variant(candidate, variant))
+                created += int(
+                    self._enroll_variant(
+                        candidate,
+                        variant,
+                        persist=False,
+                    )
+                )
+        if created and persist:
+            self.flush_active_state()
         if self.system_log and created:
             self.system_log.info(
                 "STRATEGY_LAB_ENROLLED | "
@@ -124,6 +133,8 @@ class VirtualTradeEngine:
         self,
         candidate,
         variant: VirtualStrategyVariant,
+        *,
+        persist: bool = True,
     ) -> bool:
         if candidate.risk_plan is None:
             raise ValueError("VIRTUAL_TRADE_RISK_PLAN_MISSING")
@@ -200,16 +211,26 @@ class VirtualTradeEngine:
                 "experiment_context": variant_context,
             }
             self._runtime_enrollments += 1
-            self._persist_active_locked()
+            self._active_state_dirty = True
+            if persist:
+                self._persist_active_locked()
         return True
 
-    def on_candle(self, symbol: str, candle: tuple) -> list[dict]:
+    def on_candle(
+        self,
+        symbol: str,
+        candle: tuple,
+        *,
+        persist: bool = True,
+    ) -> list[dict]:
         _, high, low, close = candle
         finished = []
+        changed = False
         with self._lock:
             for key, trade in list(self._active.items()):
                 if trade["symbol"] != symbol:
                     continue
+                changed = True
                 risk = float(trade["risk_distance"])
                 entry = float(trade["entry_price"])
                 if trade["direction"] == "LONG":
@@ -279,8 +300,12 @@ class VirtualTradeEngine:
                     finished.append(result)
                     del self._active[key]
 
-            self._runtime_closures += len(finished)
-            self._persist_active_locked()
+            if finished:
+                self._runtime_closures += len(finished)
+            if changed:
+                self._active_state_dirty = True
+                if persist:
+                    self._persist_active_locked()
 
         for result in finished:
             self._append(result)
@@ -371,6 +396,27 @@ class VirtualTradeEngine:
                 for trade in self._active.values()
                 if trade.get("symbol")
             }
+
+    def has_dirty_state(self) -> bool:
+        with self._lock:
+            return bool(self._active_state_dirty)
+
+    def runtime_state_snapshot(self) -> list[dict]:
+        """Copy active state for a combined learning-runtime checkpoint."""
+        with self._lock:
+            return [dict(trade) for trade in self._active.values()]
+
+    def mark_runtime_state_persisted(self) -> None:
+        with self._lock:
+            self._active_state_dirty = False
+
+    def flush_active_state(self) -> bool:
+        """Persist deferred active-trade progress immediately."""
+        with self._lock:
+            if not self._active_state_dirty:
+                return False
+            self._persist_active_locked()
+            return True
 
     def metrics_snapshot(self) -> dict:
         """Return in-memory virtual-trade telemetry."""
@@ -508,11 +554,13 @@ class VirtualTradeEngine:
 
     def _persist_active_locked(self) -> None:
         if self.runtime_store is None:
+            self._active_state_dirty = False
             return
         self.runtime_store.replace_section(
             "active_virtual_trades",
             [dict(trade) for trade in self._active.values()],
         )
+        self._active_state_dirty = False
 
     def _append(self, row):
         self.path.parent.mkdir(parents=True, exist_ok=True)

@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Dict, Optional
 from strategy.trade_intent import TradeIntent
 import threading
+import time
 from config import (
     CANDIDATE_OBSERVATIONS_PATH,
     CANDIDATE_OUTCOMES_PATH,
@@ -105,6 +106,9 @@ class Strategy:
         self._pending_simulations = (
             self._restore_pending_simulations()
         )
+        self._pending_runtime_dirty = False
+        self._learning_runtime_dirty_since_monotonic = None
+        self._learning_runtime_max_dirty_seconds = 30.0
         self.MAX_FORWARD_CANDLES = FORWARD_SIMULATION_MAX_CANDLES
 
         # -----------------------------
@@ -259,7 +263,12 @@ class Strategy:
                 "PENDING_SIMULATION_RECOVERY_CANDLES_INVALID"
             )
 
-    def add_pending_simulation(self, simulation):
+    def add_pending_simulation(
+        self,
+        simulation,
+        *,
+        persist: bool = True,
+    ):
         self._validate_pending_simulation(simulation)
         with self._ml_lock:
             observation_id = simulation[
@@ -272,7 +281,11 @@ class Strategy:
             ):
                 return False
             self._pending_simulations.append(dict(simulation))
-            self._persist_pending_simulations_locked()
+            if persist:
+                self._persist_pending_simulations_locked()
+            else:
+                self._pending_runtime_dirty = True
+                self._mark_learning_runtime_dirty()
         return True
 
     def _persist_pending_simulations_locked(self):
@@ -283,6 +296,89 @@ class Strategy:
                 for simulation in self._pending_simulations
             ],
         )
+        self._pending_runtime_dirty = False
+
+    def _mark_learning_runtime_dirty(
+        self,
+        *,
+        now_monotonic: float | None = None,
+    ) -> None:
+        if self._learning_runtime_dirty_since_monotonic is not None:
+            return
+        self._learning_runtime_dirty_since_monotonic = (
+            time.monotonic()
+            if now_monotonic is None
+            else float(now_monotonic)
+        )
+
+    def _maybe_flush_learning_runtime_progress(
+        self,
+        *,
+        force: bool = False,
+        now_monotonic: float | None = None,
+    ) -> bool:
+        """Persist deferred learning progress in one atomic checkpoint."""
+        dirty_getter = getattr(
+            self._virtual_trade_engine,
+            "has_dirty_state",
+            None,
+        )
+        virtual_dirty = (
+            bool(dirty_getter())
+            if callable(dirty_getter)
+            else False
+        )
+        dirty = self._pending_runtime_dirty or virtual_dirty
+        if not dirty:
+            self._learning_runtime_dirty_since_monotonic = None
+            return False
+
+        now = (
+            time.monotonic()
+            if now_monotonic is None
+            else float(now_monotonic)
+        )
+        if self._learning_runtime_dirty_since_monotonic is None:
+            self._learning_runtime_dirty_since_monotonic = now
+        dirty_age = now - self._learning_runtime_dirty_since_monotonic
+        if not force and dirty_age < self._learning_runtime_max_dirty_seconds:
+            return False
+
+        with self._ml_lock:
+            pending_rows = [
+                dict(simulation)
+                for simulation in self._pending_simulations
+            ]
+        snapshot_getter = getattr(
+            self._virtual_trade_engine,
+            "runtime_state_snapshot",
+            None,
+        )
+        if callable(snapshot_getter):
+            active_rows = snapshot_getter()
+            self._learning_runtime_store.replace_sections({
+                "pending_simulations": pending_rows,
+                "active_virtual_trades": active_rows,
+            })
+        else:
+            # Compatibility with narrow test/local substitutes that provide
+            # only enroll_all(). The production VirtualTradeEngine always
+            # supports a combined snapshot.
+            self._learning_runtime_store.replace_section(
+                "pending_simulations",
+                pending_rows,
+            )
+
+        self._pending_runtime_dirty = False
+        persisted_marker = getattr(
+            self._virtual_trade_engine,
+            "mark_runtime_state_persisted",
+            None,
+        )
+        if callable(persisted_marker):
+            persisted_marker()
+        self._learning_runtime_dirty_since_monotonic = None
+        return True
 
     # ======================================================
     # Candle Builder (5M)
@@ -324,8 +420,10 @@ class Strategy:
                             f"symbol={symbol} | error={e}"
                         )
 
-                # Update learning simulations.
-                self._update_simulations(symbol)
+                # Update learning simulations in memory. Runtime state is
+                # checkpointed once for the coordinated rollover batch instead
+                # of rewriting the whole recovery document per symbol.
+                self._update_simulations(symbol, persist=False)
                 self._virtual_trade_engine.on_candle(
                     symbol,
                     (
@@ -334,7 +432,10 @@ class Strategy:
                         candle["low"],
                         candle["close"],
                     ),
+                    persist=False,
                 )
+                if self._virtual_trade_engine.has_dirty_state():
+                    self._mark_learning_runtime_dirty()
                 self._decision_cycle_coordinator.mark_rollover(
                     symbol=symbol,
                     new_bucket=bucket,
@@ -702,7 +803,7 @@ class Strategy:
     # ======================================================
     # Forward Simulation Labeling
     # ======================================================
-    def _update_simulations(self, symbol):
+    def _update_simulations(self, symbol, *, persist: bool = True):
 
         candles = self._candle_history.get(symbol)
         if not candles:
@@ -713,6 +814,7 @@ class Strategy:
         low = latest[2]
 
         finished = []
+        changed = False
 
         with self._ml_lock:
             for sim in self._pending_simulations:
@@ -722,6 +824,7 @@ class Strategy:
                 # MFE, candle counts, and every resulting training label.
                 if sim["symbol"] != symbol:
                     continue
+                changed = True
 
                 entry = sim["entry_price"]
                 direction = sim["direction"]
@@ -791,8 +894,15 @@ class Strategy:
             for f in finished:
                 self._pending_simulations.remove(f)
 
-            # Persist MAE/MFE/candle-count progress and completed removals.
-            self._persist_pending_simulations_locked()
+            # Direct callers preserve the original immediate durability.
+            # The coordinated Observation runtime defers these whole-state
+            # rewrites and checkpoints the rollover batch atomically.
+            if changed:
+                if persist:
+                    self._persist_pending_simulations_locked()
+                else:
+                    self._pending_runtime_dirty = True
+                    self._mark_learning_runtime_dirty()
 
     # ======================================================
     # Phase 5.9 Decision-Cycle Processing
@@ -815,6 +925,10 @@ class Strategy:
             return []
         ready = self._decision_cycle_coordinator.ready_buckets(
             now_monotonic=now_monotonic
+        )
+        self._maybe_flush_learning_runtime_progress(
+            force=bool(ready),
+            now_monotonic=now_monotonic,
         )
         processed = []
         for index, coverage in enumerate(ready):
@@ -860,7 +974,30 @@ class Strategy:
         planned_candidates = self._candidate_risk_planner.plan_all(
             scored_candidates
         )
-        self._virtual_trade_engine.enroll_all(planned_candidates)
+        try:
+            self._virtual_trade_engine.enroll_all(
+                planned_candidates,
+                persist=False,
+            )
+        except TypeError as exc:
+            # Preserve compatibility with older tests/local extensions that
+            # replace enroll_all() with the original one-argument callable.
+            if "unexpected keyword" not in str(exc):
+                raise
+            self._virtual_trade_engine.enroll_all(planned_candidates)
+
+        dirty_getter = getattr(
+            self._virtual_trade_engine,
+            "has_dirty_state",
+            None,
+        )
+        if callable(dirty_getter) and dirty_getter():
+            self._mark_learning_runtime_dirty()
+
+        # Candidate generation may have added many forward simulations with
+        # deferred persistence. Checkpoint pending simulations and virtual
+        # enrollments together once per completed evaluation batch.
+        self._maybe_flush_learning_runtime_progress(force=True)
         ranked_candidates = rank_candidates(planned_candidates)
         execution_candidates = [
             candidate
