@@ -1044,15 +1044,10 @@ OBSERVATION_CONTROL_TOKEN = os.getenv(
     "",
 ).strip()
 
-# Temporary Phase 1 execution-smoke strategy. PAPER_TEST is deliberately
-# restricted to SHADOW mode and must never submit exchange orders.
+# Observation currently has one production strategy family. Learning, shadow
+# scoring, champion/challenger evaluation and canary routing operate inside
+# and alongside this STRUCTURE strategy; this flag does not disable learning.
 STRATEGY_MODE = os.getenv("STRATEGY_MODE", "STRUCTURE").strip().upper()
-PAPER_TEST_MIN_MOVE_PCT = float(
-    os.getenv("PAPER_TEST_MIN_MOVE_PCT", "0.10")
-)
-PAPER_TEST_COOLDOWN_CANDLES = int(
-    os.getenv("PAPER_TEST_COOLDOWN_CANDLES", "6")
-)
 
 # A second, explicit gate for future real-money execution. Keeping this
 # disabled has no effect on TESTNET + TRADE or either SHADOW combination.
@@ -1107,13 +1102,6 @@ LIVE_SNAPSHOT_PATH = os.getenv(
 
 ENTRY_SLIPPAGE_PCT = 1.0
 MAX_SPREAD_PCT = 0.25
-
-# ================================
-# SYSTEM HALT POLICY
-# ================================
-
-HALT_ON_RISK_BREACH = True
-
 
 # ==========================================================
 # CONFIG VALIDATION (IMPORT-TIME GUARD)
@@ -2088,17 +2076,8 @@ def _validate():
     if OBSERVATION_CONTROL_TOKEN and len(OBSERVATION_CONTROL_TOKEN) < 32:
         raise ValueError("CONFIG_INVALID: OBSERVATION_CONTROL_TOKEN_TOO_SHORT")
 
-    if STRATEGY_MODE not in {"STRUCTURE", "PAPER_TEST"}:
+    if STRATEGY_MODE != "STRUCTURE":
         raise ValueError("CONFIG_INVALID: STRATEGY_MODE")
-
-    if STRATEGY_MODE == "PAPER_TEST" and EXECUTION_MODE != "SHADOW":
-        raise ValueError("CONFIG_INVALID: PAPER_TEST_REQUIRES_SHADOW")
-
-    if not (0.01 <= PAPER_TEST_MIN_MOVE_PCT <= 5):
-        raise ValueError("CONFIG_INVALID: PAPER_TEST_MIN_MOVE_PCT")
-
-    if not (0 <= PAPER_TEST_COOLDOWN_CANDLES <= 288):
-        raise ValueError("CONFIG_INVALID: PAPER_TEST_COOLDOWN_CANDLES")
 
     if not TESTNET_TRADING_ARM_FILE:
         raise ValueError(

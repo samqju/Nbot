@@ -20,14 +20,6 @@ from observation.trade_service import ObservationTradeService
 from strategy.strategy_factory import build_strategy
 
 
-class _ObservationFlatState:
-    """Transitional adapter for UniverseManager's legacy capital guard."""
-
-    @staticmethod
-    def get_open_position():
-        return None
-
-
 class ObservationWorker:
     """Continuously observe/learn and maintain one fresh recommendation.
 
@@ -76,7 +68,6 @@ class ObservationWorker:
             execution_mode=EXECUTION_MODE,
             system_log=system_log,
         )
-        self._universe_state = _ObservationFlatState()
         self._prepared = False
         self._last_universe_refresh_monotonic = 0.0
 
@@ -90,7 +81,6 @@ class ObservationWorker:
         self.universe.load()
         self.universe.maybe_reload(
             exchange=self.market_client,
-            state=self._universe_state,
             force=True,
         )
         self.universe.warmup(self.market_client)
@@ -203,7 +193,6 @@ class ObservationWorker:
             return
         self.universe.maybe_reload(
             exchange=self.market_client,
-            state=self._universe_state,
             force=False,
         )
         self._last_universe_refresh_monotonic = time.monotonic()

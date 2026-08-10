@@ -27,7 +27,6 @@ class ReconciliationLifecycle:
         state,
         risk,
         emergency,
-        universe=None,
         system_log,
         trade_log,
         outcome_publisher=None,
@@ -36,7 +35,6 @@ class ReconciliationLifecycle:
         self.state = state
         self.risk = risk
         self.emergency = emergency
-        self.universe = universe
         self.system_log = system_log
         self.trade_log = trade_log
         self.outcome_publisher = outcome_publisher
@@ -460,20 +458,6 @@ class ReconciliationLifecycle:
                         )
                         self.state.save()
 
-                # Legacy single-process compatibility only. The
-                # independent ExecutionWorker supplies no universe, so a
-                # reconciliation close cannot trigger observation/governance.
-                if existing and self.universe is not None:
-                    try:
-                        self.universe.maybe_reload(
-                            exchange=self.exchange,
-                            state=self.state,
-                            force=True,
-                        )
-                    except Exception as e:
-                        self.system_log.error(
-                            f"UNIVERSE_RELOAD_AFTER_RECON_CLOSE_FAILED | {e}"
-                        )
 
             # --------------------------------------------------
             # Position exists

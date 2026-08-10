@@ -317,13 +317,22 @@ class Phase6A03ExecutionOutcomeDeliveryTests(unittest.TestCase):
             self.assertNotIn("CANDIDATE_OUTCOMES_PATH", source)
             self.assertIn("build_execution_outcome", source)
 
-    def test_core_injects_one_outcome_publisher_into_both_close_paths(self):
-        source = Path("engine/core.py").read_text(encoding="utf-8")
+    def test_execution_worker_injects_one_outcome_publisher_into_both_close_paths(self):
+        source = Path("workers/execution_worker.py").read_text(encoding="utf-8")
         self.assertIn("ExecutionOutcomeOutbox", source)
-        self.assertIn("LocalExecutionOutcomeReceiver", source)
-        self.assertEqual(
-            source.count("outcome_publisher=self.execution_outcome_publisher"),
-            2,
+        reconciliation_block = source[
+            source.index("ReconciliationLifecycle("):source.index("PositionLifecycle(")
+        ]
+        position_block = source[
+            source.index("PositionLifecycle("):source.index("if position_lifecycle is not None")
+        ]
+        self.assertIn(
+            "outcome_publisher=self.execution_outcome_publisher",
+            reconciliation_block,
+        )
+        self.assertIn(
+            "outcome_publisher=self.execution_outcome_publisher",
+            position_block,
         )
         self.assertIn("NEW_ENTRY_BLOCKED_PENDING_EXECUTION_OUTCOME", source)
 

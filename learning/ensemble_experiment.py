@@ -43,10 +43,6 @@ FEATURE_NAMES = (
 ARTIFACT_SCHEMA_VERSION = 1
 
 
-class EnsembleExperimentError(RuntimeError):
-    pass
-
-
 class OfflineEnsembleExperiment:
     """Compare diverse learners and validation-selected probability blends."""
 

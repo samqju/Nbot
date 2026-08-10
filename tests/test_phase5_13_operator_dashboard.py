@@ -257,40 +257,10 @@ class Phase513OperatorDashboardTests(unittest.TestCase):
             self.assertEqual(document["training_data"]["completed_outcomes"], 8462)
             self.assertEqual(document["training_data"]["independent_market_events"], 1174)
 
-    def test_telegram_learning_command_uses_unified_status(self):
-        from engine.core import TradingEngine
-
-        class FakePublisher:
-            def refresh(self):
-                return {
-                    "current_paper_champion": "RULE_SYSTEM_V1",
-                    "current_challenger": "MODEL_A",
-                    "challenger_stage": "SHADOW",
-                    "governance": {"current_verdict": "HOLD"},
-                }
-
-            def render_telegram_body(self, _document):
-                return "<pre>STATUS</pre>"
-
-        class Log:
-            def __init__(self):
-                self.info_rows = []
-                self.error_rows = []
-
-            def info(self, value):
-                self.info_rows.append(value)
-
-            def error(self, value):
-                self.error_rows.append(value)
-
-        fake = type("FakeEngine", (), {"system_log": Log()})()
-        with patch("engine.core.build_configured_publisher", return_value=FakePublisher()), \
-             patch("engine.core.send_info") as send_info:
-            TradingEngine._handle_operator_command(fake, "/learning")
-        send_info.assert_called_once_with(
-            "AUTO-LEARNING STATUS", "<pre>STATUS</pre>"
-        )
-        self.assertTrue(any("OPERATOR_LEARNING_STATUS" in row for row in fake.system_log.info_rows))
+    def test_split_execution_worker_has_no_learning_operator_command(self):
+        source = Path("workers/execution_worker.py").read_text(encoding="utf-8")
+        self.assertNotIn('"/learning"', source)
+        self.assertNotIn("AutoLearningStatusPublisher", source)
 
     def test_real_order_authority_is_never_inferred_from_registry(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -55,10 +55,6 @@ _REASON_TEXT = {
 }
 
 
-class AutoLearningStatusError(RuntimeError):
-    pass
-
-
 class AutoLearningStatusPublisher:
     """Build one operator-facing status from existing append-only evidence."""
 

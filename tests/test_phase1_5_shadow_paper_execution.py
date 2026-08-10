@@ -99,10 +99,19 @@ class Phase15ShadowPaperExecutionTests(unittest.TestCase):
         self.assertEqual(yielded, [tick])
         self.assertIsNone(exchange.get_position())
 
-    def test_engine_no_longer_contains_shadow_intent_discard(self):
-        core = (Path(__file__).resolve().parents[1] / "engine" / "core.py").read_text()
-        self.assertNotIn("SHADOW_INTENT_BLOCKED", core)
-        self.assertIn("SHADOW_PAPER_EXECUTION_ACTIVE", core)
+    def test_shadow_mode_uses_paper_exchange_in_split_runtime(self):
+        root = Path(__file__).resolve().parents[1]
+        worker = (root / "workers" / "execution_worker.py").read_text(
+            encoding="utf-8"
+        )
+        factory = (root / "execution" / "exchange_factory.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("SHADOW_INTENT_BLOCKED", worker)
+        self.assertNotIn("SHADOW_INTENT_BLOCKED", factory)
+        self.assertIn('if EXECUTION_MODE == "SHADOW":', factory)
+        self.assertIn("return PaperExchange(", factory)
+        self.assertFalse((root / "engine" / "core.py").exists())
 
 
 if __name__ == "__main__":

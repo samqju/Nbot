@@ -388,7 +388,7 @@ class UniverseManager:
     # ======================================================
     # HOT RELOAD (MEMORY-DRIVEN)
     # ======================================================
-    def maybe_reload(self, *, exchange, state, force=False):
+    def maybe_reload(self, *, exchange, force=False):
         """Refresh execution and observation universes safely.
 
         The persisted observation snapshot contains only the ranked pool.
@@ -402,17 +402,6 @@ class UniverseManager:
             return
 
         execution_changed = new_execution != self.symbols
-
-        # Execution-universe changes remain capital-boundary protected.
-        if (
-            execution_changed
-            and state.get_open_position() is not None
-        ):
-            self.system_log.info(
-                "EXECUTION_UNIVERSE_RELOAD_SKIPPED_POSITION_OPEN"
-            )
-            new_execution = list(self.symbols)
-            execution_changed = False
 
         observation_due = self._observation_refresh_due(force=force)
         ranked_observation = None

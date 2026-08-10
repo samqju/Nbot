@@ -29,10 +29,10 @@ class Phase52ExecutionHardeningTests(unittest.TestCase):
         self.assertNotIn(marker, source)
         self.assertEqual(source.count("edit_message("), 1)
 
-    def test_reconciliation_receives_emergency_handler(self):
+    def test_execution_worker_reconciliation_receives_emergency_handler(self):
         from pathlib import Path
-        source = Path("engine/core.py").read_text()
-        block = source[source.index("ReconciliationLifecycle("):source.index("# Position Lifecycle")]
+        source = Path("workers/execution_worker.py").read_text()
+        block = source[source.index("ReconciliationLifecycle("):source.index("PositionLifecycle(")]
         self.assertIn("emergency=self.emergency", block)
 
 

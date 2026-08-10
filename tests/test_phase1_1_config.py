@@ -10,10 +10,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 def import_config_with(**overrides):
     env = os.environ.copy()
-    # Isolate legacy configuration tests from the operator's active
-    # PAPER_TEST setting in .env. Tests may still override this explicitly.
+    # The split Observation Worker supports the STRUCTURE strategy family.
     env["STRATEGY_MODE"] = "STRUCTURE"
-    env["PAPER_TEST_MIN_MOVE_PCT"] = "0.10"
     env.update({key: str(value) for key, value in overrides.items()})
     return subprocess.run(
         [

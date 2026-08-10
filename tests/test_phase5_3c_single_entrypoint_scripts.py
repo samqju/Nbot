@@ -7,10 +7,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class Phase53CSingleEntrypointTests(unittest.TestCase):
-    def test_only_one_trading_entrypoint_remains(self):
-        self.assertTrue((ROOT / "run.py").is_file())
-        self.assertTrue((ROOT / "runtime_runner.py").is_file())
-
+    def test_only_split_role_entrypoints_remain(self):
+        self.assertTrue((ROOT / "run_execution.py").is_file())
+        self.assertTrue((ROOT / "run_observation.py").is_file())
+        self.assertFalse((ROOT / "run.py").exists())
+        self.assertFalse((ROOT / "runtime_runner.py").exists())
         self.assertFalse((ROOT / "run_live.py").exists())
         self.assertFalse((ROOT / "run_testnet.py").exists())
 

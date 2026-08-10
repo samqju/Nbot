@@ -466,12 +466,12 @@ class Phase59ContinuousShadowTestingTests(unittest.TestCase):
             )
             self.assertEqual(report["promotion_authority"], "NONE")
 
-    def test_engine_processes_shadow_cycle_before_open_position_fast_path(self):
-        source = Path("engine/core.py").read_text()
-        cycle_position = source.index("process_ready_decision_cycles")
-        open_mode_position = source.index("MODE A — POSITION OPEN")
-        self.assertLess(cycle_position, open_mode_position)
-        self.assertIn("runtime_effect=NONE", source)
+    def test_shadow_decision_processing_is_observation_only(self):
+        observation = Path("workers/observation_worker.py").read_text()
+        execution = Path("workers/execution_worker.py").read_text()
+        self.assertIn("process_ready_decision_cycles", observation)
+        self.assertNotIn("process_ready_decision_cycles", execution)
+        self.assertNotIn("ShadowModelScorer", execution)
 
 
 if __name__ == "__main__":

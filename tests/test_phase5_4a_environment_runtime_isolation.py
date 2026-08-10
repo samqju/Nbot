@@ -111,8 +111,8 @@ class Phase54AEnvironmentRuntimeIsolationTests(unittest.TestCase):
                 self.assertEqual(row["environment"], "LIVE")
                 self.assertEqual(row["execution_mode"], "SHADOW")
 
-    def test_engine_uses_configured_bot_state_path(self):
-        source = (ROOT / "engine/core.py").read_text(encoding="utf-8")
+    def test_execution_worker_uses_configured_bot_state_path(self):
+        source = (ROOT / "workers/execution_worker.py").read_text(encoding="utf-8")
         self.assertIn("StateManager(filename=BOT_STATE_PATH)", source)
 
 

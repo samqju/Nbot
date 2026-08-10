@@ -36,12 +36,17 @@ class Phase54BSingleInstanceLockTests(unittest.TestCase):
             finally:
                 second.release()
 
-    def test_runtime_runner_releases_lock_in_finally(self):
-        source = Path("runtime_runner.py").read_text(encoding="utf-8")
-        self.assertIn("instance_lock.acquire", source)
-        self.assertIn("finally:", source)
-        self.assertIn("instance_lock.release()", source)
-        self.assertIn("BOT_INSTANCE_LOCK_RELEASED", source)
+    def test_split_entrypoints_release_role_locks_in_finally(self):
+        for filename, release_marker in (
+            ("run_execution.py", "EXECUTION_INSTANCE_LOCK_RELEASED"),
+            ("run_observation.py", "OBSERVATION_INSTANCE_LOCK_RELEASED"),
+        ):
+            with self.subTest(filename=filename):
+                source = Path(filename).read_text(encoding="utf-8")
+                self.assertIn("lock.acquire", source)
+                self.assertIn("finally:", source)
+                self.assertIn("lock.release()", source)
+                self.assertIn(release_marker, source)
 
 
 if __name__ == "__main__":

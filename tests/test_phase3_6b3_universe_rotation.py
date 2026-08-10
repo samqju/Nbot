@@ -48,11 +48,6 @@ class Exchange:
         return [(1, 2, 0.5, 1.5)] * 60
 
 
-class State:
-    def get_open_position(self):
-        return None
-
-
 class Phase36B3UniverseRotationTests(unittest.TestCase):
     def _manager(self):
         strategy = Strategy()
@@ -74,7 +69,6 @@ class Phase36B3UniverseRotationTests(unittest.TestCase):
 
         manager.maybe_reload(
             exchange=Exchange(),
-            state=State(),
             force=True,
         )
 
@@ -99,7 +93,6 @@ class Phase36B3UniverseRotationTests(unittest.TestCase):
 
         manager.maybe_reload(
             exchange=Exchange(),
-            state=State(),
             force=True,
         )
 
@@ -122,8 +115,7 @@ class Phase36B3UniverseRotationTests(unittest.TestCase):
         ):
             manager.maybe_reload(
                 exchange=Exchange(),
-                state=State(),
-                force=False,
+                    force=False,
             )
 
         manager._build_observation_universe.assert_not_called()

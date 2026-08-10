@@ -159,7 +159,6 @@ class Phase54CRuntimeFixTests(unittest.TestCase):
             state=state,
             risk=SimpleNamespace(RISK_PER_TRADE_USD=10.0),
             emergency=SimpleNamespace(),
-            universe=SimpleNamespace(maybe_reload=lambda **kwargs: None),
             system_log=log,
             trade_log=trade_log,
         )
@@ -213,7 +212,6 @@ class Phase54CRuntimeFixTests(unittest.TestCase):
             risk=SimpleNamespace(),
             emergency=SimpleNamespace(),
             reconciliation=SimpleNamespace(),
-            universe=SimpleNamespace(maybe_reload=lambda **kwargs: None),
             system_log=log,
             trade_log=trade_log,
         )

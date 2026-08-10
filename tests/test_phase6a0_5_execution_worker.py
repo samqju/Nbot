@@ -726,7 +726,7 @@ print(json.dumps(sorted(bad)))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), [])
 
-    def test_execution_lifecycles_accept_no_universe(self):
+    def test_execution_lifecycles_have_no_universe_dependency(self):
         from engine.position_lifecycle import PositionLifecycle
         from engine.reconciliation import ReconciliationLifecycle
 
@@ -743,8 +743,8 @@ print(json.dumps(sorted(bad)))
             **common,
             reconciliation=reconciliation,
         )
-        self.assertIsNone(reconciliation.universe)
-        self.assertIsNone(position.universe)
+        self.assertFalse(hasattr(reconciliation, "universe"))
+        self.assertFalse(hasattr(position, "universe"))
 
 
 if __name__ == "__main__":

@@ -9,13 +9,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class Phase53BRuntimeLoggingCleanupTests(unittest.TestCase):
-    def test_single_entrypoint_uses_shared_runtime(self):
-        entrypoint = (ROOT / "run.py").read_text(encoding="utf-8")
-        shared = (ROOT / "runtime_runner.py").read_text(encoding="utf-8")
+    def test_split_role_entrypoints_replace_legacy_runtime(self):
+        execution = (ROOT / "run_execution.py").read_text(encoding="utf-8")
+        observation = (ROOT / "run_observation.py").read_text(encoding="utf-8")
 
-        self.assertIn("run_environment", entrypoint)
-        self.assertIn("def run_environment", shared)
-        self.assertNotIn("TradingEngine(", entrypoint)
+        self.assertIn("ExecutionWorker", execution)
+        self.assertIn("ObservationWorker", observation)
+        self.assertFalse((ROOT / "run.py").exists())
+        self.assertFalse((ROOT / "runtime_runner.py").exists())
+        self.assertFalse((ROOT / "engine/core.py").exists())
 
     def test_high_frequency_success_events_are_debug_only(self):
         universe = (ROOT / "engine/universe.py").read_text(encoding="utf-8")

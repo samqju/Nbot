@@ -19,13 +19,6 @@ from learning.shadow_decision_testing import ShadowDecisionEvaluator
 
 
 PROMOTION_CONTROLLER_SCHEMA_VERSION = 1
-PROMOTION_OUTCOMES = (
-    "REJECT",
-    "HOLD",
-    "EXTEND_SHADOW",
-    "PROMOTE_TO_PAPER_CANARY",
-)
-
 
 class PromotionControllerError(RuntimeError):
     pass
