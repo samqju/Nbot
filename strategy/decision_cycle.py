@@ -10,6 +10,8 @@ from collections import defaultdict
 class FiveMinuteDecisionCycleCoordinator:
     """Wait for broad symbol rollover, then release each candle bucket once."""
 
+    _MISSING_SYMBOL_SAMPLE_LIMIT = 20
+
     def __init__(
         self,
         *,
@@ -65,12 +67,14 @@ class FiveMinuteDecisionCycleCoordinator:
         for bucket in sorted(self._rollovers):
             if bucket in self._processed:
                 continue
-            count = len(self._rollovers[bucket] & self._symbols)
+            completed_symbols = self._rollovers[bucket] & self._symbols
+            count = len(completed_symbols)
             age = max(0.0, now - self._first_seen[bucket])
             complete = count >= total
             settled = count >= minimum and age >= self.settle_seconds
             if not (complete or settled):
                 continue
+            missing_symbols = sorted(self._symbols - completed_symbols)
             ready.append(
                 {
                     "candle_bucket": bucket,
@@ -78,6 +82,10 @@ class FiveMinuteDecisionCycleCoordinator:
                     "symbols_expected": total,
                     "coverage": count / total,
                     "settled_seconds": age,
+                    "missing_symbols_count": len(missing_symbols),
+                    "missing_symbols_sample": missing_symbols[
+                        : self._MISSING_SYMBOL_SAMPLE_LIMIT
+                    ],
                 }
             )
         return ready

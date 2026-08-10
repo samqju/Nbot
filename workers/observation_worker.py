@@ -177,9 +177,35 @@ class ObservationWorker:
             except Exception:
                 recommendation = {}
 
+        transport_metrics = {}
+        transport_getter = getattr(
+            self.market_client,
+            "market_data_integrity_snapshot",
+            None,
+        )
+        if callable(transport_getter):
+            try:
+                transport_metrics = transport_getter()
+            except Exception:
+                transport_metrics = {}
+
+        candle_metrics = {}
+        candle_getter = getattr(
+            self.strategy,
+            "get_market_data_integrity_metrics",
+            None,
+        )
+        if callable(candle_getter):
+            try:
+                candle_metrics = candle_getter()
+            except Exception:
+                candle_metrics = {}
+
         return self.health_monitor.snapshot(
             virtual_metrics=virtual_metrics,
             recommendation=recommendation,
+            transport_metrics=transport_metrics,
+            candle_metrics=candle_metrics,
         )
 
     def handle_trade_request(

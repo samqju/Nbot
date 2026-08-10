@@ -79,6 +79,16 @@ class Strategy:
 
         self._last_ts: Dict[str, int] = {}
 
+        # Phase 6B.2 market-data integrity telemetry. These counters are
+        # observational only and never change candle construction or selection.
+        self._market_data_integrity_lock = threading.Lock()
+        self._candle_gap_events = 0
+        self._candle_gap_buckets = 0
+        self._out_of_order_tick_events = 0
+        self._latest_candle_gap_by_symbol: dict[str, dict] = {}
+        self._latest_out_of_order_by_symbol: dict[str, dict] = {}
+        self._market_data_symbol_sample_limit = 20
+
         # Phase 3.6B.1 dual-universe contract.
         #
         # During B.1 both sets intentionally contain the same existing
@@ -395,6 +405,13 @@ class Strategy:
 
         candle = self._current_candle.get(symbol)
 
+        if candle is not None and candle["bucket"] != bucket:
+            self._record_candle_transition_integrity(
+                symbol=symbol,
+                previous_bucket=int(candle["bucket"]),
+                new_bucket=int(bucket),
+            )
+
         if candle is None or candle["bucket"] != bucket:
 
             if candle is not None:
@@ -465,6 +482,76 @@ class Strategy:
             )
         ):
             self._warmed_up = True
+
+    def _record_candle_transition_integrity(
+        self,
+        *,
+        symbol: str,
+        previous_bucket: int,
+        new_bucket: int,
+    ) -> None:
+        """Record gaps/out-of-order bucket transitions without changing them."""
+        previous_bucket = int(previous_bucket)
+        new_bucket = int(new_bucket)
+        symbol = str(symbol).strip().upper()
+        with self._market_data_integrity_lock:
+            if new_bucket > previous_bucket + 1:
+                missing = new_bucket - previous_bucket - 1
+                self._candle_gap_events += 1
+                self._candle_gap_buckets += missing
+                self._latest_candle_gap_by_symbol[symbol] = {
+                    "symbol": symbol,
+                    "previous_bucket": previous_bucket,
+                    "new_bucket": new_bucket,
+                    "missing_buckets": missing,
+                }
+                self._bound_integrity_samples_locked(
+                    self._latest_candle_gap_by_symbol
+                )
+            elif new_bucket < previous_bucket:
+                self._out_of_order_tick_events += 1
+                self._latest_out_of_order_by_symbol[symbol] = {
+                    "symbol": symbol,
+                    "previous_bucket": previous_bucket,
+                    "new_bucket": new_bucket,
+                }
+                self._bound_integrity_samples_locked(
+                    self._latest_out_of_order_by_symbol
+                )
+
+    def _bound_integrity_samples_locked(self, rows: dict) -> None:
+        while len(rows) > self._market_data_symbol_sample_limit:
+            rows.pop(next(iter(rows)))
+
+    def get_market_data_integrity_metrics(self) -> dict:
+        """Return read-only live candle-continuity diagnostics."""
+        try:
+            with self._market_data_integrity_lock:
+                return {
+                    "candle_gap_events": self._candle_gap_events,
+                    "missing_candle_buckets": self._candle_gap_buckets,
+                    "out_of_order_tick_events": (
+                        self._out_of_order_tick_events
+                    ),
+                    "gap_symbols_count": len(
+                        self._latest_candle_gap_by_symbol
+                    ),
+                    "out_of_order_symbols_count": len(
+                        self._latest_out_of_order_by_symbol
+                    ),
+                    "gap_symbols_sample": [
+                        dict(row)
+                        for row in self._latest_candle_gap_by_symbol.values()
+                    ],
+                    "out_of_order_symbols_sample": [
+                        dict(row)
+                        for row in (
+                            self._latest_out_of_order_by_symbol.values()
+                        )
+                    ],
+                }
+        except Exception:
+            return {}
 
     # ======================================================
     # Historical Warmup Seeder

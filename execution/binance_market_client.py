@@ -6,6 +6,7 @@ API credentials, signing code, private user stream, or order methods.
 
 import json
 import os
+import threading
 import time
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_DOWN
@@ -55,10 +56,86 @@ class BinanceMarketClient:
         self.session = requests.Session()
         self._symbol_filters = {}
         self.execution_health_monitor = None
+        self._market_integrity_lock = threading.Lock()
+        self._market_integrity = {
+            "transport_mode": "NOT_STARTED",
+            "ws_connect_attempts": 0,
+            "ws_connections": 0,
+            "ws_disconnects": 0,
+            "rest_fallback_activations": 0,
+            "rest_batches": 0,
+            "rest_poll_failures": 0,
+            "last_ws_message_monotonic": None,
+            "last_rest_batch_monotonic": None,
+            "latest_ws_event_lag_ms": None,
+            "max_ws_event_lag_ms": None,
+        }
 
     def set_execution_health_monitor(self, monitor) -> None:
         """Attach optional execution-only measurement instrumentation."""
         self.execution_health_monitor = monitor
+
+    def _record_market_integrity(
+        self,
+        *,
+        mode: str | None = None,
+        counter: str | None = None,
+        ws_message: bool = False,
+        rest_batch: bool = False,
+        ws_event_lag_ms: int | None = None,
+    ) -> None:
+        """Update bounded public-market transport telemetry only."""
+        now = time.perf_counter()
+        try:
+            with self._market_integrity_lock:
+                if mode is not None:
+                    self._market_integrity["transport_mode"] = str(mode)
+                if counter is not None:
+                    self._market_integrity[counter] = (
+                        int(self._market_integrity.get(counter, 0)) + 1
+                    )
+                if ws_message:
+                    self._market_integrity[
+                        "last_ws_message_monotonic"
+                    ] = now
+                if rest_batch:
+                    self._market_integrity[
+                        "last_rest_batch_monotonic"
+                    ] = now
+                if ws_event_lag_ms is not None:
+                    lag = int(ws_event_lag_ms)
+                    self._market_integrity[
+                        "latest_ws_event_lag_ms"
+                    ] = lag
+                    previous = self._market_integrity.get(
+                        "max_ws_event_lag_ms"
+                    )
+                    if previous is None or lag > int(previous):
+                        self._market_integrity[
+                            "max_ws_event_lag_ms"
+                        ] = lag
+        except Exception:
+            return
+
+    def market_data_integrity_snapshot(self) -> dict:
+        """Return read-only transport health for Observation telemetry."""
+        try:
+            now = time.perf_counter()
+            with self._market_integrity_lock:
+                data = dict(self._market_integrity)
+            ws_seen = data.pop("last_ws_message_monotonic", None)
+            rest_seen = data.pop("last_rest_batch_monotonic", None)
+            data["last_ws_message_age_seconds"] = (
+                None if ws_seen is None else max(0.0, now - float(ws_seen))
+            )
+            data["last_rest_batch_age_seconds"] = (
+                None
+                if rest_seen is None
+                else max(0.0, now - float(rest_seen))
+            )
+            return data
+        except Exception:
+            return {}
 
     def _normalize_market_ws_url(self, configured_url: str) -> str:
         """Migrate the retired LIVE ticker path without touching TESTNET.
@@ -461,6 +538,10 @@ class BinanceMarketClient:
         while True:
             ws = None
             try:
+                self._record_market_integrity(
+                    mode="WS_CONNECTING",
+                    counter="ws_connect_attempts",
+                )
                 self.system_log.info(
                     "PUBLIC_WS_CONNECT_ATTEMPT | "
                     f"environment={self.environment} | auth=NONE | "
@@ -469,6 +550,10 @@ class BinanceMarketClient:
                 ws = websocket.create_connection(
                     self.market_ws_url,
                     timeout=PAPER_WS_FIRST_TICK_TIMEOUT_SECONDS,
+                )
+                self._record_market_integrity(
+                    mode="WEBSOCKET",
+                    counter="ws_connections",
                 )
                 self.system_log.info(
                     "PUBLIC_WS_CONNECTED | "
@@ -516,6 +601,9 @@ class BinanceMarketClient:
                     except Exception:
                         pass
 
+            self._record_market_integrity(
+                counter="ws_disconnects",
+            )
             yield from self._rest_fallback_ticks(
                 poll_interval_seconds=PAPER_REST_POLL_INTERVAL_SECONDS,
                 retry_after_seconds=PAPER_WS_RETRY_INTERVAL_SECONDS,
@@ -532,10 +620,18 @@ class BinanceMarketClient:
             )
         timestamp = int(time.time() * 1000)
         ticks = []
+        event_times = []
         for row in data:
             if not isinstance(row, dict):
                 continue
             symbol = str(row.get("s", "")).upper()
+            event_time = row.get("E")
+            if (
+                not isinstance(event_time, bool)
+                and isinstance(event_time, (int, float))
+                and int(event_time) > 0
+            ):
+                event_times.append(int(event_time))
             if not symbol.endswith("USDT"):
                 continue
             try:
@@ -546,6 +642,14 @@ class BinanceMarketClient:
                 ticks.append(
                     PriceTick(symbol=symbol, price=price, timestamp=timestamp)
                 )
+        event_lag_ms = (
+            None if not event_times else timestamp - max(event_times)
+        )
+        self._record_market_integrity(
+            mode="WEBSOCKET",
+            ws_message=True,
+            ws_event_lag_ms=event_lag_ms,
+        )
         return ticks
 
     def _rest_fallback_ticks(
@@ -554,6 +658,10 @@ class BinanceMarketClient:
         poll_interval_seconds: float,
         retry_after_seconds: float,
     ):
+        self._record_market_integrity(
+            mode="REST_FALLBACK",
+            counter="rest_fallback_activations",
+        )
         self.system_log.warning(
             "PUBLIC_MARKET_REST_FALLBACK_ACTIVE | "
             f"environment={self.environment} | auth=NONE | "
@@ -571,6 +679,11 @@ class BinanceMarketClient:
                     raise OperationalExchangeError(
                         "PUBLIC_REST_TICK_BATCH_EMPTY"
                     )
+                self._record_market_integrity(
+                    mode="REST_FALLBACK",
+                    counter="rest_batches",
+                    rest_batch=True,
+                )
                 if first_batch:
                     self.system_log.info(
                         "PUBLIC_REST_FIRST_TICK_OK | "
@@ -581,6 +694,10 @@ class BinanceMarketClient:
                 for tick in ticks:
                     yield tick
             except OperationalExchangeError as exc:
+                self._record_market_integrity(
+                    mode="REST_FALLBACK",
+                    counter="rest_poll_failures",
+                )
                 self.system_log.warning(
                     "PUBLIC_REST_POLL_FAILED | "
                     f"environment={self.environment} | error={exc}"
@@ -591,6 +708,7 @@ class BinanceMarketClient:
             if sleep_for:
                 time.sleep(sleep_for)
 
+        self._record_market_integrity(mode="WS_RETRY_DUE")
         self.system_log.info(
             "PUBLIC_WS_RETRY_DUE | "
             f"environment={self.environment} | auth=NONE"

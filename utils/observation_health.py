@@ -21,6 +21,9 @@ class ObservationHealthMonitor:
         "decision_cycles",
         "candidates_seen",
     )
+    _TICK_FRESH_SECONDS = 5.0
+    _TICK_STALE_SECONDS = 30.0
+    _SYMBOL_SAMPLE_LIMIT = 20
 
     def __init__(self):
         self._started_monotonic = time.monotonic()
@@ -66,11 +69,20 @@ class ObservationHealthMonitor:
         except Exception:
             return
 
-    def record_tick(self, symbol: str) -> None:
+    def record_tick(
+        self,
+        symbol: str,
+        *,
+        now_monotonic: float | None = None,
+    ) -> None:
         """Record one incoming public-market tick."""
         try:
             symbol = str(symbol or "").strip().upper()
-            now = time.monotonic()
+            now = (
+                time.monotonic()
+                if now_monotonic is None
+                else float(now_monotonic)
+            )
             with self._lock:
                 self._counters["total_ticks"] += 1
                 self._last_activity_monotonic = now
@@ -104,6 +116,15 @@ class ObservationHealthMonitor:
                     if not isinstance(coverage, dict):
                         coverage = {}
 
+                    missing_sample = coverage.get("missing_symbols_sample")
+                    if not isinstance(missing_sample, (list, tuple)):
+                        missing_sample = []
+                    missing_sample = [
+                        str(symbol).strip().upper()
+                        for symbol in missing_sample
+                        if str(symbol).strip()
+                    ][: self._SYMBOL_SAMPLE_LIMIT]
+
                     self._latest_cycle = {
                         "candle_bucket": int(
                             row.get("candle_bucket", 0) or 0
@@ -124,6 +145,10 @@ class ObservationHealthMonitor:
                         "settled_seconds": float(
                             coverage.get("settled_seconds", 0.0) or 0.0
                         ),
+                        "missing_symbols_count": int(
+                            coverage.get("missing_symbols_count", 0) or 0
+                        ),
+                        "missing_symbols_sample": missing_sample,
                     }
                     self._last_decision_monotonic = now
                 self._last_activity_monotonic = now
@@ -135,14 +160,58 @@ class ObservationHealthMonitor:
         *,
         virtual_metrics: dict | None = None,
         recommendation: dict | None = None,
+        transport_metrics: dict | None = None,
+        candle_metrics: dict | None = None,
+        now_monotonic: float | None = None,
     ) -> dict:
         """Return a read-only diagnostic snapshot."""
         try:
-            now = time.monotonic()
+            now = (
+                time.monotonic()
+                if now_monotonic is None
+                else float(now_monotonic)
+            )
             with self._lock:
                 seen = (
                     set(self._last_tick_monotonic)
                     & self._observation_symbols
+                )
+                unseen = sorted(self._observation_symbols - seen)
+                ages = {
+                    symbol: max(
+                        0.0,
+                        now - self._last_tick_monotonic[symbol],
+                    )
+                    for symbol in seen
+                }
+                fresh = sorted(
+                    symbol
+                    for symbol, age in ages.items()
+                    if age <= self._TICK_FRESH_SECONDS
+                )
+                delayed = sorted(
+                    symbol
+                    for symbol, age in ages.items()
+                    if (
+                        self._TICK_FRESH_SECONDS
+                        < age
+                        <= self._TICK_STALE_SECONDS
+                    )
+                )
+                stale = sorted(
+                    symbol
+                    for symbol, age in ages.items()
+                    if age > self._TICK_STALE_SECONDS
+                )
+                stale_by_age = sorted(
+                    stale,
+                    key=lambda symbol: ages[symbol],
+                    reverse=True,
+                )
+                delayed_by_age = sorted(
+                    delayed,
+                    key=lambda symbol: ages[symbol],
+                    reverse=True,
                 )
                 latest_cycle = dict(self._latest_cycle)
                 decision_age = (
@@ -178,10 +247,43 @@ class ObservationHealthMonitor:
                             self._observation_target_count
                         ),
                         "symbols_seen": len(seen),
-                        "symbols_unseen": max(
-                            0,
-                            len(self._observation_symbols) - len(seen),
+                        "symbols_unseen": len(unseen),
+                        "symbols_fresh": len(fresh),
+                        "symbols_delayed": len(delayed),
+                        "symbols_stale": len(stale),
+                        "tick_fresh_seconds": self._TICK_FRESH_SECONDS,
+                        "tick_stale_seconds": self._TICK_STALE_SECONDS,
+                        "newest_tick_age_seconds": (
+                            min(ages.values()) if ages else None
                         ),
+                        "oldest_tick_age_seconds": (
+                            max(ages.values()) if ages else None
+                        ),
+                        "unseen_symbols_sample": unseen[
+                            : self._SYMBOL_SAMPLE_LIMIT
+                        ],
+                        "delayed_symbols_sample": [
+                            {
+                                "symbol": symbol,
+                                "age_seconds": ages[symbol],
+                            }
+                            for symbol in delayed_by_age[
+                                : self._SYMBOL_SAMPLE_LIMIT
+                            ]
+                        ],
+                        "stale_symbols_sample": [
+                            {
+                                "symbol": symbol,
+                                "age_seconds": ages[symbol],
+                            }
+                            for symbol in stale_by_age[
+                                : self._SYMBOL_SAMPLE_LIMIT
+                            ]
+                        ],
+                    },
+                    "market_data": {
+                        "transport": dict(transport_metrics or {}),
+                        "candles": dict(candle_metrics or {}),
                     },
                     "latest_decision_cycle": latest_cycle,
                     "latest_decision_age_seconds": decision_age,
@@ -206,6 +308,20 @@ class ObservationHealthMonitor:
                     "observation_target_count": 0,
                     "symbols_seen": 0,
                     "symbols_unseen": 0,
+                    "symbols_fresh": 0,
+                    "symbols_delayed": 0,
+                    "symbols_stale": 0,
+                    "tick_fresh_seconds": self._TICK_FRESH_SECONDS,
+                    "tick_stale_seconds": self._TICK_STALE_SECONDS,
+                    "newest_tick_age_seconds": None,
+                    "oldest_tick_age_seconds": None,
+                    "unseen_symbols_sample": [],
+                    "delayed_symbols_sample": [],
+                    "stale_symbols_sample": [],
+                },
+                "market_data": {
+                    "transport": dict(transport_metrics or {}),
+                    "candles": dict(candle_metrics or {}),
                 },
                 "latest_decision_cycle": {},
                 "latest_decision_age_seconds": None,
