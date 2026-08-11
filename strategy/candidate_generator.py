@@ -45,6 +45,7 @@ class StructureCandidateGenerator:
         *,
         decision_batch_id: str | None = None,
         decision_bucket: int | None = None,
+        market_context_snapshot: dict | None = None,
     ) -> list[StrategyCandidate]:
         s = self.strategy
         candidates: list[StrategyCandidate] = []
@@ -138,6 +139,8 @@ class StructureCandidateGenerator:
                     execution_mode=EXECUTION_MODE,
                     candle_bucket=bucket,
                     structure_fingerprint=structure_fingerprint,
+                    candidate_symbol=symbol,
+                    observed_market_context=market_context_snapshot,
                     paper_taker_fee_rate=PAPER_TAKER_FEE_RATE,
                     paper_entry_slippage_pct=PAPER_ENTRY_SLIPPAGE_PCT,
                     paper_exit_slippage_pct=PAPER_EXIT_SLIPPAGE_PCT,

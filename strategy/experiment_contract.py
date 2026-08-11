@@ -18,7 +18,7 @@ from strategy.features import CANDIDATE_FEATURE_SCHEMA_VERSION
 
 
 EXPERIMENT_CONTRACT_VERSION = 1
-MARKET_CONTEXT_SCHEMA_VERSION = 1
+MARKET_CONTEXT_SCHEMA_VERSION = 2
 COST_MODEL_SCHEMA_VERSION = 1
 POLICY_SCHEMA_VERSION = 1
 CANDLE_INTERVAL = "5m"
@@ -69,39 +69,104 @@ def build_model_version_from_bytes(data: bytes) -> str:
     return f"sha256:{digest}"
 
 
-def build_market_context(structure_fingerprint: Any) -> dict:
-    """Normalize currently available context and explicitly mark gaps.
+def build_market_context(
+    structure_fingerprint: Any,
+    *,
+    candidate_symbol: str | None = None,
+    observed_market_context: Any = None,
+) -> dict:
+    """Combine symbol-local structure with optional observed broad context.
 
-    BTC regime, market breadth, quote volume, and spread are not available at
-    candidate-generation time in Phase 5.5. They are represented as null rather
-    than invented. Later feature phases may populate them without changing the
-    surrounding contract.
+    Without a Phase-7 snapshot this preserves the historical Phase-5.5
+    partial-context behavior.  With a snapshot, broad market/BTC/liquidity
+    measurements are copied into the immutable candidate experiment record.
     """
     structure = (
         copy.deepcopy(dict(structure_fingerprint))
         if isinstance(structure_fingerprint, Mapping)
         else None
     )
+    observed = (
+        copy.deepcopy(dict(observed_market_context))
+        if isinstance(observed_market_context, Mapping)
+        else None
+    )
+    symbol = str(candidate_symbol or "").strip().upper()
+    liquidity = None
+    if observed is not None:
+        by_symbol = observed.get("liquidity_by_symbol")
+        if isinstance(by_symbol, Mapping) and symbol:
+            row = by_symbol.get(symbol)
+            if isinstance(row, Mapping):
+                liquidity = {
+                    "spread_pct": row.get("spread_pct"),
+                    "quote_volume_usd": row.get("quote_volume_usd"),
+                }
+
+    if observed is None:
+        return {
+            "schema_version": MARKET_CONTEXT_SCHEMA_VERSION,
+            "symbol_structure": structure,
+            "market_regime": (
+                structure.get("structure") if structure else None
+            ),
+            "trend_regime": structure.get("trend") if structure else None,
+            "volatility_regime": (
+                structure.get("volatility") if structure else None
+            ),
+            "compression": (
+                structure.get("compression") if structure else None
+            ),
+            "btc_regime": None,
+            "market_breadth": None,
+            "liquidity": {
+                "spread_pct": None,
+                "quote_volume_usd": None,
+            },
+            "completeness": "PARTIAL_PHASE5_5",
+        }
+
+    complete = (
+        observed.get("completeness") == "COMPLETE_PHASE7_1"
+        and observed.get("market_regime") is not None
+        and observed.get("volatility_regime") is not None
+        and observed.get("btc_regime") is not None
+        and observed.get("market_breadth") is not None
+        and liquidity is not None
+        and liquidity.get("spread_pct") is not None
+        and liquidity.get("quote_volume_usd") is not None
+    )
     return {
         "schema_version": MARKET_CONTEXT_SCHEMA_VERSION,
         "symbol_structure": structure,
-        "market_regime": (
+        "symbol_market_regime": (
             structure.get("structure") if structure else None
         ),
-        "trend_regime": structure.get("trend") if structure else None,
-        "volatility_regime": (
+        "symbol_trend_regime": (
+            structure.get("trend") if structure else None
+        ),
+        "symbol_volatility_regime": (
             structure.get("volatility") if structure else None
         ),
         "compression": (
             structure.get("compression") if structure else None
         ),
-        "btc_regime": None,
-        "market_breadth": None,
-        "liquidity": {
+        "market_regime": observed.get("market_regime"),
+        "trend_regime": observed.get("trend_regime"),
+        "volatility_regime": observed.get("volatility_regime"),
+        "btc_regime": observed.get("btc_regime"),
+        "btc_change_pct_24h": observed.get("btc_change_pct_24h"),
+        "market_breadth": copy.deepcopy(observed.get("market_breadth")),
+        "liquidity": liquidity or {
             "spread_pct": None,
             "quote_volume_usd": None,
         },
-        "completeness": "PARTIAL_PHASE5_5",
+        "context_observed_at_ms": observed.get("observed_at_ms"),
+        "context_source": observed.get("source"),
+        "context_coverage": observed.get("coverage"),
+        "completeness": (
+            "COMPLETE_PHASE7_1" if complete else "PARTIAL_PHASE7_1"
+        ),
     }
 
 
@@ -123,6 +188,8 @@ def build_experiment_context(
     virtual_target_r: float,
     virtual_max_candles: int,
     paper_variant_id: str,
+    candidate_symbol: str | None = None,
+    observed_market_context: Any = None,
     candle_interval: str = CANDLE_INTERVAL,
 ) -> dict:
     context = {
@@ -139,7 +206,11 @@ def build_experiment_context(
         "execution_mode": str(execution_mode).strip().upper(),
         "candle_interval": str(candle_interval).strip().lower(),
         "candle_bucket": int(candle_bucket),
-        "market_context": build_market_context(structure_fingerprint),
+        "market_context": build_market_context(
+            structure_fingerprint,
+            candidate_symbol=candidate_symbol,
+            observed_market_context=observed_market_context,
+        ),
         "cost_model": {
             "schema_version": COST_MODEL_SCHEMA_VERSION,
             "paper_taker_fee_rate": float(paper_taker_fee_rate),

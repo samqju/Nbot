@@ -33,7 +33,6 @@ _REQUIRED_CONTEXT_PATHS = (
 # in the report prevents a green runtime-data count from being mistaken for a
 # complete Phase-7 learning foundation.
 _SOURCE_GAPS = (
-    "BROAD_MARKET_REGIME_NOT_SEPARATE_FROM_SYMBOL_STRUCTURE",
     "CANDIDATE_MODEL_VECTOR_DOES_NOT_CONSUME_MARKET_CONTEXT",
     "VIRTUAL_COST_MODEL_EXCLUDES_SPREAD",
     "VIRTUAL_COST_MODEL_EXCLUDES_FUNDING",

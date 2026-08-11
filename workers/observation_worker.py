@@ -17,6 +17,7 @@ from config import (
 from engine.universe import UniverseManager
 from execution.binance_market_client import BinanceMarketClient
 from observation.execution_outcome_receiver import LocalExecutionOutcomeReceiver
+from observation.market_context import ObservationMarketContextProvider
 from observation.recommendation import LatestRecommendationStore
 from observation.trade_service import ObservationTradeService
 from strategy.strategy_factory import build_strategy
@@ -40,6 +41,7 @@ class ObservationWorker:
         recommendation_store=None,
         outcome_receiver=None,
         health_monitor=None,
+        market_context_provider=None,
     ):
         self.system_log = system_log
         if strategy is None:
@@ -55,6 +57,13 @@ class ObservationWorker:
         self.universe = universe or UniverseManager(
             strategy=self.strategy,
             system_log=system_log,
+        )
+        self.market_context_provider = (
+            market_context_provider
+            or ObservationMarketContextProvider(
+                market_client=self.market_client,
+                system_log=system_log,
+            )
         )
         self.recommendation_store = recommendation_store or LatestRecommendationStore(
             environment=TRADING_ENV,
@@ -153,12 +162,22 @@ class ObservationWorker:
             True,
             reason="READY_NO_RECOMMENDATION",
         )
-        processed = self.strategy.process_ready_decision_cycles(
-            # Observation does not know/care whether Execution is currently
-            # flat. This flag means "produce a routed recommendation for the
-            # latest completed cycle", not "place an order".
-            paper_entry_allowed=True,
-        )
+        try:
+            processed = self.strategy.process_ready_decision_cycles(
+                # Observation does not know/care whether Execution is currently
+                # flat. This flag means "produce a routed recommendation for the
+                # latest completed cycle", not "place an order".
+                paper_entry_allowed=True,
+                market_context_provider=self._market_context_snapshot,
+            )
+        except TypeError as exc:
+            # Compatibility for focused tests/local strategy doubles that
+            # still expose the pre-Phase-7.1 method signature.
+            if "market_context_provider" not in str(exc):
+                raise
+            processed = self.strategy.process_ready_decision_cycles(
+                paper_entry_allowed=True,
+            )
         if processed:
             self.health_monitor.record_decision_cycles(processed)
             intent = self.strategy.consume_observation_recommendation()
@@ -169,6 +188,12 @@ class ObservationWorker:
             else:
                 self.recommendation_store.publish_intent(intent)
         return processed
+
+    def _market_context_snapshot(self, *, candle_bucket: int) -> dict:
+        return self.market_context_provider.snapshot(
+            symbols=self.universe.observation_symbols,
+            candle_bucket=candle_bucket,
+        )
 
     def observation_health_snapshot(self) -> dict:
         """Return read-only Observation metrics for local operator health."""

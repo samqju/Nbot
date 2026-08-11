@@ -763,6 +763,67 @@ class BinanceMarketClient:
             candles.append((open_time, o, h, l, c))
         return candles
 
+    def get_market_context_rows(self, *, symbols) -> dict[str, dict]:
+        """Return bulk public 24h/liquidity measurements for Observation.
+
+        This is deliberately a read-only bulk operation: one 24h ticker read
+        and one book-ticker read cover the whole requested observation set.
+        """
+        requested = {
+            str(symbol).strip().upper()
+            for symbol in symbols
+            if str(symbol).strip()
+        }
+        if not requested:
+            raise ValueError("MARKET_CONTEXT_SYMBOLS_EMPTY")
+
+        tickers = self._public_get("/fapi/v1/ticker/24hr")
+        books = self._public_get("/fapi/v1/ticker/bookTicker")
+        if not isinstance(tickers, list) or not isinstance(books, list):
+            raise OperationalExchangeError(
+                "MARKET_CONTEXT_BULK_SCHEMA_INVALID"
+            )
+
+        book_by_symbol = {
+            str(row.get("symbol", "")).upper(): row
+            for row in books
+            if isinstance(row, dict)
+        }
+        rows = {}
+        for ticker in tickers:
+            if not isinstance(ticker, dict):
+                continue
+            symbol = str(ticker.get("symbol", "")).upper()
+            if symbol not in requested:
+                continue
+            book = book_by_symbol.get(symbol)
+            if not isinstance(book, dict):
+                continue
+            try:
+                last_price = float(ticker.get("lastPrice", 0))
+                change_pct = float(ticker.get("priceChangePercent", 0))
+                quote_volume = float(ticker.get("quoteVolume", 0))
+                bid = float(book.get("bidPrice", 0))
+                ask = float(book.get("askPrice", 0))
+            except (TypeError, ValueError):
+                continue
+            if (
+                last_price <= 0
+                or quote_volume < 0
+                or bid <= 0
+                or ask <= 0
+                or ask < bid
+            ):
+                continue
+            mid = (bid + ask) / 2.0
+            rows[symbol] = {
+                "last_price": last_price,
+                "price_change_pct_24h": change_pct,
+                "quote_volume_usd": quote_volume,
+                "spread_pct": ((ask - bid) / mid) * 100.0,
+            }
+        return rows
+
     def get_current_spread_pct(self, *, symbol: str) -> float:
         data = self._public_get("/fapi/v1/ticker/bookTicker", {"symbol": symbol})
         try:

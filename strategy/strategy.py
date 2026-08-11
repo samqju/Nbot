@@ -1016,6 +1016,7 @@ class Strategy:
         *,
         paper_entry_allowed: bool,
         now_monotonic: float | None = None,
+        market_context_provider=None,
     ) -> list[dict]:
         """Evaluate completed five-minute cycles regardless of paper exposure.
 
@@ -1039,11 +1040,25 @@ class Strategy:
             allow_paper = bool(
                 paper_entry_allowed and index == len(ready) - 1
             )
+            market_context_snapshot = None
+            if callable(market_context_provider):
+                try:
+                    market_context_snapshot = market_context_provider(
+                        candle_bucket=bucket
+                    )
+                except Exception as e:
+                    if self.system_log:
+                        self.system_log.error(
+                            "PHASE7_MARKET_CONTEXT_FAILED | "
+                            f"bucket={bucket} | error={e} | "
+                            "candidate_selection_effect=NONE"
+                        )
             try:
                 result = self._evaluate_decision_batch(
                     decision_bucket=bucket,
                     paper_entry_allowed=allow_paper,
                     cycle_coverage=coverage,
+                    market_context_snapshot=market_context_snapshot,
                 )
                 processed.append(result)
             finally:
@@ -1056,20 +1071,37 @@ class Strategy:
         decision_bucket: int | None,
         paper_entry_allowed: bool,
         cycle_coverage: dict | None = None,
+        market_context_snapshot: dict | None = None,
     ) -> dict:
         decision_batch_id = new_decision_batch_id()
+        generator_kwargs = {
+            "decision_batch_id": decision_batch_id,
+            "decision_bucket": decision_bucket,
+        }
+        if market_context_snapshot is not None:
+            generator_kwargs["market_context_snapshot"] = (
+                market_context_snapshot
+            )
         try:
             candidates = self._candidate_generator.generate(
-                decision_batch_id=decision_batch_id,
-                decision_bucket=decision_bucket,
+                **generator_kwargs
             )
         except TypeError as exc:
-            # Older tests and local extensions may replace generate() with
-            # a no-argument callable. Preserve that compatibility only for
-            # the direct, uncoordinated proposal path.
-            if decision_bucket is not None or "unexpected keyword" not in str(exc):
+            text = str(exc)
+            if (
+                "market_context_snapshot" in generator_kwargs
+                and "unexpected keyword" in text
+            ):
+                generator_kwargs.pop("market_context_snapshot", None)
+                candidates = self._candidate_generator.generate(
+                    **generator_kwargs
+                )
+            elif decision_bucket is None and "unexpected keyword" in text:
+                # Older tests and local extensions may replace generate()
+                # with a no-argument callable on the direct path.
+                candidates = self._candidate_generator.generate()
+            else:
                 raise
-            candidates = self._candidate_generator.generate()
         self._pending_paper_candidate = None
         self._pending_paper_route = None
 
