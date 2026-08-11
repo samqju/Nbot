@@ -484,11 +484,29 @@ class UniverseManager:
         observation_removed = old_observation - new_observation_set
 
         # Warm only symbols that are genuinely new to the candle universe.
+        # A prospective refresh is transactional: if any proposed symbol
+        # cannot satisfy Strategy warmup, keep the currently proven universes
+        # and snapshots unchanged rather than taking Observation down.
         if observation_added:
-            self._warm_symbols(
-                sorted(observation_added),
-                exchange,
-            )
+            try:
+                self._warm_symbols(
+                    sorted(observation_added),
+                    exchange,
+                )
+            except Exception as e:
+                self._last_reload_status = "FAILED_WARMUP"
+                if observation_due:
+                    self._last_observation_refresh_monotonic = (
+                        time.monotonic()
+                    )
+                self.system_log.warning(
+                    "UNIVERSE_REFRESH_WARMUP_REJECTED | "
+                    f"observation_added={len(observation_added)} | "
+                    f"symbols={','.join(sorted(observation_added))} | "
+                    f"error={type(e).__name__}:{e} | "
+                    "action=KEEP_CURRENT_UNIVERSE"
+                )
+                return
 
         self.symbols = sorted(new_execution)
         self.observation_symbols = sorted(effective_observation)
