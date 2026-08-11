@@ -10,6 +10,8 @@ import threading
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
+
+from utils.jsonl_history import iter_jsonl_lines, logical_jsonl_exists
 from typing import Any
 
 from learning.model_artifact_scorer import (
@@ -823,13 +825,11 @@ class ShadowDecisionEvaluator:
 
     @staticmethod
     def _read_jsonl(path: Path, issues: Counter, prefix: str) -> list[dict]:
-        if not path.exists():
+        if not logical_jsonl_exists(path):
             issues[f"{prefix}_file_missing"] += 1
             return []
         rows = []
-        for line in path.read_text().splitlines():
-            if not line.strip():
-                continue
+        for line in iter_jsonl_lines(path):
             try:
                 row = json.loads(line)
             except json.JSONDecodeError:

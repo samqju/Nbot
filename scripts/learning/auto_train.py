@@ -10,6 +10,7 @@ import time
 
 from config import (
     AUTO_TRAINING_ENABLED,
+    AUTO_TRAINING_PRUNE_REJECTED_STORAGE,
     AUTO_TRAINING_LOCK_PATH,
     AUTO_TRAINING_MAX_BRIER_SCORE,
     AUTO_TRAINING_MAX_CALIBRATION_GAP,
@@ -28,6 +29,8 @@ from config import (
     BASELINE_MODEL_RANDOM_STATE,
     CANDIDATE_OBSERVATIONS_PATH,
     CANDIDATE_OUTCOMES_PATH,
+    LEARNING_HISTORY_ROTATE_MIN_MB,
+    LEARNING_HISTORY_ROTATION_ENABLED,
     ENSEMBLE_EXPERIMENT_MIN_EVAL_ROWS,
     ENSEMBLE_EXPERIMENT_MIN_TRAIN_ROWS,
     MODEL_EVALUATION_CALIBRATION_BINS,
@@ -38,6 +41,7 @@ from config import (
     TIME_SPLIT_TRAIN_RATIO,
     TIME_SPLIT_VALIDATION_RATIO,
     TRADING_ENV,
+    VIRTUAL_TRADES_PATH,
 )
 from learning.training_orchestrator import AutomaticTrainingOrchestrator
 
@@ -80,6 +84,12 @@ def build_orchestrator() -> AutomaticTrainingOrchestrator:
         max_brier_score=AUTO_TRAINING_MAX_BRIER_SCORE,
         max_calibration_gap=AUTO_TRAINING_MAX_CALIBRATION_GAP,
         max_feature_psi=AUTO_TRAINING_MAX_FEATURE_PSI,
+        virtual_trades_path=VIRTUAL_TRADES_PATH,
+        history_rotation_enabled=LEARNING_HISTORY_ROTATION_ENABLED,
+        history_rotate_min_bytes=int(
+            LEARNING_HISTORY_ROTATE_MIN_MB * 1024 * 1024
+        ),
+        prune_rejected_storage=AUTO_TRAINING_PRUNE_REJECTED_STORAGE,
     )
 
 

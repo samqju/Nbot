@@ -23,6 +23,11 @@ from learning.model_registry import ModelRegistry
 from learning.time_split import TimeAwareDatasetSplitter
 from strategy.experiment_contract import EXPERIMENT_CONTRACT_VERSION
 from strategy.features import CANDIDATE_FEATURE_SCHEMA_VERSION
+from utils.jsonl_history import (
+    iter_jsonl_lines,
+    logical_jsonl_exists,
+    rotate_jsonl_to_history,
+)
 
 
 AUTO_TRAINING_SCHEMA_VERSION = 1
@@ -180,13 +185,11 @@ class TrainingInventory:
 
     @staticmethod
     def _read_jsonl(path: Path, issues: Counter, prefix: str) -> list[dict]:
-        if not path.exists():
+        if not logical_jsonl_exists(path):
             issues[f"{prefix}_file_missing"] += 1
             return []
         rows = []
-        for line in path.read_text().splitlines():
-            if not line.strip():
-                continue
+        for line in iter_jsonl_lines(path):
             try:
                 row = json.loads(line)
             except json.JSONDecodeError:
@@ -240,6 +243,10 @@ class AutomaticTrainingOrchestrator:
         max_brier_score: float,
         max_calibration_gap: float,
         max_feature_psi: float,
+        virtual_trades_path: str | None = None,
+        history_rotation_enabled: bool = True,
+        history_rotate_min_bytes: int = 64 * 1024 * 1024,
+        prune_rejected_storage: bool = True,
     ):
         self.enabled = bool(enabled)
         self.environment = str(environment).strip().upper()
@@ -267,6 +274,14 @@ class AutomaticTrainingOrchestrator:
         self.max_brier_score = float(max_brier_score)
         self.max_calibration_gap = float(max_calibration_gap)
         self.max_feature_psi = float(max_feature_psi)
+        self.virtual_trades_path = (
+            Path(virtual_trades_path) if virtual_trades_path else None
+        )
+        self.history_rotation_enabled = bool(history_rotation_enabled)
+        self.history_rotate_min_bytes = max(
+            0, int(history_rotate_min_bytes)
+        )
+        self.prune_rejected_storage = bool(prune_rejected_storage)
         self.registry = ModelRegistry(
             path=registry_path,
             environment=self.environment,
@@ -291,6 +306,9 @@ class AutomaticTrainingOrchestrator:
     def _run_locked(self) -> dict:
         self.registry.initialize()
         cutoff_ms = self.registry.latest_completed_cutoff_ms()
+        storage_maintenance = self._storage_maintenance(
+            cutoff_ms=cutoff_ms
+        )
         inventory = TrainingInventory(
             observations_path=str(self.observations_path),
             outcomes_path=str(self.outcomes_path),
@@ -311,6 +329,7 @@ class AutomaticTrainingOrchestrator:
                 current_champion_model_id=(
                     self.registry.current_champion_model_id()
                 ),
+                storage_maintenance=storage_maintenance,
             )
 
         started_at_ms = int(time.time() * 1000)
@@ -359,6 +378,10 @@ class AutomaticTrainingOrchestrator:
                 status=final_status,
                 updates=result,
             )
+            storage_maintenance = self._storage_maintenance(
+                cutoff_ms=int(record.get("data_cutoff_ms", 0) or 0)
+            )
+            record = self.registry.get_model(model_id) or record
             return self._status(
                 "TRAINING_COMPLETE",
                 model_id=model_id,
@@ -369,7 +392,8 @@ class AutomaticTrainingOrchestrator:
                 champion_changed=False,
                 registry_path=str(self.registry.path),
                 model_path=record.get("artifact_path"),
-                snapshot_path=snapshot["snapshot_path"],
+                snapshot_path=record.get("dataset_snapshot_path"),
+                storage_maintenance=storage_maintenance,
             )
         except Exception as exc:
             completed_at_ms = int(time.time() * 1000)
@@ -393,28 +417,19 @@ class AutomaticTrainingOrchestrator:
             raise
 
     def _create_snapshot(self) -> dict:
+        """Freeze the exact eligible training dataset without raw-data copies."""
         self.snapshot_root.mkdir(parents=True, exist_ok=True)
         staging = Path(
             tempfile.mkdtemp(
                 prefix=".snapshot.", dir=str(self.snapshot_root)
             )
         )
-        source_dir = staging / "source"
-        source_dir.mkdir()
-        observations_snapshot = source_dir / "candidate_observations.jsonl"
-        outcomes_snapshot = source_dir / "candidate_outcomes.jsonl"
-        observations_snapshot.write_bytes(
-            self._complete_jsonl_bytes(self.observations_path)
-        )
-        outcomes_snapshot.write_bytes(
-            self._complete_jsonl_bytes(self.outcomes_path)
-        )
 
-        full_dataset_path = staging / "training_dataset_all.jsonl"
+        full_dataset_path = staging / ".training_dataset_all.tmp.jsonl"
         integrity_path = staging / "dataset_integrity_report.json"
         integrity = TrainingDatasetBuilder(
-            observations_path=str(observations_snapshot),
-            outcomes_path=str(outcomes_snapshot),
+            observations_path=str(self.observations_path),
+            outcomes_path=str(self.outcomes_path),
             dataset_path=str(full_dataset_path),
             report_path=str(integrity_path),
         ).build()
@@ -470,6 +485,9 @@ class AutomaticTrainingOrchestrator:
             "data_cutoff_ms": max(
                 int(row["recorded_at_ms"]) for row in eligible_rows
             ),
+            "source_mode": "LOGICAL_HISTORY_PLUS_LIVE",
+            "observations_path": str(self.observations_path),
+            "outcomes_path": str(self.outcomes_path),
         }
         fingerprint = self._fingerprint(
             eligible_path.read_bytes(), metadata
@@ -477,6 +495,15 @@ class AutomaticTrainingOrchestrator:
         metadata["dataset_fingerprint"] = fingerprint
         metadata["strategy_schema"] = self._strategy_schema(eligible_rows)
         self._write_json(staging / "snapshot_manifest.json", metadata)
+
+        # The all-outcomes join is only a build workspace. Keeping it beside the
+        # filtered training dataset duplicated hundreds of MB per challenger.
+        full_dataset_path.unlink(missing_ok=True)
+        integrity["output"]["dataset_path"] = None
+        integrity["output"]["full_dataset_persisted"] = False
+        integrity["output"]["eligible_dataset_path"] = "training_dataset.jsonl"
+        self._write_json(integrity_path, integrity)
+
         snapshot_id = (
             datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
             + "_"
@@ -738,6 +765,130 @@ class AutomaticTrainingOrchestrator:
             "checks": checks,
         }
 
+    def _storage_maintenance(self, *, cutoff_ms: int) -> dict:
+        result = {
+            "cutoff_ms": int(cutoff_ms),
+            "rejected_models_pruned": [],
+            "history_rotations": {},
+        }
+        if self.prune_rejected_storage:
+            result["rejected_models_pruned"] = (
+                self._prune_rejected_storage()
+            )
+        if self.history_rotation_enabled and int(cutoff_ms) > 0:
+            tag = f"cutoff-{int(cutoff_ms)}"
+            for name, path in (
+                ("candidate_observations", self.observations_path),
+                ("candidate_outcomes", self.outcomes_path),
+                ("virtual_trades", self.virtual_trades_path),
+            ):
+                if path is None:
+                    continue
+                try:
+                    result["history_rotations"][name] = (
+                        rotate_jsonl_to_history(
+                            path,
+                            segment_tag=tag,
+                            min_bytes=self.history_rotate_min_bytes,
+                        )
+                    )
+                except Exception as exc:
+                    result["history_rotations"][name] = {
+                        "rotated": False,
+                        "reason": f"{type(exc).__name__}:{exc}",
+                    }
+        return result
+
+    def _prune_rejected_storage(self) -> list[dict]:
+        document = self.registry.load()
+        pruned = []
+        for model_id, record in sorted(document.get("models", {}).items()):
+            if record.get("status") != "REJECTED":
+                continue
+            if record.get("storage_pruned_at_ms"):
+                continue
+
+            original_snapshot = record.get("dataset_snapshot_path")
+            original_model_dir = record.get("model_directory")
+            reclaimed = 0
+            removed = []
+            for kind, raw_path, root in (
+                ("snapshot", original_snapshot, self.snapshot_root),
+                ("model", original_model_dir, self.model_root),
+            ):
+                if not raw_path:
+                    continue
+                target = Path(raw_path)
+                if not self._is_within(target, root):
+                    continue
+                reclaimed += self._tree_size(target)
+                if target.exists():
+                    self._remove_tree(target)
+                    removed.append(kind)
+
+            now_ms = int(time.time() * 1000)
+            updates = {
+                "storage_pruned_at_ms": now_ms,
+                "storage_prune_reason": "REJECTED_CHALLENGER",
+                "storage_reclaimed_bytes": reclaimed,
+                "pruned_dataset_snapshot_path": original_snapshot,
+                "pruned_model_directory": original_model_dir,
+                "artifact_path": None,
+                "model_directory": None,
+                "dataset_snapshot_path": None,
+            }
+            self.registry.update_model(model_id, updates=updates)
+            pruned.append(
+                {
+                    "model_id": model_id,
+                    "removed": removed,
+                    "bytes_reclaimed": reclaimed,
+                }
+            )
+        return pruned
+
+    @staticmethod
+    def _is_within(path: Path, root: Path) -> bool:
+        try:
+            path.resolve().relative_to(root.resolve())
+            return True
+        except (OSError, ValueError):
+            return False
+
+    @staticmethod
+    def _tree_size(path: Path) -> int:
+        if not path.exists():
+            return 0
+        if path.is_file():
+            try:
+                return path.stat().st_size
+            except OSError:
+                return 0
+        total = 0
+        for child in path.rglob("*"):
+            if child.is_file():
+                try:
+                    total += child.stat().st_size
+                except OSError:
+                    pass
+        return total
+
+    @staticmethod
+    def _remove_tree(path: Path) -> None:
+        if not path.exists():
+            return
+        if path.is_file():
+            path.chmod(0o600)
+            path.unlink()
+            return
+        for child in path.rglob("*"):
+            try:
+                child.chmod(0o700 if child.is_dir() else 0o600)
+            except FileNotFoundError:
+                pass
+        path.chmod(0o700)
+        shutil.rmtree(path)
+
     def _status(self, status: str, **details) -> dict:
         document = {
             "schema_version": AUTO_TRAINING_SCHEMA_VERSION,
@@ -766,18 +917,6 @@ class AutomaticTrainingOrchestrator:
             f"CHALLENGER_{stamp}{milliseconds}Z_"
             f"{fingerprint[:8].upper()}"
         )
-
-    @staticmethod
-    def _complete_jsonl_bytes(path: Path) -> bytes:
-        if not path.exists():
-            return b""
-        data = path.read_bytes()
-        if not data:
-            return data
-        if data.endswith(b"\n"):
-            return data
-        boundary = data.rfind(b"\n")
-        return data[: boundary + 1] if boundary >= 0 else b""
 
     @staticmethod
     def _fingerprint(dataset_bytes: bytes, metadata: dict) -> str:

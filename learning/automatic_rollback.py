@@ -12,6 +12,8 @@ import json
 import math
 from collections import defaultdict
 from pathlib import Path
+
+from utils.jsonl_history import iter_jsonl_lines, logical_jsonl_exists
 from typing import Any
 
 from learning.model_artifact_scorer import (
@@ -467,17 +469,16 @@ class RuntimeRollbackEvidenceEvaluator:
 
     @staticmethod
     def _read_jsonl(path: Path) -> list[dict]:
-        if not path.is_file():
+        if not logical_jsonl_exists(path):
             return []
         rows = []
-        with path.open() as handle:
-            for line in handle:
-                if not line.strip():
-                    continue
-                try:
-                    row = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if isinstance(row, dict):
-                    rows.append(row)
+        for line in iter_jsonl_lines(path):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(row, dict):
+                rows.append(row)
         return rows

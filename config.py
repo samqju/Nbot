@@ -507,6 +507,21 @@ AUTO_TRAINING_ENABLED = (
     .lower()
     in {"1", "true", "yes", "on"}
 )
+LEARNING_HISTORY_ROTATION_ENABLED = (
+    os.getenv("LEARNING_HISTORY_ROTATION_ENABLED", "true")
+    .strip()
+    .lower()
+    in {"1", "true", "yes", "on"}
+)
+LEARNING_HISTORY_ROTATE_MIN_MB = float(
+    os.getenv("LEARNING_HISTORY_ROTATE_MIN_MB", "64")
+)
+AUTO_TRAINING_PRUNE_REJECTED_STORAGE = (
+    os.getenv("AUTO_TRAINING_PRUNE_REJECTED_STORAGE", "true")
+    .strip()
+    .lower()
+    in {"1", "true", "yes", "on"}
+)
 AUTO_TRAINING_POLL_SECONDS = int(
     os.getenv("AUTO_TRAINING_POLL_SECONDS", "300")
 )
@@ -1583,6 +1598,10 @@ def _validate():
             "CONFIG_INVALID: RELIABLE_EVALUATION_LIQUID_MIN_QUOTE_VOLUME_USD"
         )
 
+    if not (1 <= LEARNING_HISTORY_ROTATE_MIN_MB <= 10240):
+        raise ValueError(
+            "CONFIG_INVALID: LEARNING_HISTORY_ROTATE_MIN_MB"
+        )
     if not (30 <= AUTO_TRAINING_POLL_SECONDS <= 86400):
         raise ValueError(
             "CONFIG_INVALID: AUTO_TRAINING_POLL_SECONDS"

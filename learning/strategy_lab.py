@@ -15,6 +15,8 @@ import tempfile
 import time
 from collections import defaultdict
 from pathlib import Path
+
+from utils.jsonl_history import iter_jsonl_lines, logical_jsonl_exists
 from typing import Any
 
 
@@ -103,14 +105,13 @@ class StrategyLabEvaluator:
 
     def _load_rows(self) -> tuple[list[dict], defaultdict[str, int]]:
         issues: defaultdict[str, int] = defaultdict(int)
-        if not self.outcomes_path.exists():
+        if not logical_jsonl_exists(self.outcomes_path):
             issues["outcomes_file_missing"] += 1
             return [], issues
 
         rows = []
         seen_candidate_variants = set()
-        with self.outcomes_path.open("r", encoding="utf-8") as handle:
-            for raw_line in handle:
+        for raw_line in iter_jsonl_lines(self.outcomes_path):
                 line = raw_line.strip()
                 if not line:
                     continue

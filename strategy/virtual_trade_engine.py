@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import threading
 import time
 from pathlib import Path
@@ -17,6 +16,8 @@ from config import (
     VIRTUAL_TRADE_MAX_CANDLES,
     VIRTUAL_TRADE_TARGET_R,
 )
+from utils.jsonl_history import append_jsonl_line
+
 from strategy.experiment_contract import (
     copy_experiment_context,
     validate_experiment_context,
@@ -565,13 +566,4 @@ class VirtualTradeEngine:
     def _append(self, row):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         line = json.dumps(row, default=str)
-        fd = os.open(
-            self.path,
-            os.O_APPEND | os.O_CREAT | os.O_WRONLY,
-            0o600,
-        )
-        try:
-            os.write(fd, (line + "\n").encode("utf-8"))
-            os.fsync(fd)
-        finally:
-            os.close(fd)
+        append_jsonl_line(self.path, line)

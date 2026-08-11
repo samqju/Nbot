@@ -15,6 +15,8 @@ import tempfile
 import time
 from collections import defaultdict
 from pathlib import Path
+
+from utils.jsonl_history import iter_jsonl_lines, logical_jsonl_exists
 from typing import Iterable
 
 from strategy.strategy_lab import VirtualStrategyVariant, variants_for_pattern
@@ -90,13 +92,12 @@ class StrategyPolicyRecommender:
 
     def _load_rows(self):
         issues = defaultdict(int)
-        if not self.outcomes_path.exists():
+        if not logical_jsonl_exists(self.outcomes_path):
             issues["outcomes_file_missing"] += 1
             return [], issues
         rows = []
         seen = set()
-        with self.outcomes_path.open(encoding="utf-8") as handle:
-            for line in handle:
+        for line in iter_jsonl_lines(self.outcomes_path):
                 try:
                     row = json.loads(line)
                 except json.JSONDecodeError:

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
 import threading
 import time
 from pathlib import Path
 
 from strategy.features import CANDIDATE_FEATURE_SCHEMA_VERSION
+from utils.jsonl_history import append_jsonl_line
 from strategy.experiment_contract import (
     copy_experiment_context,
     experiment_projection,
@@ -101,16 +101,7 @@ class CandidateObservationWriter:
         line = json.dumps(row, default=str)
 
         with self._lock:
-            fd = os.open(
-                self.path,
-                os.O_APPEND | os.O_CREAT | os.O_WRONLY,
-                0o600,
-            )
-            try:
-                os.write(fd, (line + "\n").encode("utf-8"))
-                os.fsync(fd)
-            finally:
-                os.close(fd)
+            append_jsonl_line(self.path, line)
 
         if self.system_log:
             getattr(self.system_log, "debug", lambda *_args, **_kwargs: None)(

@@ -13,13 +13,14 @@ import math
 from pathlib import Path
 from typing import Iterator
 
+from utils.jsonl_history import iter_jsonl_lines, logical_jsonl_exists
+
 
 def iter_paper_execution_evidence(path: str | Path) -> Iterator[dict]:
     source = Path(path)
-    if not source.exists():
+    if not logical_jsonl_exists(source):
         return
-    with source.open(encoding="utf-8") as handle:
-        for raw_line in handle:
+    for raw_line in iter_jsonl_lines(source):
             try:
                 row = json.loads(raw_line)
             except (json.JSONDecodeError, TypeError, ValueError):

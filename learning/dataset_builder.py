@@ -15,6 +15,8 @@ from strategy.experiment_contract import (
     EXPERIMENT_CONTRACT_VERSION,
     validate_experiment_context,
 )
+from utils.jsonl_history import iter_jsonl_lines, logical_jsonl_exists
+
 from strategy.features import (
     CANDIDATE_FEATURE_NAMES,
     CANDIDATE_FEATURE_SCHEMA_VERSION,
@@ -253,26 +255,25 @@ class TrainingDatasetBuilder:
         source: str,
         issues: Counter,
     ) -> list[dict]:
-        if not path.exists():
+        if not logical_jsonl_exists(path):
             issues[f"{source}_file_missing"] += 1
             return []
 
         rows = []
         try:
-            with path.open("r") as handle:
-                for raw_line in handle:
-                    line = raw_line.strip()
-                    if not line:
-                        continue
-                    try:
-                        row = json.loads(line)
-                    except json.JSONDecodeError:
-                        issues[f"{source}_malformed_json"] += 1
-                        continue
-                    if not isinstance(row, dict):
-                        issues[f"{source}_row_not_object"] += 1
-                        continue
-                    rows.append(row)
+            for raw_line in iter_jsonl_lines(path):
+                line = raw_line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    issues[f"{source}_malformed_json"] += 1
+                    continue
+                if not isinstance(row, dict):
+                    issues[f"{source}_row_not_object"] += 1
+                    continue
+                rows.append(row)
         except OSError as exc:
             raise DatasetBuildError(
                 f"DATASET_INPUT_READ_FAILED | "
