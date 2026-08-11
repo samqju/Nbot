@@ -42,6 +42,8 @@ class UniverseManager:
         self.observation_generated_at = None
         self._last_observation_refresh_monotonic = 0.0
         self._execution_selection_metadata = {}
+        self._ranked_observation_symbols = []
+        self._last_reload_status = "NOT_RUN"
 
     # ======================================================
     # STARTUP LOAD (RECOVERY FROM SNAPSHOT)
@@ -91,6 +93,9 @@ class UniverseManager:
 
         self.observation_symbols = (
             self._load_or_build_observation_universe()
+        )
+        self._ranked_observation_symbols = list(
+            self.observation_symbols
         )
 
         self.system_log.info(
@@ -395,9 +400,12 @@ class UniverseManager:
         The in-memory effective pool may be larger while unfinished virtual
         trades or forward simulations still require candle updates.
         """
+        self._last_reload_status = "IN_PROGRESS"
+        observation_build_failed = False
         try:
             new_execution = self._build_universe()
         except Exception as e:
+            self._last_reload_status = "FAILED_EXECUTION_BUILD"
             self.system_log.error(f"UNIVERSE_BUILD_FAILED | {e}")
             return
 
@@ -420,6 +428,8 @@ class UniverseManager:
                 # reconciled result before restoring the current universe.
                 new_execution = list(self.symbols)
             except Exception as e:
+                observation_build_failed = True
+                self._last_reload_status = "FAILED_OBSERVATION_BUILD"
                 self.system_log.error(
                     "OBSERVATION_UNIVERSE_BUILD_FAILED | "
                     f"error={e}"
@@ -454,6 +464,12 @@ class UniverseManager:
                 self._last_observation_refresh_monotonic = (
                     time.monotonic()
                 )
+                if not observation_build_failed:
+                    self._ranked_observation_symbols = list(
+                        ranked_observation
+                    )
+            if not observation_build_failed:
+                self._last_reload_status = "NO_CHANGE"
             getattr(self.system_log, "debug", lambda *_args, **_kwargs: None)("UNIVERSE_RELOAD_NO_CHANGE")
             return
 
@@ -490,11 +506,18 @@ class UniverseManager:
             self._last_observation_refresh_monotonic = (
                 time.monotonic()
             )
+            if not observation_build_failed:
+                self._ranked_observation_symbols = list(
+                    ranked_observation
+                )
 
         self.strategy.set_universes(
             execution_symbols=self.symbols,
             observation_symbols=self.observation_symbols,
         )
+
+        if not observation_build_failed:
+            self._last_reload_status = "SUCCESS"
 
         self.system_log.info(
             "DUAL_UNIVERSE_RELOADED | "
@@ -510,3 +533,25 @@ class UniverseManager:
             f"execution_selector="
             f"{self._execution_selection_metadata.get('mode', 'UNKNOWN')}"
         )
+
+    def scale_composition_snapshot(self):
+        """Return read-only ranked/effective/retention composition telemetry."""
+        try:
+            retained = set(
+                self.strategy.get_retained_observation_symbols()
+            )
+            ranked = set(
+                self._ranked_observation_symbols
+                or self.observation_symbols
+            )
+            effective = set(self.observation_symbols)
+            return {
+                "ranked_universe_count": len(ranked),
+                "effective_universe_count": len(effective),
+                "retained_symbol_count": len(retained),
+                "retained_extra_count": len(effective - ranked),
+                "execution_symbol_count": len(self.symbols),
+                "last_reload_status": self._last_reload_status,
+            }
+        except Exception:
+            return {}

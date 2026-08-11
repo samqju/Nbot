@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 
 from communication.trade_request import TradeRequest
@@ -74,6 +75,23 @@ class ObservationWorker:
         self.health_monitor = health_monitor or ObservationHealthMonitor()
         self._prepared = False
         self._last_universe_refresh_monotonic = 0.0
+        self._scale_lock = threading.Lock()
+        self._scale_metrics = {
+            "refresh_attempts": 0,
+            "refresh_successes": 0,
+            "refresh_failures": 0,
+            "refresh_no_change": 0,
+            "last_refresh_status": "NOT_RUN",
+            "last_refresh_duration_ms": None,
+            "max_refresh_duration_ms": 0.0,
+            "last_refresh_monotonic": None,
+            "last_warmup_symbols_count": 0,
+            "last_execution_added": 0,
+            "last_execution_removed": 0,
+            "last_observation_added": 0,
+            "last_observation_removed": 0,
+            "peak_effective_universe_count": 0,
+        }
 
     def prepare(self) -> None:
         """Connect public market data, restore universes, and warm Strategy."""
@@ -89,6 +107,7 @@ class ObservationWorker:
         )
         self.universe.warmup(self.market_client)
         self._sync_health_universes()
+        self._update_scale_composition()
         self._prepared = True
         self._last_universe_refresh_monotonic = time.monotonic()
         if self.strategy.is_warmed_up():
@@ -206,6 +225,7 @@ class ObservationWorker:
             recommendation=recommendation,
             transport_metrics=transport_metrics,
             candle_metrics=candle_metrics,
+            scale_metrics=self._scale_snapshot(),
         )
 
     def handle_trade_request(
@@ -255,12 +275,140 @@ class ObservationWorker:
         elapsed = time.monotonic() - self._last_universe_refresh_monotonic
         if elapsed < OBSERVATION_UNIVERSE_REFRESH_SECONDS:
             return
-        self.universe.maybe_reload(
-            exchange=self.market_client,
-            force=False,
+
+        old_execution = set(self.universe.symbols)
+        old_observation = set(self.universe.observation_symbols)
+        refresh_started = time.perf_counter()
+        with self._scale_lock:
+            self._scale_metrics["refresh_attempts"] += 1
+
+        try:
+            self.universe.maybe_reload(
+                exchange=self.market_client,
+                force=False,
+            )
+        except Exception:
+            self._record_scale_refresh(
+                status="FAILED_EXCEPTION",
+                refresh_started=refresh_started,
+                old_execution=old_execution,
+                old_observation=old_observation,
+            )
+            raise
+
+        composition = self._universe_scale_composition()
+        status = str(
+            composition.get("last_reload_status") or "UNKNOWN"
+        ).upper()
+        self._record_scale_refresh(
+            status=status,
+            refresh_started=refresh_started,
+            old_execution=old_execution,
+            old_observation=old_observation,
         )
         self._sync_health_universes()
         self._last_universe_refresh_monotonic = time.monotonic()
+
+    def _universe_scale_composition(self) -> dict:
+        getter = getattr(
+            self.universe,
+            "scale_composition_snapshot",
+            None,
+        )
+        if callable(getter):
+            try:
+                return dict(getter() or {})
+            except Exception:
+                return {}
+        return {
+            "ranked_universe_count": len(
+                self.universe.observation_symbols
+            ),
+            "effective_universe_count": len(
+                self.universe.observation_symbols
+            ),
+            "retained_symbol_count": 0,
+            "retained_extra_count": 0,
+            "execution_symbol_count": len(self.universe.symbols),
+            "last_reload_status": "UNKNOWN",
+        }
+
+    def _update_scale_composition(self) -> None:
+        composition = self._universe_scale_composition()
+        effective = int(
+            composition.get("effective_universe_count", 0) or 0
+        )
+        with self._scale_lock:
+            self._scale_metrics["peak_effective_universe_count"] = max(
+                self._scale_metrics["peak_effective_universe_count"],
+                effective,
+            )
+
+    def _record_scale_refresh(
+        self,
+        *,
+        status,
+        refresh_started,
+        old_execution,
+        old_observation,
+    ) -> None:
+        new_execution = set(self.universe.symbols)
+        new_observation = set(self.universe.observation_symbols)
+        duration_ms = max(
+            0.0,
+            (time.perf_counter() - refresh_started) * 1000.0,
+        )
+        status = str(status or "UNKNOWN").upper()
+        with self._scale_lock:
+            if status == "SUCCESS":
+                self._scale_metrics["refresh_successes"] += 1
+            elif status == "NO_CHANGE":
+                self._scale_metrics["refresh_no_change"] += 1
+            elif status.startswith("FAILED"):
+                self._scale_metrics["refresh_failures"] += 1
+            self._scale_metrics["last_refresh_status"] = status
+            self._scale_metrics["last_refresh_duration_ms"] = duration_ms
+            self._scale_metrics["max_refresh_duration_ms"] = max(
+                self._scale_metrics["max_refresh_duration_ms"],
+                duration_ms,
+            )
+            self._scale_metrics["last_refresh_monotonic"] = (
+                time.monotonic()
+            )
+            self._scale_metrics["last_execution_added"] = len(
+                new_execution - old_execution
+            )
+            self._scale_metrics["last_execution_removed"] = len(
+                old_execution - new_execution
+            )
+            self._scale_metrics["last_observation_added"] = len(
+                new_observation - old_observation
+            )
+            self._scale_metrics["last_observation_removed"] = len(
+                old_observation - new_observation
+            )
+            self._scale_metrics["last_warmup_symbols_count"] = len(
+                new_observation - old_observation
+            )
+        self._update_scale_composition()
+
+    def _scale_snapshot(self) -> dict:
+        composition = self._universe_scale_composition()
+        now = time.monotonic()
+        with self._scale_lock:
+            snapshot = dict(self._scale_metrics)
+        last_refresh = snapshot.pop("last_refresh_monotonic", None)
+        snapshot["last_refresh_age_seconds"] = (
+            None
+            if last_refresh is None
+            else max(0.0, now - float(last_refresh))
+        )
+        snapshot.update(composition)
+        snapshot["peak_effective_universe_count"] = max(
+            int(snapshot.get("peak_effective_universe_count", 0) or 0),
+            int(snapshot.get("effective_universe_count", 0) or 0),
+        )
+        return snapshot
 
     def _sync_health_universes(self) -> None:
         self.health_monitor.set_universes(

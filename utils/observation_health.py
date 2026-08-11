@@ -36,6 +36,10 @@ class ObservationHealthMonitor:
         self._observation_target_count = 0
         self._last_tick_monotonic: dict[str, float] = {}
         self._latest_cycle: dict = {}
+        self._sample_monotonic = self._started_monotonic
+        self._sample_cpu_seconds = time.process_time()
+        self._sample_counters = dict(self._counters)
+        self._peak_cpu_utilization_percent = 0.0
 
     def set_universes(
         self,
@@ -204,6 +208,7 @@ class ObservationHealthMonitor:
         recommendation: dict | None = None,
         transport_metrics: dict | None = None,
         candle_metrics: dict | None = None,
+        scale_metrics: dict | None = None,
         now_monotonic: float | None = None,
     ) -> dict:
         """Return a read-only diagnostic snapshot."""
@@ -269,6 +274,54 @@ class ObservationHealthMonitor:
                     set(stale) & self._execution_symbols
                 )
                 latest_cycle = dict(self._latest_cycle)
+                cpu_seconds = max(0.0, time.process_time())
+                sample_window = max(0.0, now - self._sample_monotonic)
+                cpu_utilization_percent = 0.0
+                rates = {
+                    "window_seconds": sample_window,
+                    "total_ticks_per_second": 0.0,
+                    "selected_universe_ticks_per_second": 0.0,
+                    "candidates_per_minute": 0.0,
+                    "decision_cycles_per_minute": 0.0,
+                }
+                if sample_window > 0.0:
+                    cpu_delta = max(
+                        0.0,
+                        cpu_seconds - self._sample_cpu_seconds,
+                    )
+                    cpu_utilization_percent = (
+                        cpu_delta / sample_window
+                    ) * 100.0
+                    for name, rate_name, multiplier in (
+                        ("total_ticks", "total_ticks_per_second", 1.0),
+                        (
+                            "selected_universe_ticks",
+                            "selected_universe_ticks_per_second",
+                            1.0,
+                        ),
+                        ("candidates_seen", "candidates_per_minute", 60.0),
+                        (
+                            "decision_cycles",
+                            "decision_cycles_per_minute",
+                            60.0,
+                        ),
+                    ):
+                        delta = max(
+                            0,
+                            int(self._counters.get(name, 0) or 0)
+                            - int(self._sample_counters.get(name, 0) or 0),
+                        )
+                        rates[rate_name] = (
+                            delta / sample_window
+                        ) * multiplier
+                    self._sample_monotonic = now
+                    self._sample_cpu_seconds = cpu_seconds
+                    self._sample_counters = dict(self._counters)
+                    self._peak_cpu_utilization_percent = max(
+                        self._peak_cpu_utilization_percent,
+                        cpu_utilization_percent,
+                    )
+                cpu_count = max(1, int(os.cpu_count() or 1))
                 decision_age = (
                     None
                     if self._last_decision_monotonic is None
@@ -287,9 +340,19 @@ class ObservationHealthMonitor:
                         now - self._last_activity_monotonic,
                     ),
                     "process": {
-                        "cpu_seconds": max(0.0, time.process_time()),
+                        "cpu_seconds": cpu_seconds,
+                        "cpu_utilization_percent": cpu_utilization_percent,
+                        "cpu_capacity_percent": (
+                            cpu_utilization_percent / cpu_count
+                        ),
+                        "peak_cpu_utilization_percent": (
+                            self._peak_cpu_utilization_percent
+                        ),
+                        "cpu_count": cpu_count,
                         "rss_mb": self._current_rss_mb(),
+                        "peak_rss_mb": self._peak_rss_mb(),
                     },
+                    "rates": rates,
                     "counters": dict(self._counters),
                     "universe": {
                         "execution_symbol_count": len(
@@ -362,6 +425,7 @@ class ObservationHealthMonitor:
                     "latest_decision_age_seconds": decision_age,
                     "virtual": dict(virtual_metrics or {}),
                     "recommendation": dict(recommendation or {}),
+                    "scale": dict(scale_metrics or {}),
                 }
                 return result
         except Exception:
@@ -370,7 +434,19 @@ class ObservationHealthMonitor:
                 "activity_age_seconds": 0.0,
                 "process": {
                     "cpu_seconds": 0.0,
+                    "cpu_utilization_percent": 0.0,
+                    "cpu_capacity_percent": 0.0,
+                    "peak_cpu_utilization_percent": 0.0,
+                    "cpu_count": max(1, int(os.cpu_count() or 1)),
                     "rss_mb": 0.0,
+                    "peak_rss_mb": 0.0,
+                },
+                "rates": {
+                    "window_seconds": 0.0,
+                    "total_ticks_per_second": 0.0,
+                    "selected_universe_ticks_per_second": 0.0,
+                    "candidates_per_minute": 0.0,
+                    "decision_cycles_per_minute": 0.0,
                 },
                 "counters": {
                     name: 0 for name in self._COUNTERS
@@ -412,6 +488,7 @@ class ObservationHealthMonitor:
                 "latest_decision_age_seconds": None,
                 "virtual": dict(virtual_metrics or {}),
                 "recommendation": dict(recommendation or {}),
+                "scale": dict(scale_metrics or {}),
             }
 
     @staticmethod
@@ -426,3 +503,19 @@ class ObservationHealthMonitor:
             ) / (1024.0 * 1024.0)
         except Exception:
             return 0.0
+
+    @staticmethod
+    def _peak_rss_mb() -> float:
+        """Read Linux resident high-water mark; return zero on failure."""
+        try:
+            with open(
+                "/proc/self/status",
+                "r",
+                encoding="utf-8",
+            ) as handle:
+                for line in handle:
+                    if line.startswith("VmHWM:"):
+                        return float(line.split()[1]) / 1024.0
+        except Exception:
+            return 0.0
+        return 0.0
