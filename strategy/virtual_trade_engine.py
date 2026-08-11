@@ -86,9 +86,13 @@ class VirtualTradeEngine:
         self._active: dict[str, dict] = {}
         self._lock = threading.Lock()
         self._active_state_dirty = False
+        self._runtime_enrollment_attempts = 0
         self._runtime_enrollments = 0
+        self._runtime_capacity_rejections = 0
         self._runtime_closures = 0
+        self._peak_active_experiments = 0
         self._restore_active_trades()
+        self._peak_active_experiments = len(self._active)
 
     @staticmethod
     def _active_key(observation_id: str, variant_id: str) -> str:
@@ -96,11 +100,29 @@ class VirtualTradeEngine:
 
     def enroll(self, candidate) -> bool:
         """Backward-compatible baseline-only enrollment."""
-        return self._enroll_variant(candidate, self._baseline_variant)
+        before = int(
+            getattr(self, "_runtime_capacity_rejections", 0)
+        )
+        created = self._enroll_variant(candidate, self._baseline_variant)
+        rejected = (
+            int(getattr(self, "_runtime_capacity_rejections", 0))
+            - before
+        )
+        system_log = getattr(self, "system_log", None)
+        if rejected and system_log:
+            system_log.warning(
+                "VIRTUAL_TRADE_CAPACITY_REACHED | "
+                f"rejected={rejected} | active={self.active_count()} | "
+                f"max_active={self.max_active}"
+            )
+        return created
 
     def enroll_all(self, candidates, *, persist: bool = True) -> int:
         """Enroll approved variants and persist the batch at most once."""
         created = 0
+        capacity_rejections_before = int(
+            getattr(self, "_runtime_capacity_rejections", 0)
+        )
         for candidate in candidates:
             variants = (
                 variants_for_pattern(
@@ -120,6 +142,17 @@ class VirtualTradeEngine:
                 )
         if created and persist:
             self.flush_active_state()
+        rejected = (
+            int(getattr(self, "_runtime_capacity_rejections", 0))
+            - capacity_rejections_before
+        )
+        system_log = getattr(self, "system_log", None)
+        if rejected and system_log:
+            system_log.warning(
+                "VIRTUAL_TRADE_CAPACITY_REACHED | "
+                f"rejected={rejected} | active={self.active_count()} | "
+                f"max_active={self.max_active}"
+            )
         if self.system_log and created:
             self.system_log.info(
                 "STRATEGY_LAB_ENROLLED | "
@@ -145,15 +178,15 @@ class VirtualTradeEngine:
             variant.variant_id,
         )
         with self._lock:
+            self._runtime_enrollment_attempts = int(
+                getattr(self, "_runtime_enrollment_attempts", 0)
+            ) + 1
             if active_key in self._active:
                 return False
             if len(self._active) >= self.max_active:
-                if self.system_log:
-                    self.system_log.warning(
-                        "VIRTUAL_TRADE_CAPACITY_REACHED | "
-                        f"active={len(self._active)} | "
-                        f"max_active={self.max_active}"
-                    )
+                self._runtime_capacity_rejections = int(
+                    getattr(self, "_runtime_capacity_rejections", 0)
+                ) + 1
                 return False
 
             plan = candidate.risk_plan
@@ -211,7 +244,13 @@ class VirtualTradeEngine:
                 "strategy_lab_baseline": variant.baseline,
                 "experiment_context": variant_context,
             }
-            self._runtime_enrollments += 1
+            self._runtime_enrollments = int(
+                getattr(self, "_runtime_enrollments", 0)
+            ) + 1
+            self._peak_active_experiments = max(
+                int(getattr(self, "_peak_active_experiments", 0)),
+                len(self._active),
+            )
             self._active_state_dirty = True
             if persist:
                 self._persist_active_locked()
@@ -422,14 +461,33 @@ class VirtualTradeEngine:
     def metrics_snapshot(self) -> dict:
         """Return in-memory virtual-trade telemetry."""
         with self._lock:
+            active = len(self._active)
             return {
-                "active_experiments": len(self._active),
+                "active_experiments": active,
                 "active_candidates": len({
                     row["candidate_observation_id"]
                     for row in self._active.values()
                 }),
-                "runtime_enrollments": int(self._runtime_enrollments),
-                "runtime_closures": int(self._runtime_closures),
+                "max_active_experiments": int(self.max_active),
+                "capacity_remaining": max(0, self.max_active - active),
+                "capacity_utilization": (
+                    active / self.max_active if self.max_active else 0.0
+                ),
+                "peak_active_experiments": int(
+                    getattr(self, "_peak_active_experiments", active)
+                ),
+                "runtime_enrollment_attempts": int(
+                    getattr(self, "_runtime_enrollment_attempts", 0)
+                ),
+                "runtime_enrollments": int(
+                    getattr(self, "_runtime_enrollments", 0)
+                ),
+                "runtime_capacity_rejections": int(
+                    getattr(self, "_runtime_capacity_rejections", 0)
+                ),
+                "runtime_closures": int(
+                    getattr(self, "_runtime_closures", 0)
+                ),
             }
 
     def _restore_active_trades(self) -> None:

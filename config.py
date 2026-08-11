@@ -389,11 +389,13 @@ VIRTUAL_LAB_CATALOG_VERSION = os.getenv(
     "VIRTUAL_LAB_CATALOG_VERSION",
     "PHASE5_6_APPROVED_V1",
 ).strip().upper()
+# Phase 6B.4: each candidate currently creates three realtime virtual
+# experiments. The old derived default (500 * 3 = 1500) saturated under the
+# measured ~12.4k candidates/day workload and permanently dropped experiments.
+# 6000 keeps a hard safety ceiling while providing >2x headroom over the
+# observed steady-state demand implied by the 1h/2h/3h experiment horizons.
 VIRTUAL_LAB_MAX_ACTIVE = int(
-    os.getenv(
-        "VIRTUAL_LAB_MAX_ACTIVE",
-        str(VIRTUAL_TRADE_MAX_ACTIVE * 3),
-    )
+    os.getenv("VIRTUAL_LAB_MAX_ACTIVE", "6000")
 )
 TESTNET_STRATEGY_LAB_REPORT_PATH = os.getenv(
     "TESTNET_STRATEGY_LAB_REPORT_PATH",
