@@ -9,6 +9,15 @@ import time
 from pathlib import Path
 
 import numpy as np
+
+from learning.context_features import (
+    CONTEXT_FEATURE_NAMES,
+    CONTEXT_FEATURE_SCHEMA_VERSION,
+    context_feature_mapping,
+    context_feature_vector,
+    is_complete_market_context,
+    market_context_from_row,
+)
 from sklearn.metrics import (
     accuracy_score,
     brier_score_loss,
@@ -151,6 +160,15 @@ class ChallengerArtifactEvaluator:
             raise ChallengerEvaluationError(
                 "CHALLENGER_ARTIFACT_FIELDS_MISSING"
             )
+        if artifact.get("requires_complete_market_context"):
+            if int(artifact.get("context_feature_schema_version", 0) or 0) != CONTEXT_FEATURE_SCHEMA_VERSION:
+                raise ChallengerEvaluationError(
+                    "CHALLENGER_CONTEXT_FEATURE_SCHEMA_INVALID"
+                )
+            if tuple(artifact.get("context_feature_names") or ()) != CONTEXT_FEATURE_NAMES:
+                raise ChallengerEvaluationError(
+                    "CHALLENGER_CONTEXT_FEATURE_NAMES_INVALID"
+                )
         return artifact
 
     @staticmethod
@@ -216,6 +234,10 @@ class ChallengerArtifactEvaluator:
                 continue
             if not all(math.isfinite(value) for value in values):
                 continue
+            if artifact.get("requires_complete_market_context") and not is_complete_market_context(
+                market_context_from_row(row)
+            ):
+                continue
             seen.add(candidate_id)
             filtered.append(row)
         return filtered
@@ -267,7 +289,7 @@ class ChallengerArtifactEvaluator:
     @staticmethod
     def _vector(artifact: dict, row: dict) -> list[float]:
         features = row["features"]
-        return (
+        vector = (
             [
                 float(features[name])
                 for name in artifact["base_feature_names"]
@@ -282,6 +304,9 @@ class ChallengerArtifactEvaluator:
                 for pattern in artifact["pattern_categories"]
             ]
         )
+        if artifact.get("requires_complete_market_context"):
+            vector += context_feature_vector(market_context_from_row(row))
+        return vector
 
     @staticmethod
     def _metrics(labels, probabilities) -> dict:
@@ -361,6 +386,8 @@ class ChallengerArtifactEvaluator:
             "rule_score",
             "final_score",
         ]
+        if artifact.get("requires_complete_market_context"):
+            names.extend(artifact.get("context_feature_names") or CONTEXT_FEATURE_NAMES)
         report = {}
         for name in names:
             expected = self._column(validation, name)
@@ -385,6 +412,14 @@ class ChallengerArtifactEvaluator:
         if name in {"rule_score", "final_score"}:
             return np.asarray(
                 [float(row.get(name, 0)) for row in rows], dtype=float
+            )
+        if name in CONTEXT_FEATURE_NAMES:
+            return np.asarray(
+                [
+                    context_feature_mapping(market_context_from_row(row))[name]
+                    for row in rows
+                ],
+                dtype=float,
             )
         return np.asarray(
             [float(row["features"][name]) for row in rows], dtype=float

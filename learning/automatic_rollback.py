@@ -16,6 +16,11 @@ from pathlib import Path
 from utils.jsonl_history import iter_jsonl_lines, logical_jsonl_exists
 from typing import Any
 
+from learning.context_features import (
+    CONTEXT_FEATURE_NAMES,
+    context_feature_mapping,
+    market_context_from_row,
+)
 from learning.model_artifact_scorer import (
     RegisteredModelArtifactScorer,
     RegisteredModelScoringError,
@@ -374,6 +379,11 @@ class RuntimeRollbackEvidenceEvaluator:
         names = list(scorer.artifact["base_feature_names"]) + [
             "rule_score", "final_score"
         ]
+        if scorer.artifact.get("requires_complete_market_context"):
+            names.extend(
+                scorer.artifact.get("context_feature_names")
+                or CONTEXT_FEATURE_NAMES
+            )
         report = {}
         for name in names:
             expected = self._column(train_rows, name)
@@ -428,13 +438,27 @@ class RuntimeRollbackEvidenceEvaluator:
     def _column(rows: list[dict], name: str) -> list[float]:
         values = []
         for row in rows:
-            source = row if name in {"rule_score", "final_score"} else row.get("features")
-            if not isinstance(source, dict):
-                continue
-            try:
-                value = float(source[name])
-            except (KeyError, TypeError, ValueError):
-                continue
+            if name in CONTEXT_FEATURE_NAMES:
+                try:
+                    value = float(
+                        context_feature_mapping(
+                            market_context_from_row(row)
+                        )[name]
+                    )
+                except (KeyError, TypeError, ValueError):
+                    continue
+            else:
+                source = (
+                    row
+                    if name in {"rule_score", "final_score"}
+                    else row.get("features")
+                )
+                if not isinstance(source, dict):
+                    continue
+                try:
+                    value = float(source[name])
+                except (KeyError, TypeError, ValueError):
+                    continue
             if math.isfinite(value):
                 values.append(value)
         return values

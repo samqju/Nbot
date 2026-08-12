@@ -1,5 +1,6 @@
 import json
 import os
+import pickle
 import tempfile
 import unittest
 from pathlib import Path
@@ -60,6 +61,36 @@ class Phase58AutomaticTrainingTests(unittest.TestCase):
                     "trend": "UP" if label else "DOWN",
                     "volatility": "NORMAL",
                     "compression": False,
+                },
+                candidate_symbol="BTCUSDT",
+                observed_market_context={
+                    "schema_version": 1,
+                    "source": "TEST",
+                    "observed_at_ms": observed_at_ms,
+                    "candle_bucket": index,
+                    "coverage": 1.0,
+                    "market_regime": "BULLISH" if label else "BEARISH",
+                    "trend_regime": "BULLISH" if label else "BEARISH",
+                    "volatility_regime": "NORMAL",
+                    "btc_regime": "BULLISH" if label else "BEARISH",
+                    "btc_change_pct_24h": 2.0 if label else -2.0,
+                    "market_breadth": {
+                        "symbols_expected": 200,
+                        "symbols_observed": 200,
+                        "coverage": 1.0,
+                        "advancing_fraction": 0.7 if label else 0.3,
+                        "declining_fraction": 0.3 if label else 0.7,
+                        "unchanged_fraction": 0.0,
+                        "median_change_pct_24h": 2.0 if label else -2.0,
+                        "median_abs_change_pct_24h": 3.0,
+                    },
+                    "liquidity_by_symbol": {
+                        "BTCUSDT": {
+                            "spread_pct": 0.01,
+                            "quote_volume_usd": 1_000_000_000.0,
+                        }
+                    },
+                    "completeness": "COMPLETE_PHASE7_1",
                 },
                 paper_taker_fee_rate=0.0005,
                 paper_entry_slippage_pct=0.02,
@@ -274,6 +305,17 @@ class Phase58AutomaticTrainingTests(unittest.TestCase):
                 self.assertEqual(len(model["artifact_checksum_sha256"]), 64)
                 self.assertGreater(model["training_rows"], 0)
                 self.assertEqual(model["feature_schema_version"], 3)
+                self.assertEqual(model["context_feature_schema_version"], 1)
+                self.assertTrue(model["requires_complete_market_context"])
+                artifact = pickle.loads(Path(model["artifact_path"]).read_bytes())
+                self.assertTrue(artifact["requires_complete_market_context"])
+                self.assertEqual(artifact["context_feature_schema_version"], 1)
+                self.assertTrue(
+                    any(
+                        str(name).startswith("ctx_btc_")
+                        for name in artifact["vector_columns"]
+                    )
+                )
                 self.assertIn("strategy_versions", model["strategy_schema"])
                 self.assertEqual(model["runtime_activation"], "DISABLED")
                 self.assertEqual(model["paper_authority"], "UNCHANGED")

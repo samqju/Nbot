@@ -103,10 +103,12 @@ class Phase7DataCompletenessAuditTests(unittest.TestCase):
                 report["observations"]["missing_required_market_context"],
                 {},
             )
-            # Source-level Phase-7 gaps deliberately remain blockers until the
-            # context contract/model vector are upgraded.
-            self.assertIn(
+            self.assertNotIn(
                 "CANDIDATE_MODEL_VECTOR_DOES_NOT_CONSUME_MARKET_CONTEXT",
+                report["blockers"],
+            )
+            self.assertIn(
+                "VIRTUAL_COST_MODEL_EXCLUDES_SPREAD",
                 report["blockers"],
             )
 

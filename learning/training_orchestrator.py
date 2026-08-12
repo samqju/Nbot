@@ -16,6 +16,12 @@ from pathlib import Path
 from typing import Any
 
 from learning.baseline_trainer import BaselineModelTrainer
+from learning.context_features import (
+    CONTEXT_FEATURE_NAMES,
+    CONTEXT_FEATURE_SCHEMA_VERSION,
+    is_complete_market_context,
+    market_context_from_row,
+)
 from learning.challenger_evaluator import ChallengerArtifactEvaluator
 from learning.dataset_builder import TrainingDatasetBuilder
 from learning.ensemble_experiment import OfflineEnsembleExperiment
@@ -100,10 +106,14 @@ class TrainingInventory:
         observations_path: str,
         outcomes_path: str,
         outcome_type: str,
+        require_complete_market_context: bool = False,
     ):
         self.observations_path = Path(observations_path)
         self.outcomes_path = Path(outcomes_path)
         self.outcome_type = str(outcome_type).strip().upper()
+        self.require_complete_market_context = bool(
+            require_complete_market_context
+        )
 
     def scan(self, *, after_ms: int = 0) -> dict:
         observations = {}
@@ -140,6 +150,14 @@ class TrainingInventory:
             )
             if contract_version != EXPERIMENT_CONTRACT_VERSION:
                 issues["non_current_contract_excluded"] += 1
+                continue
+            if (
+                self.require_complete_market_context
+                and not is_complete_market_context(
+                    market_context_from_row(observation)
+                )
+            ):
+                issues["market_context_incomplete_excluded"] += 1
                 continue
             market_event_id = str(
                 observation.get("market_event_id") or ""
@@ -313,6 +331,7 @@ class AutomaticTrainingOrchestrator:
             observations_path=str(self.observations_path),
             outcomes_path=str(self.outcomes_path),
             outcome_type=self.outcome_type,
+            require_complete_market_context=True,
         ).scan(after_ms=cutoff_ms)
         if (
             inventory["new_completed_outcomes"] < self.min_new_outcomes
@@ -348,6 +367,9 @@ class AutomaticTrainingOrchestrator:
             "training_started_at_ms": started_at_ms,
             "training_completed_at_ms": None,
             "feature_schema_version": CANDIDATE_FEATURE_SCHEMA_VERSION,
+            "context_feature_schema_version": CONTEXT_FEATURE_SCHEMA_VERSION,
+            "context_feature_names": list(CONTEXT_FEATURE_NAMES),
+            "requires_complete_market_context": True,
             "strategy_schema": snapshot["strategy_schema"],
             "training_rows": 0,
             "independent_event_count": snapshot[
@@ -362,6 +384,8 @@ class AutomaticTrainingOrchestrator:
             "runtime_activation": "DISABLED",
             "paper_authority": "UNCHANGED",
             "real_order_authority": "NONE",
+            "phase": "7.2",
+            "paper_promotion_allowed": False,
         }
         self.registry.register_training(registry_record)
         try:
@@ -452,6 +476,10 @@ class AutomaticTrainingOrchestrator:
                 continue
             if row.get("label_profitable") not in {True, False}:
                 continue
+            if not is_complete_market_context(
+                market_context_from_row(row)
+            ):
+                continue
             eligible_rows.append(row)
         eligible_rows.sort(
             key=lambda row: (
@@ -480,6 +508,9 @@ class AutomaticTrainingOrchestrator:
             "outcome_type": self.outcome_type,
             "experiment_contract_version": EXPERIMENT_CONTRACT_VERSION,
             "feature_schema_version": CANDIDATE_FEATURE_SCHEMA_VERSION,
+            "context_feature_schema_version": CONTEXT_FEATURE_SCHEMA_VERSION,
+            "context_feature_names": list(CONTEXT_FEATURE_NAMES),
+            "requires_complete_market_context": True,
             "rows": len(eligible_rows),
             "independent_market_events": len(market_events),
             "data_cutoff_ms": max(
@@ -569,6 +600,7 @@ class AutomaticTrainingOrchestrator:
             min_train_rows=self.baseline_min_train_rows,
             min_eval_rows=self.baseline_min_eval_rows,
             random_state=self.random_state,
+            context_aware=True,
         ).train()
 
         ensemble_artifact = model_dir / "ensemble.pkl"
@@ -583,6 +615,7 @@ class AutomaticTrainingOrchestrator:
             min_train_rows=self.ensemble_min_train_rows,
             min_eval_rows=self.ensemble_min_eval_rows,
             random_state=self.random_state,
+            context_aware=True,
         ).run()
 
         candidates = []
@@ -638,7 +671,7 @@ class AutomaticTrainingOrchestrator:
         )
         selected_artifact.update(
             {
-                "phase": "5.8",
+                "phase": "7.2",
                 "model_id": model_id,
                 "parent_model_id": parent_model_id,
                 "dataset_fingerprint": snapshot[
@@ -653,6 +686,7 @@ class AutomaticTrainingOrchestrator:
                 "runtime_activation": "DISABLED",
                 "paper_authority": "UNCHANGED",
                 "real_order_authority": "NONE",
+                "paper_promotion_allowed": False,
             }
         )
         challenger_path = model_dir / "challenger.pkl"
@@ -893,7 +927,7 @@ class AutomaticTrainingOrchestrator:
         document = {
             "schema_version": AUTO_TRAINING_SCHEMA_VERSION,
             "generated_at_ms": int(time.time() * 1000),
-            "phase": "5.8",
+            "phase": "7.2",
             "status": status,
             "environment": self.environment,
             "process_id": os.getpid(),

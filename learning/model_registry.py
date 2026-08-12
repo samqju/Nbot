@@ -700,6 +700,14 @@ class ModelRegistry:
                 "MODEL_REGISTRY_PROMOTION_STATUS_INVALID | "
                 f"model_id={model_id} | status={record.get('status')}"
             )
+        if (
+            decision == "PROMOTE_TO_PAPER_CANARY"
+            and record.get("paper_promotion_allowed") is False
+        ):
+            raise ModelRegistryError(
+                "MODEL_REGISTRY_PHASE7_PAPER_PROMOTION_LOCKED | "
+                f"model_id={model_id}"
+            )
 
         now_ms = int(time.time() * 1000)
         record["promotion_evaluation"] = dict(evidence)

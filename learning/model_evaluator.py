@@ -12,6 +12,14 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 import numpy as np
+
+from learning.context_features import (
+    CONTEXT_FEATURE_NAMES,
+    context_feature_mapping,
+    context_feature_vector,
+    is_complete_market_context,
+    market_context_from_row,
+)
 from sklearn.metrics import (
     accuracy_score,
     brier_score_loss,
@@ -262,6 +270,10 @@ class BaselineModelEvaluator:
                     continue
             except (KeyError, TypeError, ValueError):
                 continue
+            if artifact.get("requires_complete_market_context") and not is_complete_market_context(
+                market_context_from_row(row)
+            ):
+                continue
             seen.add(candidate_id)
             filtered.append(row)
         return filtered
@@ -274,6 +286,7 @@ class BaselineModelEvaluator:
                 row,
                 feature_names,
                 patterns,
+                artifact.get("requires_complete_market_context", False),
             )
             for row in rows
         ], dtype=float)
@@ -287,9 +300,9 @@ class BaselineModelEvaluator:
         return labels, probabilities
 
     @staticmethod
-    def _vector(row, feature_names, patterns):
+    def _vector(row, feature_names, patterns, context_aware=False):
         features = row["features"]
-        return (
+        vector = (
             [float(features[name]) for name in feature_names]
             + [
                 float(row.get("rule_score", 0)),
@@ -301,6 +314,9 @@ class BaselineModelEvaluator:
                 for pattern in patterns
             ]
         )
+        if context_aware:
+            vector += context_feature_vector(market_context_from_row(row))
+        return vector
 
     @staticmethod
     def _metrics(labels, probabilities):
@@ -466,6 +482,10 @@ class BaselineModelEvaluator:
             list(artifact["base_feature_names"])
             + ["rule_score", "final_score"]
         )
+        if artifact.get("requires_complete_market_context"):
+            feature_names.extend(
+                artifact.get("context_feature_names") or CONTEXT_FEATURE_NAMES
+            )
         report = {}
         for name in feature_names:
             validation_values = self._column(validation, name)
@@ -490,6 +510,11 @@ class BaselineModelEvaluator:
         if name in {"rule_score", "final_score"}:
             return np.asarray([
                 float(row.get(name, 0))
+                for row in rows
+            ], dtype=float)
+        if name in CONTEXT_FEATURE_NAMES:
+            return np.asarray([
+                context_feature_mapping(market_context_from_row(row))[name]
                 for row in rows
             ], dtype=float)
         return np.asarray([

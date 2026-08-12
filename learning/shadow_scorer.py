@@ -13,6 +13,13 @@ from pathlib import Path
 
 import numpy as np
 
+from learning.context_features import (
+    CONTEXT_FEATURE_NAMES,
+    CONTEXT_FEATURE_SCHEMA_VERSION,
+    context_feature_vector,
+    market_context_from_candidate,
+)
+
 from strategy.experiment_contract import (
     EXPERIMENT_CONTRACT_VERSION,
     build_model_version_from_bytes,
@@ -225,6 +232,11 @@ class ShadowModelScorer:
             raise ShadowModelError("SHADOW_MODEL_WINNER_KIND_INVALID")
         if not isinstance(artifact["models"], dict):
             raise ShadowModelError("SHADOW_MODEL_MODELS_INVALID")
+        if artifact.get("requires_complete_market_context"):
+            if int(artifact.get("context_feature_schema_version", 0) or 0) != CONTEXT_FEATURE_SCHEMA_VERSION:
+                raise ShadowModelError("SHADOW_MODEL_CONTEXT_SCHEMA_INVALID")
+            if tuple(artifact.get("context_feature_names") or ()) != CONTEXT_FEATURE_NAMES:
+                raise ShadowModelError("SHADOW_MODEL_CONTEXT_FEATURES_INVALID")
 
     def _predict(self, artifact, candidate) -> float:
         vector = np.asarray(
@@ -271,7 +283,7 @@ class ShadowModelScorer:
             if breakdown is not None
             else float(candidate.score)
         )
-        return (
+        vector = (
             [
                 float(features[name])
                 for name in artifact["base_feature_names"]
@@ -286,6 +298,11 @@ class ShadowModelScorer:
                 for pattern in artifact["pattern_categories"]
             ]
         )
+        if artifact.get("requires_complete_market_context"):
+            vector += context_feature_vector(
+                market_context_from_candidate(candidate)
+            )
+        return vector
 
     def _append_rows(self, rows):
         if not rows:

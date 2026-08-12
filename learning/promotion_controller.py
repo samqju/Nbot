@@ -208,6 +208,12 @@ class AutomaticPromotionController:
         evidence = self._evidence(evidence_report, record)
         gate_report = self._gates(evidence)
         promotion_outcome, reason_codes = self._decide(gate_report)
+        if (
+            promotion_outcome == "PROMOTE_TO_PAPER_CANARY"
+            and record.get("paper_promotion_allowed") is False
+        ):
+            promotion_outcome = "EXTEND_SHADOW"
+            reason_codes = ["PHASE7_PAPER_PROMOTION_LOCKED"]
 
         previous_evaluation = record.get("promotion_evaluation") or {}
         no_new_evidence = (

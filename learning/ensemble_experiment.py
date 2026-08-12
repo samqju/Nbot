@@ -28,6 +28,14 @@ from sklearn.metrics import (
 )
 from sklearn.preprocessing import StandardScaler
 
+from learning.context_features import (
+    CONTEXT_FEATURE_NAMES,
+    CONTEXT_FEATURE_SCHEMA_VERSION,
+    context_feature_vector,
+    is_complete_market_context,
+    market_context_from_row,
+)
+
 
 FEATURE_NAMES = (
     "short_range",
@@ -64,6 +72,7 @@ class OfflineEnsembleExperiment:
         min_train_rows=200,
         min_eval_rows=40,
         random_state=42,
+        context_aware=False,
     ):
         self.train_path = Path(train_path)
         self.validation_path = Path(validation_path)
@@ -74,6 +83,7 @@ class OfflineEnsembleExperiment:
         self.min_train_rows = int(min_train_rows)
         self.min_eval_rows = int(min_eval_rows)
         self.random_state = int(random_state)
+        self.context_aware = bool(context_aware)
 
     def run(self):
         issues = Counter()
@@ -134,11 +144,12 @@ class OfflineEnsembleExperiment:
                 "direction_long",
             )
             + tuple(f"pattern::{pattern}" for pattern in patterns)
+            + (CONTEXT_FEATURE_NAMES if self.context_aware else ())
         )
 
         matrices = {
             name: np.asarray(
-                [self._vector(row, patterns) for row in rows],
+                [self._vector(row, patterns, self.context_aware) for row in rows],
                 dtype=float,
             )
             for name, rows in filtered.items()
@@ -275,6 +286,13 @@ class OfflineEnsembleExperiment:
             "test_metrics": winner_test_metrics,
             "training_rows": len(filtered["train"]),
             "runtime_activation": "DISABLED",
+            "context_feature_schema_version": (
+                CONTEXT_FEATURE_SCHEMA_VERSION if self.context_aware else None
+            ),
+            "context_feature_names": (
+                CONTEXT_FEATURE_NAMES if self.context_aware else ()
+            ),
+            "requires_complete_market_context": self.context_aware,
         }
         self._write_pickle(self.artifact_path, artifact)
 
@@ -437,9 +455,9 @@ class OfflineEnsembleExperiment:
         }
 
     @staticmethod
-    def _vector(row, patterns):
+    def _vector(row, patterns, context_aware=False):
         features = row["features"]
-        return (
+        vector = (
             [float(features[name]) for name in FEATURE_NAMES]
             + [
                 float(row.get("rule_score", 0)),
@@ -451,6 +469,9 @@ class OfflineEnsembleExperiment:
                 for pattern in patterns
             ]
         )
+        if context_aware:
+            vector += context_feature_vector(market_context_from_row(row))
+        return vector
 
     def _filter(self, rows, split, issues):
         filtered = []
@@ -495,6 +516,11 @@ class OfflineEnsembleExperiment:
                 continue
             if not all(math.isfinite(value) for value in values):
                 issues[f"{split}_feature_value_invalid"] += 1
+                continue
+            if self.context_aware and not is_complete_market_context(
+                market_context_from_row(row)
+            ):
+                issues[f"{split}_market_context_incomplete"] += 1
                 continue
             seen.add(candidate_id)
             filtered.append(row)

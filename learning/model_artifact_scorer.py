@@ -16,6 +16,13 @@ from typing import Iterable
 import numpy as np
 
 from strategy.features import CANDIDATE_FEATURE_SCHEMA_VERSION
+from learning.context_features import (
+    CONTEXT_FEATURE_NAMES,
+    CONTEXT_FEATURE_SCHEMA_VERSION,
+    ContextFeatureError,
+    context_feature_vector,
+    market_context_from_candidate,
+)
 
 
 class RegisteredModelScoringError(RuntimeError):
@@ -72,6 +79,11 @@ class RegisteredModelArtifactScorer:
                 raise RegisteredModelScoringError(
                     "REGISTERED_MODEL_REQUIRED_FEATURE_MISSING | "
                     f"model_id={self.model_id} | feature={feature}"
+                ) from exc
+            except ContextFeatureError as exc:
+                raise RegisteredModelScoringError(
+                    "REGISTERED_MODEL_MARKET_CONTEXT_INVALID | "
+                    f"model_id={self.model_id} | reason={exc}"
                 ) from exc
             except RegisteredModelScoringError:
                 raise
@@ -162,6 +174,15 @@ class RegisteredModelArtifactScorer:
                 f"artifact={artifact_schema} | "
                 f"registry={self.expected_feature_schema_version}"
             )
+        if artifact.get("requires_complete_market_context"):
+            if int(artifact.get("context_feature_schema_version", 0) or 0) != CONTEXT_FEATURE_SCHEMA_VERSION:
+                raise RegisteredModelScoringError(
+                    "REGISTERED_MODEL_CONTEXT_SCHEMA_INVALID"
+                )
+            if tuple(artifact.get("context_feature_names") or ()) != CONTEXT_FEATURE_NAMES:
+                raise RegisteredModelScoringError(
+                    "REGISTERED_MODEL_CONTEXT_FEATURES_INVALID"
+                )
         if artifact.get("model_kind") == "LOGISTIC_REGRESSION_BASELINE":
             if "model" not in artifact:
                 raise RegisteredModelScoringError(
@@ -237,7 +258,7 @@ class RegisteredModelArtifactScorer:
             if breakdown is not None
             else float(candidate.score)
         )
-        return (
+        vector = (
             [
                 float(features[name])
                 for name in artifact["base_feature_names"]
@@ -252,3 +273,8 @@ class RegisteredModelArtifactScorer:
                 for pattern in artifact["pattern_categories"]
             ]
         )
+        if artifact.get("requires_complete_market_context"):
+            vector += context_feature_vector(
+                market_context_from_candidate(candidate)
+            )
+        return vector
