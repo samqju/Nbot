@@ -18,7 +18,7 @@ from learning.model_registry import ModelRegistry, ModelRegistryError
 from learning.shadow_decision_testing import ShadowDecisionEvaluator
 
 
-PROMOTION_CONTROLLER_SCHEMA_VERSION = 1
+PROMOTION_CONTROLLER_SCHEMA_VERSION = 2
 
 class PromotionControllerError(RuntimeError):
     pass
@@ -111,6 +111,11 @@ class AutomaticPromotionController:
         min_recent_expectancy: float,
         recent_event_window: int,
         extend_evidence_ratio: float,
+        phase7_strict_evidence: bool = False,
+        min_regime_events: int = 1,
+        min_distinct_market_regimes: int = 1,
+        min_regime_average_r_lift: float = -5.0,
+        min_regime_after_cost_expectancy: float = -5.0,
     ):
         self.enabled = bool(enabled)
         self.environment = str(environment or "").strip().upper()
@@ -138,6 +143,26 @@ class AutomaticPromotionController:
         self.min_recent_expectancy = float(min_recent_expectancy)
         self.recent_event_window = int(recent_event_window)
         self.extend_evidence_ratio = float(extend_evidence_ratio)
+        self.phase7_strict_evidence = bool(phase7_strict_evidence)
+        self.min_regime_events = max(1, int(min_regime_events))
+        self.min_distinct_market_regimes = max(
+            1, int(min_distinct_market_regimes)
+        )
+        self.min_regime_average_r_lift = float(
+            min_regime_average_r_lift
+        )
+        self.min_regime_after_cost_expectancy = float(
+            min_regime_after_cost_expectancy
+        )
+        if self.phase7_strict_evidence:
+            if self.min_regime_events > self.min_independent_events:
+                raise ValueError(
+                    "PROMOTION_CONTROLLER_REGIME_EVENTS_INVALID"
+                )
+            if not (1 <= self.min_distinct_market_regimes <= 3):
+                raise ValueError(
+                    "PROMOTION_CONTROLLER_DISTINCT_REGIMES_INVALID"
+                )
         if not self.environment:
             raise ValueError("PROMOTION_CONTROLLER_ENVIRONMENT_REQUIRED")
         if not self.default_champion_model_id:
@@ -195,6 +220,20 @@ class AutomaticPromotionController:
             registry_document.get("current_champion_model_id")
             or self.default_champion_model_id
         )
+        if (
+            self.phase7_strict_evidence
+            and not self.registry.phase7_shadow_eligible(record)
+        ):
+            return self._status(
+                "WAITING_FOR_PHASE7_CHALLENGER",
+                model_id=challenger_model_id,
+                champion_model_id=champion_model_id,
+                promotion_outcome="HOLD",
+                reason_codes=[
+                    "CURRENT_SHADOW_NOT_PHASE7_VALIDATION_ELIGIBLE"
+                ],
+                registry_changed=False,
+            )
 
         evidence_report = ShadowDecisionEvaluator(
             decisions_path=str(self.decisions_path),
@@ -204,6 +243,8 @@ class AutomaticPromotionController:
             challenger_model_id=challenger_model_id,
             champion_model_id=champion_model_id,
             recent_event_window=self.recent_event_window,
+            require_complete_market_context=self.phase7_strict_evidence,
+            require_complete_cost_evidence=self.phase7_strict_evidence,
         ).evaluate()
         evidence = self._evidence(evidence_report, record)
         gate_report = self._gates(evidence)
@@ -289,6 +330,13 @@ class AutomaticPromotionController:
             )
         )
         artifact_validation = self._validate_artifact(record)
+        regime_robustness = self._regime_robustness(
+            comparison,
+            report["policies"]["CHALLENGER"]["TOP_ONE"].get(
+                "regimes"
+            )
+            or {},
+        )
         challenger_win_rate = self._number(
             comparison.get("left_win_rate")
         )
@@ -333,9 +381,93 @@ class AutomaticPromotionController:
             ),
             "recent_event_window": self.recent_event_window,
             "artifact_validation": artifact_validation,
+            "regime_robustness": regime_robustness,
             "evidence_basis": "INDEPENDENT_MARKET_EVENTS_PRIMARY",
-            "return_basis": "NET_AFTER_ESTIMATED_COSTS",
+            "return_basis": (
+                "NET_AFTER_COMPLETE_PHASE7_3_COSTS"
+                if self.phase7_strict_evidence
+                else "NET_AFTER_ESTIMATED_COSTS"
+            ),
+            "market_context_basis": (
+                "COMPLETE_PHASE7_1_REQUIRED"
+                if self.phase7_strict_evidence
+                else "LEGACY_COMPATIBLE"
+            ),
         }
+
+    def _regime_robustness(
+        self, comparison: dict, challenger_regimes: dict
+    ) -> dict:
+        report = {}
+        all_regimes = comparison.get("regimes") or {}
+        for dimension in (
+            "market_regime",
+            "volatility_regime",
+            "btc_regime",
+        ):
+            groups = all_regimes.get(dimension) or {}
+            normalized = {}
+            eligible = []
+            for name, metrics in sorted(groups.items()):
+                if not isinstance(metrics, dict):
+                    continue
+                event_count = int(
+                    metrics.get("independent_market_event_pairs", 0) or 0
+                )
+                challenger_group = (
+                    (challenger_regimes.get(dimension) or {}).get(name)
+                    or {}
+                )
+                item = {
+                    "independent_market_events": event_count,
+                    "challenger_average_net_r": self._number(
+                        challenger_group.get("average_net_r")
+                    ),
+                    "champion_average_net_r": self._number(
+                        metrics.get("right_average_net_r")
+                    ),
+                    "average_r_lift_over_champion": self._number(
+                        metrics.get("left_minus_right_average_net_r")
+                    ),
+                    "challenger_win_rate": self._number(
+                        metrics.get("left_win_rate")
+                    ),
+                    "champion_win_rate": self._number(
+                        metrics.get("right_win_rate")
+                    ),
+                    "disagreement_events": int(
+                        metrics.get("disagreement_events", 0) or 0
+                    ),
+                    "comparison_basis": metrics.get("comparison_basis"),
+                    "eligible": (
+                        name not in {"MIXED", "NOT_AVAILABLE"}
+                        and event_count >= self.min_regime_events
+                    ),
+                }
+                normalized[str(name)] = item
+                if item["eligible"]:
+                    eligible.append(item)
+            lifts = [
+                item["average_r_lift_over_champion"]
+                for item in eligible
+                if item["average_r_lift_over_champion"] is not None
+            ]
+            expectancies = [
+                item["challenger_average_net_r"]
+                for item in eligible
+                if item["challenger_average_net_r"] is not None
+            ]
+            report[dimension] = {
+                "minimum_events_per_group": self.min_regime_events,
+                "observed_group_count": len(normalized),
+                "eligible_group_count": len(eligible),
+                "minimum_r_lift": min(lifts) if lifts else None,
+                "minimum_challenger_expectancy": (
+                    min(expectancies) if expectancies else None
+                ),
+                "groups": normalized,
+            }
+        return report
 
     def _gates(self, evidence: dict) -> dict:
         checks = {
@@ -385,16 +517,49 @@ class AutomaticPromotionController:
                 "passed": evidence["artifact_validation"]["valid"],
             },
         }
+        if self.phase7_strict_evidence:
+            market_regime = evidence["regime_robustness"][
+                "market_regime"
+            ]
+            checks.update({
+                "market_regime_coverage": self._minimum_gate(
+                    market_regime["eligible_group_count"],
+                    self.min_distinct_market_regimes,
+                ),
+                "market_regime_min_r_lift": self._minimum_gate(
+                    market_regime["minimum_r_lift"],
+                    self.min_regime_average_r_lift,
+                ),
+                "market_regime_min_after_cost_expectancy": (
+                    self._strict_minimum_gate(
+                        market_regime["minimum_challenger_expectancy"],
+                        self.min_regime_after_cost_expectancy,
+                    )
+                ),
+            })
         count_names = (
             "matched_candidate_outcomes",
             "independent_decision_events",
             "paired_disagreement_events",
+            *(
+                ("market_regime_coverage",)
+                if self.phase7_strict_evidence
+                else ()
+            ),
         )
         performance_names = (
             "average_r_lift_over_champion",
             "after_cost_expectancy",
             "win_rate_deterioration",
             "recent_period_expectancy",
+            *(
+                (
+                    "market_regime_min_r_lift",
+                    "market_regime_min_after_cost_expectancy",
+                )
+                if self.phase7_strict_evidence
+                else ()
+            ),
         )
         hard_safety_names = (
             "brier_score",
@@ -416,7 +581,11 @@ class AutomaticPromotionController:
             "all_gates_passed": all(
                 item["passed"] for item in checks.values()
             ),
-            "promotion_basis": "INDEPENDENT_MARKET_EVENTS_PRIMARY",
+            "promotion_basis": (
+                "INDEPENDENT_MARKET_EVENTS_AND_REGIME_ROBUSTNESS"
+                if self.phase7_strict_evidence
+                else "INDEPENDENT_MARKET_EVENTS_PRIMARY"
+            ),
         }
 
     def _decide(self, gate_report: dict) -> tuple[str, list[str]]:
@@ -457,6 +626,28 @@ class AutomaticPromotionController:
                 or win_drop > self.max_win_rate_deterioration
             ):
                 clearly_worse.append("WIN_RATE_DETERIORATION_EXCEEDED")
+            if self.phase7_strict_evidence:
+                regime_lift = checks["market_regime_min_r_lift"][
+                    "actual"
+                ]
+                regime_expectancy = checks[
+                    "market_regime_min_after_cost_expectancy"
+                ]["actual"]
+                if (
+                    regime_lift is None
+                    or regime_lift < self.min_regime_average_r_lift
+                ):
+                    clearly_worse.append(
+                        "SUPPORTED_REGIME_R_LIFT_BELOW_MINIMUM"
+                    )
+                if (
+                    regime_expectancy is None
+                    or regime_expectancy
+                    <= self.min_regime_after_cost_expectancy
+                ):
+                    clearly_worse.append(
+                        "SUPPORTED_REGIME_EXPECTANCY_NOT_POSITIVE"
+                    )
             if clearly_worse:
                 return "REJECT", clearly_worse
             return "EXTEND_SHADOW", [
@@ -530,11 +721,14 @@ class AutomaticPromotionController:
 
     def _count_progress(self, checks: dict) -> float:
         values = []
-        for name in (
+        names = [
             "matched_candidate_outcomes",
             "independent_decision_events",
             "paired_disagreement_events",
-        ):
+        ]
+        if self.phase7_strict_evidence:
+            names.append("market_regime_coverage")
+        for name in names:
             actual = float(checks[name]["actual"] or 0.0)
             required = float(checks[name]["required_min"])
             values.append(min(1.0, actual / required))
@@ -545,7 +739,7 @@ class AutomaticPromotionController:
         expectancy = checks["after_cost_expectancy"]["actual"]
         recent = checks["recent_period_expectancy"]["actual"]
         win_drop = checks["win_rate_deterioration"]["actual"]
-        return (
+        promising = (
             lift is not None
             and lift >= 0
             and expectancy is not None
@@ -554,6 +748,28 @@ class AutomaticPromotionController:
             and recent > self.min_recent_expectancy
             and win_drop is not None
             and win_drop <= self.max_win_rate_deterioration
+        )
+        if not promising or not self.phase7_strict_evidence:
+            return promising
+        regime_coverage = checks.get("market_regime_coverage", {}).get(
+            "actual"
+        )
+        regime_lift = checks.get("market_regime_min_r_lift", {}).get(
+            "actual"
+        )
+        regime_expectancy = checks.get(
+            "market_regime_min_after_cost_expectancy", {}
+        ).get("actual")
+        return (
+            regime_coverage is None
+            or regime_coverage < self.min_distinct_market_regimes
+            or (
+                regime_lift is not None
+                and regime_lift >= self.min_regime_average_r_lift
+                and regime_expectancy is not None
+                and regime_expectancy
+                > self.min_regime_after_cost_expectancy
+            )
         )
 
     @staticmethod
@@ -570,7 +786,9 @@ class AutomaticPromotionController:
         document = {
             "schema_version": PROMOTION_CONTROLLER_SCHEMA_VERSION,
             "generated_at_ms": int(time.time() * 1000),
-            "phase": "5.10",
+            "phase": (
+                "7.5" if self.phase7_strict_evidence else "5.10"
+            ),
             "status": status,
             "environment": self.environment,
             "process_id": os.getpid(),

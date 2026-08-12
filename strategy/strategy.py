@@ -188,6 +188,7 @@ class Strategy:
                 decisions_path=SHADOW_DECISIONS_PATH,
                 top_k=SHADOW_DECISION_TOP_K,
                 system_log=system_log,
+                require_phase7_validation=True,
             )
         )
         self._paper_canary_router = PaperCanaryRouter(

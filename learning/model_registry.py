@@ -606,7 +606,24 @@ class ModelRegistry:
             "current_paper_canary_model_id": canary_id,
         }
 
-    def activate_next_shadow_challenger(self) -> dict | None:
+    @staticmethod
+    def phase7_shadow_eligible(record: dict | None) -> bool:
+        if not isinstance(record, dict):
+            return False
+        phase = str(record.get("phase") or "").strip()
+        return (
+            phase.startswith("7.")
+            and record.get("requires_complete_market_context") is True
+            and record.get("requires_complete_cost_evidence") is True
+            and record.get("test_set_policy")
+            == "SEALED_UNTIL_FINAL_CANDIDATE_SELECTED"
+            and record.get("selected_using_test_data") is False
+            and record.get("paper_promotion_allowed") is False
+        )
+
+    def activate_next_shadow_challenger(
+        self, *, require_phase7_validation: bool = False
+    ) -> dict | None:
         """Atomically attach one offline-validated challenger to shadow.
 
         Only one challenger may occupy the SHADOW slot. This method never
@@ -614,20 +631,46 @@ class ModelRegistry:
         """
         document = self.load()
         current_id = document.get("current_shadow_model_id")
+        registry_changed = False
         if current_id:
             current = document["models"].get(current_id)
-            if isinstance(current, dict) and current.get("status") == "SHADOW":
+            current_valid = (
+                isinstance(current, dict)
+                and current.get("status") == "SHADOW"
+            )
+            phase7_valid = (
+                not require_phase7_validation
+                or self.phase7_shadow_eligible(current)
+            )
+            if current_valid and phase7_valid:
                 return dict(current)
+            if current_valid and require_phase7_validation:
+                now_ms = int(time.time() * 1000)
+                current["status"] = "ARCHIVED"
+                current["runtime_activation"] = "DISABLED"
+                current["paper_authority"] = "UNCHANGED"
+                current["real_order_authority"] = "NONE"
+                current["phase7_incompatible_archived_at_ms"] = now_ms
+                current["phase7_incompatible_reason"] = (
+                    "PHASE7_SHADOW_ELIGIBILITY_REQUIRED"
+                )
+                current["updated_at_ms"] = now_ms
+                registry_changed = True
             document["current_shadow_model_id"] = None
+            registry_changed = True
 
         eligible = [
             record
             for record in document["models"].values()
             if record.get("status") == "OFFLINE_VALIDATED"
             and str(record.get("artifact_path") or "").strip()
+            and (
+                not require_phase7_validation
+                or self.phase7_shadow_eligible(record)
+            )
         ]
         if not eligible:
-            if current_id:
+            if registry_changed:
                 document["updated_at_ms"] = int(time.time() * 1000)
                 self._write(document)
             return None

@@ -14,6 +14,11 @@ from pathlib import Path
 from utils.jsonl_history import iter_jsonl_lines, logical_jsonl_exists
 from typing import Any
 
+from learning.cost_evidence import (
+    cost_breakdown_from_row,
+    has_complete_cost_evidence,
+)
+from learning.context_features import is_complete_market_context
 from learning.model_artifact_scorer import (
     RegisteredModelArtifactScorer,
     RegisteredModelScoringError,
@@ -23,7 +28,7 @@ from strategy.candidate import rank_candidates
 
 
 SHADOW_DECISION_SCHEMA_VERSION = 1
-SHADOW_DECISION_REPORT_SCHEMA_VERSION = 2
+SHADOW_DECISION_REPORT_SCHEMA_VERSION = 3
 
 
 class ShadowDecisionTestingError(RuntimeError):
@@ -43,6 +48,7 @@ class ChampionChallengerShadowTester:
         decisions_path: str,
         top_k: int = 3,
         system_log=None,
+        require_phase7_validation: bool = False,
     ):
         self.enabled = bool(enabled)
         self.environment = str(environment or "").strip().upper()
@@ -52,6 +58,9 @@ class ChampionChallengerShadowTester:
         self.decisions_path = Path(decisions_path)
         self.top_k = int(top_k)
         self.system_log = system_log
+        self.require_phase7_validation = bool(
+            require_phase7_validation
+        )
         if not self.environment:
             raise ValueError("SHADOW_DECISION_ENVIRONMENT_REQUIRED")
         if not self.default_champion_model_id:
@@ -85,7 +94,9 @@ class ChampionChallengerShadowTester:
             )
 
         self.registry.initialize()
-        challenger = self.registry.activate_next_shadow_challenger()
+        challenger = self.registry.activate_next_shadow_challenger(
+            require_phase7_validation=self.require_phase7_validation
+        )
         registry_document = self.registry.load()
         champion_model_id = str(
             registry_document.get("current_champion_model_id")
@@ -383,6 +394,8 @@ class ShadowDecisionEvaluator:
         challenger_model_id: str | None = None,
         champion_model_id: str | None = None,
         recent_event_window: int = 30,
+        require_complete_market_context: bool = False,
+        require_complete_cost_evidence: bool = False,
     ):
         self.decisions_path = Path(decisions_path)
         self.outcomes_path = Path(outcomes_path)
@@ -399,6 +412,12 @@ class ShadowDecisionEvaluator:
             else None
         )
         self.recent_event_window = int(recent_event_window)
+        self.require_complete_market_context = bool(
+            require_complete_market_context
+        )
+        self.require_complete_cost_evidence = bool(
+            require_complete_cost_evidence
+        )
         if not (1 <= self.recent_event_window <= 10000):
             raise ValueError("SHADOW_DECISION_RECENT_WINDOW_INVALID")
 
@@ -421,6 +440,7 @@ class ShadowDecisionEvaluator:
                     outcomes,
                     system_name=system_name,
                     selection_key=key,
+                    issues=issues,
                 )
                 policies[system_name][policy_name] = {
                     "summary": self._summary(records),
@@ -442,6 +462,7 @@ class ShadowDecisionEvaluator:
                         left=left,
                         right=right,
                         selection_key=key,
+                        issues=issues,
                     )
                 )
 
@@ -458,12 +479,23 @@ class ShadowDecisionEvaluator:
         report = {
             "schema_version": SHADOW_DECISION_REPORT_SCHEMA_VERSION,
             "generated_at_ms": int(time.time() * 1000),
-            "phase": "5.9",
+            "phase": (
+                "7.5"
+                if self.require_complete_market_context
+                and self.require_complete_cost_evidence
+                else "5.9"
+            ),
             "status": status,
             "outcome_type": self.outcome_type,
             "filters": {
                 "challenger_model_id": self.challenger_model_id,
                 "champion_model_id": self.champion_model_id,
+                "require_complete_market_context": (
+                    self.require_complete_market_context
+                ),
+                "require_complete_cost_evidence": (
+                    self.require_complete_cost_evidence
+                ),
             },
             "recent_event_window": self.recent_event_window,
             "decision_rows_read": len(decisions),
@@ -476,7 +508,16 @@ class ShadowDecisionEvaluator:
                 "top_one_and_top_k_separate": True,
                 "top_k_portfolio_weighting": "EQUAL_WEIGHT",
                 "incomplete_portfolios_excluded": True,
-                "return_basis": "NET_AFTER_ESTIMATED_COSTS",
+                "return_basis": (
+                    "NET_AFTER_COMPLETE_PHASE7_3_COSTS"
+                    if self.require_complete_cost_evidence
+                    else "NET_AFTER_ESTIMATED_COSTS"
+                ),
+                "market_context_basis": (
+                    "COMPLETE_PHASE7_1_REQUIRED"
+                    if self.require_complete_market_context
+                    else "LEGACY_COMPATIBLE"
+                ),
             },
             "runtime_effect": "NONE",
             "paper_authority": "UNCHANGED",
@@ -495,6 +536,7 @@ class ShadowDecisionEvaluator:
         *,
         system_name: str,
         selection_key: str,
+        issues: Counter | None = None,
     ) -> list[dict]:
         records = []
         for decision in decisions:
@@ -503,6 +545,15 @@ class ShadowDecisionEvaluator:
                 continue
             selections = system.get(selection_key) or []
             if not selections:
+                continue
+            if self.require_complete_market_context and not all(
+                is_complete_market_context(
+                    selection.get("market_context")
+                )
+                for selection in selections
+            ):
+                if issues is not None:
+                    issues["market_context_incomplete_excluded"] += 1
                 continue
             candidate_outcomes = []
             for selection in selections:
@@ -550,6 +601,7 @@ class ShadowDecisionEvaluator:
         left: str,
         right: str,
         selection_key: str,
+        issues: Counter | None = None,
     ) -> dict:
         left_records = {
             row["decision_batch_id"]: row
@@ -558,6 +610,7 @@ class ShadowDecisionEvaluator:
                 outcomes,
                 system_name=left,
                 selection_key=selection_key,
+                issues=None,
             )
         }
         right_records = {
@@ -567,6 +620,7 @@ class ShadowDecisionEvaluator:
                 outcomes,
                 system_name=right,
                 selection_key=selection_key,
+                issues=None,
             )
         }
         paired = []
@@ -584,52 +638,18 @@ class ShadowDecisionEvaluator:
                         left_row["selection_ids"]
                         == right_row["selection_ids"]
                     ),
+                    "regime": self._pairwise_regime(
+                        left_row.get("regime") or {},
+                        right_row.get("regime") or {},
+                    ),
                 }
             )
         independent = self._group_pairwise_by_event(paired)
-        disagreements = [row for row in independent if not row["agreement"]]
-        basis = disagreements if disagreements else independent
-        left_average = self._average([row["left_r"] for row in basis])
-        right_average = self._average([row["right_r"] for row in basis])
-        left_win_rate = (
-            sum(row["left_r"] > 0 for row in basis) / len(basis)
-            if basis else None
-        )
-        right_win_rate = (
-            sum(row["right_r"] > 0 for row in basis) / len(basis)
-            if basis else None
-        )
+        summary = self._pairwise_summary(independent)
         return {
             "raw_completed_pairs": len(paired),
-            "independent_market_event_pairs": len(independent),
-            "agreement_events": sum(row["agreement"] for row in independent),
-            "disagreement_events": len(disagreements),
-            "comparison_basis": (
-                "DISAGREEMENTS" if disagreements else "ALL_PAIRED_EVENTS"
-            ),
-            "left_average_net_r": left_average,
-            "right_average_net_r": right_average,
-            "left_minus_right_average_net_r": (
-                None
-                if left_average is None or right_average is None
-                else left_average - right_average
-            ),
-            "left_win_rate": left_win_rate,
-            "right_win_rate": right_win_rate,
-            "left_minus_right_win_rate": (
-                None
-                if left_win_rate is None or right_win_rate is None
-                else left_win_rate - right_win_rate
-            ),
-            "left_better_events": sum(
-                row["left_r"] > row["right_r"] for row in basis
-            ),
-            "right_better_events": sum(
-                row["right_r"] > row["left_r"] for row in basis
-            ),
-            "tie_events": sum(
-                row["right_r"] == row["left_r"] for row in basis
-            ),
+            **summary,
+            "regimes": self._pairwise_regime_breakdown(independent),
             "promotion_basis": "INDEPENDENT_MARKET_EVENTS",
         }
 
@@ -683,8 +703,8 @@ class ShadowDecisionEvaluator:
             )
         return sorted(result, key=lambda row: (row["observed_at_ms"], row["market_event_id"]))
 
-    @staticmethod
-    def _group_pairwise_by_event(rows: list[dict]) -> list[dict]:
+    @classmethod
+    def _group_pairwise_by_event(cls, rows: list[dict]) -> list[dict]:
         grouped: dict[str, list[dict]] = defaultdict(list)
         for row in rows:
             grouped[row["market_event_id"]].append(row)
@@ -699,12 +719,102 @@ class ShadowDecisionEvaluator:
                     "left_r": sum(row["left_r"] for row in event_rows) / len(event_rows),
                     "right_r": sum(row["right_r"] for row in event_rows) / len(event_rows),
                     "agreement": all(row["agreement"] for row in event_rows),
+                    "regime": cls._combine_regimes(
+                        [row.get("regime") or {} for row in event_rows]
+                    ),
                 }
             )
         return sorted(
             result,
             key=lambda row: (row["observed_at_ms"], row["market_event_id"]),
         )
+
+    def _pairwise_summary(self, rows: list[dict]) -> dict:
+        disagreements = [row for row in rows if not row["agreement"]]
+        basis = disagreements if disagreements else rows
+        left_average = self._average([row["left_r"] for row in basis])
+        right_average = self._average([row["right_r"] for row in basis])
+        left_win_rate = (
+            sum(row["left_r"] > 0 for row in basis) / len(basis)
+            if basis else None
+        )
+        right_win_rate = (
+            sum(row["right_r"] > 0 for row in basis) / len(basis)
+            if basis else None
+        )
+        return {
+            "independent_market_event_pairs": len(rows),
+            "agreement_events": sum(row["agreement"] for row in rows),
+            "disagreement_events": len(disagreements),
+            "comparison_basis": (
+                "DISAGREEMENTS" if disagreements else "ALL_PAIRED_EVENTS"
+            ),
+            "left_average_net_r": left_average,
+            "right_average_net_r": right_average,
+            "left_minus_right_average_net_r": (
+                None
+                if left_average is None or right_average is None
+                else left_average - right_average
+            ),
+            "left_win_rate": left_win_rate,
+            "right_win_rate": right_win_rate,
+            "left_minus_right_win_rate": (
+                None
+                if left_win_rate is None or right_win_rate is None
+                else left_win_rate - right_win_rate
+            ),
+            "left_better_events": sum(
+                row["left_r"] > row["right_r"] for row in basis
+            ),
+            "right_better_events": sum(
+                row["right_r"] > row["left_r"] for row in basis
+            ),
+            "tie_events": sum(
+                row["right_r"] == row["left_r"] for row in basis
+            ),
+        }
+
+    def _pairwise_regime_breakdown(self, rows: list[dict]) -> dict:
+        dimensions = defaultdict(lambda: defaultdict(list))
+        for row in rows:
+            regime = row.get("regime") or {}
+            for dimension in (
+                "market_regime",
+                "volatility_regime",
+                "btc_regime",
+            ):
+                value = str(
+                    regime.get(dimension) or "NOT_AVAILABLE"
+                ).upper()
+                dimensions[dimension][value].append(row)
+        return {
+            dimension: {
+                value: self._pairwise_summary(group_rows)
+                for value, group_rows in sorted(groups.items())
+            }
+            for dimension, groups in sorted(dimensions.items())
+        }
+
+    @classmethod
+    def _pairwise_regime(cls, left: dict, right: dict) -> dict:
+        return cls._combine_regimes([left, right])
+
+    @staticmethod
+    def _combine_regimes(regimes: list[dict]) -> dict:
+        result = {}
+        for dimension in (
+            "market_regime",
+            "volatility_regime",
+            "btc_regime",
+        ):
+            values = {
+                str(regime.get(dimension) or "NOT_AVAILABLE").upper()
+                for regime in regimes
+            }
+            result[dimension] = (
+                next(iter(values)) if len(values) == 1 else "MIXED"
+            )
+        return result
 
     def _regime_breakdown(self, records: list[dict]) -> dict:
         dimensions = defaultdict(lambda: defaultdict(list))
@@ -736,6 +846,9 @@ class ShadowDecisionEvaluator:
             "volatility_regime": combined(
                 context.get("volatility_regime") for context in contexts
             ),
+            "btc_regime": combined(
+                context.get("btc_regime") for context in contexts
+            ),
             "direction": combined(row.get("direction") for row in selections),
             "pattern": combined(row.get("pattern") for row in selections),
         }
@@ -753,6 +866,12 @@ class ShadowDecisionEvaluator:
             if not candidate_id or not isinstance(payload, dict):
                 issues["outcome_identity_or_payload_invalid"] += 1
                 continue
+            if (
+                self.require_complete_cost_evidence
+                and not has_complete_cost_evidence(row)
+            ):
+                issues["cost_evidence_incomplete_excluded"] += 1
+                continue
             net_r = self._number(
                 payload.get("net_exit_r", payload.get("exit_r"))
             )
@@ -760,7 +879,12 @@ class ShadowDecisionEvaluator:
                 issues["outcome_net_r_missing"] += 1
                 continue
             gross_r = self._number(payload.get("gross_exit_r"))
-            cost_r = self._number(payload.get("estimated_cost_r"))
+            if self.require_complete_cost_evidence:
+                cost_r = self._number(
+                    cost_breakdown_from_row(row).get("total_cost_r")
+                )
+            else:
+                cost_r = self._number(payload.get("estimated_cost_r"))
             if gross_r is None:
                 gross_r = net_r + (cost_r or 0.0)
             if cost_r is None:

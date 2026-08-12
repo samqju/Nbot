@@ -1,4 +1,4 @@
-"""Run the Phase 5.10 automatic promotion controller separately."""
+"""Run Phase 7.5 strict champion-challenger governance separately."""
 
 from __future__ import annotations
 
@@ -23,6 +23,10 @@ from config import (
     AUTOMATIC_PROMOTION_MIN_INDEPENDENT_EVENTS,
     AUTOMATIC_PROMOTION_MIN_MATCHED_OUTCOMES,
     AUTOMATIC_PROMOTION_MIN_RECENT_EXPECTANCY,
+    AUTOMATIC_PROMOTION_MIN_REGIME_AFTER_COST_EXPECTANCY,
+    AUTOMATIC_PROMOTION_MIN_REGIME_AVERAGE_R_LIFT,
+    AUTOMATIC_PROMOTION_MIN_REGIME_EVENTS,
+    AUTOMATIC_PROMOTION_MIN_DISTINCT_MARKET_REGIMES,
     AUTOMATIC_PROMOTION_POLL_SECONDS,
     AUTOMATIC_PROMOTION_RECENT_EVENT_WINDOW,
     AUTOMATIC_PROMOTION_STATUS_PATH,
@@ -72,6 +76,17 @@ def build_controller() -> AutomaticPromotionController:
         min_recent_expectancy=AUTOMATIC_PROMOTION_MIN_RECENT_EXPECTANCY,
         recent_event_window=AUTOMATIC_PROMOTION_RECENT_EVENT_WINDOW,
         extend_evidence_ratio=AUTOMATIC_PROMOTION_EXTEND_EVIDENCE_RATIO,
+        phase7_strict_evidence=True,
+        min_regime_events=AUTOMATIC_PROMOTION_MIN_REGIME_EVENTS,
+        min_distinct_market_regimes=(
+            AUTOMATIC_PROMOTION_MIN_DISTINCT_MARKET_REGIMES
+        ),
+        min_regime_average_r_lift=(
+            AUTOMATIC_PROMOTION_MIN_REGIME_AVERAGE_R_LIFT
+        ),
+        min_regime_after_cost_expectancy=(
+            AUTOMATIC_PROMOTION_MIN_REGIME_AFTER_COST_EXPECTANCY
+        ),
     )
 
 
@@ -85,7 +100,7 @@ def _lower_priority() -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Run Phase 5.10 promotion governance separately from the "
+            "Run Phase 7.5 promotion governance separately from the "
             "trading engine"
         )
     )

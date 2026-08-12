@@ -1,4 +1,4 @@
-"""Generate the Phase 5.9 champion-challenger evidence report."""
+"""Generate the Phase 7.5 strict champion-challenger evidence report."""
 
 from __future__ import annotations
 
@@ -21,6 +21,8 @@ def main() -> int:
         report_path=SHADOW_DECISION_REPORT_PATH,
         outcome_type=SHADOW_DECISION_OUTCOME_TYPE,
         recent_event_window=AUTOMATIC_PROMOTION_RECENT_EVENT_WINDOW,
+        require_complete_market_context=True,
+        require_complete_cost_evidence=True,
     ).evaluate()
     challenger = report["policies"]["CHALLENGER"]["TOP_ONE"]["summary"]
     comparison = report["pairwise"]["CHALLENGER_VS_CHAMPION"]["TOP_ONE"]

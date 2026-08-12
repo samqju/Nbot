@@ -734,6 +734,22 @@ AUTOMATIC_PROMOTION_RECENT_EVENT_WINDOW = int(
 AUTOMATIC_PROMOTION_EXTEND_EVIDENCE_RATIO = float(
     os.getenv("AUTOMATIC_PROMOTION_EXTEND_EVIDENCE_RATIO", "0.50")
 )
+# ===== Phase 7.5 forward regime-robustness gates =====
+AUTOMATIC_PROMOTION_MIN_REGIME_EVENTS = int(
+    os.getenv("AUTOMATIC_PROMOTION_MIN_REGIME_EVENTS", "20")
+)
+AUTOMATIC_PROMOTION_MIN_DISTINCT_MARKET_REGIMES = int(
+    os.getenv("AUTOMATIC_PROMOTION_MIN_DISTINCT_MARKET_REGIMES", "2")
+)
+AUTOMATIC_PROMOTION_MIN_REGIME_AVERAGE_R_LIFT = float(
+    os.getenv("AUTOMATIC_PROMOTION_MIN_REGIME_AVERAGE_R_LIFT", "0")
+)
+AUTOMATIC_PROMOTION_MIN_REGIME_AFTER_COST_EXPECTANCY = float(
+    os.getenv(
+        "AUTOMATIC_PROMOTION_MIN_REGIME_AFTER_COST_EXPECTANCY",
+        "0",
+    )
+)
 TESTNET_AUTOMATIC_PROMOTION_STATUS_PATH = os.getenv(
     "TESTNET_AUTOMATIC_PROMOTION_STATUS_PATH",
     "data/promotion_controller_status_testnet.json",
@@ -1780,6 +1796,36 @@ def _validate():
     if not (0.1 <= AUTOMATIC_PROMOTION_EXTEND_EVIDENCE_RATIO <= 1.0):
         raise ValueError(
             "CONFIG_INVALID: AUTOMATIC_PROMOTION_EXTEND_EVIDENCE_RATIO"
+        )
+    if not (
+        5
+        <= AUTOMATIC_PROMOTION_MIN_REGIME_EVENTS
+        <= AUTOMATIC_PROMOTION_MIN_INDEPENDENT_EVENTS
+    ):
+        raise ValueError(
+            "CONFIG_INVALID: AUTOMATIC_PROMOTION_MIN_REGIME_EVENTS"
+        )
+    if not (
+        2 <= AUTOMATIC_PROMOTION_MIN_DISTINCT_MARKET_REGIMES <= 3
+    ):
+        raise ValueError(
+            "CONFIG_INVALID: "
+            "AUTOMATIC_PROMOTION_MIN_DISTINCT_MARKET_REGIMES"
+        )
+    if not (
+        -5.0 <= AUTOMATIC_PROMOTION_MIN_REGIME_AVERAGE_R_LIFT <= 5.0
+    ):
+        raise ValueError(
+            "CONFIG_INVALID: AUTOMATIC_PROMOTION_MIN_REGIME_AVERAGE_R_LIFT"
+        )
+    if not (
+        -5.0
+        <= AUTOMATIC_PROMOTION_MIN_REGIME_AFTER_COST_EXPECTANCY
+        <= 5.0
+    ):
+        raise ValueError(
+            "CONFIG_INVALID: "
+            "AUTOMATIC_PROMOTION_MIN_REGIME_AFTER_COST_EXPECTANCY"
         )
     automatic_promotion_paths = {
         AUTOMATIC_PROMOTION_STATUS_PATH,
