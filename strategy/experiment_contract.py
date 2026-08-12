@@ -19,7 +19,7 @@ from strategy.features import CANDIDATE_FEATURE_SCHEMA_VERSION
 
 EXPERIMENT_CONTRACT_VERSION = 1
 MARKET_CONTEXT_SCHEMA_VERSION = 2
-COST_MODEL_SCHEMA_VERSION = 1
+COST_MODEL_SCHEMA_VERSION = 2
 POLICY_SCHEMA_VERSION = 1
 CANDLE_INTERVAL = "5m"
 
@@ -220,9 +220,14 @@ def build_experiment_context(
             "paper_exit_slippage_pct": float(
                 paper_exit_slippage_pct
             ),
-            "spread_included_in_virtual_outcome": False,
-            "fees_included_in_virtual_outcome": False,
-            "funding_included": False,
+            "spread_included_in_virtual_outcome": True,
+            "fees_included_in_virtual_outcome": True,
+            "funding_included": True,
+            "spread_evidence_source": (
+                "MEASURED_ENTRY_AND_EXIT_BOOK_TICKER"
+            ),
+            "funding_evidence_source": "BINANCE_FUNDING_RATE_HISTORY",
+            "complete_cost_evidence_required_for_training": True,
         },
         "virtual_policy": {
             "schema_version": POLICY_SCHEMA_VERSION,

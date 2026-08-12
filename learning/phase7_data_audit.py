@@ -14,6 +14,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from learning.cost_evidence import PHASE7_COMPLETE_COST_BASIS
 from strategy.experiment_contract import EXPERIMENT_CONTRACT_VERSION
 from utils.jsonl_history import iter_jsonl_lines, logical_jsonl_exists
 
@@ -32,10 +33,7 @@ _REQUIRED_CONTEXT_PATHS = (
 # Source-level limitations found at the phase6b-final boundary.  Keeping them
 # in the report prevents a green runtime-data count from being mistaken for a
 # complete Phase-7 learning foundation.
-_SOURCE_GAPS = (
-    "VIRTUAL_COST_MODEL_EXCLUDES_SPREAD",
-    "VIRTUAL_COST_MODEL_EXCLUDES_FUNDING",
-)
+_SOURCE_GAPS = ()
 
 
 class Phase7DataAudit:
@@ -110,12 +108,17 @@ class Phase7DataAudit:
         runtime_context_ready = (
             current_contract_candidates > 0 and required_missing_total == 0
         )
+        complete_cost_outcomes = int(
+            cost_completeness.get(PHASE7_COMPLETE_COST_BASIS, 0)
+        )
 
         blockers = list(_SOURCE_GAPS)
         if current_contract_candidates == 0:
             blockers.append("NO_CURRENT_CONTRACT_CANDIDATES_TO_AUDIT")
         elif required_missing_total:
             blockers.append("CURRENT_MARKET_CONTEXT_INCOMPLETE")
+        if current_contract_outcomes > 0 and complete_cost_outcomes == 0:
+            blockers.append("NO_COMPLETE_PHASE7_3_COST_OUTCOMES_YET")
 
         return {
             "schema_version": PHASE7_DATA_AUDIT_SCHEMA_VERSION,
@@ -141,6 +144,7 @@ class Phase7DataAudit:
                 "candidate_outcomes": candidate_outcomes,
                 "current_contract_outcomes": current_contract_outcomes,
                 "cost_completeness": dict(sorted(cost_completeness.items())),
+                "complete_phase7_3_cost_outcomes": complete_cost_outcomes,
                 "missing_cost_components": dict(sorted(cost_missing.items())),
                 "issues": dict(sorted(outcome_issues.items())),
             },

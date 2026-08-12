@@ -824,6 +824,162 @@ class BinanceMarketClient:
             }
         return rows
 
+    def get_virtual_cost_evidence_rows(
+        self,
+        *,
+        symbols,
+        start_ms: int,
+        end_ms: int,
+    ) -> dict:
+        """Return one bulk spread snapshot plus actual funding history.
+
+        Spread comes from the public all-symbol book ticker. Funding comes
+        from Binance's public funding-rate history over the requested time
+        window. The funding history is marked incomplete when Binance returns
+        the endpoint limit, because a truncated response must never be treated
+        as proof that no additional funding event occurred.
+        """
+        requested = {
+            str(symbol).strip().upper()
+            for symbol in symbols
+            if str(symbol).strip()
+        }
+        if not requested:
+            raise ValueError("VIRTUAL_COST_EVIDENCE_SYMBOLS_EMPTY")
+        start_ms = int(start_ms)
+        end_ms = int(end_ms)
+        if start_ms < 0 or end_ms <= 0 or start_ms > end_ms:
+            raise ValueError("VIRTUAL_COST_EVIDENCE_WINDOW_INVALID")
+
+        books = self._public_get("/fapi/v1/ticker/bookTicker")
+        funding_limit = 1000
+        funding = []
+        funding_history_complete = True
+        funding_parse_errors = 0
+        funding_cursor = start_ms
+        funding_pages = 0
+        max_funding_pages = 8
+        seen_funding_rows = set()
+        while funding_cursor <= end_ms:
+            page = self._public_get(
+                "/fapi/v1/fundingRate",
+                {
+                    "startTime": funding_cursor,
+                    "endTime": end_ms,
+                    "limit": funding_limit,
+                },
+            )
+            funding_pages += 1
+            if not isinstance(page, list):
+                raise OperationalExchangeError(
+                    "VIRTUAL_COST_EVIDENCE_BULK_SCHEMA_INVALID"
+                )
+            if not page:
+                break
+
+            page_times = []
+            for row in page:
+                if not isinstance(row, dict):
+                    funding_parse_errors += 1
+                    continue
+                try:
+                    funding_time = int(row.get("fundingTime"))
+                except (TypeError, ValueError):
+                    funding_parse_errors += 1
+                    continue
+                page_times.append(funding_time)
+                identity = (
+                    str(row.get("symbol") or "").upper(),
+                    funding_time,
+                    str(row.get("fundingRate") or ""),
+                    str(row.get("markPrice") or ""),
+                    str(row.get("rateType") or ""),
+                )
+                if identity in seen_funding_rows:
+                    continue
+                seen_funding_rows.add(identity)
+                funding.append(row)
+
+            if len(page) < funding_limit:
+                break
+            if not page_times or funding_pages >= max_funding_pages:
+                funding_history_complete = False
+                break
+            next_cursor = max(page_times)
+            if next_cursor < funding_cursor:
+                funding_history_complete = False
+                break
+            # Repeat the last timestamp rather than adding one millisecond so
+            # a page boundary cannot skip other symbols funded at that exact
+            # time. Exact duplicate rows are removed above.
+            if next_cursor == funding_cursor and len(page) >= funding_limit:
+                funding_history_complete = False
+                break
+            funding_cursor = next_cursor
+
+        if not isinstance(books, list):
+            raise OperationalExchangeError(
+                "VIRTUAL_COST_EVIDENCE_BULK_SCHEMA_INVALID"
+            )
+
+        spread_by_symbol = {}
+        for row in books:
+            if not isinstance(row, dict):
+                continue
+            symbol = str(row.get("symbol", "")).upper()
+            if symbol not in requested:
+                continue
+            try:
+                bid = float(row.get("bidPrice", 0))
+                ask = float(row.get("askPrice", 0))
+            except (TypeError, ValueError):
+                continue
+            if bid <= 0 or ask <= 0 or ask < bid:
+                continue
+            mid = (bid + ask) / 2.0
+            spread_by_symbol[symbol] = ((ask - bid) / mid) * 100.0
+
+        funding_events_by_symbol = {}
+        for row in funding:
+            if not isinstance(row, dict):
+                funding_parse_errors += 1
+                continue
+            symbol = str(row.get("symbol", "")).upper()
+            if symbol not in requested:
+                continue
+            try:
+                rate = float(row.get("fundingRate"))
+                funding_time = int(row.get("fundingTime"))
+                mark_price = float(row.get("markPrice"))
+            except (TypeError, ValueError):
+                funding_parse_errors += 1
+                continue
+            if funding_time <= 0 or mark_price <= 0:
+                funding_parse_errors += 1
+                continue
+            funding_events_by_symbol.setdefault(symbol, []).append({
+                "funding_time": funding_time,
+                "funding_rate": rate,
+                "mark_price": mark_price,
+                "rate_type": str(row.get("rateType") or "Regular"),
+            })
+
+        for events in funding_events_by_symbol.values():
+            events.sort(key=lambda item: item["funding_time"])
+
+        return {
+            "spread_by_symbol": spread_by_symbol,
+            "funding_events_by_symbol": funding_events_by_symbol,
+            "funding_coverage_start_ms": start_ms,
+            "funding_coverage_end_ms": end_ms,
+            "funding_history_complete": (
+                funding_history_complete and funding_parse_errors == 0
+            ),
+            "funding_rows_returned": len(funding),
+            "funding_pages": funding_pages,
+            "funding_parse_errors": funding_parse_errors,
+        }
+
     def get_current_spread_pct(self, *, symbol: str) -> float:
         data = self._public_get("/fapi/v1/ticker/bookTicker", {"symbol": symbol})
         try:

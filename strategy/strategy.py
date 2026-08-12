@@ -450,6 +450,7 @@ class Strategy:
                         candle["close"],
                     ),
                     persist=False,
+                    closed_at_ms=timestamp,
                 )
                 if self._virtual_trade_engine.has_dirty_state():
                     self._mark_learning_runtime_dirty()
@@ -749,6 +750,30 @@ class Strategy:
     def get_virtual_trade_metrics(self) -> dict:
         """Expose virtual-trade telemetry without changing virtual state."""
         return self._virtual_trade_engine.metrics_snapshot()
+
+    def set_virtual_cost_evidence(self, snapshot: dict | None) -> None:
+        setter = getattr(
+            self._virtual_trade_engine,
+            "set_cost_evidence_snapshot",
+            None,
+        )
+        if callable(setter):
+            setter(snapshot)
+
+    def get_virtual_cost_evidence_start_ms(
+        self,
+        *,
+        default_start_ms: int,
+    ) -> int:
+        getter = getattr(
+            self._virtual_trade_engine,
+            "oldest_active_opened_at_ms",
+            None,
+        )
+        oldest = getter() if callable(getter) else None
+        if oldest is None:
+            return int(default_start_ms)
+        return min(int(default_start_ms), int(oldest))
 
     def get_structure(self, symbol):
         return self._latest_structure.get(symbol)

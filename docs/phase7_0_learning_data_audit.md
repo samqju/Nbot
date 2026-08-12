@@ -41,13 +41,14 @@ Do not replace every `None` value mechanically.
 1. Phase 7.0 — source and live-data completeness audit.
 2. Phase 7.1 — versioned broad-market/BTC/breadth/liquidity context snapshot.
 3. Phase 7.2 — context-aware learning feature/vector contract.
-4. Phase 7.3 — dataset eligibility and historical-data policy for the new
-   contract.
-5. Phase 7.4 — time-safe challenger training and untouched-test validation.
+4. Phase 7.3 — complete spread/funding cost evidence and cost-qualified
+   training eligibility.
+5. Phase 7.4 — dataset cohort readiness, time-safe challenger training, and
+   untouched-test validation.
 6. Phase 7.5 — champion/challenger comparison by independent events and market
    regimes.
-7. Phase 7.6 — calibration, drift, after-cost evidence, automatic reject/promote
-   gates.
+7. Phase 7.6 — calibration, drift, automatic reject/promote gates, and final
+   learning-validation evidence.
 8. Phase 7.7 — prove the approved champion is suitable to become Phase 8 paper
    selection authority without changing Execution risk authority.
 

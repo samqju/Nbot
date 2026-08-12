@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import threading
 import time
@@ -91,6 +92,7 @@ class VirtualTradeEngine:
         self._runtime_capacity_rejections = 0
         self._runtime_closures = 0
         self._peak_active_experiments = 0
+        self._cost_evidence_snapshot: dict | None = None
         self._restore_active_trades()
         self._peak_active_experiments = len(self._active)
 
@@ -262,8 +264,12 @@ class VirtualTradeEngine:
         candle: tuple,
         *,
         persist: bool = True,
+        closed_at_ms: int | None = None,
     ) -> list[dict]:
         _, high, low, close = candle
+        effective_closed_at_ms = int(
+            closed_at_ms if closed_at_ms is not None else time.time() * 1000
+        )
         finished = []
         changed = False
         with self._lock:
@@ -316,13 +322,14 @@ class VirtualTradeEngine:
                     cost = self._estimate_cost(
                         trade=trade,
                         exit_price=exit_price,
+                        closed_at_ms=effective_closed_at_ms,
                     )
                     net_exit_r = float(gross_exit_r) - float(
                         cost["total_cost_r"]
                     )
                     result = dict(trade)
                     result.update({
-                        "closed_at_ms": int(time.time() * 1000),
+                        "closed_at_ms": effective_closed_at_ms,
                         "exit_reason": reason,
                         "exit_price": float(exit_price),
                         # Kept for the legacy virtual-trades file contract.
@@ -398,10 +405,78 @@ class VirtualTradeEngine:
                 )
         return finished
 
-    @staticmethod
-    def _estimate_cost(*, trade: dict, exit_price: float) -> dict:
+    def set_cost_evidence_snapshot(self, snapshot: dict | None) -> None:
+        with self._lock:
+            self._cost_evidence_snapshot = (
+                copy.deepcopy(snapshot) if isinstance(snapshot, dict) else None
+            )
+
+    def oldest_active_opened_at_ms(self) -> int | None:
+        with self._lock:
+            values = [
+                int(row.get("opened_at_ms", 0) or 0)
+                for row in self._active.values()
+                if int(row.get("opened_at_ms", 0) or 0) > 0
+            ]
+        return min(values) if values else None
+
+    def _estimate_cost(
+        self,
+        *,
+        trade: dict,
+        exit_price: float,
+        closed_at_ms: int,
+    ) -> dict:
         context = trade.get("experiment_context") or {}
         cost_model = context.get("cost_model") or {}
+        market_context = context.get("market_context") or {}
+        liquidity = market_context.get("liquidity") or {}
+        entry_spread_pct = liquidity.get("spread_pct")
+
+        # on_candle already holds the engine lock while estimating costs, so
+        # the snapshot setter cannot mutate/replace this reference concurrently.
+        # Avoid deep-copying the full 200-symbol evidence snapshot per closure.
+        evidence = self._cost_evidence_snapshot
+        evidence = evidence if isinstance(evidence, dict) else {}
+        spread_by_symbol = evidence.get("spread_by_symbol") or {}
+        symbol = str(trade.get("symbol") or "").strip().upper()
+        exit_spread_pct = (
+            spread_by_symbol.get(symbol)
+            if isinstance(spread_by_symbol, dict)
+            else None
+        )
+
+        opened_at_ms = int(trade.get("opened_at_ms", 0) or 0)
+        funding_complete = False
+        funding_events = []
+        try:
+            coverage_start = int(
+                evidence.get("funding_coverage_start_ms", -1)
+            )
+            coverage_end = int(
+                evidence.get("funding_coverage_end_ms", -1)
+            )
+        except (TypeError, ValueError):
+            coverage_start = -1
+            coverage_end = -1
+        if (
+            evidence.get("funding_history_complete") is True
+            and opened_at_ms > 0
+            and coverage_start <= opened_at_ms
+            and coverage_end >= int(closed_at_ms)
+        ):
+            funding_complete = True
+            by_symbol = evidence.get("funding_events_by_symbol") or {}
+            rows = by_symbol.get(symbol, []) if isinstance(by_symbol, dict) else []
+            if isinstance(rows, list):
+                funding_events = [
+                    row
+                    for row in rows
+                    if isinstance(row, dict)
+                    and opened_at_ms < int(row.get("funding_time", 0) or 0)
+                    <= int(closed_at_ms)
+                ]
+
         return estimate_round_trip_cost_r(
             entry_price=float(trade["entry_price"]),
             exit_price=float(exit_price),
@@ -415,6 +490,11 @@ class VirtualTradeEngine:
             exit_slippage_pct=float(
                 cost_model.get("paper_exit_slippage_pct", 0.0) or 0.0
             ),
+            entry_spread_pct=entry_spread_pct,
+            exit_spread_pct=exit_spread_pct,
+            direction=trade.get("direction"),
+            funding_events=funding_events,
+            funding_history_complete=funding_complete,
         )
 
     def active_count(self) -> int:

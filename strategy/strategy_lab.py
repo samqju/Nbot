@@ -188,8 +188,13 @@ def build_variant_experiment_context(
         "fees_included_in_virtual_outcome": True,
         "entry_slippage_included_in_virtual_outcome": True,
         "exit_slippage_included_in_virtual_outcome": True,
-        "spread_included_in_virtual_outcome": False,
-        "funding_included": False,
+        "spread_included_in_virtual_outcome": True,
+        "funding_included": True,
+        "spread_evidence_source": (
+            "MEASURED_ENTRY_AND_EXIT_BOOK_TICKER"
+        ),
+        "funding_evidence_source": "BINANCE_FUNDING_RATE_HISTORY",
+        "complete_cost_evidence_required_for_training": True,
     })
     context["cost_model"] = cost_model
     context["strategy_lab"] = {
@@ -211,8 +216,20 @@ def estimate_round_trip_cost_r(
     taker_fee_rate: float,
     entry_slippage_pct: float,
     exit_slippage_pct: float,
+    entry_spread_pct: float | None = None,
+    exit_spread_pct: float | None = None,
+    direction: str | None = None,
+    funding_events: list[dict] | None = None,
+    funding_history_complete: bool = False,
 ) -> dict:
-    """Estimate deterministic round-trip costs per unit in R multiples."""
+    """Estimate round-trip costs per unit in R multiples.
+
+    Fees and configured slippage are deterministic policy inputs. Spread uses
+    measured book-ticker observations at entry and exit, charging half of each
+    observed spread at the corresponding market fill. Funding uses actual
+    Binance funding-history rows that occurred while the virtual position was
+    open. Positive funding is a cost to LONG and a credit to SHORT.
+    """
     entry = float(entry_price)
     exit_value = float(exit_price)
     risk = float(risk_distance)
@@ -228,19 +245,91 @@ def estimate_round_trip_cost_r(
     exit_fee_r = (exit_value * fee_rate) / risk
     entry_slippage_r = (entry * entry_slippage_rate) / risk
     exit_slippage_r = (exit_value * exit_slippage_rate) / risk
-    total_cost_r = (
+
+    entry_spread_r = None
+    exit_spread_r = None
+    spread_r = None
+    try:
+        entry_spread_value = float(entry_spread_pct)
+        exit_spread_value = float(exit_spread_pct)
+    except (TypeError, ValueError):
+        entry_spread_value = None
+        exit_spread_value = None
+    if (
+        entry_spread_value is not None
+        and exit_spread_value is not None
+        and entry_spread_value >= 0
+        and exit_spread_value >= 0
+    ):
+        entry_spread_r = (
+            entry * (entry_spread_value / 100.0) * 0.5
+        ) / risk
+        exit_spread_r = (
+            exit_value * (exit_spread_value / 100.0) * 0.5
+        ) / risk
+        spread_r = entry_spread_r + exit_spread_r
+
+    side = str(direction or "").strip().upper()
+    funding_r = None
+    normalized_funding_events = []
+    if funding_history_complete and side in {"LONG", "SHORT"}:
+        funding_r = 0.0
+        side_sign = 1.0 if side == "LONG" else -1.0
+        for event in funding_events or []:
+            if not isinstance(event, dict):
+                continue
+            try:
+                funding_rate = float(event["funding_rate"])
+                mark_price = float(event["mark_price"])
+                funding_time = int(event["funding_time"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if mark_price <= 0 or funding_time <= 0:
+                continue
+            event_cost_r = side_sign * (
+                mark_price * funding_rate
+            ) / risk
+            funding_r += event_cost_r
+            normalized_funding_events.append({
+                "funding_time": funding_time,
+                "funding_rate": funding_rate,
+                "mark_price": mark_price,
+                "rate_type": str(event.get("rate_type") or "Regular"),
+                "cost_r": event_cost_r,
+            })
+
+    known_total = (
         entry_fee_r
         + exit_fee_r
         + entry_slippage_r
         + exit_slippage_r
+        + (spread_r if spread_r is not None else 0.0)
+        + (funding_r if funding_r is not None else 0.0)
     )
+    if spread_r is not None and funding_r is not None:
+        completeness = (
+            "FEES_SLIPPAGE_SPREAD_FUNDING_COMPLETE_PHASE7_3"
+        )
+    elif spread_r is not None:
+        completeness = "FEES_SLIPPAGE_SPREAD_ONLY"
+    elif funding_r is not None:
+        completeness = "FEES_SLIPPAGE_FUNDING_ONLY"
+    else:
+        completeness = "FEES_AND_CONFIGURED_SLIPPAGE_ONLY"
+
     return {
         "entry_fee_r": entry_fee_r,
         "exit_fee_r": exit_fee_r,
         "entry_slippage_r": entry_slippage_r,
         "exit_slippage_r": exit_slippage_r,
-        "spread_r": None,
-        "funding_r": None,
-        "total_cost_r": total_cost_r,
-        "cost_completeness": "FEES_AND_CONFIGURED_SLIPPAGE_ONLY",
+        "entry_spread_pct": entry_spread_value,
+        "exit_spread_pct": exit_spread_value,
+        "entry_spread_r": entry_spread_r,
+        "exit_spread_r": exit_spread_r,
+        "spread_r": spread_r,
+        "funding_r": funding_r,
+        "funding_event_count": len(normalized_funding_events),
+        "funding_events": normalized_funding_events,
+        "total_cost_r": known_total,
+        "cost_completeness": completeness,
     }

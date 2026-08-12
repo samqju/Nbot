@@ -18,6 +18,9 @@ from engine.universe import UniverseManager
 from execution.binance_market_client import BinanceMarketClient
 from observation.execution_outcome_receiver import LocalExecutionOutcomeReceiver
 from observation.market_context import ObservationMarketContextProvider
+from observation.virtual_cost_evidence import (
+    ObservationVirtualCostEvidenceProvider,
+)
 from observation.recommendation import LatestRecommendationStore
 from observation.trade_service import ObservationTradeService
 from strategy.strategy_factory import build_strategy
@@ -42,6 +45,7 @@ class ObservationWorker:
         outcome_receiver=None,
         health_monitor=None,
         market_context_provider=None,
+        virtual_cost_evidence_provider=None,
     ):
         self.system_log = system_log
         if strategy is None:
@@ -65,6 +69,13 @@ class ObservationWorker:
                 system_log=system_log,
             )
         )
+        self.virtual_cost_evidence_provider = (
+            virtual_cost_evidence_provider
+            or ObservationVirtualCostEvidenceProvider(
+                market_client=self.market_client,
+                system_log=system_log,
+            )
+        )
         self.recommendation_store = recommendation_store or LatestRecommendationStore(
             environment=TRADING_ENV,
             system_log=system_log,
@@ -84,6 +95,7 @@ class ObservationWorker:
         self.health_monitor = health_monitor or ObservationHealthMonitor()
         self._prepared = False
         self._last_universe_refresh_monotonic = 0.0
+        self._last_virtual_cost_bucket = None
         self._scale_lock = threading.Lock()
         self._scale_metrics = {
             "refresh_attempts": 0,
@@ -144,6 +156,7 @@ class ObservationWorker:
             raise RuntimeError("OBSERVATION_WORKER_NOT_PREPARED")
 
         self._maybe_refresh_universe()
+        self._maybe_refresh_virtual_cost_evidence(tick)
         self.health_monitor.record_tick(tick.symbol)
         self.strategy.on_price(
             symbol=tick.symbol,
@@ -194,6 +207,51 @@ class ObservationWorker:
             symbols=self.universe.observation_symbols,
             candle_bucket=candle_bucket,
         )
+
+    def _maybe_refresh_virtual_cost_evidence(self, tick) -> None:
+        setter = getattr(
+            self.strategy,
+            "set_virtual_cost_evidence",
+            None,
+        )
+        if not callable(setter):
+            return
+        bucket = int(tick.timestamp) // 300000
+        if self._last_virtual_cost_bucket == bucket:
+            return
+
+        end_ms = int(tick.timestamp)
+        default_start_ms = max(0, end_ms - (4 * 60 * 60 * 1000))
+        start_getter = getattr(
+            self.strategy,
+            "get_virtual_cost_evidence_start_ms",
+            None,
+        )
+        start_ms = (
+            start_getter(default_start_ms=default_start_ms)
+            if callable(start_getter)
+            else default_start_ms
+        )
+        try:
+            snapshot = self.virtual_cost_evidence_provider.snapshot(
+                symbols=self.universe.observation_symbols,
+                candle_bucket=bucket,
+                start_ms=int(start_ms),
+                end_ms=end_ms,
+            )
+        except Exception as exc:
+            self.system_log.warning(
+                "PHASE7_COST_EVIDENCE_FAILED | "
+                f"bucket={bucket} | "
+                f"error={type(exc).__name__}:{exc} | "
+                "learning_cost_completeness=PARTIAL"
+            )
+        else:
+            setter(snapshot)
+        finally:
+            # One attempt per bucket. A failed snapshot remains incomplete and
+            # therefore cannot silently enter Phase-7 training evidence.
+            self._last_virtual_cost_bucket = bucket
 
     def observation_health_snapshot(self) -> dict:
         """Return read-only Observation metrics for local operator health."""

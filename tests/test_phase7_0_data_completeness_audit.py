@@ -107,8 +107,12 @@ class Phase7DataCompletenessAuditTests(unittest.TestCase):
                 "CANDIDATE_MODEL_VECTOR_DOES_NOT_CONSUME_MARKET_CONTEXT",
                 report["blockers"],
             )
-            self.assertIn(
+            self.assertNotIn(
                 "VIRTUAL_COST_MODEL_EXCLUDES_SPREAD",
+                report["blockers"],
+            )
+            self.assertNotIn(
+                "VIRTUAL_COST_MODEL_EXCLUDES_FUNDING",
                 report["blockers"],
             )
 

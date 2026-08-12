@@ -153,7 +153,17 @@ class Phase58AutomaticTrainingTests(unittest.TestCase):
                     "experiment_context": context,
                     "payload": {
                         "exit_r": 2.0 if label else -1.0,
+                        "net_exit_r": 2.0 if label else -1.0,
                         "profitable": label,
+                        "cost_breakdown": {
+                            "spread_r": 0.01,
+                            "funding_r": 0.0,
+                            "total_cost_r": 0.05,
+                            "cost_completeness": (
+                                "FEES_SLIPPAGE_SPREAD_FUNDING_"
+                                "COMPLETE_PHASE7_3"
+                            ),
+                        },
                     },
                 }
             )

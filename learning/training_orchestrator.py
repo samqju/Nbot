@@ -22,6 +22,7 @@ from learning.context_features import (
     is_complete_market_context,
     market_context_from_row,
 )
+from learning.cost_evidence import has_complete_cost_evidence
 from learning.challenger_evaluator import ChallengerArtifactEvaluator
 from learning.dataset_builder import TrainingDatasetBuilder
 from learning.ensemble_experiment import OfflineEnsembleExperiment
@@ -36,7 +37,7 @@ from utils.jsonl_history import (
 )
 
 
-AUTO_TRAINING_SCHEMA_VERSION = 1
+AUTO_TRAINING_SCHEMA_VERSION = 2
 
 
 class AutoTrainingError(RuntimeError):
@@ -107,12 +108,16 @@ class TrainingInventory:
         outcomes_path: str,
         outcome_type: str,
         require_complete_market_context: bool = False,
+        require_complete_cost_evidence: bool = False,
     ):
         self.observations_path = Path(observations_path)
         self.outcomes_path = Path(outcomes_path)
         self.outcome_type = str(outcome_type).strip().upper()
         self.require_complete_market_context = bool(
             require_complete_market_context
+        )
+        self.require_complete_cost_evidence = bool(
+            require_complete_cost_evidence
         )
 
     def scan(self, *, after_ms: int = 0) -> dict:
@@ -158,6 +163,12 @@ class TrainingInventory:
                 )
             ):
                 issues["market_context_incomplete_excluded"] += 1
+                continue
+            if (
+                self.require_complete_cost_evidence
+                and not has_complete_cost_evidence(outcome)
+            ):
+                issues["cost_evidence_incomplete_excluded"] += 1
                 continue
             market_event_id = str(
                 observation.get("market_event_id") or ""
@@ -332,6 +343,7 @@ class AutomaticTrainingOrchestrator:
             outcomes_path=str(self.outcomes_path),
             outcome_type=self.outcome_type,
             require_complete_market_context=True,
+            require_complete_cost_evidence=True,
         ).scan(after_ms=cutoff_ms)
         if (
             inventory["new_completed_outcomes"] < self.min_new_outcomes
@@ -370,6 +382,7 @@ class AutomaticTrainingOrchestrator:
             "context_feature_schema_version": CONTEXT_FEATURE_SCHEMA_VERSION,
             "context_feature_names": list(CONTEXT_FEATURE_NAMES),
             "requires_complete_market_context": True,
+            "requires_complete_cost_evidence": True,
             "strategy_schema": snapshot["strategy_schema"],
             "training_rows": 0,
             "independent_event_count": snapshot[
@@ -384,7 +397,7 @@ class AutomaticTrainingOrchestrator:
             "runtime_activation": "DISABLED",
             "paper_authority": "UNCHANGED",
             "real_order_authority": "NONE",
-            "phase": "7.2",
+            "phase": "7.3",
             "paper_promotion_allowed": False,
         }
         self.registry.register_training(registry_record)
@@ -480,6 +493,8 @@ class AutomaticTrainingOrchestrator:
                 market_context_from_row(row)
             ):
                 continue
+            if not has_complete_cost_evidence(row):
+                continue
             eligible_rows.append(row)
         eligible_rows.sort(
             key=lambda row: (
@@ -511,6 +526,7 @@ class AutomaticTrainingOrchestrator:
             "context_feature_schema_version": CONTEXT_FEATURE_SCHEMA_VERSION,
             "context_feature_names": list(CONTEXT_FEATURE_NAMES),
             "requires_complete_market_context": True,
+            "requires_complete_cost_evidence": True,
             "rows": len(eligible_rows),
             "independent_market_events": len(market_events),
             "data_cutoff_ms": max(
@@ -671,7 +687,7 @@ class AutomaticTrainingOrchestrator:
         )
         selected_artifact.update(
             {
-                "phase": "7.2",
+                "phase": "7.3",
                 "model_id": model_id,
                 "parent_model_id": parent_model_id,
                 "dataset_fingerprint": snapshot[
@@ -927,7 +943,7 @@ class AutomaticTrainingOrchestrator:
         document = {
             "schema_version": AUTO_TRAINING_SCHEMA_VERSION,
             "generated_at_ms": int(time.time() * 1000),
-            "phase": "7.2",
+            "phase": "7.3",
             "status": status,
             "environment": self.environment,
             "process_id": os.getpid(),
