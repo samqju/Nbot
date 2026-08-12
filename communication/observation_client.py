@@ -115,6 +115,32 @@ class ObservationClient:
         """Compatibility surface for ExecutionOutcomePublisher."""
         return self.deliver_execution_outcome(outcome)
 
+    def request_learning_status(self) -> dict:
+        """Fetch Observation-owned learning status for operator display only."""
+        payload = self._post(
+            "/learning-status",
+            {"request": "LEARNING_STATUS"},
+        )
+        if payload.get("status") != "OK":
+            raise ObservationClientError(
+                "OBSERVATION_LEARNING_STATUS_INVALID"
+            )
+        if payload.get("order_authority") != "NONE":
+            raise ObservationClientError(
+                "OBSERVATION_LEARNING_STATUS_AUTHORITY_INVALID"
+            )
+        body = payload.get("telegram_body")
+        document = payload.get("document")
+        if not isinstance(body, str) or not body.strip():
+            raise ObservationClientError(
+                "OBSERVATION_LEARNING_STATUS_BODY_INVALID"
+            )
+        if not isinstance(document, dict):
+            raise ObservationClientError(
+                "OBSERVATION_LEARNING_STATUS_DOCUMENT_INVALID"
+            )
+        return payload
+
     def _post(self, path: str, payload: dict) -> dict:
         body = json.dumps(
             payload,

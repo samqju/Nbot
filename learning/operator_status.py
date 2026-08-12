@@ -52,6 +52,11 @@ _REASON_TEXT = {
     "NON_POSITIVE_AFTER_COST_EXPECTANCY": "The challenger has non-positive after-cost expectancy.",
     "NON_POSITIVE_RECENT_EXPECTANCY": "The challenger's recent after-cost expectancy is non-positive.",
     "WIN_RATE_DETERIORATION_EXCEEDED": "The challenger win rate deteriorated beyond the allowed limit.",
+    "NO_ACTIVE_CHALLENGER": "No eligible challenger exists yet; the rule system remains the paper champion.",
+    "PHASE7_PAPER_PROMOTION_LOCKED": "The challenger passed the Phase-7 forward gates, but paper authority remains locked until Phase 8.",
+    "CURRENT_SHADOW_NOT_PHASE7_VALIDATION_ELIGIBLE": "The current shadow model does not satisfy the strict Phase-7 validation contract.",
+    "SUPPORTED_REGIME_R_LIFT_BELOW_MINIMUM": "The challenger did not beat the champion in every sufficiently represented market regime.",
+    "SUPPORTED_REGIME_EXPECTANCY_NOT_POSITIVE": "The challenger was not profitable after costs in every sufficiently represented market regime.",
 }
 
 
@@ -156,24 +161,55 @@ class AutoLearningStatusPublisher:
             record=challenger_record,
         )
 
-        inventory = TrainingInventory(
-            observations_path=str(self.observations_path),
-            outcomes_path=str(self.outcomes_path),
-            outcome_type=self.training_outcome_type,
-        ).scan(after_ms=0)
-        training_rows = self._int_or_none(
-            challenger_record.get("training_rows")
+        status_inventory = training.get("inventory")
+        if not isinstance(status_inventory, dict):
+            status_inventory = {}
+        training_thresholds = training.get("thresholds")
+        if not isinstance(training_thresholds, dict):
+            training_thresholds = {}
+
+        if (
+            "new_completed_outcomes" in status_inventory
+            and "new_independent_market_events" in status_inventory
+        ):
+            # Phase 7.5A: prefer the automatic trainer's own qualified
+            # cohort/cutoff.  This is the exact gate the trainer will use and
+            # avoids rescanning large history files for every /learning call.
+            inventory = status_inventory
+            completed_outcomes = int(
+                inventory.get("new_completed_outcomes", 0) or 0
+            )
+            independent_events = int(
+                inventory.get("new_independent_market_events", 0) or 0
+            )
+            training_count_basis = "AUTO_TRAINING_QUALIFIED_COHORT"
+        else:
+            inventory = TrainingInventory(
+                observations_path=str(self.observations_path),
+                outcomes_path=str(self.outcomes_path),
+                outcome_type=self.training_outcome_type,
+            ).scan(after_ms=0)
+            training_rows = self._int_or_none(
+                challenger_record.get("training_rows")
+            )
+            training_events = self._int_or_none(
+                challenger_record.get("independent_event_count")
+            )
+            completed_outcomes = max(
+                int(inventory.get("new_completed_outcomes", 0) or 0),
+                training_rows or 0,
+            )
+            independent_events = max(
+                int(inventory.get("new_independent_market_events", 0) or 0),
+                training_events or 0,
+            )
+            training_count_basis = "FALLBACK_HISTORY_SCAN"
+
+        required_outcomes = int(
+            training_thresholds.get("min_new_outcomes", 0) or 0
         )
-        training_events = self._int_or_none(
-            challenger_record.get("independent_event_count")
-        )
-        completed_outcomes = max(
-            int(inventory.get("new_completed_outcomes", 0) or 0),
-            training_rows or 0,
-        )
-        independent_events = max(
-            int(inventory.get("new_independent_market_events", 0) or 0),
-            training_events or 0,
+        required_events = int(
+            training_thresholds.get("min_new_market_events", 0) or 0
         )
 
         evidence = self._select_evidence(
@@ -183,6 +219,53 @@ class AutoLearningStatusPublisher:
             canary=canary,
         )
         forward = self._forward_metrics(evidence, canary)
+        promotion_thresholds = promotion.get("thresholds")
+        if not isinstance(promotion_thresholds, dict):
+            promotion_thresholds = {}
+        gates = promotion.get("gates")
+        checks = gates.get("checks") if isinstance(gates, dict) else {}
+        if not isinstance(checks, dict):
+            checks = {}
+
+        def _required(check_name: str, threshold_name: str) -> int:
+            check = checks.get(check_name)
+            if isinstance(check, dict):
+                value = self._int_or_none(check.get("required_min"))
+                if value is not None:
+                    return value
+            return int(promotion_thresholds.get(threshold_name, 0) or 0)
+
+        forward["status"] = promotion.get("status") or "NOT_AVAILABLE"
+        forward["matched_required"] = _required(
+            "matched_candidate_outcomes", "min_matched_outcomes"
+        )
+        forward["independent_required"] = _required(
+            "independent_decision_events", "min_independent_events"
+        )
+        forward["disagreement_required"] = _required(
+            "paired_disagreement_events", "min_disagreement_events"
+        )
+        regime = evidence.get("regime_robustness")
+        market_regime = (
+            regime.get("market_regime")
+            if isinstance(regime, dict)
+            else {}
+        )
+        if not isinstance(market_regime, dict):
+            market_regime = {}
+        forward["market_regimes_eligible"] = int(
+            market_regime.get("eligible_group_count", 0) or 0
+        )
+        forward["market_regimes_required"] = _required(
+            "market_regime_coverage", "min_distinct_market_regimes"
+        )
+        forward["minimum_events_per_regime"] = int(
+            promotion_thresholds.get("min_regime_events", 0) or 0
+        )
+        forward["all_gates_passed"] = bool(
+            gates.get("all_gates_passed", False)
+        ) if isinstance(gates, dict) else False
+
         verdict, reason_codes = self._verdict(
             challenger_id=challenger_id,
             stage=stage,
@@ -238,9 +321,20 @@ class AutoLearningStatusPublisher:
             "current_challenger": challenger_id,
             "challenger_stage": stage,
             "training_data": {
+                "phase": training.get("phase") or "UNKNOWN",
+                "status": training.get("status") or "NOT_AVAILABLE",
                 "completed_outcomes": completed_outcomes,
+                "required_outcomes": required_outcomes,
+                "remaining_outcomes": max(
+                    0, required_outcomes - completed_outcomes
+                ),
                 "independent_market_events": independent_events,
+                "required_independent_market_events": required_events,
+                "remaining_independent_market_events": max(
+                    0, required_events - independent_events
+                ),
                 "outcome_type": self.training_outcome_type,
+                "count_basis": training_count_basis,
                 "inventory_issue_count": int(
                     inventory.get("issue_count", 0) or 0
                 ),
@@ -284,19 +378,52 @@ class AutoLearningStatusPublisher:
         governance = document.get("governance") or {}
         safety = document.get("safety") or {}
         warnings = (document.get("source_health") or {}).get("warnings") or []
+
+        def _progress(actual, required) -> str:
+            actual = int(actual or 0)
+            required = int(required or 0)
+            if required <= 0:
+                return f"{actual:,}"
+            marker = "PASS" if actual >= required else "WAIT"
+            return f"{actual:,} / {required:,} [{marker}]"
+
         lines = [
-            "AUTO-LEARNING STATUS",
+            "NBOT LEARNING STATUS",
             "================================================",
             f"Environment            : {document.get('environment', 'N/A')}+{document.get('execution_mode', 'N/A')}",
-            f"Current paper champion : {document.get('current_paper_champion') or 'NONE'}",
+            f"Current champion       : {document.get('current_paper_champion') or 'NONE'}",
             f"Current challenger     : {document.get('current_challenger') or 'NONE'}",
             f"Challenger stage       : {document.get('challenger_stage') or 'NONE'}",
-            f"Training data          : {int(training.get('completed_outcomes', 0) or 0):,} completed outcomes",
-            f"Independent events     : {int(training.get('independent_market_events', 0) or 0):,}",
-            f"Forward comparisons    : {int(forward.get('matched_candidate_outcomes', 0) or 0):,}",
-            f"Independent comparisons: {int(forward.get('independent_decision_events', 0) or 0):,}",
-            f"Disagreement events    : {int(forward.get('paired_disagreement_events', 0) or 0):,}",
             "",
+            f"TRAINING ({training.get('phase', 'UNKNOWN')})",
+            f"Training status        : {training.get('status', 'NOT_AVAILABLE')}",
+            "Qualified outcomes     : " + _progress(
+                training.get("completed_outcomes"),
+                training.get("required_outcomes"),
+            ),
+            "Independent events     : " + _progress(
+                training.get("independent_market_events"),
+                training.get("required_independent_market_events"),
+            ),
+            "",
+            "FORWARD CHALLENGE (7.5)",
+            f"Comparison status      : {forward.get('status', 'NOT_AVAILABLE')}",
+            "Matched outcomes       : " + _progress(
+                forward.get("matched_candidate_outcomes"),
+                forward.get("matched_required"),
+            ),
+            "Independent comparisons: " + _progress(
+                forward.get("independent_decision_events"),
+                forward.get("independent_required"),
+            ),
+            "Disagreement events    : " + _progress(
+                forward.get("paired_disagreement_events"),
+                forward.get("disagreement_required"),
+            ),
+            "Market regimes         : " + _progress(
+                forward.get("market_regimes_eligible"),
+                forward.get("market_regimes_required"),
+            ),
             f"Champion average R     : {AutoLearningStatusPublisher._r(forward.get('champion_average_net_r'))}",
             f"Challenger average R   : {AutoLearningStatusPublisher._r(forward.get('challenger_average_net_r'))}",
             f"Lift                   : {AutoLearningStatusPublisher._r(forward.get('average_r_lift_over_champion'))}",

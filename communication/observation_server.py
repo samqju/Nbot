@@ -93,6 +93,23 @@ class ObservationHTTPServer:
                     return
                 try:
                     payload = self._read_json()
+                    if self.path == "/learning-status":
+                        if payload not in ({}, {"request": "LEARNING_STATUS"}):
+                            raise ValueError(
+                                "OBSERVATION_LEARNING_STATUS_REQUEST_INVALID"
+                            )
+                        getter = getattr(
+                            target,
+                            "learning_operator_status",
+                            None,
+                        )
+                        if not callable(getter):
+                            self._send(503, {
+                                "error": "LEARNING_STATUS_UNAVAILABLE"
+                            })
+                            return
+                        self._send(200, getter())
+                        return
                     if self.path == "/trade-request":
                         request = TradeRequest.from_dict(payload)
                         response = target.handle_trade_request(request)

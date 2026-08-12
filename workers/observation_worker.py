@@ -325,6 +325,19 @@ class ObservationWorker:
     def receive_execution_outcome(self, outcome):
         return self.outcome_receiver.receive(outcome)
 
+    def learning_operator_status(self) -> dict:
+        """Return a read-only Observation-owned learning status payload."""
+        from learning.operator_status import build_configured_publisher
+
+        publisher = build_configured_publisher()
+        document = publisher.refresh()
+        return {
+            "status": "OK",
+            "order_authority": "NONE",
+            "document": document,
+            "telegram_body": publisher.render_telegram_body(document),
+        }
+
     def run_forever(self) -> None:
         if not self._prepared:
             self.prepare()

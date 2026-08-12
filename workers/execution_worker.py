@@ -814,6 +814,35 @@ class ExecutionWorker:
                 self.system_log.info(log_line)
                 send_info("EXECUTION HEARTBEAT", body)
 
+            elif command == "/learning":
+                if args:
+                    send_warning(
+                        "LEARNING COMMAND INVALID",
+                        "Use /learning with no arguments.",
+                    )
+                    return
+                try:
+                    payload = self.observation_client.request_learning_status()
+                except ObservationClientError as exc:
+                    self.system_log.warning(
+                        "OPERATOR_LEARNING_STATUS_UNAVAILABLE | "
+                        f"source=TELEGRAM | error={exc}"
+                    )
+                    send_warning(
+                        "LEARNING STATUS UNAVAILABLE",
+                        "Observation learning status could not be read. "
+                        "Trading and open-position management are unchanged.",
+                    )
+                    return
+                self.system_log.info(
+                    "OPERATOR_LEARNING_STATUS | source=TELEGRAM | "
+                    "owner=OBSERVATION | order_authority=NONE"
+                )
+                send_info(
+                    "LEARNING STATUS",
+                    payload["telegram_body"],
+                )
+
             elif command == "/help":
                 self.system_log.info(
                     f"OPERATOR_HELP | source=TELEGRAM | command={command}"
@@ -823,6 +852,7 @@ class ExecutionWorker:
                     "/status — engine/position state\n"
                     "/execution — technical execution health\n"
                     "/heartbeat — cached position/account snapshot\n"
+                    "/learning — Observation learning/challenger status\n"
                     "/pnl [YYYY-MM-DD] — daily PnL\n"
                     "/enable — enable new entries after reconciliation\n"
                     "/disable — disable new entries\n"

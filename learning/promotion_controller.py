@@ -796,6 +796,15 @@ class AutomaticPromotionController:
             "champion_changed": False,
             "paper_order_routing_changed": False,
             "real_order_authority": "NONE",
+            "thresholds": {
+                "min_matched_outcomes": self.min_matched_outcomes,
+                "min_independent_events": self.min_independent_events,
+                "min_disagreement_events": self.min_disagreement_events,
+                "min_regime_events": self.min_regime_events,
+                "min_distinct_market_regimes": (
+                    self.min_distinct_market_regimes
+                ),
+            },
             **details,
         }
         self._write_json_atomic(self.status_path, document)

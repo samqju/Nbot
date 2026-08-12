@@ -183,9 +183,10 @@ class Phase513OperatorDashboardTests(unittest.TestCase):
             document = self._publisher(Path(tmp)).refresh()
             text = AutoLearningStatusPublisher.render_console(document)
             for label in (
-                "Current paper champion", "Current challenger", "Challenger stage",
-                "Training data", "Independent events", "Forward comparisons",
-                "Disagreement events", "Champion average R", "Challenger average R",
+                "Current champion", "Current challenger", "Challenger stage",
+                "Training status", "Qualified outcomes", "Independent events",
+                "Comparison status", "Matched outcomes", "Disagreement events",
+                "Market regimes", "Champion average R", "Challenger average R",
                 "Lift", "Current verdict", "Reason", "Paper activation",
                 "Real-order execution", "Next automatic action",
             ):
@@ -257,10 +258,12 @@ class Phase513OperatorDashboardTests(unittest.TestCase):
             self.assertEqual(document["training_data"]["completed_outcomes"], 8462)
             self.assertEqual(document["training_data"]["independent_market_events"], 1174)
 
-    def test_split_execution_worker_has_no_learning_operator_command(self):
+    def test_split_execution_worker_learning_command_is_remote_read_only(self):
         source = Path("workers/execution_worker.py").read_text(encoding="utf-8")
-        self.assertNotIn('"/learning"', source)
+        self.assertIn('"/learning"', source)
+        self.assertIn("request_learning_status", source)
         self.assertNotIn("AutoLearningStatusPublisher", source)
+        self.assertNotIn("from learning", source)
 
     def test_real_order_authority_is_never_inferred_from_registry(self):
         with tempfile.TemporaryDirectory() as tmp:

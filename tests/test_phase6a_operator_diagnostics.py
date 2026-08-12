@@ -135,12 +135,13 @@ class OperatorDiagnosticsTests(unittest.TestCase):
             "/status",
             "/execution",
             "/heartbeat",
+            "/learning",
             "/pnl",
             "/enable",
             "/disable",
         ):
             self.assertIn(command, body)
-        self.assertNotIn("/learning", body)
+        self.assertEqual(body.count("/learning"), 1)
         self.assertEqual(body.count("/disable"), 1)
 
     def test_disabled_startup_sends_one_warning_not_two_messages(self):
