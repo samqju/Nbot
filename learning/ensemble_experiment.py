@@ -73,10 +73,11 @@ class OfflineEnsembleExperiment:
         min_eval_rows=40,
         random_state=42,
         context_aware=False,
+        evaluate_test=True,
     ):
         self.train_path = Path(train_path)
         self.validation_path = Path(validation_path)
-        self.test_path = Path(test_path)
+        self.test_path = Path(test_path) if test_path else None
         self.artifact_path = Path(artifact_path)
         self.report_path = Path(report_path)
         self.outcome_type = str(outcome_type).upper()
@@ -84,6 +85,7 @@ class OfflineEnsembleExperiment:
         self.min_eval_rows = int(min_eval_rows)
         self.random_state = int(random_state)
         self.context_aware = bool(context_aware)
+        self.evaluate_test = bool(evaluate_test)
 
     def run(self):
         issues = Counter()
@@ -94,8 +96,11 @@ class OfflineEnsembleExperiment:
                 "validation",
                 issues,
             ),
-            "test": self._read(self.test_path, "test", issues),
         }
+        if self.evaluate_test:
+            if self.test_path is None:
+                raise ValueError("ENSEMBLE_TEST_PATH_REQUIRED")
+            raw["test"] = self._read(self.test_path, "test", issues)
         filtered = {
             name: self._filter(rows, name, issues)
             for name, rows in raw.items()
@@ -105,7 +110,10 @@ class OfflineEnsembleExperiment:
         if (
             len(filtered["train"]) < self.min_train_rows
             or len(filtered["validation"]) < self.min_eval_rows
-            or len(filtered["test"]) < self.min_eval_rows
+            or (
+                self.evaluate_test
+                and len(filtered["test"]) < self.min_eval_rows
+            )
         ):
             status = "INSUFFICIENT_DATA"
         elif any(
@@ -166,31 +174,32 @@ class OfflineEnsembleExperiment:
         scaled = {
             "train": scaler.fit_transform(matrices["train"]),
             "validation": scaler.transform(matrices["validation"]),
-            "test": scaler.transform(matrices["test"]),
         }
+        if self.evaluate_test:
+            scaled["test"] = scaler.transform(matrices["test"])
 
         models = self._models()
-        probabilities = {
-            "validation": {},
-            "test": {},
-        }
+        probabilities = {"validation": {}}
+        if self.evaluate_test:
+            probabilities["test"] = {}
 
         for name, model in models.items():
             if name == "LOGISTIC_REGRESSION":
                 model.fit(scaled["train"], labels["train"])
                 validation_matrix = scaled["validation"]
-                test_matrix = scaled["test"]
+                test_matrix = scaled.get("test")
             else:
                 model.fit(matrices["train"], labels["train"])
                 validation_matrix = matrices["validation"]
-                test_matrix = matrices["test"]
+                test_matrix = matrices.get("test")
 
             probabilities["validation"][name] = (
                 model.predict_proba(validation_matrix)[:, 1]
             )
-            probabilities["test"][name] = (
-                model.predict_proba(test_matrix)[:, 1]
-            )
+            if self.evaluate_test:
+                probabilities["test"][name] = (
+                    model.predict_proba(test_matrix)[:, 1]
+                )
 
         individual_metrics = {
             split: {
@@ -200,7 +209,11 @@ class OfflineEnsembleExperiment:
                 )
                 for name, probability in probabilities[split].items()
             }
-            for split in ("validation", "test")
+            for split in (
+                ("validation", "test")
+                if self.evaluate_test
+                else ("validation",)
+            )
         }
 
         blend_candidates = self._blend_candidates(
@@ -242,27 +255,36 @@ class OfflineEnsembleExperiment:
         winner = candidates[winner_name]
 
         if winner["kind"] == "MODEL":
-            winner_test_probability = probabilities["test"][winner_name]
             winner_definition = {
                 "kind": "MODEL",
                 "name": winner_name,
             }
+            winner_test_probability = (
+                probabilities["test"][winner_name]
+                if self.evaluate_test
+                else None
+            )
         else:
             weights = self._parse_blend_name(winner_name)
-            winner_test_probability = sum(
-                weights[model_name]
-                * probabilities["test"][model_name]
-                for model_name in self.MODEL_NAMES
-            )
             winner_definition = {
                 "kind": "BLEND",
                 "name": winner_name,
                 "weights": weights,
             }
+            winner_test_probability = (
+                sum(
+                    weights[model_name]
+                    * probabilities["test"][model_name]
+                    for model_name in self.MODEL_NAMES
+                )
+                if self.evaluate_test
+                else None
+            )
 
-        winner_test_metrics = self._metrics(
-            labels["test"],
-            winner_test_probability,
+        winner_test_metrics = (
+            self._metrics(labels["test"], winner_test_probability)
+            if self.evaluate_test
+            else None
         )
 
         artifact = {
@@ -284,6 +306,7 @@ class OfflineEnsembleExperiment:
                 winner["validation_metrics"]
             ),
             "test_metrics": winner_test_metrics,
+            "test_evaluated_during_training": self.evaluate_test,
             "training_rows": len(filtered["train"]),
             "runtime_activation": "DISABLED",
             "context_feature_schema_version": (
@@ -308,6 +331,7 @@ class OfflineEnsembleExperiment:
                 ),
                 "test_metrics": winner_test_metrics,
                 "selected_using_test_data": False,
+                "test_evaluated_during_training": self.evaluate_test,
                 "advisory_only": True,
             },
             "class_balance": {

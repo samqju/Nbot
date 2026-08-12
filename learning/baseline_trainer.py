@@ -20,13 +20,16 @@ FEATURE_NAMES=("short_range","long_range","trend_score","wick_ratio_recent","bod
 ARTIFACT_SCHEMA_VERSION=1
 
 class BaselineModelTrainer:
- def __init__(self,*,train_path,validation_path,test_path,artifact_path,report_path,outcome_type="VIRTUAL_TRADE",min_train_rows=100,min_eval_rows=20,random_state=42,context_aware=False):
-  self.train_path=Path(train_path); self.validation_path=Path(validation_path); self.test_path=Path(test_path); self.artifact_path=Path(artifact_path); self.report_path=Path(report_path); self.outcome_type=outcome_type.upper(); self.min_train_rows=int(min_train_rows); self.min_eval_rows=int(min_eval_rows); self.random_state=int(random_state); self.context_aware=bool(context_aware)
+ def __init__(self,*,train_path,validation_path,test_path,artifact_path,report_path,outcome_type="VIRTUAL_TRADE",min_train_rows=100,min_eval_rows=20,random_state=42,context_aware=False,evaluate_test=True):
+  self.train_path=Path(train_path); self.validation_path=Path(validation_path); self.test_path=Path(test_path) if test_path else None; self.artifact_path=Path(artifact_path); self.report_path=Path(report_path); self.outcome_type=outcome_type.upper(); self.min_train_rows=int(min_train_rows); self.min_eval_rows=int(min_eval_rows); self.random_state=int(random_state); self.context_aware=bool(context_aware); self.evaluate_test=bool(evaluate_test)
  def train(self):
-  issues=Counter(); raw={"train":self._read(self.train_path,"train",issues),"validation":self._read(self.validation_path,"validation",issues),"test":self._read(self.test_path,"test",issues)}
+  issues=Counter(); raw={"train":self._read(self.train_path,"train",issues),"validation":self._read(self.validation_path,"validation",issues)}
+  if self.evaluate_test:
+   if self.test_path is None: raise ValueError("BASELINE_TEST_PATH_REQUIRED")
+   raw["test"]=self._read(self.test_path,"test",issues)
   filtered={k:self._filter(v,k,issues) for k,v in raw.items()}
   status="TRAINED"
-  if len(filtered["train"])<self.min_train_rows or len(filtered["validation"])<self.min_eval_rows or len(filtered["test"])<self.min_eval_rows: status="INSUFFICIENT_DATA"
+  if len(filtered["train"])<self.min_train_rows or len(filtered["validation"])<self.min_eval_rows or (self.evaluate_test and len(filtered["test"])<self.min_eval_rows): status="INSUFFICIENT_DATA"
   elif any(len({r["label_profitable"] for r in filtered[k]})<2 for k in filtered): status="INSUFFICIENT_CLASS_DIVERSITY"
   report={"schema_version":1,"generated_at_ms":int(time.time()*1000),"status":status,"outcome_type":self.outcome_type,"rows":{k:len(v) for k,v in filtered.items()},"issues":dict(sorted(issues.items())),"issue_count":sum(issues.values()),"artifact_path":str(self.artifact_path),"runtime_activation":"DISABLED"}
   if status!="TRAINED": self._write_json(self.report_path,report); return report
@@ -34,9 +37,9 @@ class BaselineModelTrainer:
   X={k:np.asarray([self._vector(r,patterns,self.context_aware) for r in rows],dtype=float) for k,rows in filtered.items()}; y={k:np.asarray([int(r["label_profitable"]) for r in rows],dtype=int) for k,rows in filtered.items()}
   scaler=StandardScaler(); Xtr=scaler.fit_transform(X["train"])
   model=LogisticRegression(max_iter=1000,class_weight="balanced",random_state=self.random_state); model.fit(Xtr,y["train"])
-  metrics={k:self._metrics(y[k],model.predict_proba(scaler.transform(X[k]))[:,1]) for k in ("validation","test")}
-  artifact={"artifact_schema_version":ARTIFACT_SCHEMA_VERSION,"model_kind":"LOGISTIC_REGRESSION_BASELINE","created_at_ms":int(time.time()*1000),"outcome_type":self.outcome_type,"feature_schema_version":3,"base_feature_names":FEATURE_NAMES,"pattern_categories":tuple(patterns),"vector_columns":tuple(columns),"scaler":scaler,"model":model,"metrics":metrics,"training_rows":len(filtered["train"]),"runtime_activation":"DISABLED","context_feature_schema_version":(CONTEXT_FEATURE_SCHEMA_VERSION if self.context_aware else None),"context_feature_names":(CONTEXT_FEATURE_NAMES if self.context_aware else ()),"requires_complete_market_context":self.context_aware}
-  self._write_pickle(self.artifact_path,artifact); report.update({"metrics":metrics,"vector_columns":columns,"pattern_categories":patterns,"class_balance":{k:dict(Counter(map(str,y[k].tolist()))) for k in y}}); self._write_json(self.report_path,report); return report
+  metric_splits=("validation","test") if self.evaluate_test else ("validation",); metrics={k:self._metrics(y[k],model.predict_proba(scaler.transform(X[k]))[:,1]) for k in metric_splits}
+  artifact={"artifact_schema_version":ARTIFACT_SCHEMA_VERSION,"model_kind":"LOGISTIC_REGRESSION_BASELINE","created_at_ms":int(time.time()*1000),"outcome_type":self.outcome_type,"feature_schema_version":3,"base_feature_names":FEATURE_NAMES,"pattern_categories":tuple(patterns),"vector_columns":tuple(columns),"scaler":scaler,"model":model,"metrics":metrics,"training_rows":len(filtered["train"]),"runtime_activation":"DISABLED","context_feature_schema_version":(CONTEXT_FEATURE_SCHEMA_VERSION if self.context_aware else None),"context_feature_names":(CONTEXT_FEATURE_NAMES if self.context_aware else ()),"requires_complete_market_context":self.context_aware,"test_evaluated_during_training":self.evaluate_test}
+  self._write_pickle(self.artifact_path,artifact); report.update({"metrics":metrics,"vector_columns":columns,"pattern_categories":patterns,"test_evaluated_during_training":self.evaluate_test,"class_balance":{k:dict(Counter(map(str,y[k].tolist()))) for k in y}}); self._write_json(self.report_path,report); return report
  def _read(self,path,name,issues):
   if not path.exists(): issues[f"{name}_file_missing"]+=1; return []
   out=[]

@@ -36,6 +36,8 @@ from config import (
     MODEL_EVALUATION_CALIBRATION_BINS,
     MODEL_EVALUATION_DRIFT_BINS,
     MODEL_REGISTRY_PATH,
+    RELIABLE_EVALUATION_MIN_HOLDOUT_EVENTS,
+    RELIABLE_EVALUATION_MIN_MARKET_EVENTS,
     TIME_SPLIT_EMBARGO_SECONDS,
     TIME_SPLIT_TEST_RATIO,
     TIME_SPLIT_TRAIN_RATIO,
@@ -90,6 +92,9 @@ def build_orchestrator() -> AutomaticTrainingOrchestrator:
             LEARNING_HISTORY_ROTATE_MIN_MB * 1024 * 1024
         ),
         prune_rejected_storage=AUTO_TRAINING_PRUNE_REJECTED_STORAGE,
+        min_train_market_events=RELIABLE_EVALUATION_MIN_MARKET_EVENTS,
+        min_validation_market_events=RELIABLE_EVALUATION_MIN_HOLDOUT_EVENTS,
+        min_test_market_events=RELIABLE_EVALUATION_MIN_HOLDOUT_EVENTS,
     )
 
 

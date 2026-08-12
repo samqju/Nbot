@@ -29,6 +29,7 @@ class TimeAwareDatasetSplitter:
         validation_ratio: float,
         test_ratio: float,
         embargo_seconds: int = 3600,
+        group_by_market_event: bool = False,
     ):
         self.dataset_path = Path(dataset_path)
         self.train_path = Path(train_path)
@@ -39,6 +40,7 @@ class TimeAwareDatasetSplitter:
         self.validation_ratio = float(validation_ratio)
         self.test_ratio = float(test_ratio)
         self.embargo_ms = int(embargo_seconds) * 1000
+        self.group_by_market_event = bool(group_by_market_event)
 
         ratios = (
             self.train_ratio,
@@ -94,8 +96,24 @@ class TimeAwareDatasetSplitter:
                 issues["candidate_identity_inconsistent"] += 1
                 continue
 
+            market_event_ids = {
+                str(row.get("market_event_id") or "").strip()
+                for row in candidate_rows
+            }
+            if self.group_by_market_event and (
+                len(market_event_ids) != 1
+                or not next(iter(market_event_ids), "")
+            ):
+                issues["candidate_market_event_invalid"] += 1
+                continue
+
             groups.append({
+                "group_id": candidate_id,
                 "candidate_id": candidate_id,
+                "candidate_ids": (candidate_id,),
+                "market_event_ids": tuple(sorted(
+                    event_id for event_id in market_event_ids if event_id
+                )),
                 "observed_at_ms": next(iter(observed_times)),
                 "outcome_end_ms": max(
                     int(row["recorded_at_ms"])
@@ -110,10 +128,14 @@ class TimeAwareDatasetSplitter:
                 ),
             })
 
+        candidate_group_count = len(groups)
+        if self.group_by_market_event:
+            groups = self._group_by_market_event(groups)
+
         groups.sort(
             key=lambda group: (
                 group["observed_at_ms"],
-                group["candidate_id"],
+                group["group_id"],
             )
         )
 
@@ -211,6 +233,8 @@ class TimeAwareDatasetSplitter:
         }
 
         self._assert_no_candidate_leakage(split_groups)
+        if self.group_by_market_event:
+            self._assert_no_market_event_leakage(split_groups)
         self._assert_chronological_order(split_groups)
 
         self._write_jsonl_atomic(
@@ -227,7 +251,7 @@ class TimeAwareDatasetSplitter:
         )
 
         report = {
-            "schema_version": 1,
+            "schema_version": 2,
             "generated_at_ms": int(time.time() * 1000),
             "status": status,
             "configuration": {
@@ -235,6 +259,11 @@ class TimeAwareDatasetSplitter:
                 "validation_ratio": self.validation_ratio,
                 "test_ratio": self.test_ratio,
                 "embargo_seconds": self.embargo_ms // 1000,
+                "grouping_policy": (
+                    "MARKET_EVENT"
+                    if self.group_by_market_event
+                    else "CANDIDATE"
+                ),
             },
             "input": {
                 "dataset_path": str(self.dataset_path),
@@ -242,7 +271,10 @@ class TimeAwareDatasetSplitter:
                 "valid_labeled_rows": sum(
                     len(group["rows"]) for group in groups
                 ),
-                "candidate_groups": len(groups),
+                "candidate_groups": candidate_group_count,
+                "market_event_groups": (
+                    len(groups) if self.group_by_market_event else None
+                ),
                 "unlabeled_rows_excluded": unlabeled_rows,
                 "invalid_rows_excluded": invalid_rows,
             },
@@ -275,6 +307,7 @@ class TimeAwareDatasetSplitter:
             },
             "leakage_checks": {
                 "candidate_overlap": False,
+                "market_event_overlap": False,
                 "label_window_overlap": False,
                 "chronological_order": True,
             },
@@ -283,6 +316,48 @@ class TimeAwareDatasetSplitter:
         }
         self._write_json_atomic(self.report_path, report)
         return report
+
+    @staticmethod
+    def _group_by_market_event(candidate_groups: list[dict]) -> list[dict]:
+        by_event = {}
+        for group in candidate_groups:
+            event_id = group["market_event_ids"][0]
+            by_event.setdefault(event_id, []).append(group)
+
+        event_groups = []
+        for event_id, members in by_event.items():
+            candidate_ids = tuple(sorted(
+                candidate_id
+                for member in members
+                for candidate_id in member["candidate_ids"]
+            ))
+            rows = sorted(
+                (
+                    row
+                    for member in members
+                    for row in member["rows"]
+                ),
+                key=lambda row: (
+                    int(row["observed_at_ms"]),
+                    int(row["recorded_at_ms"]),
+                    row["candidate_observation_id"],
+                    row["outcome_type"],
+                ),
+            )
+            event_groups.append({
+                "group_id": event_id,
+                "candidate_id": candidate_ids[0],
+                "candidate_ids": candidate_ids,
+                "market_event_ids": (event_id,),
+                "observed_at_ms": min(
+                    member["observed_at_ms"] for member in members
+                ),
+                "outcome_end_ms": max(
+                    member["outcome_end_ms"] for member in members
+                ),
+                "rows": rows,
+            })
+        return event_groups
 
     def _allocate_counts(self, group_count: int) -> tuple[int, int]:
         train_count = max(1, int(group_count * self.train_ratio))
@@ -366,8 +441,11 @@ class TimeAwareDatasetSplitter:
     def _assert_no_candidate_leakage(split_groups: dict) -> None:
         ids = {
             name: {
-                group["candidate_id"]
+                candidate_id
                 for group in groups
+                for candidate_id in group.get(
+                    "candidate_ids", (group["candidate_id"],)
+                )
             }
             for name, groups in split_groups.items()
         }
@@ -377,6 +455,23 @@ class TimeAwareDatasetSplitter:
             or ids["validation"] & ids["test"]
         ):
             raise TimeSplitError("TIME_SPLIT_CANDIDATE_LEAKAGE")
+
+    @staticmethod
+    def _assert_no_market_event_leakage(split_groups: dict) -> None:
+        ids = {
+            name: {
+                event_id
+                for group in groups
+                for event_id in group.get("market_event_ids", ())
+            }
+            for name, groups in split_groups.items()
+        }
+        if (
+            ids["train"] & ids["validation"]
+            or ids["train"] & ids["test"]
+            or ids["validation"] & ids["test"]
+        ):
+            raise TimeSplitError("TIME_SPLIT_MARKET_EVENT_LEAKAGE")
 
     @staticmethod
     def _assert_chronological_order(split_groups: dict) -> None:
@@ -411,7 +506,18 @@ class TimeAwareDatasetSplitter:
         )
         return {
             "path": str(path),
-            "candidate_groups": len(groups),
+            "candidate_groups": len({
+                candidate_id
+                for group in groups
+                for candidate_id in group.get(
+                    "candidate_ids", (group["candidate_id"],)
+                )
+            }),
+            "market_event_groups": len({
+                event_id
+                for group in groups
+                for event_id in group.get("market_event_ids", ())
+            }),
             "rows": len(rows),
             "first_observed_at_ms": min(timestamps) if timestamps else None,
             "last_observed_at_ms": max(timestamps) if timestamps else None,

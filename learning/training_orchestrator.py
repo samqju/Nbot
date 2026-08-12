@@ -37,7 +37,7 @@ from utils.jsonl_history import (
 )
 
 
-AUTO_TRAINING_SCHEMA_VERSION = 2
+AUTO_TRAINING_SCHEMA_VERSION = 3
 
 
 class AutoTrainingError(RuntimeError):
@@ -276,6 +276,9 @@ class AutomaticTrainingOrchestrator:
         history_rotation_enabled: bool = True,
         history_rotate_min_bytes: int = 64 * 1024 * 1024,
         prune_rejected_storage: bool = True,
+        min_train_market_events: int = 1,
+        min_validation_market_events: int = 1,
+        min_test_market_events: int = 1,
     ):
         self.enabled = bool(enabled)
         self.environment = str(environment).strip().upper()
@@ -311,6 +314,11 @@ class AutomaticTrainingOrchestrator:
             0, int(history_rotate_min_bytes)
         )
         self.prune_rejected_storage = bool(prune_rejected_storage)
+        self.min_train_market_events = max(1, int(min_train_market_events))
+        self.min_validation_market_events = max(
+            1, int(min_validation_market_events)
+        )
+        self.min_test_market_events = max(1, int(min_test_market_events))
         self.registry = ModelRegistry(
             path=registry_path,
             environment=self.environment,
@@ -365,6 +373,27 @@ class AutomaticTrainingOrchestrator:
 
         started_at_ms = int(time.time() * 1000)
         snapshot = self._create_snapshot()
+        cohort = self._cohort_readiness(snapshot)
+        if not cohort["ready"]:
+            self._remove_tree(Path(snapshot["snapshot_path"]))
+            return self._status(
+                "WAITING_FOR_COHORT",
+                inventory=inventory,
+                cohort_readiness=cohort,
+                thresholds={
+                    "min_new_outcomes": self.min_new_outcomes,
+                    "min_new_market_events": self.min_new_market_events,
+                    "min_train_market_events": self.min_train_market_events,
+                    "min_validation_market_events": (
+                        self.min_validation_market_events
+                    ),
+                    "min_test_market_events": self.min_test_market_events,
+                },
+                current_champion_model_id=(
+                    self.registry.current_champion_model_id()
+                ),
+                storage_maintenance=storage_maintenance,
+            )
         model_id = self._model_id(
             started_at_ms, snapshot["dataset_fingerprint"]
         )
@@ -397,7 +426,7 @@ class AutomaticTrainingOrchestrator:
             "runtime_activation": "DISABLED",
             "paper_authority": "UNCHANGED",
             "real_order_authority": "NONE",
-            "phase": "7.3",
+            "phase": "7.4",
             "paper_promotion_allowed": False,
         }
         self.registry.register_training(registry_record)
@@ -572,6 +601,75 @@ class AutomaticTrainingOrchestrator:
             "strategy_schema": metadata["strategy_schema"],
         }
 
+    def _cohort_readiness(self, snapshot: dict) -> dict:
+        """Prove independent-event split readiness before registering a model."""
+        self.model_root.mkdir(parents=True, exist_ok=True)
+        staging = Path(
+            tempfile.mkdtemp(prefix=".cohort.", dir=str(self.model_root))
+        )
+        try:
+            report = TimeAwareDatasetSplitter(
+                dataset_path=snapshot["dataset_path"],
+                train_path=str(staging / "train.jsonl"),
+                validation_path=str(staging / "validation.jsonl"),
+                test_path=str(staging / "test.jsonl"),
+                report_path=str(staging / "time_split_report.json"),
+                train_ratio=self.train_ratio,
+                validation_ratio=self.validation_ratio,
+                test_ratio=self.test_ratio,
+                embargo_seconds=self.embargo_seconds,
+                group_by_market_event=True,
+            ).split()
+            counts = {
+                name: int(report["splits"][name].get("market_event_groups", 0))
+                for name in ("train", "validation", "test")
+            }
+            checks = {
+                "split_ready": {
+                    "actual": report["status"],
+                    "required": "READY",
+                    "passed": report["status"] == "READY",
+                },
+                "train_market_events": {
+                    "actual": counts["train"],
+                    "required_min": self.min_train_market_events,
+                    "passed": counts["train"] >= self.min_train_market_events,
+                },
+                "validation_market_events": {
+                    "actual": counts["validation"],
+                    "required_min": self.min_validation_market_events,
+                    "passed": (
+                        counts["validation"]
+                        >= self.min_validation_market_events
+                    ),
+                },
+                "test_market_events": {
+                    "actual": counts["test"],
+                    "required_min": self.min_test_market_events,
+                    "passed": counts["test"] >= self.min_test_market_events,
+                },
+                "market_event_isolation": {
+                    "actual": report["leakage_checks"].get(
+                        "market_event_overlap"
+                    ),
+                    "required": False,
+                    "passed": report["leakage_checks"].get(
+                        "market_event_overlap"
+                    ) is False,
+                },
+            }
+            return {
+                "ready": all(item["passed"] for item in checks.values()),
+                "checks": checks,
+                "split_status": report["status"],
+                "split_market_events": counts,
+                "grouping_policy": report["configuration"][
+                    "grouping_policy"
+                ],
+            }
+        finally:
+            self._remove_tree(staging)
+
     def _train_model(
         self,
         *,
@@ -597,19 +695,36 @@ class AutomaticTrainingOrchestrator:
             validation_ratio=self.validation_ratio,
             test_ratio=self.test_ratio,
             embargo_seconds=self.embargo_seconds,
+            group_by_market_event=True,
         ).split()
         if split_report["status"] != "READY":
             raise AutoTrainingError(
                 "AUTO_TRAINING_SPLIT_NOT_READY | "
                 f"status={split_report['status']}"
             )
+        event_counts = {
+            name: int(split_report["splits"][name].get("market_event_groups", 0))
+            for name in ("train", "validation", "test")
+        }
+        event_thresholds = {
+            "train": self.min_train_market_events,
+            "validation": self.min_validation_market_events,
+            "test": self.min_test_market_events,
+        }
+        if any(event_counts[name] < event_thresholds[name] for name in event_counts):
+            raise AutoTrainingError(
+                "AUTO_TRAINING_COHORT_NOT_READY | "
+                f"events={event_counts} | required={event_thresholds}"
+            )
+
+        test_sha256_before = hashlib.sha256(test_path.read_bytes()).hexdigest()
 
         baseline_artifact = model_dir / "baseline.pkl"
         baseline_report_path = model_dir / "baseline_report.json"
         baseline_report = BaselineModelTrainer(
             train_path=str(train_path),
             validation_path=str(validation_path),
-            test_path=str(test_path),
+            test_path=None,
             artifact_path=str(baseline_artifact),
             report_path=str(baseline_report_path),
             outcome_type=self.outcome_type,
@@ -617,6 +732,7 @@ class AutomaticTrainingOrchestrator:
             min_eval_rows=self.baseline_min_eval_rows,
             random_state=self.random_state,
             context_aware=True,
+            evaluate_test=False,
         ).train()
 
         ensemble_artifact = model_dir / "ensemble.pkl"
@@ -624,7 +740,7 @@ class AutomaticTrainingOrchestrator:
         ensemble_report = OfflineEnsembleExperiment(
             train_path=str(train_path),
             validation_path=str(validation_path),
-            test_path=str(test_path),
+            test_path=None,
             artifact_path=str(ensemble_artifact),
             report_path=str(ensemble_report_path),
             outcome_type=self.outcome_type,
@@ -632,130 +748,144 @@ class AutomaticTrainingOrchestrator:
             min_eval_rows=self.ensemble_min_eval_rows,
             random_state=self.random_state,
             context_aware=True,
+            evaluate_test=False,
         ).run()
 
         candidates = []
         if baseline_report.get("status") == "TRAINED":
-            evaluation = ChallengerArtifactEvaluator(
-                artifact_path=str(baseline_artifact),
-                validation_path=str(validation_path),
-                test_path=str(test_path),
-                calibration_bins=self.calibration_bins,
-                drift_bins=self.drift_bins,
-            ).evaluate()
-            self._write_json(
-                model_dir / "baseline_evaluation.json", evaluation
-            )
-            if evaluation["status"] == "EVALUATED":
-                candidates.append(
-                    {
-                        "name": "BASELINE",
-                        "artifact_path": baseline_artifact,
-                        "evaluation": evaluation,
-                    }
-                )
+            metrics = (baseline_report.get("metrics") or {}).get("validation")
+            if isinstance(metrics, dict):
+                candidates.append({
+                    "name": "BASELINE",
+                    "artifact_path": baseline_artifact,
+                    "validation_metrics": metrics,
+                })
         if ensemble_report.get("status") == "EXPERIMENT_COMPLETE":
-            evaluation = ChallengerArtifactEvaluator(
-                artifact_path=str(ensemble_artifact),
-                validation_path=str(validation_path),
-                test_path=str(test_path),
-                calibration_bins=self.calibration_bins,
-                drift_bins=self.drift_bins,
-            ).evaluate()
-            self._write_json(
-                model_dir / "ensemble_evaluation.json", evaluation
-            )
-            if evaluation["status"] == "EVALUATED":
-                candidates.append(
-                    {
-                        "name": "ENSEMBLE",
-                        "artifact_path": ensemble_artifact,
-                        "evaluation": evaluation,
-                    }
-                )
+            winner_report = ensemble_report.get("winner") or {}
+            metrics = winner_report.get("validation_metrics")
+            if isinstance(metrics, dict):
+                candidates.append({
+                    "name": "ENSEMBLE",
+                    "artifact_path": ensemble_artifact,
+                    "validation_metrics": metrics,
+                })
         if not candidates:
             raise AutoTrainingError("AUTO_TRAINING_NO_VALID_MODEL")
 
         winner = min(candidates, key=self._candidate_selection_key)
-        gates = self._offline_gates(winner["evaluation"])
-        final_status = (
-            "OFFLINE_VALIDATED" if gates["passed"] else "REJECTED"
-        )
+        selected_at_ms = int(time.time() * 1000)
+        pretest_selection = {
+            "schema_version": 1,
+            "model_id": model_id,
+            "selected_at_ms": selected_at_ms,
+            "selected_candidate": winner["name"],
+            "selection_basis": "VALIDATION_LOG_LOSS_THEN_BRIER_THEN_ROC_AUC",
+            "selected_using_test_data": False,
+            "test_set_policy": "SEALED_UNTIL_FINAL_CANDIDATE_SELECTED",
+            "test_sha256": test_sha256_before,
+            "candidates": {
+                candidate["name"]: {
+                    "validation_metrics": candidate["validation_metrics"],
+                    "test_metrics": None,
+                    "test_evaluated": False,
+                }
+                for candidate in candidates
+            },
+        }
+        self._write_json(model_dir / "pretest_selection_report.json", pretest_selection)
+
+        evaluation = ChallengerArtifactEvaluator(
+            artifact_path=str(winner["artifact_path"]),
+            validation_path=str(validation_path),
+            test_path=str(test_path),
+            calibration_bins=self.calibration_bins,
+            drift_bins=self.drift_bins,
+        ).evaluate()
+        self._write_json(model_dir / "selected_challenger_evaluation.json", evaluation)
+        if evaluation.get("status") != "EVALUATED":
+            raise AutoTrainingError("AUTO_TRAINING_SELECTED_MODEL_EVALUATION_FAILED")
+
+        test_sha256_after = hashlib.sha256(test_path.read_bytes()).hexdigest()
+        if test_sha256_after != test_sha256_before:
+            raise AutoTrainingError("AUTO_TRAINING_TEST_SET_MUTATED")
+
+        gates = self._offline_gates(evaluation)
+        final_status = "OFFLINE_VALIDATED" if gates["passed"] else "REJECTED"
         completed_at_ms = int(time.time() * 1000)
-        selected_artifact = pickle.loads(
-            winner["artifact_path"].read_bytes()
-        )
-        selected_artifact.update(
-            {
-                "phase": "7.3",
-                "model_id": model_id,
-                "parent_model_id": parent_model_id,
-                "dataset_fingerprint": snapshot[
-                    "dataset_fingerprint"
-                ],
-                "dataset_snapshot_path": snapshot["snapshot_path"],
-                "data_cutoff_ms": snapshot["data_cutoff_ms"],
-                "training_started_at_ms": started_at_ms,
-                "training_completed_at_ms": completed_at_ms,
-                "strategy_schema": snapshot["strategy_schema"],
-                "registry_status": final_status,
-                "runtime_activation": "DISABLED",
-                "paper_authority": "UNCHANGED",
-                "real_order_authority": "NONE",
-                "paper_promotion_allowed": False,
-            }
-        )
+        selected_artifact = pickle.loads(winner["artifact_path"].read_bytes())
+        selected_artifact.update({
+            "phase": "7.4",
+            "model_id": model_id,
+            "parent_model_id": parent_model_id,
+            "dataset_fingerprint": snapshot["dataset_fingerprint"],
+            "dataset_snapshot_path": snapshot["snapshot_path"],
+            "data_cutoff_ms": snapshot["data_cutoff_ms"],
+            "training_started_at_ms": started_at_ms,
+            "training_completed_at_ms": completed_at_ms,
+            "strategy_schema": snapshot["strategy_schema"],
+            "registry_status": final_status,
+            "runtime_activation": "DISABLED",
+            "paper_authority": "UNCHANGED",
+            "real_order_authority": "NONE",
+            "paper_promotion_allowed": False,
+            "test_set_policy": "SEALED_UNTIL_FINAL_CANDIDATE_SELECTED",
+            "selected_using_test_data": False,
+            "test_sha256": test_sha256_after,
+        })
         challenger_path = model_dir / "challenger.pkl"
         self._write_pickle(challenger_path, selected_artifact)
         checksum = hashlib.sha256(challenger_path.read_bytes()).hexdigest()
         selection_report = {
-            "schema_version": 1,
+            "schema_version": 2,
             "model_id": model_id,
             "selected_candidate": winner["name"],
-            "selection_basis": (
-                "VALIDATION_LOG_LOSS_THEN_BRIER_THEN_ROC_AUC"
-            ),
+            "selection_basis": "VALIDATION_LOG_LOSS_THEN_BRIER_THEN_ROC_AUC",
             "selected_using_test_data": False,
+            "test_set_policy": "SEALED_UNTIL_FINAL_CANDIDATE_SELECTED",
+            "test_sha256_before": test_sha256_before,
+            "test_sha256_after": test_sha256_after,
+            "test_unchanged": test_sha256_before == test_sha256_after,
+            "pretest_selected_at_ms": selected_at_ms,
             "offline_gates": gates,
             "final_status": final_status,
             "runtime_activation": "DISABLED",
             "paper_authority": "UNCHANGED",
             "real_order_authority": "NONE",
+            "split_market_events": event_counts,
             "candidates": {
-                candidate["name"]: candidate["evaluation"]
+                candidate["name"]: {
+                    "validation_metrics": candidate["validation_metrics"],
+                    "test_evaluated": candidate["name"] == winner["name"],
+                    "test_metrics": (
+                        evaluation["metrics"]["test"]
+                        if candidate["name"] == winner["name"]
+                        else None
+                    ),
+                }
                 for candidate in candidates
             },
         }
-        self._write_json(
-            model_dir / "challenger_selection_report.json",
-            selection_report,
-        )
-        train_rows = int(
-            split_report["splits"]["train"]["rows"]
-        )
+        self._write_json(model_dir / "challenger_selection_report.json", selection_report)
+        train_rows = int(split_report["splits"]["train"]["rows"])
         return {
             "status": final_status,
             "training_completed_at_ms": completed_at_ms,
             "training_rows": train_rows,
-            "validation_metrics": winner["evaluation"]["metrics"][
-                "validation"
-            ],
-            "test_metrics": winner["evaluation"]["metrics"]["test"],
+            "split_market_events": event_counts,
+            "validation_metrics": evaluation["metrics"]["validation"],
+            "test_metrics": evaluation["metrics"]["test"],
             "calibration_metrics": {
-                "validation_max_abs_gap": winner["evaluation"][
-                    "calibration"
-                ]["validation_max_abs_gap"],
-                "test_max_abs_gap": winner["evaluation"][
-                    "calibration"
-                ]["test_max_abs_gap"],
+                "validation_max_abs_gap": evaluation["calibration"]["validation_max_abs_gap"],
+                "test_max_abs_gap": evaluation["calibration"]["test_max_abs_gap"],
             },
             "drift_metrics": {
-                "max_feature_psi": winner["evaluation"]["drift"][
-                    "max_feature_psi"
-                ]
+                "max_feature_psi": evaluation["drift"]["max_feature_psi"]
             },
             "offline_gate_results": gates,
             "selected_candidate": winner["name"],
+            "selected_using_test_data": False,
+            "test_set_policy": "SEALED_UNTIL_FINAL_CANDIDATE_SELECTED",
+            "test_unchanged": True,
             "artifact_checksum_sha256": checksum,
             "artifact_path": str(challenger_path),
             "model_directory": str(model_dir),
@@ -766,7 +896,9 @@ class AutomaticTrainingOrchestrator:
 
     @staticmethod
     def _candidate_selection_key(candidate: dict) -> tuple:
-        metrics = candidate["evaluation"]["metrics"]["validation"]
+        metrics = candidate.get("validation_metrics")
+        if not isinstance(metrics, dict):
+            metrics = candidate["evaluation"]["metrics"]["validation"]
         roc_auc = metrics.get("roc_auc")
         return (
             float(metrics["log_loss"]),
@@ -943,7 +1075,7 @@ class AutomaticTrainingOrchestrator:
         document = {
             "schema_version": AUTO_TRAINING_SCHEMA_VERSION,
             "generated_at_ms": int(time.time() * 1000),
-            "phase": "7.3",
+            "phase": "7.4",
             "status": status,
             "environment": self.environment,
             "process_id": os.getpid(),
