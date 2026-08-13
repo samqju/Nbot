@@ -27,6 +27,7 @@ from learning.cost_evidence import has_complete_cost_evidence
 from learning.challenger_evaluator import ChallengerArtifactEvaluator
 from learning.dataset_builder import TrainingDatasetBuilder
 from learning.ensemble_experiment import OfflineEnsembleExperiment
+from learning.evidence_ledger import Phase7EvidenceLedger, LEDGER_SOURCE_MODE
 from learning.model_registry import ModelRegistry
 from learning.time_split import TimeAwareDatasetSplitter
 from strategy.experiment_contract import EXPERIMENT_CONTRACT_VERSION
@@ -337,6 +338,9 @@ class AutomaticTrainingOrchestrator:
         min_train_market_events: int = 1,
         min_validation_market_events: int = 1,
         min_test_market_events: int = 1,
+        evidence_ledger_path: str | None = None,
+        evidence_generation: str | None = None,
+        evidence_pending_retention_hours: float = 24.0,
     ):
         self.enabled = bool(enabled)
         self.environment = str(environment).strip().upper()
@@ -377,6 +381,26 @@ class AutomaticTrainingOrchestrator:
             1, int(min_validation_market_events)
         )
         self.min_test_market_events = max(1, int(min_test_market_events))
+        self.evidence_ledger_path = (
+            Path(evidence_ledger_path) if evidence_ledger_path else None
+        )
+        self.evidence_generation = (
+            str(evidence_generation or "").strip().upper() or None
+        )
+        self.evidence_pending_retention_hours = float(
+            evidence_pending_retention_hours
+        )
+        self.evidence_ledger = (
+            Phase7EvidenceLedger(
+                path=str(self.evidence_ledger_path),
+                generation=self.evidence_generation or "PHASE7_LEDGER_V1",
+                training_outcome_type=self.outcome_type,
+                environment=self.environment,
+                pending_retention_hours=self.evidence_pending_retention_hours,
+            )
+            if self.evidence_ledger_path is not None
+            else None
+        )
         self.registry = ModelRegistry(
             path=registry_path,
             environment=self.environment,
@@ -400,17 +424,22 @@ class AutomaticTrainingOrchestrator:
 
     def _run_locked(self) -> dict:
         self.registry.initialize()
-        cutoff_ms = self.registry.latest_completed_cutoff_ms()
+        cutoff_ms = self.registry.latest_completed_cutoff_ms(
+            evidence_generation=self.evidence_generation
+        )
         storage_maintenance = self._storage_maintenance(
             cutoff_ms=cutoff_ms
         )
-        inventory = TrainingInventory(
-            observations_path=str(self.observations_path),
-            outcomes_path=str(self.outcomes_path),
-            outcome_type=self.outcome_type,
-            require_complete_market_context=True,
-            require_complete_cost_evidence=True,
-        ).scan(after_ms=cutoff_ms)
+        if self.evidence_ledger is not None:
+            inventory = self.evidence_ledger.inventory(after_ms=cutoff_ms)
+        else:
+            inventory = TrainingInventory(
+                observations_path=str(self.observations_path),
+                outcomes_path=str(self.outcomes_path),
+                outcome_type=self.outcome_type,
+                require_complete_market_context=True,
+                require_complete_cost_evidence=True,
+            ).scan(after_ms=cutoff_ms)
         if (
             inventory["new_completed_outcomes"] < self.min_new_outcomes
             or inventory["new_independent_market_events"]
@@ -486,6 +515,12 @@ class AutomaticTrainingOrchestrator:
             "real_order_authority": "NONE",
             "phase": "7.4",
             "paper_promotion_allowed": False,
+            "evidence_generation": self.evidence_generation,
+            "training_source": (
+                LEDGER_SOURCE_MODE
+                if self.evidence_ledger is not None
+                else "RAW_HISTORY_COMPATIBILITY"
+            ),
         }
         self.registry.register_training(registry_record)
         try:
@@ -541,7 +576,7 @@ class AutomaticTrainingOrchestrator:
             raise
 
     def _create_snapshot(self) -> dict:
-        """Freeze the exact eligible dataset with bounded Python memory."""
+        """Freeze the exact eligible dataset from the permanent Phase-7 source."""
         self.snapshot_root.mkdir(parents=True, exist_ok=True)
         staging = Path(
             tempfile.mkdtemp(
@@ -549,97 +584,98 @@ class AutomaticTrainingOrchestrator:
             )
         )
 
-        full_dataset_path = staging / ".training_dataset_all.tmp.jsonl"
-        integrity_path = staging / "dataset_integrity_report.json"
-        integrity = TrainingDatasetBuilder(
-            observations_path=str(self.observations_path),
-            outcomes_path=str(self.outcomes_path),
-            dataset_path=str(full_dataset_path),
-            report_path=str(integrity_path),
-        ).build()
-        if integrity["status"] == "EMPTY":
-            raise AutoTrainingError("AUTO_TRAINING_DATASET_EMPTY")
-
         eligible_path = staging / "training_dataset.jsonl"
-        eligible_count = 0
-        data_cutoff_ms = 0
-        market_events = set()
-        schema_sets = {
-            "experiment_contract_versions": set(),
-            "strategy_versions": set(),
-            "strategy_variant_ids": set(),
-            "outcome_variant_ids": set(),
-            "strategy_lab_catalog_versions": set(),
-        }
+        integrity_path = staging / "dataset_integrity_report.json"
 
-        with full_dataset_path.open("r") as source, eligible_path.open(
-            "w"
-        ) as destination:
-            for line in source:
-                if not line.strip():
-                    continue
-                row = json.loads(line)
-                if row.get("outcome_type") != self.outcome_type:
-                    continue
-                if (
-                    int(row.get("experiment_contract_version", 0) or 0)
-                    != EXPERIMENT_CONTRACT_VERSION
-                ):
-                    continue
-                market_event_id = str(
-                    row.get("market_event_id") or ""
-                ).strip()
-                if not market_event_id:
-                    continue
-                if row.get("label_profitable") not in {True, False}:
-                    continue
-                if not is_complete_market_context(
-                    market_context_from_row(row)
-                ):
-                    continue
-                if not has_complete_cost_evidence(row):
-                    continue
-
-                # TrainingDatasetBuilder already emits deterministic
-                # chronological order, so filtering preserves the old sorted
-                # snapshot contract without keeping every row in memory.
-                destination.write(
-                    json.dumps(row, sort_keys=True) + "\n"
-                )
-                eligible_count += 1
-                market_events.add(market_event_id)
-                data_cutoff_ms = max(
-                    data_cutoff_ms, int(row["recorded_at_ms"])
-                )
-                schema_sets["experiment_contract_versions"].add(
-                    int(row["experiment_contract_version"])
-                )
-                schema_sets["strategy_versions"].add(
-                    str(row.get("strategy_version") or "UNKNOWN")
-                )
-                schema_sets["strategy_variant_ids"].add(
-                    str(row.get("strategy_variant_id") or "UNKNOWN")
-                )
-                schema_sets["outcome_variant_ids"].add(
-                    str(row.get("outcome_variant_id") or "UNKNOWN")
-                )
-                schema_sets["strategy_lab_catalog_versions"].add(
-                    str(
-                        row.get("strategy_lab_catalog_version")
-                        or "NOT_LAB_RECORD"
-                    )
-                )
-            destination.flush()
-            os.fsync(destination.fileno())
+        if self.evidence_ledger is not None:
+            exported = self.evidence_ledger.export_dataset(eligible_path)
+            eligible_count = int(exported["rows"])
+            independent_events = int(exported["independent_market_events"])
+            data_cutoff_ms = int(exported["data_cutoff_ms"])
+            strategy_schema = exported.get("strategy_schema") or {}
+            integrity = {
+                "schema_version": AUTO_TRAINING_SCHEMA_VERSION,
+                "status": "READY" if eligible_count else "EMPTY",
+                "source": LEDGER_SOURCE_MODE,
+                "ledger_generation": self.evidence_generation,
+                "rows": eligible_count,
+                "independent_market_events": independent_events,
+                "output": {
+                    "eligible_dataset_path": "training_dataset.jsonl",
+                    "full_dataset_persisted": False,
+                    "snapshot_filter_mode": "LEDGER_DIRECT_EXPORT",
+                },
+            }
+            self._write_json(integrity_path, integrity)
+            build_mode = "QUALIFIED_LEDGER_DIRECT_EXPORT"
+        else:
+            # Compatibility path retained for old tests/manual tools only.
+            full_dataset_path = staging / ".training_dataset_all.tmp.jsonl"
+            integrity = TrainingDatasetBuilder(
+                observations_path=str(self.observations_path),
+                outcomes_path=str(self.outcomes_path),
+                dataset_path=str(full_dataset_path),
+                report_path=str(integrity_path),
+            ).build()
+            if integrity["status"] == "EMPTY":
+                raise AutoTrainingError("AUTO_TRAINING_DATASET_EMPTY")
+            eligible_count = 0
+            data_cutoff_ms = 0
+            market_events = set()
+            schema_sets = {
+                "experiment_contract_versions": set(),
+                "strategy_versions": set(),
+                "strategy_variant_ids": set(),
+                "outcome_variant_ids": set(),
+                "strategy_lab_catalog_versions": set(),
+            }
+            with full_dataset_path.open("r") as source, eligible_path.open("w") as destination:
+                for line in source:
+                    if not line.strip():
+                        continue
+                    row = json.loads(line)
+                    if row.get("outcome_type") != self.outcome_type:
+                        continue
+                    if int(row.get("experiment_contract_version", 0) or 0) != EXPERIMENT_CONTRACT_VERSION:
+                        continue
+                    market_event_id = str(row.get("market_event_id") or "").strip()
+                    if not market_event_id or row.get("label_profitable") not in {True, False}:
+                        continue
+                    if not is_complete_market_context(market_context_from_row(row)):
+                        continue
+                    if not has_complete_cost_evidence(row):
+                        continue
+                    destination.write(json.dumps(row, sort_keys=True) + "\n")
+                    eligible_count += 1
+                    market_events.add(market_event_id)
+                    data_cutoff_ms = max(data_cutoff_ms, int(row["recorded_at_ms"]))
+                    schema_sets["experiment_contract_versions"].add(int(row["experiment_contract_version"]))
+                    schema_sets["strategy_versions"].add(str(row.get("strategy_version") or "UNKNOWN"))
+                    schema_sets["strategy_variant_ids"].add(str(row.get("strategy_variant_id") or "UNKNOWN"))
+                    schema_sets["outcome_variant_ids"].add(str(row.get("outcome_variant_id") or "UNKNOWN"))
+                    schema_sets["strategy_lab_catalog_versions"].add(str(row.get("strategy_lab_catalog_version") or "NOT_LAB_RECORD"))
+                destination.flush()
+                os.fsync(destination.fileno())
+            independent_events = len(market_events)
+            strategy_schema = {key: sorted(values) for key, values in schema_sets.items()}
+            full_dataset_path.unlink(missing_ok=True)
+            integrity.setdefault("output", {})["dataset_path"] = None
+            integrity["output"]["full_dataset_persisted"] = False
+            integrity["output"]["eligible_dataset_path"] = (
+                "training_dataset.jsonl"
+            )
+            integrity["output"]["snapshot_filter_mode"] = (
+                "STREAMING_BOUNDED_MEMORY"
+            )
+            self._write_json(integrity_path, integrity)
+            build_mode = "STREAMING_BOUNDED_MEMORY"
 
         if eligible_count < self.min_new_outcomes:
-            raise AutoTrainingError(
-                "AUTO_TRAINING_ELIGIBLE_DATA_BELOW_TRIGGER"
-            )
-        if len(market_events) < self.min_new_market_events:
-            raise AutoTrainingError(
-                "AUTO_TRAINING_ELIGIBLE_EVENTS_BELOW_TRIGGER"
-            )
+            self._remove_tree(staging)
+            raise AutoTrainingError("AUTO_TRAINING_ELIGIBLE_DATA_BELOW_TRIGGER")
+        if independent_events < self.min_new_market_events:
+            self._remove_tree(staging)
+            raise AutoTrainingError("AUTO_TRAINING_ELIGIBLE_EVENTS_BELOW_TRIGGER")
 
         metadata = {
             "schema_version": AUTO_TRAINING_SCHEMA_VERSION,
@@ -652,32 +688,25 @@ class AutomaticTrainingOrchestrator:
             "requires_complete_market_context": True,
             "requires_complete_cost_evidence": True,
             "rows": eligible_count,
-            "independent_market_events": len(market_events),
+            "independent_market_events": independent_events,
             "data_cutoff_ms": data_cutoff_ms,
-            "source_mode": "LOGICAL_HISTORY_PLUS_LIVE",
-            "observations_path": str(self.observations_path),
-            "outcomes_path": str(self.outcomes_path),
+            "source_mode": (
+                LEDGER_SOURCE_MODE
+                if self.evidence_ledger is not None
+                else "LOGICAL_HISTORY_PLUS_LIVE"
+            ),
+            "evidence_generation": self.evidence_generation,
+            "evidence_ledger_path": (
+                str(self.evidence_ledger_path)
+                if self.evidence_ledger_path is not None
+                else None
+            ),
         }
         fingerprint = self._fingerprint_file(eligible_path, metadata)
         metadata["dataset_fingerprint"] = fingerprint
-        metadata["strategy_schema"] = {
-            key: sorted(values) for key, values in schema_sets.items()
-        }
-        metadata["snapshot_build_mode"] = "STREAMING_BOUNDED_MEMORY"
+        metadata["strategy_schema"] = strategy_schema
+        metadata["snapshot_build_mode"] = build_mode
         self._write_json(staging / "snapshot_manifest.json", metadata)
-
-        # The all-outcomes join is only a build workspace. Keeping it beside
-        # the filtered training dataset would duplicate large histories.
-        full_dataset_path.unlink(missing_ok=True)
-        integrity["output"]["dataset_path"] = None
-        integrity["output"]["full_dataset_persisted"] = False
-        integrity["output"]["eligible_dataset_path"] = (
-            "training_dataset.jsonl"
-        )
-        integrity["output"]["snapshot_filter_mode"] = (
-            "STREAMING_BOUNDED_MEMORY"
-        )
-        self._write_json(integrity_path, integrity)
 
         snapshot_id = (
             datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -695,10 +724,11 @@ class AutomaticTrainingOrchestrator:
             "dataset_path": str(final_path / "training_dataset.jsonl"),
             "dataset_fingerprint": fingerprint,
             "rows": eligible_count,
-            "independent_event_count": len(market_events),
-            "data_cutoff_ms": metadata["data_cutoff_ms"],
-            "strategy_schema": metadata["strategy_schema"],
-            "build_mode": "STREAMING_BOUNDED_MEMORY",
+            "independent_event_count": independent_events,
+            "data_cutoff_ms": data_cutoff_ms,
+            "strategy_schema": strategy_schema,
+            "build_mode": build_mode,
+            "evidence_generation": self.evidence_generation,
         }
 
     def _cohort_readiness(self, snapshot: dict) -> dict:

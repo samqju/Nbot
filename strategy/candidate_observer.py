@@ -8,7 +8,8 @@ import time
 from pathlib import Path
 
 from strategy.features import CANDIDATE_FEATURE_SCHEMA_VERSION
-from utils.jsonl_history import append_jsonl_line
+from learning.evidence_ledger import Phase7EvidenceLedger
+from utils.jsonl_history import append_jsonl_line, append_jsonl_line_bounded
 from strategy.experiment_contract import (
     copy_experiment_context,
     experiment_projection,
@@ -23,6 +24,12 @@ class CandidateObservationWriter:
         *,
         environment: str | None = None,
         execution_mode: str | None = None,
+        evidence_ledger_path: str | None = None,
+        evidence_generation: str | None = None,
+        training_outcome_type: str = "VIRTUAL_TRADE",
+        pending_fact_retention_hours: float = 24.0,
+        raw_segment_max_bytes: int = 0,
+        raw_retain_segments: int = 4,
     ):
         self.path = Path(path)
         self.system_log = system_log
@@ -33,6 +40,19 @@ class CandidateObservationWriter:
             str(execution_mode).strip().upper() if execution_mode else None
         )
         self._lock = threading.Lock()
+        self.raw_segment_max_bytes = max(0, int(raw_segment_max_bytes))
+        self.raw_retain_segments = max(1, int(raw_retain_segments))
+        self.evidence_ledger = (
+            Phase7EvidenceLedger(
+                path=evidence_ledger_path,
+                generation=evidence_generation or "PHASE7_LEDGER_V1",
+                training_outcome_type=training_outcome_type,
+                environment=self.environment,
+                pending_retention_hours=pending_fact_retention_hours,
+            )
+            if evidence_ledger_path
+            else None
+        )
 
     def append(self, candidate, *, rank: int, selected: bool) -> None:
         experiment_context = copy_experiment_context(
@@ -100,8 +120,29 @@ class CandidateObservationWriter:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         line = json.dumps(row, default=str)
 
+        ledger_result = None
+        if self.evidence_ledger is not None:
+            try:
+                ledger_result = self.evidence_ledger.register_candidate(row)
+            except Exception as exc:
+                if self.system_log:
+                    getattr(self.system_log, "error", lambda *_args, **_kwargs: None)(
+                        "PHASE7_EVIDENCE_CANDIDATE_FAILED | "
+                        f"id={candidate.observation_id} | "
+                        f"error={type(exc).__name__}:{exc}"
+                    )
+
         with self._lock:
-            append_jsonl_line(self.path, line)
+            if self.raw_segment_max_bytes > 0:
+                append_jsonl_line_bounded(
+                    self.path,
+                    line,
+                    max_bytes=self.raw_segment_max_bytes,
+                    retain_segments=self.raw_retain_segments,
+                    segment_tag="candidate-observations",
+                )
+            else:
+                append_jsonl_line(self.path, line)
 
         if self.system_log:
             getattr(self.system_log, "debug", lambda *_args, **_kwargs: None)(
@@ -109,5 +150,6 @@ class CandidateObservationWriter:
                 f"id={candidate.observation_id} | "
                 f"symbol={candidate.symbol} | rank={rank} | "
                 f"selected={str(selected).lower()} | "
-                f"schema={CANDIDATE_FEATURE_SCHEMA_VERSION}"
+                f"schema={CANDIDATE_FEATURE_SCHEMA_VERSION} | "
+                f"ledger={(ledger_result or {}).get('decision', 'DISABLED')}"
             )

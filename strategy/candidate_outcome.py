@@ -7,7 +7,8 @@ import threading
 import time
 from pathlib import Path
 
-from utils.jsonl_history import append_jsonl_line
+from learning.evidence_ledger import Phase7EvidenceLedger
+from utils.jsonl_history import append_jsonl_line, append_jsonl_line_bounded
 
 from strategy.experiment_contract import (
     copy_experiment_context,
@@ -26,6 +27,12 @@ class CandidateOutcomeWriter:
         *,
         environment: str | None = None,
         execution_mode: str | None = None,
+        evidence_ledger_path: str | None = None,
+        evidence_generation: str | None = None,
+        training_outcome_type: str = "VIRTUAL_TRADE",
+        pending_fact_retention_hours: float = 24.0,
+        raw_segment_max_bytes: int = 0,
+        raw_retain_segments: int = 4,
     ):
         self.path = Path(path)
         self.system_log = system_log
@@ -36,6 +43,19 @@ class CandidateOutcomeWriter:
             str(execution_mode).strip().upper() if execution_mode else None
         )
         self._lock = threading.Lock()
+        self.raw_segment_max_bytes = max(0, int(raw_segment_max_bytes))
+        self.raw_retain_segments = max(1, int(raw_retain_segments))
+        self.evidence_ledger = (
+            Phase7EvidenceLedger(
+                path=evidence_ledger_path,
+                generation=evidence_generation or "PHASE7_LEDGER_V1",
+                training_outcome_type=training_outcome_type,
+                environment=self.environment,
+                pending_retention_hours=pending_fact_retention_hours,
+            )
+            if evidence_ledger_path
+            else None
+        )
 
     def append(
         self,
@@ -79,12 +99,34 @@ class CandidateOutcomeWriter:
         line = json.dumps(row, default=str)
 
         with self._lock:
-            append_jsonl_line(self.path, line)
+            if self.raw_segment_max_bytes > 0:
+                append_jsonl_line_bounded(
+                    self.path,
+                    line,
+                    max_bytes=self.raw_segment_max_bytes,
+                    retain_segments=self.raw_retain_segments,
+                    segment_tag="candidate-outcomes",
+                )
+            else:
+                append_jsonl_line(self.path, line)
+
+        ledger_result = None
+        if self.evidence_ledger is not None:
+            try:
+                ledger_result = self.evidence_ledger.qualify_outcome(row)
+            except Exception as exc:
+                if self.system_log:
+                    getattr(self.system_log, "error", lambda *_args, **_kwargs: None)(
+                        "PHASE7_EVIDENCE_OUTCOME_FAILED | "
+                        f"id={observation_id} | type={row['outcome_type']} | "
+                        f"error={type(exc).__name__}:{exc}"
+                    )
 
         if self.system_log:
             getattr(self.system_log, "debug", lambda *_args, **_kwargs: None)(
                 "CANDIDATE_OUTCOME_WRITTEN | "
                 f"id={observation_id} | "
                 f"type={row['outcome_type']} | "
-                f"symbol={row['symbol']}"
+                f"symbol={row['symbol']} | "
+                f"ledger={(ledger_result or {}).get('decision', 'DISABLED')}"
             )

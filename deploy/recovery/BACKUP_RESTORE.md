@@ -95,9 +95,9 @@ the authority, not these example LIVE filenames.
 
 Observation owns, as configured for the active environment:
 
-- candidate observations;
-- candidate outcomes;
-- virtual trades;
+- Phase-7 qualified evidence ledger (permanent training source);
+- candidate observations/outcomes and virtual trades only when recent raw
+  diagnostic spool retention is desired;
 - learning runtime state;
 - universe/observation-universe snapshots;
 - model registry and model artifacts;
@@ -117,17 +117,20 @@ configuration and repository ownership documentation, then verify the archive.
 At minimum the primary split-owned paths include:
 
 ```text
-data/candidate_observations_live.jsonl
-data/candidate_outcomes_live.jsonl
-data/virtual_trades_live.jsonl
+data/phase7_evidence_ledger_live.sqlite3
 data/learning_runtime_state_live.json
+data/candidate_observations_live.jsonl   # recent disposable raw spool
+data/candidate_outcomes_live.jsonl       # recent disposable raw spool
+data/virtual_trades_live.jsonl           # recent disposable raw spool
 data/universe_live.json
 data/observation_universe_live.json
 models/
 ```
 
 Include additional Observation-owned status/governance files present in the
-active deployment.
+active deployment.  For Phase 7.5C and later, restoring the qualified evidence
+ledger is what restores automatic-training evidence; the bounded raw spools are
+not a substitute for that ledger.
 
 ## 5. Secrets backup
 

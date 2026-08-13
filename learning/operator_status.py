@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from learning.training_orchestrator import TrainingInventory
+from learning.evidence_ledger import Phase7EvidenceLedger
 
 
 AUTO_LEARNING_STATUS_SCHEMA_VERSION = 1
@@ -80,6 +81,9 @@ class AutoLearningStatusPublisher:
         paper_canary_status_path: str,
         strategy_policy_path: str,
         source_stale_seconds: int = 1800,
+        evidence_ledger_path: str | None = None,
+        evidence_generation: str | None = None,
+        evidence_pending_retention_hours: float = 24.0,
     ):
         self.environment = str(environment or "").strip().upper()
         self.execution_mode = str(execution_mode or "").strip().upper()
@@ -99,6 +103,15 @@ class AutoLearningStatusPublisher:
         self.paper_canary_status_path = Path(paper_canary_status_path)
         self.strategy_policy_path = Path(strategy_policy_path)
         self.source_stale_seconds = int(source_stale_seconds)
+        self.evidence_ledger_path = (
+            Path(evidence_ledger_path) if evidence_ledger_path else None
+        )
+        self.evidence_generation = (
+            str(evidence_generation or "").strip().upper() or None
+        )
+        self.evidence_pending_retention_hours = float(
+            evidence_pending_retention_hours
+        )
         if not self.environment:
             raise ValueError("AUTO_LEARNING_STATUS_ENVIRONMENT_REQUIRED")
         if not self.default_champion_model_id:
@@ -187,11 +200,22 @@ class AutoLearningStatusPublisher:
             )
             training_count_basis = "AUTO_TRAINING_QUALIFIED_COHORT"
         else:
-            inventory = TrainingInventory(
-                observations_path=str(self.observations_path),
-                outcomes_path=str(self.outcomes_path),
-                outcome_type=self.training_outcome_type,
-            ).scan(after_ms=0)
+            if self.evidence_ledger_path is not None:
+                inventory = Phase7EvidenceLedger(
+                    path=str(self.evidence_ledger_path),
+                    generation=self.evidence_generation or "PHASE7_LEDGER_V1",
+                    training_outcome_type=self.training_outcome_type,
+                    environment=self.environment,
+                    pending_retention_hours=(
+                        self.evidence_pending_retention_hours
+                    ),
+                ).inventory(after_ms=0)
+            else:
+                inventory = TrainingInventory(
+                    observations_path=str(self.observations_path),
+                    outcomes_path=str(self.outcomes_path),
+                    outcome_type=self.training_outcome_type,
+                ).scan(after_ms=0)
             training_rows = self._int_or_none(
                 challenger_record.get("training_rows")
             )
@@ -341,6 +365,18 @@ class AutoLearningStatusPublisher:
                 "inventory_issue_count": int(
                     inventory.get("issue_count", 0) or 0
                 ),
+                "source_mode": inventory.get("scan_mode"),
+                "ledger_generation": inventory.get("ledger_generation"),
+                "total_qualified_outcomes": int(
+                    inventory.get("total_qualified_outcomes", 0) or 0
+                ),
+                "pending_candidate_facts": int(
+                    inventory.get("pending_candidate_facts", 0) or 0
+                ),
+                "rejected_evidence": int(
+                    inventory.get("rejected_evidence", 0) or 0
+                ),
+                "rejection_reasons": inventory.get("rejection_reasons") or {},
                 "cohort_readiness": cohort_readiness,
             },
             "forward_comparison": forward,
@@ -410,6 +446,13 @@ class AutoLearningStatusPublisher:
                 training.get("required_independent_market_events"),
             ),
         ]
+        if training.get("source_mode"):
+            lines.extend([
+                f"Training source        : {training.get('source_mode')}",
+                f"Ledger generation      : {training.get('ledger_generation') or 'N/A'}",
+                f"Pending candidate facts: {int(training.get('pending_candidate_facts', 0) or 0):,}",
+                f"Rejected evidence      : {int(training.get('rejected_evidence', 0) or 0):,}",
+            ])
 
         cohort = training.get("cohort_readiness") or {}
         cohort_checks = cohort.get("checks") or {}
@@ -839,6 +882,9 @@ def build_configured_publisher() -> AutoLearningStatusPublisher:
         AUTOMATIC_PROMOTION_STATUS_PATH,
         CANDIDATE_OBSERVATIONS_PATH,
         CANDIDATE_OUTCOMES_PATH,
+        PHASE7_EVIDENCE_LEDGER_PATH,
+        PHASE7_EVIDENCE_GENERATION,
+        PHASE7_PENDING_FACT_RETENTION_HOURS,
         EXECUTION_MODE,
         MODEL_REGISTRY_PATH,
         PAPER_CANARY_STATUS_PATH,
@@ -862,4 +908,9 @@ def build_configured_publisher() -> AutoLearningStatusPublisher:
         paper_canary_status_path=PAPER_CANARY_STATUS_PATH,
         strategy_policy_path=STRATEGY_POLICY_RECOMMENDATION_PATH,
         source_stale_seconds=AUTO_LEARNING_STATUS_MAX_SOURCE_AGE_SECONDS,
+        evidence_ledger_path=PHASE7_EVIDENCE_LEDGER_PATH,
+        evidence_generation=PHASE7_EVIDENCE_GENERATION,
+        evidence_pending_retention_hours=(
+            PHASE7_PENDING_FACT_RETENTION_HOURS
+        ),
     )

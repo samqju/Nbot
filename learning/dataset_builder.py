@@ -385,6 +385,23 @@ class TrainingDatasetBuilder:
         key = TrainingDatasetBuilder._outcome_key(row)
         return json.dumps(key, sort_keys=True, default=str, separators=(",", ":"))
 
+    # Phase 7.5C reuses the exact historical validation/join contract at
+    # evidence-ingest time so qualification cannot drift from the dataset
+    # builder semantics.
+    def validate_observation_record(self, row: dict) -> str | None:
+        return self._validate_observation(row)
+
+    def validate_outcome_record(self, row: dict) -> str | None:
+        return self._validate_outcome(row)
+
+    def validate_contract_link(
+        self, observation: dict, outcome: dict
+    ) -> str | None:
+        return self._validate_contract_link(observation, outcome)
+
+    def join_records(self, observation: dict, outcome: dict) -> dict:
+        return self._join(observation, outcome)
+
     def _validate_observation(self, row: dict) -> str | None:
         if row.get("observation_type") != "STRATEGY_CANDIDATE":
             return "observation_type_invalid"

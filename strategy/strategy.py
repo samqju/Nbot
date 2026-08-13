@@ -11,6 +11,12 @@ import time
 from config import (
     CANDIDATE_OBSERVATIONS_PATH,
     CANDIDATE_OUTCOMES_PATH,
+    PHASE7_EVIDENCE_LEDGER_PATH,
+    PHASE7_EVIDENCE_GENERATION,
+    PHASE7_PENDING_FACT_RETENTION_HOURS,
+    LEARNING_RAW_SEGMENT_MAX_MB,
+    LEARNING_RAW_RETAIN_SEGMENTS,
+    AUTO_TRAINING_OUTCOME_TYPE,
     LEARNING_RUNTIME_STATE_PATH,
     SHADOW_MODEL_ARTIFACT_PATH,
     SHADOW_MODEL_PREDICTIONS_PATH,
@@ -144,17 +150,36 @@ class Strategy:
         self._candidate_generator = StructureCandidateGenerator(self)
         self._candidate_scorer = CandidateScorer()
         self._candidate_risk_planner = CandidateRiskPlanner()
+        raw_segment_max_bytes = int(
+            LEARNING_RAW_SEGMENT_MAX_MB * 1024 * 1024
+        )
         self._candidate_observer = CandidateObservationWriter(
             CANDIDATE_OBSERVATIONS_PATH,
             system_log=system_log,
             environment=TRADING_ENV,
             execution_mode=EXECUTION_MODE,
+            evidence_ledger_path=PHASE7_EVIDENCE_LEDGER_PATH,
+            evidence_generation=PHASE7_EVIDENCE_GENERATION,
+            training_outcome_type=AUTO_TRAINING_OUTCOME_TYPE,
+            pending_fact_retention_hours=(
+                PHASE7_PENDING_FACT_RETENTION_HOURS
+            ),
+            raw_segment_max_bytes=raw_segment_max_bytes,
+            raw_retain_segments=LEARNING_RAW_RETAIN_SEGMENTS,
         )
         self._candidate_outcome_writer = CandidateOutcomeWriter(
             CANDIDATE_OUTCOMES_PATH,
             system_log=system_log,
             environment=TRADING_ENV,
             execution_mode=EXECUTION_MODE,
+            evidence_ledger_path=PHASE7_EVIDENCE_LEDGER_PATH,
+            evidence_generation=PHASE7_EVIDENCE_GENERATION,
+            training_outcome_type=AUTO_TRAINING_OUTCOME_TYPE,
+            pending_fact_retention_hours=(
+                PHASE7_PENDING_FACT_RETENTION_HOURS
+            ),
+            raw_segment_max_bytes=raw_segment_max_bytes,
+            raw_retain_segments=LEARNING_RAW_RETAIN_SEGMENTS,
         )
         self._virtual_trade_engine = VirtualTradeEngine(
             system_log=system_log,

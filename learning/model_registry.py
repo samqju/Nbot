@@ -177,8 +177,13 @@ class ModelRegistry:
         self._write(document)
         return dict(record)
 
-    def latest_completed_cutoff_ms(self) -> int:
+    def latest_completed_cutoff_ms(
+        self, *, evidence_generation: str | None = None
+    ) -> int:
         document = self.load()
+        generation = (
+            str(evidence_generation or "").strip().upper() or None
+        )
         cutoffs = [
             int(record.get("data_cutoff_ms", 0) or 0)
             for record in document["models"].values()
@@ -189,6 +194,13 @@ class ModelRegistry:
                 "PAPER_CHAMPION",
                 "REJECTED",
             }
+            and (
+                generation is None
+                or str(record.get("evidence_generation") or "")
+                .strip()
+                .upper()
+                == generation
+            )
         ]
         return max(cutoffs, default=0)
 

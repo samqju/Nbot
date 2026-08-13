@@ -29,6 +29,9 @@ from config import (
     BASELINE_MODEL_RANDOM_STATE,
     CANDIDATE_OBSERVATIONS_PATH,
     CANDIDATE_OUTCOMES_PATH,
+    PHASE7_EVIDENCE_LEDGER_PATH,
+    PHASE7_EVIDENCE_GENERATION,
+    PHASE7_PENDING_FACT_RETENTION_HOURS,
     LEARNING_HISTORY_ROTATE_MIN_MB,
     LEARNING_HISTORY_ROTATION_ENABLED,
     ENSEMBLE_EXPERIMENT_MIN_EVAL_ROWS,
@@ -95,6 +98,11 @@ def build_orchestrator() -> AutomaticTrainingOrchestrator:
         min_train_market_events=RELIABLE_EVALUATION_MIN_MARKET_EVENTS,
         min_validation_market_events=RELIABLE_EVALUATION_MIN_HOLDOUT_EVENTS,
         min_test_market_events=RELIABLE_EVALUATION_MIN_HOLDOUT_EVENTS,
+        evidence_ledger_path=PHASE7_EVIDENCE_LEDGER_PATH,
+        evidence_generation=PHASE7_EVIDENCE_GENERATION,
+        evidence_pending_retention_hours=(
+            PHASE7_PENDING_FACT_RETENTION_HOURS
+        ),
     )
 
 

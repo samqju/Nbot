@@ -10,6 +10,7 @@ from pathlib import Path
 from communication.execution_outcome import ExecutionOutcome
 from communication.responses import OutcomeAcknowledgement
 from strategy.candidate_outcome import CandidateOutcomeWriter
+from utils.jsonl_history import iter_jsonl_lines, logical_jsonl_exists
 
 
 class LocalExecutionOutcomeReceiver:
@@ -44,27 +45,26 @@ class LocalExecutionOutcomeReceiver:
         self._load_existing_execution_evidence()
 
     def _load_existing_execution_evidence(self) -> None:
-        if not self.path.exists():
+        if not logical_jsonl_exists(self.path):
             return
         try:
-            with self.path.open("r", encoding="utf-8") as handle:
-                for raw_line in handle:
-                    line = raw_line.strip()
-                    if not line:
-                        continue
-                    try:
-                        row = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if str(row.get("outcome_type") or "").upper() != "EXECUTED_TRADE":
-                        continue
-                    candidate_id = row.get("candidate_observation_id")
-                    if candidate_id:
-                        self._seen_executed_candidate_ids.add(str(candidate_id))
-                    payload = row.get("payload") or {}
-                    outcome_id = payload.get("execution_outcome_id")
-                    if outcome_id:
-                        self._seen_outcome_ids.add(str(outcome_id))
+            for raw_line in iter_jsonl_lines(self.path):
+                line = raw_line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if str(row.get("outcome_type") or "").upper() != "EXECUTED_TRADE":
+                    continue
+                candidate_id = row.get("candidate_observation_id")
+                if candidate_id:
+                    self._seen_executed_candidate_ids.add(str(candidate_id))
+                payload = row.get("payload") or {}
+                outcome_id = payload.get("execution_outcome_id")
+                if outcome_id:
+                    self._seen_outcome_ids.add(str(outcome_id))
         except OSError:
             return
 

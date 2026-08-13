@@ -200,3 +200,110 @@ def rotate_jsonl_to_history(
         "bytes_reclaimed": max(0, size - compressed),
         "archive_path": str(gzip_target),
     }
+
+
+
+def rotate_jsonl_spool(
+    path: str | Path,
+    *,
+    segment_tag: str,
+    min_bytes: int = 0,
+) -> dict:
+    """Quickly rotate a disposable raw spool without synchronous gzip.
+
+    This is used on the realtime Observation path.  The rename is atomic and
+    short; bounded retention, rather than compression, keeps disk use small.
+    """
+    source = Path(path)
+    minimum = max(0, int(min_bytes))
+    safe_tag = _SEGMENT_SAFE.sub("-", str(segment_tag).strip()) or "segment"
+    archive = history_directory(source)
+    archive.mkdir(parents=True, exist_ok=True)
+    with jsonl_write_lock(source):
+        if not source.exists():
+            return {"rotated": False, "reason": "SOURCE_MISSING", "bytes": 0}
+        size = source.stat().st_size
+        if size <= 0:
+            return {"rotated": False, "reason": "SOURCE_EMPTY", "bytes": 0}
+        if size < minimum:
+            return {"rotated": False, "reason": "BELOW_MIN_BYTES", "bytes": size}
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        nonce = time.time_ns()
+        segment = archive / (
+            f"{source.stem}.{stamp}.{safe_tag}.{nonce}.jsonl"
+        )
+        os.replace(source, segment)
+        fd = os.open(source, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.close(fd)
+    return {
+        "rotated": True,
+        "source_bytes": size,
+        "archive_bytes": size,
+        "archive_path": str(segment),
+    }
+
+def prune_jsonl_history(path: str | Path, *, retain_segments: int) -> dict:
+    """Keep only the newest bounded number of archived JSONL segments."""
+    source = Path(path)
+    retain = max(0, int(retain_segments))
+    segments = _history_segments(source)
+    removed = []
+    reclaimed = 0
+    if len(segments) <= retain:
+        return {
+            "removed_segments": 0,
+            "bytes_reclaimed": 0,
+            "retained_segments": len(segments),
+        }
+    for segment in segments[: len(segments) - retain]:
+        try:
+            size = segment.stat().st_size
+        except FileNotFoundError:
+            continue
+        try:
+            segment.unlink()
+        except FileNotFoundError:
+            continue
+        removed.append(str(segment))
+        reclaimed += size
+    return {
+        "removed_segments": len(removed),
+        "bytes_reclaimed": reclaimed,
+        "retained_segments": min(retain, len(segments)),
+    }
+
+
+def append_jsonl_line_bounded(
+    path: str | Path,
+    line: str,
+    *,
+    max_bytes: int,
+    retain_segments: int,
+    segment_tag: str = "raw-spool",
+) -> dict:
+    """Append then rotate/prune a disposable raw spool at a fixed size.
+
+    The live file remains append-only.  Once it reaches ``max_bytes`` the
+    complete live file is atomically rotated into compressed history.  Only
+    the newest ``retain_segments`` archives are retained.  Consumers that need
+    long-lived learning evidence must use the Phase-7 evidence ledger instead.
+    """
+    append_jsonl_line(path, line)
+    source = Path(path)
+    limit = max(0, int(max_bytes))
+    result = {
+        "rotated": False,
+        "reason": "BELOW_MAX_BYTES",
+        "live_bytes": source.stat().st_size if source.exists() else 0,
+    }
+    if limit > 0 and result["live_bytes"] >= limit:
+        result = rotate_jsonl_spool(
+            source,
+            segment_tag=segment_tag,
+            min_bytes=limit,
+        )
+        result["prune"] = prune_jsonl_history(
+            source,
+            retain_segments=retain_segments,
+        )
+    return result

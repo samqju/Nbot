@@ -148,6 +148,27 @@ LIVE_CANDIDATE_OUTCOMES_PATH = os.getenv(
     "LIVE_CANDIDATE_OUTCOMES_PATH",
     "data/candidate_outcomes_live.jsonl",
 ).strip()
+TESTNET_PHASE7_EVIDENCE_LEDGER_PATH = os.getenv(
+    "TESTNET_PHASE7_EVIDENCE_LEDGER_PATH",
+    "data/phase7_evidence_ledger_testnet.sqlite3",
+).strip()
+LIVE_PHASE7_EVIDENCE_LEDGER_PATH = os.getenv(
+    "LIVE_PHASE7_EVIDENCE_LEDGER_PATH",
+    "data/phase7_evidence_ledger_live.sqlite3",
+).strip()
+PHASE7_EVIDENCE_GENERATION = os.getenv(
+    "PHASE7_EVIDENCE_GENERATION",
+    "PHASE7_LEDGER_V1",
+).strip().upper()
+PHASE7_PENDING_FACT_RETENTION_HOURS = float(
+    os.getenv("PHASE7_PENDING_FACT_RETENTION_HOURS", "24")
+)
+LEARNING_RAW_SEGMENT_MAX_MB = float(
+    os.getenv("LEARNING_RAW_SEGMENT_MAX_MB", "16")
+)
+LEARNING_RAW_RETAIN_SEGMENTS = int(
+    os.getenv("LEARNING_RAW_RETAIN_SEGMENTS", "4")
+)
 TESTNET_VIRTUAL_TRADES_PATH = os.getenv(
     "TESTNET_VIRTUAL_TRADES_PATH",
     "data/virtual_trades_testnet.jsonl",
@@ -186,6 +207,11 @@ _DEFAULT_CANDIDATE_OUTCOMES_PATH = (
     if TRADING_ENV == "TESTNET"
     else LIVE_CANDIDATE_OUTCOMES_PATH
 )
+_DEFAULT_PHASE7_EVIDENCE_LEDGER_PATH = (
+    TESTNET_PHASE7_EVIDENCE_LEDGER_PATH
+    if TRADING_ENV == "TESTNET"
+    else LIVE_PHASE7_EVIDENCE_LEDGER_PATH
+)
 _DEFAULT_VIRTUAL_TRADES_PATH = (
     TESTNET_VIRTUAL_TRADES_PATH
     if TRADING_ENV == "TESTNET"
@@ -208,6 +234,10 @@ CANDIDATE_OBSERVATIONS_PATH = os.getenv(
 CANDIDATE_OUTCOMES_PATH = os.getenv(
     "CANDIDATE_OUTCOMES_PATH",
     _DEFAULT_CANDIDATE_OUTCOMES_PATH,
+).strip()
+PHASE7_EVIDENCE_LEDGER_PATH = os.getenv(
+    "PHASE7_EVIDENCE_LEDGER_PATH",
+    _DEFAULT_PHASE7_EVIDENCE_LEDGER_PATH,
 ).strip()
 VIRTUAL_TRADES_PATH = os.getenv(
     "VIRTUAL_TRADES_PATH",
@@ -1643,6 +1673,26 @@ def _validate():
         raise ValueError(
             "CONFIG_INVALID: AUTO_TRAINING_OUTCOME_TYPE"
         )
+    if not PHASE7_EVIDENCE_LEDGER_PATH:
+        raise ValueError(
+            "CONFIG_INVALID: PHASE7_EVIDENCE_LEDGER_PATH"
+        )
+    if not PHASE7_EVIDENCE_GENERATION:
+        raise ValueError(
+            "CONFIG_INVALID: PHASE7_EVIDENCE_GENERATION"
+        )
+    if not (1.0 <= PHASE7_PENDING_FACT_RETENTION_HOURS <= 168.0):
+        raise ValueError(
+            "CONFIG_INVALID: PHASE7_PENDING_FACT_RETENTION_HOURS"
+        )
+    if not (1.0 <= LEARNING_RAW_SEGMENT_MAX_MB <= 256.0):
+        raise ValueError(
+            "CONFIG_INVALID: LEARNING_RAW_SEGMENT_MAX_MB"
+        )
+    if not (1 <= LEARNING_RAW_RETAIN_SEGMENTS <= 100):
+        raise ValueError(
+            "CONFIG_INVALID: LEARNING_RAW_RETAIN_SEGMENTS"
+        )
     if not AUTO_TRAINING_PARENT_MODEL_ID:
         raise ValueError(
             "CONFIG_INVALID: AUTO_TRAINING_PARENT_MODEL_ID"
@@ -1665,6 +1715,7 @@ def _validate():
     protected_learning_paths = {
         CANDIDATE_OBSERVATIONS_PATH,
         CANDIDATE_OUTCOMES_PATH,
+        PHASE7_EVIDENCE_LEDGER_PATH,
         TRAINING_DATASET_PATH,
         DATASET_INTEGRITY_REPORT_PATH,
         TRAIN_SPLIT_PATH,
@@ -1682,6 +1733,15 @@ def _validate():
     if auto_training_paths & protected_learning_paths:
         raise ValueError(
             "CONFIG_INVALID: AUTO_TRAINING_PROTECTED_PATH_CONFLICT"
+        )
+    if PHASE7_EVIDENCE_LEDGER_PATH in {
+        CANDIDATE_OBSERVATIONS_PATH,
+        CANDIDATE_OUTCOMES_PATH,
+        VIRTUAL_TRADES_PATH,
+        LEARNING_RUNTIME_STATE_PATH,
+    }:
+        raise ValueError(
+            "CONFIG_INVALID: PHASE7_EVIDENCE_LEDGER_PATH_CONFLICT"
         )
     if not (0.0 <= AUTO_TRAINING_MIN_ROC_AUC <= 1.0):
         raise ValueError(

@@ -13,11 +13,13 @@ from config import (
     VIRTUAL_LAB_MAX_ACTIVE,
     VIRTUAL_STRATEGY_VARIANT_ID,
     VIRTUAL_TRADES_PATH,
+    LEARNING_RAW_SEGMENT_MAX_MB,
+    LEARNING_RAW_RETAIN_SEGMENTS,
     VIRTUAL_TRADE_MAX_ACTIVE,
     VIRTUAL_TRADE_MAX_CANDLES,
     VIRTUAL_TRADE_TARGET_R,
 )
-from utils.jsonl_history import append_jsonl_line
+from utils.jsonl_history import append_jsonl_line_bounded
 
 from strategy.experiment_contract import (
     copy_experiment_context,
@@ -704,4 +706,10 @@ class VirtualTradeEngine:
     def _append(self, row):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         line = json.dumps(row, default=str)
-        append_jsonl_line(self.path, line)
+        append_jsonl_line_bounded(
+            self.path,
+            line,
+            max_bytes=int(LEARNING_RAW_SEGMENT_MAX_MB * 1024 * 1024),
+            retain_segments=LEARNING_RAW_RETAIN_SEGMENTS,
+            segment_tag="virtual-trades",
+        )
