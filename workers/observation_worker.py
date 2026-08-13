@@ -220,7 +220,12 @@ class ObservationWorker:
         if self._last_virtual_cost_bucket == bucket:
             return
 
-        end_ms = int(tick.timestamp)
+        # Phase 7.5C.2: funding evidence for a completed five-minute candle
+        # ends at the canonical candle boundary, not at the arrival timestamp
+        # of whichever symbol happened to deliver the first tick of the new
+        # bucket. All symbols closing the same candle therefore use one exact
+        # funding horizon.
+        end_ms = int(bucket) * 300000
         default_start_ms = max(0, end_ms - (4 * 60 * 60 * 1000))
         start_getter = getattr(
             self.strategy,

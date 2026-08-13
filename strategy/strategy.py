@@ -476,7 +476,12 @@ class Strategy:
                         candle["close"],
                     ),
                     persist=False,
-                    closed_at_ms=timestamp,
+                    # The candle that just completed ended exactly at the
+                    # start of the new five-minute bucket. Using per-symbol
+                    # websocket arrival time here can exceed the shared
+                    # funding snapshot by milliseconds/seconds and falsely
+                    # mark otherwise complete funding evidence as missing.
+                    closed_at_ms=int(bucket) * 300000,
                 )
                 if self._virtual_trade_engine.has_dirty_state():
                     self._mark_learning_runtime_dirty()

@@ -523,7 +523,7 @@ class Phase73CompleteCostEvidenceTests(unittest.TestCase):
         worker.virtual_cost_evidence_provider = Provider()
         worker.system_log = SilentLog()
         worker._last_virtual_cost_bucket = None
-        tick = SimpleNamespace(timestamp=1_700_000_400_000)
+        tick = SimpleNamespace(timestamp=1_700_000_401_234)
 
         worker._maybe_refresh_virtual_cost_evidence(tick)
         worker._maybe_refresh_virtual_cost_evidence(tick)
@@ -531,9 +531,11 @@ class Phase73CompleteCostEvidenceTests(unittest.TestCase):
         self.assertEqual(len(worker.virtual_cost_evidence_provider.calls), 1)
         call = worker.virtual_cost_evidence_provider.calls[0]
         self.assertEqual(set(call["symbols"]), {"BTCUSDT", "ETHUSDT"})
+        canonical_end = (tick.timestamp // 300000) * 300000
+        self.assertEqual(call["end_ms"], canonical_end)
         self.assertEqual(
             call["start_ms"],
-            tick.timestamp - (4 * 60 * 60 * 1000) - 300_000,
+            canonical_end - (4 * 60 * 60 * 1000) - 300_000,
         )
         self.assertEqual(len(worker.strategy.snapshots), 1)
 
@@ -570,6 +572,59 @@ class Phase73CompleteCostEvidenceTests(unittest.TestCase):
         self.assertEqual(worker.virtual_cost_evidence_provider.calls, 2)
         self.assertTrue(
             any("learning_cost_completeness=PARTIAL" in row for row in warnings)
+        )
+
+    def test_strategy_virtual_closure_uses_canonical_candle_boundary(self):
+        class VirtualEngine:
+            def __init__(self):
+                self.closed_at_ms = None
+
+            def on_candle(self, _symbol, _candle, *, persist, closed_at_ms):
+                self.closed_at_ms = int(closed_at_ms)
+                self.persist = persist
+                return []
+
+            def has_dirty_state(self):
+                return False
+
+        strategy = object.__new__(Strategy)
+        symbol = "BTCUSDT"
+        new_bucket = 5_666_668
+        boundary = new_bucket * 300000
+        arrival = boundary + 1_234
+        strategy.system_log = SilentLog()
+        strategy._universe = {symbol}
+        strategy._current_candle = {
+            symbol: {
+                "bucket": new_bucket - 1,
+                "open": 100.0,
+                "high": 101.0,
+                "low": 99.0,
+                "close": 100.5,
+            }
+        }
+        strategy._candle_history = {symbol: []}
+        strategy._last_ts = {}
+        strategy._latest_structure = {}
+        strategy._classifier = SimpleNamespace(fingerprint=lambda _rows: {})
+        strategy._record_candle_transition_integrity = lambda **_kwargs: None
+        strategy._update_simulations = lambda _symbol, persist: None
+        strategy._virtual_trade_engine = VirtualEngine()
+        strategy._decision_cycle_coordinator = SimpleNamespace(
+            mark_rollover=lambda **_kwargs: None
+        )
+        strategy.WARMUP_WINDOW = 50
+        strategy._warmed_up = False
+
+        Strategy.on_price(strategy, symbol, 101.0, arrival)
+
+        self.assertEqual(
+            strategy._virtual_trade_engine.closed_at_ms,
+            boundary,
+        )
+        self.assertNotEqual(
+            strategy._virtual_trade_engine.closed_at_ms,
+            arrival,
         )
 
     def test_training_inventory_excludes_partial_cost_labels(self):
