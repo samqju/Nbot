@@ -167,6 +167,9 @@ class AutoLearningStatusPublisher:
         training_thresholds = training.get("thresholds")
         if not isinstance(training_thresholds, dict):
             training_thresholds = {}
+        cohort_readiness = training.get("cohort_readiness")
+        if not isinstance(cohort_readiness, dict):
+            cohort_readiness = {}
 
         if (
             "new_completed_outcomes" in status_inventory
@@ -338,6 +341,7 @@ class AutoLearningStatusPublisher:
                 "inventory_issue_count": int(
                     inventory.get("issue_count", 0) or 0
                 ),
+                "cohort_readiness": cohort_readiness,
             },
             "forward_comparison": forward,
             "governance": {
@@ -405,6 +409,39 @@ class AutoLearningStatusPublisher:
                 training.get("independent_market_events"),
                 training.get("required_independent_market_events"),
             ),
+        ]
+
+        cohort = training.get("cohort_readiness") or {}
+        cohort_checks = cohort.get("checks") or {}
+        if cohort:
+            split_events = cohort.get("split_market_events") or {}
+            purging = cohort.get("purging") or {}
+            embargo = cohort.get("embargo") or {}
+
+            def _cohort_required(name):
+                check = cohort_checks.get(name) or {}
+                return int(check.get("required_min", 0) or 0)
+
+            lines.extend([
+                f"Cohort split status    : {cohort.get('split_status', 'UNKNOWN')}",
+                f"Cohort build mode      : {cohort.get('snapshot_build_mode', 'UNKNOWN')}",
+                "Cohort train events    : " + _progress(
+                    split_events.get("train"),
+                    _cohort_required("train_market_events"),
+                ),
+                "Cohort validation      : " + _progress(
+                    split_events.get("validation"),
+                    _cohort_required("validation_market_events"),
+                ),
+                "Cohort test events     : " + _progress(
+                    split_events.get("test"),
+                    _cohort_required("test_market_events"),
+                ),
+                f"Purged event groups    : {int(purging.get('candidate_groups_excluded', 0) or 0):,}",
+                f"Embargoed event groups : {int(embargo.get('candidate_groups_excluded', 0) or 0):,}",
+            ])
+
+        lines.extend([
             "",
             "FORWARD CHALLENGE (7.5)",
             f"Comparison status      : {forward.get('status', 'NOT_AVAILABLE')}",
@@ -433,7 +470,7 @@ class AutoLearningStatusPublisher:
             f"Paper activation       : {governance.get('paper_activation', 'UNKNOWN')}",
             f"Real-order execution   : {safety.get('real_order_execution', 'UNKNOWN')}",
             f"Next automatic action  : {governance.get('next_automatic_action', 'UNKNOWN')}",
-        ]
+        ])
         if warnings:
             lines.append(f"Source warnings        : {', '.join(warnings)}")
         return "\n".join(lines)

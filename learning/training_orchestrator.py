@@ -8,6 +8,7 @@ import json
 import os
 import pickle
 import shutil
+import sqlite3
 import tempfile
 import time
 from collections import Counter
@@ -121,103 +122,154 @@ class TrainingInventory:
         )
 
     def scan(self, *, after_ms: int = 0) -> dict:
-        observations = {}
+        """Count qualified evidence without materializing full histories."""
         issues = Counter()
-        for row in self._read_jsonl(self.observations_path, issues, "observation"):
-            candidate_id = str(
-                row.get("candidate_observation_id") or ""
-            ).strip()
-            if not candidate_id:
-                issues["observation_missing_id"] += 1
-                continue
-            if candidate_id in observations:
-                issues["duplicate_observation_id"] += 1
-                continue
-            observations[candidate_id] = row
+        completed_outcomes = 0
+        market_events = set()
+        latest_recorded_at_ms = int(after_ms)
 
-        material = []
-        seen = set()
-        for outcome in self._read_jsonl(self.outcomes_path, issues, "outcome"):
-            if str(outcome.get("outcome_type") or "").upper() != self.outcome_type:
-                continue
-            candidate_id = str(
-                outcome.get("candidate_observation_id") or ""
-            ).strip()
-            observation = observations.get(candidate_id)
-            if observation is None:
-                issues["orphan_outcome"] += 1
-                continue
-            recorded_at_ms = self._int(outcome.get("recorded_at_ms"))
-            if recorded_at_ms <= int(after_ms):
-                continue
-            contract_version = self._int(
-                observation.get("experiment_contract_version")
-            )
-            if contract_version != EXPERIMENT_CONTRACT_VERSION:
-                issues["non_current_contract_excluded"] += 1
-                continue
-            if (
-                self.require_complete_market_context
-                and not is_complete_market_context(
-                    market_context_from_row(observation)
+        workspace_parent = self.outcomes_path.parent
+        workspace_parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix=".training-inventory.",
+            dir=str(workspace_parent),
+        ) as temporary_directory:
+            database_path = Path(temporary_directory) / "inventory.sqlite3"
+            connection = sqlite3.connect(str(database_path))
+            try:
+                self._configure_sqlite(connection)
+                connection.executescript(
+                    """
+                    CREATE TABLE observations (
+                        candidate_id TEXT PRIMARY KEY,
+                        contract_version INTEGER NOT NULL,
+                        market_event_id TEXT NOT NULL,
+                        context_complete INTEGER NOT NULL
+                    );
+                    CREATE TABLE seen_material (
+                        material_key TEXT PRIMARY KEY
+                    );
+                    """
                 )
-            ):
-                issues["market_context_incomplete_excluded"] += 1
-                continue
-            if (
-                self.require_complete_cost_evidence
-                and not has_complete_cost_evidence(outcome)
-            ):
-                issues["cost_evidence_incomplete_excluded"] += 1
-                continue
-            market_event_id = str(
-                observation.get("market_event_id") or ""
-            ).strip()
-            if not market_event_id:
-                issues["market_event_id_missing"] += 1
-                continue
-            outcome_variant_id = str(
-                outcome.get("outcome_variant_id") or ""
-            ).strip()
-            key = (
-                candidate_id,
-                self.outcome_type,
-                outcome_variant_id,
-            )
-            if key in seen:
-                issues["duplicate_material_outcome"] += 1
-                continue
-            seen.add(key)
-            material.append(
-                {
-                    "candidate_observation_id": candidate_id,
-                    "market_event_id": market_event_id,
-                    "recorded_at_ms": recorded_at_ms,
-                    "outcome_variant_id": outcome_variant_id,
-                }
-            )
+
+                for row in self._iter_jsonl(
+                    self.observations_path, issues, "observation"
+                ):
+                    candidate_id = str(
+                        row.get("candidate_observation_id") or ""
+                    ).strip()
+                    if not candidate_id:
+                        issues["observation_missing_id"] += 1
+                        continue
+                    exists = connection.execute(
+                        "SELECT 1 FROM observations WHERE candidate_id = ?",
+                        (candidate_id,),
+                    ).fetchone()
+                    if exists is not None:
+                        # Preserve the historical inventory contract: first
+                        # observation wins and later duplicates are warnings.
+                        issues["duplicate_observation_id"] += 1
+                        continue
+                    connection.execute(
+                        "INSERT INTO observations("
+                        "candidate_id, contract_version, market_event_id, "
+                        "context_complete"
+                        ") VALUES (?, ?, ?, ?)",
+                        (
+                            candidate_id,
+                            self._int(row.get("experiment_contract_version")),
+                            str(row.get("market_event_id") or "").strip(),
+                            1 if is_complete_market_context(
+                                market_context_from_row(row)
+                            ) else 0,
+                        ),
+                    )
+                connection.commit()
+
+                for outcome in self._iter_jsonl(
+                    self.outcomes_path, issues, "outcome"
+                ):
+                    if (
+                        str(outcome.get("outcome_type") or "").upper()
+                        != self.outcome_type
+                    ):
+                        continue
+                    candidate_id = str(
+                        outcome.get("candidate_observation_id") or ""
+                    ).strip()
+                    observation = connection.execute(
+                        "SELECT contract_version, market_event_id, "
+                        "context_complete FROM observations "
+                        "WHERE candidate_id = ?",
+                        (candidate_id,),
+                    ).fetchone()
+                    if observation is None:
+                        issues["orphan_outcome"] += 1
+                        continue
+                    recorded_at_ms = self._int(outcome.get("recorded_at_ms"))
+                    if recorded_at_ms <= int(after_ms):
+                        continue
+                    contract_version, market_event_id, context_complete = (
+                        observation
+                    )
+                    if contract_version != EXPERIMENT_CONTRACT_VERSION:
+                        issues["non_current_contract_excluded"] += 1
+                        continue
+                    if (
+                        self.require_complete_market_context
+                        and not bool(context_complete)
+                    ):
+                        issues["market_context_incomplete_excluded"] += 1
+                        continue
+                    if (
+                        self.require_complete_cost_evidence
+                        and not has_complete_cost_evidence(outcome)
+                    ):
+                        issues["cost_evidence_incomplete_excluded"] += 1
+                        continue
+                    market_event_id = str(market_event_id or "").strip()
+                    if not market_event_id:
+                        issues["market_event_id_missing"] += 1
+                        continue
+                    outcome_variant_id = str(
+                        outcome.get("outcome_variant_id") or ""
+                    ).strip()
+                    material_key = json.dumps(
+                        (candidate_id, self.outcome_type, outcome_variant_id),
+                        separators=(",", ":"),
+                    )
+                    try:
+                        connection.execute(
+                            "INSERT INTO seen_material(material_key) VALUES (?)",
+                            (material_key,),
+                        )
+                    except sqlite3.IntegrityError:
+                        issues["duplicate_material_outcome"] += 1
+                        continue
+                    completed_outcomes += 1
+                    market_events.add(market_event_id)
+                    latest_recorded_at_ms = max(
+                        latest_recorded_at_ms, recorded_at_ms
+                    )
+            finally:
+                connection.close()
 
         return {
             "outcome_type": self.outcome_type,
             "after_ms": int(after_ms),
-            "new_completed_outcomes": len(material),
-            "new_independent_market_events": len(
-                {row["market_event_id"] for row in material}
-            ),
-            "latest_recorded_at_ms": max(
-                (row["recorded_at_ms"] for row in material),
-                default=int(after_ms),
-            ),
+            "new_completed_outcomes": completed_outcomes,
+            "new_independent_market_events": len(market_events),
+            "latest_recorded_at_ms": latest_recorded_at_ms,
             "issues": dict(sorted(issues.items())),
             "issue_count": sum(issues.values()),
+            "scan_mode": "DISK_BACKED_STREAMING_SQLITE",
         }
 
     @staticmethod
-    def _read_jsonl(path: Path, issues: Counter, prefix: str) -> list[dict]:
+    def _iter_jsonl(path: Path, issues: Counter, prefix: str):
         if not logical_jsonl_exists(path):
             issues[f"{prefix}_file_missing"] += 1
-            return []
-        rows = []
+            return
         for line in iter_jsonl_lines(path):
             try:
                 row = json.loads(line)
@@ -225,10 +277,16 @@ class TrainingInventory:
                 issues[f"{prefix}_malformed_json"] += 1
                 continue
             if isinstance(row, dict):
-                rows.append(row)
+                yield row
             else:
                 issues[f"{prefix}_row_not_object"] += 1
-        return rows
+
+    @staticmethod
+    def _configure_sqlite(connection: sqlite3.Connection) -> None:
+        connection.execute("PRAGMA journal_mode=OFF")
+        connection.execute("PRAGMA synchronous=OFF")
+        connection.execute("PRAGMA temp_store=FILE")
+        connection.execute("PRAGMA cache_size=-8192")
 
     @staticmethod
     def _int(value: Any) -> int:
@@ -483,7 +541,7 @@ class AutomaticTrainingOrchestrator:
             raise
 
     def _create_snapshot(self) -> dict:
-        """Freeze the exact eligible training dataset without raw-data copies."""
+        """Freeze the exact eligible dataset with bounded Python memory."""
         self.snapshot_root.mkdir(parents=True, exist_ok=True)
         staging = Path(
             tempfile.mkdtemp(
@@ -502,50 +560,87 @@ class AutomaticTrainingOrchestrator:
         if integrity["status"] == "EMPTY":
             raise AutoTrainingError("AUTO_TRAINING_DATASET_EMPTY")
 
-        eligible_rows = []
-        for line in full_dataset_path.read_text().splitlines():
-            if not line.strip():
-                continue
-            row = json.loads(line)
-            if row.get("outcome_type") != self.outcome_type:
-                continue
-            if (
-                int(row.get("experiment_contract_version", 0) or 0)
-                != EXPERIMENT_CONTRACT_VERSION
-            ):
-                continue
-            if not str(row.get("market_event_id") or "").strip():
-                continue
-            if row.get("label_profitable") not in {True, False}:
-                continue
-            if not is_complete_market_context(
-                market_context_from_row(row)
-            ):
-                continue
-            if not has_complete_cost_evidence(row):
-                continue
-            eligible_rows.append(row)
-        eligible_rows.sort(
-            key=lambda row: (
-                int(row["observed_at_ms"]),
-                int(row["recorded_at_ms"]),
-                row["candidate_observation_id"],
-            )
-        )
-        if len(eligible_rows) < self.min_new_outcomes:
+        eligible_path = staging / "training_dataset.jsonl"
+        eligible_count = 0
+        data_cutoff_ms = 0
+        market_events = set()
+        schema_sets = {
+            "experiment_contract_versions": set(),
+            "strategy_versions": set(),
+            "strategy_variant_ids": set(),
+            "outcome_variant_ids": set(),
+            "strategy_lab_catalog_versions": set(),
+        }
+
+        with full_dataset_path.open("r") as source, eligible_path.open(
+            "w"
+        ) as destination:
+            for line in source:
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                if row.get("outcome_type") != self.outcome_type:
+                    continue
+                if (
+                    int(row.get("experiment_contract_version", 0) or 0)
+                    != EXPERIMENT_CONTRACT_VERSION
+                ):
+                    continue
+                market_event_id = str(
+                    row.get("market_event_id") or ""
+                ).strip()
+                if not market_event_id:
+                    continue
+                if row.get("label_profitable") not in {True, False}:
+                    continue
+                if not is_complete_market_context(
+                    market_context_from_row(row)
+                ):
+                    continue
+                if not has_complete_cost_evidence(row):
+                    continue
+
+                # TrainingDatasetBuilder already emits deterministic
+                # chronological order, so filtering preserves the old sorted
+                # snapshot contract without keeping every row in memory.
+                destination.write(
+                    json.dumps(row, sort_keys=True) + "\n"
+                )
+                eligible_count += 1
+                market_events.add(market_event_id)
+                data_cutoff_ms = max(
+                    data_cutoff_ms, int(row["recorded_at_ms"])
+                )
+                schema_sets["experiment_contract_versions"].add(
+                    int(row["experiment_contract_version"])
+                )
+                schema_sets["strategy_versions"].add(
+                    str(row.get("strategy_version") or "UNKNOWN")
+                )
+                schema_sets["strategy_variant_ids"].add(
+                    str(row.get("strategy_variant_id") or "UNKNOWN")
+                )
+                schema_sets["outcome_variant_ids"].add(
+                    str(row.get("outcome_variant_id") or "UNKNOWN")
+                )
+                schema_sets["strategy_lab_catalog_versions"].add(
+                    str(
+                        row.get("strategy_lab_catalog_version")
+                        or "NOT_LAB_RECORD"
+                    )
+                )
+            destination.flush()
+            os.fsync(destination.fileno())
+
+        if eligible_count < self.min_new_outcomes:
             raise AutoTrainingError(
                 "AUTO_TRAINING_ELIGIBLE_DATA_BELOW_TRIGGER"
             )
-        market_events = {
-            row["market_event_id"] for row in eligible_rows
-        }
         if len(market_events) < self.min_new_market_events:
             raise AutoTrainingError(
                 "AUTO_TRAINING_ELIGIBLE_EVENTS_BELOW_TRIGGER"
             )
 
-        eligible_path = staging / "training_dataset.jsonl"
-        self._write_jsonl(eligible_path, eligible_rows)
         metadata = {
             "schema_version": AUTO_TRAINING_SCHEMA_VERSION,
             "environment": self.environment,
@@ -556,28 +651,32 @@ class AutomaticTrainingOrchestrator:
             "context_feature_names": list(CONTEXT_FEATURE_NAMES),
             "requires_complete_market_context": True,
             "requires_complete_cost_evidence": True,
-            "rows": len(eligible_rows),
+            "rows": eligible_count,
             "independent_market_events": len(market_events),
-            "data_cutoff_ms": max(
-                int(row["recorded_at_ms"]) for row in eligible_rows
-            ),
+            "data_cutoff_ms": data_cutoff_ms,
             "source_mode": "LOGICAL_HISTORY_PLUS_LIVE",
             "observations_path": str(self.observations_path),
             "outcomes_path": str(self.outcomes_path),
         }
-        fingerprint = self._fingerprint(
-            eligible_path.read_bytes(), metadata
-        )
+        fingerprint = self._fingerprint_file(eligible_path, metadata)
         metadata["dataset_fingerprint"] = fingerprint
-        metadata["strategy_schema"] = self._strategy_schema(eligible_rows)
+        metadata["strategy_schema"] = {
+            key: sorted(values) for key, values in schema_sets.items()
+        }
+        metadata["snapshot_build_mode"] = "STREAMING_BOUNDED_MEMORY"
         self._write_json(staging / "snapshot_manifest.json", metadata)
 
-        # The all-outcomes join is only a build workspace. Keeping it beside the
-        # filtered training dataset duplicated hundreds of MB per challenger.
+        # The all-outcomes join is only a build workspace. Keeping it beside
+        # the filtered training dataset would duplicate large histories.
         full_dataset_path.unlink(missing_ok=True)
         integrity["output"]["dataset_path"] = None
         integrity["output"]["full_dataset_persisted"] = False
-        integrity["output"]["eligible_dataset_path"] = "training_dataset.jsonl"
+        integrity["output"]["eligible_dataset_path"] = (
+            "training_dataset.jsonl"
+        )
+        integrity["output"]["snapshot_filter_mode"] = (
+            "STREAMING_BOUNDED_MEMORY"
+        )
         self._write_json(integrity_path, integrity)
 
         snapshot_id = (
@@ -595,10 +694,11 @@ class AutomaticTrainingOrchestrator:
             "snapshot_path": str(final_path),
             "dataset_path": str(final_path / "training_dataset.jsonl"),
             "dataset_fingerprint": fingerprint,
-            "rows": len(eligible_rows),
+            "rows": eligible_count,
             "independent_event_count": len(market_events),
             "data_cutoff_ms": metadata["data_cutoff_ms"],
             "strategy_schema": metadata["strategy_schema"],
+            "build_mode": "STREAMING_BOUNDED_MEMORY",
         }
 
     def _cohort_readiness(self, snapshot: dict) -> dict:
@@ -666,6 +766,14 @@ class AutomaticTrainingOrchestrator:
                 "grouping_policy": report["configuration"][
                     "grouping_policy"
                 ],
+                "snapshot_build_mode": snapshot.get(
+                    "build_mode", "UNKNOWN"
+                ),
+                "input": report.get("input") or {},
+                "purging": report.get("purging") or {},
+                "embargo": report.get("embargo") or {},
+                "configuration": report.get("configuration") or {},
+                "issues": report.get("issues") or {},
             }
         finally:
             self._remove_tree(staging)
@@ -1099,6 +1207,20 @@ class AutomaticTrainingOrchestrator:
             f"CHALLENGER_{stamp}{milliseconds}Z_"
             f"{fingerprint[:8].upper()}"
         )
+
+    @staticmethod
+    def _fingerprint_file(dataset_path: Path, metadata: dict) -> str:
+        digest = hashlib.sha256()
+        with Path(dataset_path).open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        digest.update(b"\n--PHASE5.8-METADATA--\n")
+        digest.update(
+            json.dumps(
+                metadata, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        )
+        return digest.hexdigest()
 
     @staticmethod
     def _fingerprint(dataset_bytes: bytes, metadata: dict) -> str:
