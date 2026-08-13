@@ -13,7 +13,6 @@ import numpy as np
 from learning.context_features import (
     CONTEXT_FEATURE_NAMES,
     CONTEXT_FEATURE_SCHEMA_VERSION,
-    context_feature_mapping,
     context_feature_vector,
     is_complete_market_context,
     market_context_from_row,
@@ -57,11 +56,11 @@ class ChallengerArtifactEvaluator:
 
     def evaluate(self) -> dict:
         artifact = self._load_artifact()
-        validation = self._filter_rows(
-            self._read_rows(self.validation_path), artifact
+        validation_matrix, validation_labels = self._load_matrix(
+            self.validation_path, artifact
         )
-        test = self._filter_rows(
-            self._read_rows(self.test_path), artifact
+        test_matrix, test_labels = self._load_matrix(
+            self.test_path, artifact
         )
         base = {
             "schema_version": 1,
@@ -70,12 +69,13 @@ class ChallengerArtifactEvaluator:
             "artifact_kind": self._artifact_kind(artifact),
             "outcome_type": artifact.get("outcome_type"),
             "runtime_activation": "DISABLED",
+            "matrix_build_mode": "STREAMING_COMPACT_NUMPY",
             "rows": {
-                "validation": len(validation),
-                "test": len(test),
+                "validation": int(len(validation_labels)),
+                "test": int(len(test_labels)),
             },
         }
-        if not validation or not test:
+        if not len(validation_labels) or not len(test_labels):
             return {
                 **base,
                 "status": "INSUFFICIENT_DATA",
@@ -84,15 +84,17 @@ class ChallengerArtifactEvaluator:
                 "drift": {},
             }
 
-        validation_labels, validation_probabilities = self._predict(
-            artifact, validation
+        validation_probabilities = self._predict(
+            artifact, validation_matrix
         )
-        test_labels, test_probabilities = self._predict(artifact, test)
+        test_probabilities = self._predict(artifact, test_matrix)
         validation_bins = self._calibration(
             validation_labels, validation_probabilities
         )
         test_bins = self._calibration(test_labels, test_probabilities)
-        drift = self._drift(artifact, validation, test)
+        drift = self._drift(
+            artifact, validation_matrix, test_matrix
+        )
         return {
             **base,
             "status": "EVALUATED",
@@ -100,7 +102,9 @@ class ChallengerArtifactEvaluator:
                 "validation": self._metrics(
                     validation_labels, validation_probabilities
                 ),
-                "test": self._metrics(test_labels, test_probabilities),
+                "test": self._metrics(
+                    test_labels, test_probabilities
+                ),
             },
             "calibration": {
                 "validation": validation_bins,
@@ -181,81 +185,94 @@ class ChallengerArtifactEvaluator:
             "CHALLENGER_ARTIFACT_KIND_UNSUPPORTED"
         )
 
-    @staticmethod
-    def _read_rows(path: Path) -> list[dict]:
-        if not path.exists():
-            return []
-        rows = []
-        for raw_line in path.read_text().splitlines():
-            if not raw_line.strip():
-                continue
-            try:
-                row = json.loads(raw_line)
-            except json.JSONDecodeError as exc:
+    def _load_matrix(self, path: Path, artifact: dict):
+        count = sum(1 for _ in self._iter_filtered(path, artifact))
+        width = (
+            len(artifact["base_feature_names"])
+            + 3
+            + len(artifact["pattern_categories"])
+            + (
+                len(artifact.get("context_feature_names") or CONTEXT_FEATURE_NAMES)
+                if artifact.get("requires_complete_market_context")
+                else 0
+            )
+        )
+        matrix = np.empty((count, width), dtype=float)
+        labels = np.empty(count, dtype=int)
+        index = 0
+        for row in self._iter_filtered(path, artifact):
+            if index >= count:
                 raise ChallengerEvaluationError(
-                    f"CHALLENGER_SPLIT_JSON_INVALID | path={path}"
-                ) from exc
-            if isinstance(row, dict):
-                rows.append(row)
-        return rows
+                    "CHALLENGER_SPLIT_CHANGED_DURING_LOAD"
+                )
+            matrix[index, :] = self._vector(artifact, row)
+            labels[index] = int(row["label_profitable"])
+            index += 1
+        if index != count:
+            raise ChallengerEvaluationError(
+                "CHALLENGER_SPLIT_CHANGED_DURING_LOAD"
+            )
+        return matrix, labels
 
-    @staticmethod
-    def _filter_rows(rows: list[dict], artifact: dict) -> list[dict]:
+    def _iter_filtered(self, path: Path, artifact: dict):
+        if not path.exists():
+            return
         outcome_type = artifact["outcome_type"]
         feature_names = tuple(artifact["base_feature_names"])
-        filtered = []
         seen = set()
-        for row in rows:
-            if row.get("outcome_type") != outcome_type:
-                continue
-            candidate_id = str(
-                row.get("candidate_observation_id") or ""
-            ).strip()
-            if not candidate_id or candidate_id in seen:
-                continue
-            if row.get("label_profitable") not in {True, False}:
-                continue
-            if row.get("direction") not in {"LONG", "SHORT"}:
-                continue
-            if not str(row.get("pattern") or "").strip():
-                continue
-            features = row.get("features")
-            if not isinstance(features, dict):
-                continue
-            try:
-                values = [float(features[name]) for name in feature_names]
-                values.extend(
-                    [
+        with path.open("r") as handle:
+            for raw_line in handle:
+                if not raw_line.strip():
+                    continue
+                try:
+                    row = json.loads(raw_line)
+                except json.JSONDecodeError as exc:
+                    raise ChallengerEvaluationError(
+                        f"CHALLENGER_SPLIT_JSON_INVALID | path={path}"
+                    ) from exc
+                if not isinstance(row, dict):
+                    continue
+                if row.get("outcome_type") != outcome_type:
+                    continue
+                candidate_id = str(
+                    row.get("candidate_observation_id") or ""
+                ).strip()
+                if not candidate_id or candidate_id in seen:
+                    continue
+                if row.get("label_profitable") not in {True, False}:
+                    continue
+                if row.get("direction") not in {"LONG", "SHORT"}:
+                    continue
+                if not str(row.get("pattern") or "").strip():
+                    continue
+                features = row.get("features")
+                if not isinstance(features, dict):
+                    continue
+                try:
+                    values = [
+                        float(features[name])
+                        for name in feature_names
+                    ]
+                    values.extend([
                         float(row.get("rule_score", 0)),
                         float(row.get("final_score", 0)),
-                    ]
-                )
-            except (KeyError, TypeError, ValueError):
-                continue
-            if not all(math.isfinite(value) for value in values):
-                continue
-            if artifact.get("requires_complete_market_context") and not is_complete_market_context(
-                market_context_from_row(row)
-            ):
-                continue
-            seen.add(candidate_id)
-            filtered.append(row)
-        return filtered
+                    ])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if not all(math.isfinite(value) for value in values):
+                    continue
+                if artifact.get("requires_complete_market_context") and not is_complete_market_context(
+                    market_context_from_row(row)
+                ):
+                    continue
+                seen.add(candidate_id)
+                yield row
 
-    def _predict(self, artifact: dict, rows: list[dict]):
-        matrix = np.asarray(
-            [self._vector(artifact, row) for row in rows],
-            dtype=float,
-        )
-        labels = np.asarray(
-            [int(row["label_profitable"]) for row in rows],
-            dtype=int,
-        )
+    def _predict(self, artifact: dict, matrix):
         if self._artifact_kind(artifact) == "BASELINE":
-            probabilities = artifact["model"].predict_proba(
+            return artifact["model"].predict_proba(
                 artifact["scaler"].transform(matrix)
             )[:, 1]
-            return labels, probabilities
 
         model_probabilities = {}
         for name, model in artifact["models"].items():
@@ -284,7 +301,7 @@ class ChallengerArtifactEvaluator:
             raise ChallengerEvaluationError(
                 "CHALLENGER_WINNER_INVALID"
             )
-        return labels, np.asarray(probabilities, dtype=float)
+        return np.asarray(probabilities, dtype=float)
 
     @staticmethod
     def _vector(artifact: dict, row: dict) -> list[float]:
@@ -379,19 +396,35 @@ class ChallengerArtifactEvaluator:
     def _drift(
         self,
         artifact: dict,
-        validation: list[dict],
-        test: list[dict],
+        validation_matrix,
+        test_matrix,
     ) -> dict:
-        names = list(artifact["base_feature_names"]) + [
-            "rule_score",
-            "final_score",
-        ]
+        base_names = list(artifact["base_feature_names"])
+        patterns = tuple(artifact["pattern_categories"])
+        index_by_name = {
+            name: index for index, name in enumerate(base_names)
+        }
+        index_by_name["rule_score"] = len(base_names)
+        index_by_name["final_score"] = len(base_names) + 1
         if artifact.get("requires_complete_market_context"):
-            names.extend(artifact.get("context_feature_names") or CONTEXT_FEATURE_NAMES)
+            context_names = tuple(
+                artifact.get("context_feature_names")
+                or CONTEXT_FEATURE_NAMES
+            )
+            context_start = len(base_names) + 3 + len(patterns)
+            for offset, name in enumerate(context_names):
+                index_by_name[name] = context_start + offset
+        names = base_names + ["rule_score", "final_score"]
+        if artifact.get("requires_complete_market_context"):
+            names.extend(
+                artifact.get("context_feature_names")
+                or CONTEXT_FEATURE_NAMES
+            )
         report = {}
         for name in names:
-            expected = self._column(validation, name)
-            actual = self._column(test, name)
+            column = index_by_name[name]
+            expected = validation_matrix[:, column]
+            actual = test_matrix[:, column]
             psi = self._psi(expected, actual)
             report[name] = {
                 "psi": psi,
@@ -406,24 +439,6 @@ class ChallengerArtifactEvaluator:
                 "test_mean": float(np.mean(actual)),
             }
         return report
-
-    @staticmethod
-    def _column(rows: list[dict], name: str):
-        if name in {"rule_score", "final_score"}:
-            return np.asarray(
-                [float(row.get(name, 0)) for row in rows], dtype=float
-            )
-        if name in CONTEXT_FEATURE_NAMES:
-            return np.asarray(
-                [
-                    context_feature_mapping(market_context_from_row(row))[name]
-                    for row in rows
-                ],
-                dtype=float,
-            )
-        return np.asarray(
-            [float(row["features"][name]) for row in rows], dtype=float
-        )
 
     def _psi(self, expected, actual) -> float:
         quantiles = np.linspace(0.0, 1.0, self.drift_bins + 1)

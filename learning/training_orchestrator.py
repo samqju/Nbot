@@ -769,6 +769,9 @@ class AutomaticTrainingOrchestrator:
                 "snapshot_build_mode": snapshot.get(
                     "build_mode", "UNKNOWN"
                 ),
+                "split_build_mode": (
+                    report.get("configuration") or {}
+                ).get("build_mode", "UNKNOWN"),
                 "input": report.get("input") or {},
                 "purging": report.get("purging") or {},
                 "embargo": report.get("embargo") or {},
@@ -825,7 +828,7 @@ class AutomaticTrainingOrchestrator:
                 f"events={event_counts} | required={event_thresholds}"
             )
 
-        test_sha256_before = hashlib.sha256(test_path.read_bytes()).hexdigest()
+        test_sha256_before = self._sha256_file(test_path)
 
         baseline_artifact = model_dir / "baseline.pkl"
         baseline_report_path = model_dir / "baseline_report.json"
@@ -913,7 +916,7 @@ class AutomaticTrainingOrchestrator:
         if evaluation.get("status") != "EVALUATED":
             raise AutoTrainingError("AUTO_TRAINING_SELECTED_MODEL_EVALUATION_FAILED")
 
-        test_sha256_after = hashlib.sha256(test_path.read_bytes()).hexdigest()
+        test_sha256_after = self._sha256_file(test_path)
         if test_sha256_after != test_sha256_before:
             raise AutoTrainingError("AUTO_TRAINING_TEST_SET_MUTATED")
 
@@ -1207,6 +1210,14 @@ class AutomaticTrainingOrchestrator:
             f"CHALLENGER_{stamp}{milliseconds}Z_"
             f"{fingerprint[:8].upper()}"
         )
+
+    @staticmethod
+    def _sha256_file(path: Path) -> str:
+        digest = hashlib.sha256()
+        with Path(path).open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
 
     @staticmethod
     def _fingerprint_file(dataset_path: Path, metadata: dict) -> str:

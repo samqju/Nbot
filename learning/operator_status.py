@@ -425,6 +425,7 @@ class AutoLearningStatusPublisher:
             lines.extend([
                 f"Cohort split status    : {cohort.get('split_status', 'UNKNOWN')}",
                 f"Cohort build mode      : {cohort.get('snapshot_build_mode', 'UNKNOWN')}",
+                f"Cohort split mode      : {cohort.get('split_build_mode', 'UNKNOWN')}",
                 "Cohort train events    : " + _progress(
                     split_events.get("train"),
                     _cohort_required("train_market_events"),

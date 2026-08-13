@@ -49,6 +49,7 @@ FEATURE_NAMES = (
     "directional_consistency",
 )
 ARTIFACT_SCHEMA_VERSION = 1
+MATRIX_BUILD_MODE = "STREAMING_COMPACT_NUMPY"
 
 
 class OfflineEnsembleExperiment:
@@ -89,36 +90,35 @@ class OfflineEnsembleExperiment:
 
     def run(self):
         issues = Counter()
-        raw = {
-            "train": self._read(self.train_path, "train", issues),
-            "validation": self._read(
-                self.validation_path,
-                "validation",
-                issues,
-            ),
+        paths = {
+            "train": self.train_path,
+            "validation": self.validation_path,
         }
         if self.evaluate_test:
             if self.test_path is None:
                 raise ValueError("ENSEMBLE_TEST_PATH_REQUIRED")
-            raw["test"] = self._read(self.test_path, "test", issues)
-        filtered = {
-            name: self._filter(rows, name, issues)
-            for name, rows in raw.items()
+            paths["test"] = self.test_path
+
+        summaries = {
+            name: self._scan(
+                path, name, issues, collect_patterns=(name == "train")
+            )
+            for name, path in paths.items()
         }
 
         status = "EXPERIMENT_COMPLETE"
         if (
-            len(filtered["train"]) < self.min_train_rows
-            or len(filtered["validation"]) < self.min_eval_rows
+            summaries["train"]["count"] < self.min_train_rows
+            or summaries["validation"]["count"] < self.min_eval_rows
             or (
                 self.evaluate_test
-                and len(filtered["test"]) < self.min_eval_rows
+                and summaries["test"]["count"] < self.min_eval_rows
             )
         ):
             status = "INSUFFICIENT_DATA"
         elif any(
-            len({row["label_profitable"] for row in rows}) < 2
-            for rows in filtered.values()
+            len(summary["labels"]) < 2
+            for summary in summaries.values()
         ):
             status = "INSUFFICIENT_CLASS_DIVERSITY"
 
@@ -128,22 +128,20 @@ class OfflineEnsembleExperiment:
             "status": status,
             "outcome_type": self.outcome_type,
             "rows": {
-                name: len(rows)
-                for name, rows in filtered.items()
+                name: summary["count"]
+                for name, summary in summaries.items()
             },
             "issues": dict(sorted(issues.items())),
             "issue_count": sum(issues.values()),
             "artifact_path": str(self.artifact_path),
             "runtime_activation": "DISABLED",
+            "matrix_build_mode": MATRIX_BUILD_MODE,
         }
         if status != "EXPERIMENT_COMPLETE":
             self._write_json(self.report_path, report)
             return report
 
-        patterns = tuple(sorted({
-            row["pattern"]
-            for row in filtered["train"]
-        }))
+        patterns = tuple(sorted(summaries["train"]["patterns"]))
         vector_columns = (
             tuple(FEATURE_NAMES)
             + (
@@ -155,20 +153,12 @@ class OfflineEnsembleExperiment:
             + (CONTEXT_FEATURE_NAMES if self.context_aware else ())
         )
 
-        matrices = {
-            name: np.asarray(
-                [self._vector(row, patterns, self.context_aware) for row in rows],
-                dtype=float,
+        matrices = {}
+        labels = {}
+        for name, path in paths.items():
+            matrices[name], labels[name] = self._matrix(
+                path, name, patterns, summaries[name]["count"]
             )
-            for name, rows in filtered.items()
-        }
-        labels = {
-            name: np.asarray(
-                [int(row["label_profitable"]) for row in rows],
-                dtype=int,
-            )
-            for name, rows in filtered.items()
-        }
 
         scaler = StandardScaler()
         scaled = {
@@ -307,7 +297,7 @@ class OfflineEnsembleExperiment:
             ),
             "test_metrics": winner_test_metrics,
             "test_evaluated_during_training": self.evaluate_test,
-            "training_rows": len(filtered["train"]),
+            "training_rows": summaries["train"]["count"],
             "runtime_activation": "DISABLED",
             "context_feature_schema_version": (
                 CONTEXT_FEATURE_SCHEMA_VERSION if self.context_aware else None
@@ -316,6 +306,7 @@ class OfflineEnsembleExperiment:
                 CONTEXT_FEATURE_NAMES if self.context_aware else ()
             ),
             "requires_complete_market_context": self.context_aware,
+            "matrix_build_mode": MATRIX_BUILD_MODE,
         }
         self._write_pickle(self.artifact_path, artifact)
 
@@ -497,79 +488,117 @@ class OfflineEnsembleExperiment:
             vector += context_feature_vector(market_context_from_row(row))
         return vector
 
-    def _filter(self, rows, split, issues):
-        filtered = []
-        seen = set()
-        for row in rows:
-            if row.get("outcome_type") != self.outcome_type:
-                continue
-            candidate_id = str(
-                row.get("candidate_observation_id") or ""
-            ).strip()
-            if not candidate_id:
-                issues[f"{split}_candidate_id_invalid"] += 1
-                continue
-            if candidate_id in seen:
-                issues[f"{split}_candidate_duplicate"] += 1
-                continue
-            if row.get("label_profitable") not in {True, False}:
-                issues[f"{split}_label_invalid"] += 1
-                continue
-            if row.get("direction") not in {"LONG", "SHORT"}:
-                issues[f"{split}_direction_invalid"] += 1
-                continue
-            pattern = str(row.get("pattern") or "").strip()
-            if not pattern:
-                issues[f"{split}_pattern_invalid"] += 1
-                continue
-            features = row.get("features")
-            if not isinstance(features, dict):
-                issues[f"{split}_features_invalid"] += 1
-                continue
-            try:
-                values = [
-                    float(features[name])
-                    for name in FEATURE_NAMES
-                ]
-                values.extend([
-                    float(row.get("rule_score", 0)),
-                    float(row.get("final_score", 0)),
-                ])
-            except (KeyError, TypeError, ValueError):
-                issues[f"{split}_feature_value_invalid"] += 1
-                continue
-            if not all(math.isfinite(value) for value in values):
-                issues[f"{split}_feature_value_invalid"] += 1
-                continue
-            if self.context_aware and not is_complete_market_context(
-                market_context_from_row(row)
-            ):
-                issues[f"{split}_market_context_incomplete"] += 1
-                continue
-            seen.add(candidate_id)
-            filtered.append(row)
-        return filtered
+    def _scan(self, path, split, issues, collect_patterns=False):
+        count = 0
+        labels = Counter()
+        patterns = set()
+        for row in self._iter_filtered(path, split, issues):
+            count += 1
+            labels[str(row["label_profitable"])] += 1
+            if collect_patterns:
+                patterns.add(row["pattern"])
+        return {"count": count, "labels": labels, "patterns": patterns}
 
-    @staticmethod
-    def _read(path, split, issues):
+    def _matrix(self, path, split, patterns, count):
+        width = (
+            len(FEATURE_NAMES)
+            + 3
+            + len(patterns)
+            + (len(CONTEXT_FEATURE_NAMES) if self.context_aware else 0)
+        )
+        matrix = np.empty((count, width), dtype=float)
+        labels = np.empty(count, dtype=int)
+        index = 0
+        for row in self._iter_filtered(path, split, None):
+            if index >= count:
+                raise RuntimeError("ENSEMBLE_SPLIT_CHANGED_DURING_LOAD")
+            matrix[index, :] = self._vector(
+                row, patterns, self.context_aware
+            )
+            labels[index] = int(row["label_profitable"])
+            index += 1
+        if index != count:
+            raise RuntimeError("ENSEMBLE_SPLIT_CHANGED_DURING_LOAD")
+        return matrix, labels
+
+    def _iter_filtered(self, path, split, issues):
         path = Path(path)
         if not path.exists():
-            issues[f"{split}_file_missing"] += 1
-            return []
-        rows = []
-        for line in path.read_text().splitlines():
-            if not line.strip():
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError:
-                issues[f"{split}_malformed_json"] += 1
-                continue
-            if isinstance(row, dict):
-                rows.append(row)
-            else:
-                issues[f"{split}_row_not_object"] += 1
-        return rows
+            if issues is not None:
+                issues[f"{split}_file_missing"] += 1
+            return
+        seen = set()
+        with path.open("r") as handle:
+            for raw_line in handle:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    if issues is not None:
+                        issues[f"{split}_malformed_json"] += 1
+                    continue
+                if not isinstance(row, dict):
+                    if issues is not None:
+                        issues[f"{split}_row_not_object"] += 1
+                    continue
+                if row.get("outcome_type") != self.outcome_type:
+                    continue
+                candidate_id = str(
+                    row.get("candidate_observation_id") or ""
+                ).strip()
+                if not candidate_id:
+                    if issues is not None:
+                        issues[f"{split}_candidate_id_invalid"] += 1
+                    continue
+                if candidate_id in seen:
+                    if issues is not None:
+                        issues[f"{split}_candidate_duplicate"] += 1
+                    continue
+                if row.get("label_profitable") not in {True, False}:
+                    if issues is not None:
+                        issues[f"{split}_label_invalid"] += 1
+                    continue
+                if row.get("direction") not in {"LONG", "SHORT"}:
+                    if issues is not None:
+                        issues[f"{split}_direction_invalid"] += 1
+                    continue
+                pattern = str(row.get("pattern") or "").strip()
+                if not pattern:
+                    if issues is not None:
+                        issues[f"{split}_pattern_invalid"] += 1
+                    continue
+                features = row.get("features")
+                if not isinstance(features, dict):
+                    if issues is not None:
+                        issues[f"{split}_features_invalid"] += 1
+                    continue
+                try:
+                    values = [
+                        float(features[name])
+                        for name in FEATURE_NAMES
+                    ]
+                    values.extend([
+                        float(row.get("rule_score", 0)),
+                        float(row.get("final_score", 0)),
+                    ])
+                except (KeyError, TypeError, ValueError):
+                    if issues is not None:
+                        issues[f"{split}_feature_value_invalid"] += 1
+                    continue
+                if not all(math.isfinite(value) for value in values):
+                    if issues is not None:
+                        issues[f"{split}_feature_value_invalid"] += 1
+                    continue
+                if self.context_aware and not is_complete_market_context(
+                    market_context_from_row(row)
+                ):
+                    if issues is not None:
+                        issues[f"{split}_market_context_incomplete"] += 1
+                    continue
+                seen.add(candidate_id)
+                yield row
 
     @staticmethod
     def _write_pickle(path, document):
