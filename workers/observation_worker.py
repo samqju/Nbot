@@ -232,26 +232,65 @@ class ObservationWorker:
             if callable(start_getter)
             else default_start_ms
         )
-        try:
-            snapshot = self.virtual_cost_evidence_provider.snapshot(
-                symbols=self.universe.observation_symbols,
-                candle_bucket=bucket,
-                start_ms=int(start_ms),
-                end_ms=end_ms,
-            )
-        except Exception as exc:
+        # Phase 7.5C.1: a single transient/partial funding read must not
+        # discard every virtual outcome closing on this five-minute rollover.
+        # Cost evidence is collected before strategy.on_price() closes the
+        # previous candles, so one immediate bounded retry can recover the
+        # bucket without moving network work into the later training path.
+        # The normal healthy path is still exactly one provider call.
+        best_snapshot = None
+        last_error = None
+        for attempt in range(1, 3):
+            try:
+                candidate = self.virtual_cost_evidence_provider.snapshot(
+                    symbols=self.universe.observation_symbols,
+                    candle_bucket=bucket,
+                    start_ms=int(start_ms),
+                    end_ms=end_ms,
+                )
+            except Exception as exc:
+                last_error = exc
+                if attempt < 2:
+                    self.system_log.warning(
+                        "PHASE7_COST_EVIDENCE_RETRY | "
+                        f"bucket={bucket} | attempt={attempt} | "
+                        f"error={type(exc).__name__}:{exc}"
+                    )
+                continue
+
+            best_snapshot = candidate
+            if (
+                isinstance(candidate, dict)
+                and candidate.get("completeness") == "COMPLETE_PHASE7_3"
+            ):
+                break
+            if attempt < 2:
+                self.system_log.warning(
+                    "PHASE7_COST_EVIDENCE_PARTIAL_RETRY | "
+                    f"bucket={bucket} | attempt={attempt} | "
+                    f"funding_complete={str(bool((candidate or {}).get('funding_history_complete'))).lower()} | "
+                    f"funding_rows={int((candidate or {}).get('funding_rows_returned', 0) or 0)} | "
+                    f"funding_pages={int((candidate or {}).get('funding_pages', 0) or 0)} | "
+                    f"funding_parse_errors={int((candidate or {}).get('funding_parse_errors', 0) or 0)}"
+                )
+
+        if best_snapshot is not None:
+            # Preserve the newest partial snapshot as well.  The cost model
+            # remains fail-closed, but spread evidence is fresher than leaving
+            # an old bucket snapshot installed.
+            setter(best_snapshot)
+        elif last_error is not None:
             self.system_log.warning(
                 "PHASE7_COST_EVIDENCE_FAILED | "
-                f"bucket={bucket} | "
-                f"error={type(exc).__name__}:{exc} | "
+                f"bucket={bucket} | attempts=2 | "
+                f"error={type(last_error).__name__}:{last_error} | "
                 "learning_cost_completeness=PARTIAL"
             )
-        else:
-            setter(snapshot)
-        finally:
-            # One attempt per bucket. A failed snapshot remains incomplete and
-            # therefore cannot silently enter Phase-7 training evidence.
-            self._last_virtual_cost_bucket = bucket
+
+        # At most two attempts per bucket.  Incomplete evidence still fails
+        # closed; this patch improves collection reliability without guessing
+        # funding or weakening Phase-7 qualification.
+        self._last_virtual_cost_bucket = bucket
 
     def observation_health_snapshot(self) -> dict:
         """Return read-only Observation metrics for local operator health."""

@@ -880,16 +880,20 @@ class BinanceMarketClient:
             page_times = []
             for row in page:
                 if not isinstance(row, dict):
+                    # Unknown malformed rows remain fail-closed because we
+                    # cannot prove that they belong to an unrelated symbol.
                     funding_parse_errors += 1
                     continue
+                row_symbol = str(row.get("symbol") or "").upper()
                 try:
                     funding_time = int(row.get("fundingTime"))
                 except (TypeError, ValueError):
-                    funding_parse_errors += 1
+                    if row_symbol in requested:
+                        funding_parse_errors += 1
                     continue
                 page_times.append(funding_time)
                 identity = (
-                    str(row.get("symbol") or "").upper(),
+                    row_symbol,
                     funding_time,
                     str(row.get("fundingRate") or ""),
                     str(row.get("markPrice") or ""),

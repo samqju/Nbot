@@ -23,6 +23,7 @@ from strategy.experiment_contract import (
     experiment_projection,
 )
 from strategy.features import CandidateFeatures
+from strategy.strategy import Strategy
 from strategy.strategy_lab import estimate_round_trip_cost_r
 from strategy.virtual_trade_engine import VirtualTradeEngine
 
@@ -222,6 +223,44 @@ class Phase73CompleteCostEvidenceTests(unittest.TestCase):
         self.assertEqual(result["funding_pages"], 2)
         self.assertTrue(result["funding_history_complete"])
 
+    def test_malformed_unrequested_funding_row_does_not_poison_history(self):
+        client = object.__new__(BinanceMarketClient)
+
+        def public_get(path, params=None):
+            if path.endswith("bookTicker"):
+                return [{
+                    "symbol": "BTCUSDT",
+                    "bidPrice": "99.99",
+                    "askPrice": "100.01",
+                }]
+            return [
+                {
+                    "symbol": "UNRELATEDUSDT",
+                    "fundingRate": "not-a-number",
+                    "fundingTime": 1_700_000_050_000,
+                    "markPrice": "bad",
+                },
+                {
+                    "symbol": "BTCUSDT",
+                    "fundingRate": "0.0001",
+                    "fundingTime": 1_700_000_100_000,
+                    "markPrice": "101.0",
+                },
+            ]
+
+        client._public_get = public_get
+        result = client.get_virtual_cost_evidence_rows(
+            symbols=["BTCUSDT"],
+            start_ms=1_700_000_000_000,
+            end_ms=1_700_000_300_000,
+        )
+        self.assertTrue(result["funding_history_complete"])
+        self.assertEqual(result["funding_parse_errors"], 0)
+        self.assertEqual(
+            result["funding_events_by_symbol"]["BTCUSDT"][0]["funding_rate"],
+            0.0001,
+        )
+
     def test_malformed_target_funding_event_fails_history_closed(self):
         client = object.__new__(BinanceMarketClient)
 
@@ -394,6 +433,69 @@ class Phase73CompleteCostEvidenceTests(unittest.TestCase):
             row = json.loads(outcomes_path.read_text().splitlines()[0])
             self.assertTrue(has_complete_cost_evidence(row))
 
+    def test_strategy_cost_window_starts_at_exact_oldest_active_trade(self):
+        strategy = object.__new__(Strategy)
+        strategy._virtual_trade_engine = SimpleNamespace(
+            oldest_active_opened_at_ms=lambda: 1_700_000_250_000
+        )
+        self.assertEqual(
+            strategy.get_virtual_cost_evidence_start_ms(
+                default_start_ms=1_700_000_000_000
+            ),
+            1_700_000_250_000,
+        )
+
+    def test_observation_worker_retries_partial_cost_snapshot_before_rollover(self):
+        class StrategyDouble:
+            def __init__(self):
+                self.snapshots = []
+
+            def set_virtual_cost_evidence(self, snapshot):
+                self.snapshots.append(snapshot)
+
+            def get_virtual_cost_evidence_start_ms(self, *, default_start_ms):
+                return default_start_ms + 3_300_000
+
+        class Provider:
+            def __init__(self):
+                self.calls = []
+
+            def snapshot(self, **kwargs):
+                self.calls.append(kwargs)
+                if len(self.calls) == 1:
+                    return {
+                        "completeness": "PARTIAL_PHASE7_3",
+                        "funding_history_complete": False,
+                        "funding_rows_returned": 1000,
+                        "funding_pages": 1,
+                        "funding_parse_errors": 0,
+                    }
+                return {
+                    "completeness": "COMPLETE_PHASE7_3",
+                    "funding_history_complete": True,
+                    "funding_rows_returned": 12,
+                    "funding_pages": 1,
+                    "funding_parse_errors": 0,
+                }
+
+        worker = object.__new__(ObservationWorker)
+        worker.strategy = StrategyDouble()
+        worker.universe = SimpleNamespace(observation_symbols={"BTCUSDT"})
+        worker.virtual_cost_evidence_provider = Provider()
+        worker.system_log = SilentLog()
+        worker._last_virtual_cost_bucket = None
+        tick = SimpleNamespace(timestamp=1_700_000_400_000)
+
+        worker._maybe_refresh_virtual_cost_evidence(tick)
+        worker._maybe_refresh_virtual_cost_evidence(tick)
+
+        self.assertEqual(len(worker.virtual_cost_evidence_provider.calls), 2)
+        self.assertEqual(len(worker.strategy.snapshots), 1)
+        self.assertEqual(
+            worker.strategy.snapshots[0]["completeness"],
+            "COMPLETE_PHASE7_3",
+        )
+
     def test_observation_worker_collects_cost_evidence_once_per_bucket(self):
         class Strategy:
             def __init__(self):
@@ -465,7 +567,7 @@ class Phase73CompleteCostEvidenceTests(unittest.TestCase):
         worker._maybe_refresh_virtual_cost_evidence(tick)
         worker._maybe_refresh_virtual_cost_evidence(tick)
 
-        self.assertEqual(worker.virtual_cost_evidence_provider.calls, 1)
+        self.assertEqual(worker.virtual_cost_evidence_provider.calls, 2)
         self.assertTrue(
             any("learning_cost_completeness=PARTIAL" in row for row in warnings)
         )

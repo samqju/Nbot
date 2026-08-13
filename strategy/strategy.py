@@ -799,7 +799,14 @@ class Strategy:
         oldest = getter() if callable(getter) else None
         if oldest is None:
             return int(default_start_ms)
-        return min(int(default_start_ms), int(oldest))
+        # Phase 7.5C.1: when virtual trades are active, the oldest open
+        # timestamp is the exact funding-evidence horizon we need.  The old
+        # min(default_start_ms, oldest) behavior forced every live refresh to
+        # request at least four hours of global Binance funding history even
+        # when the oldest trade was only minutes old.  That enlarged/paginated
+        # the response unnecessarily and could make funding completeness fail
+        # for otherwise valid short-lived virtual outcomes.
+        return int(oldest)
 
     def get_structure(self, symbol):
         return self._latest_structure.get(symbol)
