@@ -354,6 +354,92 @@ class Phase58AutomaticTrainingTests(unittest.TestCase):
             finally:
                 self._make_writable(root)
 
+
+    def test_offline_drift_gate_uses_stability_psi_and_reports_regime_shift(self):
+        with tempfile.TemporaryDirectory() as root:
+            orchestrator = self._orchestrator(
+                root,
+                count=10,
+                min_roc_auc=0.50,
+                max_brier_score=0.25,
+                max_calibration_gap=0.10,
+                max_feature_psi=0.25,
+            )
+            evaluation = {
+                "metrics": {
+                    "test": {
+                        "roc_auc": 0.60,
+                        "brier_score": 0.20,
+                    }
+                },
+                "calibration": {
+                    "test_max_abs_gap": 0.05,
+                },
+                "drift": {
+                    "max_feature_psi": 27.63099348490743,
+                    "max_feature_name": "ctx_btc_regime::SIDEWAYS",
+                    "max_stability_feature_psi": 0.095,
+                    "max_stability_feature_name": "long_range",
+                    "max_regime_context_psi": 27.63099348490743,
+                    "max_regime_context_feature_name": (
+                        "ctx_btc_regime::SIDEWAYS"
+                    ),
+                },
+            }
+
+            gates = orchestrator._offline_gates(evaluation)
+
+            self.assertTrue(gates["passed"])
+            self.assertTrue(
+                gates["checks"]["feature_drift_psi"]["passed"]
+            )
+            self.assertEqual(
+                gates["checks"]["feature_drift_psi"]["actual"],
+                0.095,
+            )
+            regime = gates["diagnostics"]["regime_context_shift_psi"]
+            self.assertTrue(regime["exceeds_reference"])
+            self.assertEqual(regime["gate_effect"], "DIAGNOSTIC_ONLY")
+
+    def test_offline_drift_gate_still_rejects_unstable_model_features(self):
+        with tempfile.TemporaryDirectory() as root:
+            orchestrator = self._orchestrator(
+                root,
+                count=10,
+                min_roc_auc=0.50,
+                max_brier_score=0.25,
+                max_calibration_gap=0.10,
+                max_feature_psi=0.25,
+            )
+            evaluation = {
+                "metrics": {
+                    "test": {
+                        "roc_auc": 0.60,
+                        "brier_score": 0.20,
+                    }
+                },
+                "calibration": {
+                    "test_max_abs_gap": 0.05,
+                },
+                "drift": {
+                    "max_feature_psi": 0.80,
+                    "max_feature_name": "long_range",
+                    "max_stability_feature_psi": 0.80,
+                    "max_stability_feature_name": "long_range",
+                    "max_regime_context_psi": 0.05,
+                    "max_regime_context_feature_name": (
+                        "ctx_btc_change_pct_24h"
+                    ),
+                },
+            }
+
+            gates = orchestrator._offline_gates(evaluation)
+
+            self.assertFalse(gates["passed"])
+            self.assertFalse(
+                gates["checks"]["feature_drift_psi"]["passed"]
+            )
+
     def test_snapshot_fingerprint_is_reproducible(self):
         with tempfile.TemporaryDirectory() as root:
             try:

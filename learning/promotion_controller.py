@@ -324,10 +324,18 @@ class AutomaticPromotionController:
                 "test_max_abs_gap"
             )
         )
+        drift_metrics = record.get("drift_metrics") or {}
         feature_psi = self._number(
-            (record.get("drift_metrics") or {}).get(
-                "max_feature_psi"
+            drift_metrics.get(
+                "max_stability_feature_psi",
+                drift_metrics.get("max_feature_psi"),
             )
+        )
+        all_feature_psi = self._number(
+            drift_metrics.get("max_feature_psi")
+        )
+        regime_context_psi = self._number(
+            drift_metrics.get("max_regime_context_psi")
         )
         artifact_validation = self._validate_artifact(record)
         regime_robustness = self._regime_robustness(
@@ -373,6 +381,12 @@ class AutomaticPromotionController:
             "brier_score": brier_score,
             "calibration_gap": calibration_gap,
             "maximum_feature_psi": feature_psi,
+            "feature_psi_scope": "MODEL_STABILITY_GATE",
+            "maximum_all_feature_psi": all_feature_psi,
+            "maximum_regime_context_psi": regime_context_psi,
+            "maximum_regime_context_feature": drift_metrics.get(
+                "max_regime_context_feature_name"
+            ),
             "recent_period_expectancy": self._number(
                 challenger.get("recent_average_net_r")
             ),

@@ -336,6 +336,55 @@ class Phase75ChampionChallengerValidationTests(unittest.TestCase):
                 result["reason_codes"],
             )
 
+
+    def test_promotion_gate_uses_stability_psi_while_retaining_regime_diagnostic(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            registry = self._phase7_registry(root)
+            registry.update_model(
+                "MODEL_A",
+                updates={
+                    "drift_metrics": {
+                        "max_feature_psi": 27.63099348490743,
+                        "max_feature_name": "ctx_btc_regime::SIDEWAYS",
+                        "max_stability_feature_psi": 0.095,
+                        "max_stability_feature_name": "long_range",
+                        "max_regime_context_psi": 27.63099348490743,
+                        "max_regime_context_feature_name": (
+                            "ctx_btc_regime::SIDEWAYS"
+                        ),
+                    }
+                },
+            )
+            self._write_evidence(
+                root,
+                [
+                    ("BULLISH", 0.4, 0.1),
+                    ("BULLISH", 0.3, 0.1),
+                    ("BEARISH", 0.35, 0.1),
+                    ("BEARISH", 0.30, 0.1),
+                ],
+            )
+
+            result = self._controller(root).run_once()
+
+            self.assertTrue(
+                result["gates"]["checks"]["maximum_feature_psi"]["passed"]
+            )
+            self.assertEqual(result["evidence"]["maximum_feature_psi"], 0.095)
+            self.assertEqual(
+                result["evidence"]["maximum_all_feature_psi"],
+                27.63099348490743,
+            )
+            self.assertEqual(
+                result["evidence"]["maximum_regime_context_psi"],
+                27.63099348490743,
+            )
+            self.assertEqual(
+                result["evidence"]["feature_psi_scope"],
+                "MODEL_STABILITY_GATE",
+            )
+
     def test_all_phase75_gates_pass_but_paper_authority_stays_locked(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

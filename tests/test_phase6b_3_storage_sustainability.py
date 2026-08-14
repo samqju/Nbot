@@ -156,6 +156,17 @@ class Phase6B3StorageSustainabilityTests(unittest.TestCase):
             self.assertIsNone(record["artifact_path"])
             self.assertIsNone(record["dataset_snapshot_path"])
             self.assertTrue(record["storage_pruned_at_ms"])
+            self.assertTrue(record["evaluation_diagnostics_retained"])
+            diagnostics = record["evaluation_diagnostics"]
+            self.assertIn("validation", diagnostics["calibration"])
+            self.assertIn("test", diagnostics["calibration"])
+            self.assertIn("features", diagnostics["drift"])
+            self.assertIn(
+                "max_stability_feature_psi", diagnostics["drift"]
+            )
+            self.assertIn(
+                "max_regime_context_psi", diagnostics["drift"]
+            )
 
             # Even after hot files rotate away, all evidence remains readable.
             inventory = TrainingInventory(

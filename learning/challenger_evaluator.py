@@ -27,6 +27,39 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
+REGIME_CONTEXT_DRIFT_FEATURES = frozenset({
+    "ctx_btc_change_pct_24h",
+    "ctx_market_advancing_fraction",
+    "ctx_market_declining_fraction",
+    "ctx_market_unchanged_fraction",
+    "ctx_market_median_change_pct_24h",
+    "ctx_market_median_abs_change_pct_24h",
+})
+REGIME_CONTEXT_DRIFT_PREFIXES = (
+    "ctx_market_regime::",
+    "ctx_volatility_regime::",
+    "ctx_btc_regime::",
+)
+DRIFT_SCOPE_MODEL_STABILITY = "MODEL_STABILITY_GATE"
+DRIFT_SCOPE_REGIME_CONTEXT = "REGIME_CONTEXT_DIAGNOSTIC"
+
+
+def drift_scope_for_feature(name: str) -> str:
+    """Classify PSI features by whether drift itself should fail the model.
+
+    Broad/BTC/volatility regime descriptors are expected to move when the
+    market changes.  They remain measured and reported, but model quality is
+    judged by performance across that change instead of rejecting solely
+    because the regime descriptor moved.  Candidate features, scores, market
+    coverage, spread, and liquidity remain part of the stability PSI gate.
+    """
+    normalized = str(name or "").strip()
+    if normalized in REGIME_CONTEXT_DRIFT_FEATURES:
+        return DRIFT_SCOPE_REGIME_CONTEXT
+    if any(normalized.startswith(prefix) for prefix in REGIME_CONTEXT_DRIFT_PREFIXES):
+        return DRIFT_SCOPE_REGIME_CONTEXT
+    return DRIFT_SCOPE_MODEL_STABILITY
+
 
 class ChallengerEvaluationError(RuntimeError):
     pass
@@ -95,6 +128,7 @@ class ChallengerArtifactEvaluator:
         drift = self._drift(
             artifact, validation_matrix, test_matrix
         )
+        drift_summary = self._drift_summary(drift)
         return {
             **base,
             "status": "EVALUATED",
@@ -116,10 +150,7 @@ class ChallengerArtifactEvaluator:
             },
             "drift": {
                 "features": drift,
-                "max_feature_psi": max(
-                    (item["psi"] for item in drift.values()),
-                    default=0.0,
-                ),
+                **drift_summary,
             },
         }
 
@@ -435,10 +466,53 @@ class ChallengerArtifactEvaluator:
                     if psi >= 0.10
                     else "LOW"
                 ),
+                "gate_scope": drift_scope_for_feature(name),
                 "validation_mean": float(np.mean(expected)),
                 "test_mean": float(np.mean(actual)),
             }
         return report
+
+    @staticmethod
+    def _drift_summary(report: dict[str, dict]) -> dict:
+        def maximum(scope: str | None = None) -> tuple[str | None, float]:
+            candidates = [
+                (name, row)
+                for name, row in report.items()
+                if scope is None or row.get("gate_scope") == scope
+            ]
+            if not candidates:
+                return None, 0.0
+            name, row = max(
+                candidates,
+                key=lambda item: float(item[1]["psi"]),
+            )
+            return name, float(row["psi"])
+
+        max_name, max_psi = maximum()
+        stability_name, stability_psi = maximum(
+            DRIFT_SCOPE_MODEL_STABILITY
+        )
+        regime_name, regime_psi = maximum(
+            DRIFT_SCOPE_REGIME_CONTEXT
+        )
+        return {
+            "max_feature_psi": max_psi,
+            "max_feature_name": max_name,
+            "max_stability_feature_psi": stability_psi,
+            "max_stability_feature_name": stability_name,
+            "max_regime_context_psi": regime_psi,
+            "max_regime_context_feature_name": regime_name,
+            "stability_feature_count": sum(
+                1
+                for row in report.values()
+                if row.get("gate_scope") == DRIFT_SCOPE_MODEL_STABILITY
+            ),
+            "regime_context_feature_count": sum(
+                1
+                for row in report.values()
+                if row.get("gate_scope") == DRIFT_SCOPE_REGIME_CONTEXT
+            ),
+        }
 
     def _psi(self, expected, actual) -> float:
         quantiles = np.linspace(0.0, 1.0, self.drift_bins + 1)

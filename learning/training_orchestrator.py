@@ -1020,7 +1020,23 @@ class AutomaticTrainingOrchestrator:
                 "test_max_abs_gap": evaluation["calibration"]["test_max_abs_gap"],
             },
             "drift_metrics": {
-                "max_feature_psi": evaluation["drift"]["max_feature_psi"]
+                key: evaluation["drift"].get(key)
+                for key in (
+                    "max_feature_psi",
+                    "max_feature_name",
+                    "max_stability_feature_psi",
+                    "max_stability_feature_name",
+                    "max_regime_context_psi",
+                    "max_regime_context_feature_name",
+                    "stability_feature_count",
+                    "regime_context_feature_count",
+                )
+            },
+            "evaluation_diagnostics": {
+                "schema_version": 1,
+                "rows": evaluation.get("rows") or {},
+                "calibration": evaluation.get("calibration") or {},
+                "drift": evaluation.get("drift") or {},
             },
             "offline_gate_results": gates,
             "selected_candidate": winner["name"],
@@ -1051,6 +1067,11 @@ class AutomaticTrainingOrchestrator:
     def _offline_gates(self, evaluation: dict) -> dict:
         test = evaluation["metrics"]["test"]
         roc_auc = test.get("roc_auc")
+        drift = evaluation["drift"]
+        stability_psi = drift.get(
+            "max_stability_feature_psi", drift["max_feature_psi"]
+        )
+        regime_context_psi = drift.get("max_regime_context_psi")
         checks = {
             "test_roc_auc": {
                 "actual": roc_auc,
@@ -1077,15 +1098,38 @@ class AutomaticTrainingOrchestrator:
                 <= self.max_calibration_gap,
             },
             "feature_drift_psi": {
-                "actual": evaluation["drift"]["max_feature_psi"],
+                "actual": stability_psi,
                 "required_max": self.max_feature_psi,
-                "passed": evaluation["drift"]["max_feature_psi"]
-                <= self.max_feature_psi,
+                "scope": "MODEL_STABILITY_GATE",
+                "passed": float(stability_psi) <= self.max_feature_psi,
+            },
+        }
+        diagnostics = {
+            "all_feature_max_psi": {
+                "actual": drift.get("max_feature_psi"),
+                "top_feature": drift.get("max_feature_name"),
+            },
+            "regime_context_shift_psi": {
+                "actual": regime_context_psi,
+                "top_feature": drift.get(
+                    "max_regime_context_feature_name"
+                ),
+                "reference_max": self.max_feature_psi,
+                "exceeds_reference": (
+                    regime_context_psi is not None
+                    and float(regime_context_psi) > self.max_feature_psi
+                ),
+                "gate_effect": "DIAGNOSTIC_ONLY",
             },
         }
         return {
             "passed": all(item["passed"] for item in checks.values()),
             "checks": checks,
+            "diagnostics": diagnostics,
+            "drift_policy": {
+                "feature_drift_gate_scope": "MODEL_STABILITY_GATE",
+                "regime_context_shift_role": "DIAGNOSTIC_ONLY",
+            },
         }
 
     def _storage_maintenance(self, *, cutoff_ms: int) -> dict:
@@ -1156,6 +1200,9 @@ class AutomaticTrainingOrchestrator:
                 "storage_reclaimed_bytes": reclaimed,
                 "pruned_dataset_snapshot_path": original_snapshot,
                 "pruned_model_directory": original_model_dir,
+                "evaluation_diagnostics_retained": isinstance(
+                    record.get("evaluation_diagnostics"), dict
+                ),
                 "artifact_path": None,
                 "model_directory": None,
                 "dataset_snapshot_path": None,

@@ -4,8 +4,15 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
+
 from learning.baseline_trainer import BaselineModelTrainer
-from learning.challenger_evaluator import ChallengerArtifactEvaluator
+from learning.challenger_evaluator import (
+    DRIFT_SCOPE_MODEL_STABILITY,
+    DRIFT_SCOPE_REGIME_CONTEXT,
+    ChallengerArtifactEvaluator,
+)
+from learning.context_features import CONTEXT_FEATURE_NAMES
 from learning.ensemble_experiment import OfflineEnsembleExperiment
 from learning.time_split import (
     TIME_SPLIT_BUILD_MODE,
@@ -127,6 +134,49 @@ class Phase75B1EndToEndMemorySafeTrainingTests(unittest.TestCase):
                 ensemble_report["matrix_build_mode"],
                 "STREAMING_COMPACT_NUMPY",
             )
+
+
+    def test_regime_context_drift_is_diagnostic_not_stability_drift(self):
+        evaluator = ChallengerArtifactEvaluator.__new__(
+            ChallengerArtifactEvaluator
+        )
+        evaluator.drift_bins = 10
+        artifact = {
+            "base_feature_names": ("short_range",),
+            "pattern_categories": (),
+            "requires_complete_market_context": True,
+            "context_feature_names": CONTEXT_FEATURE_NAMES,
+        }
+        width = 1 + 3 + len(CONTEXT_FEATURE_NAMES)
+        validation = np.zeros((20, width), dtype=float)
+        test = np.zeros((20, width), dtype=float)
+        context_start = 4
+        sideways = CONTEXT_FEATURE_NAMES.index(
+            "ctx_btc_regime::SIDEWAYS"
+        )
+        bearish = CONTEXT_FEATURE_NAMES.index(
+            "ctx_btc_regime::BEARISH"
+        )
+        validation[:, context_start + sideways] = 1.0
+        test[:, context_start + bearish] = 1.0
+
+        report = evaluator._drift(artifact, validation, test)
+        summary = evaluator._drift_summary(report)
+
+        self.assertEqual(
+            report["ctx_btc_regime::SIDEWAYS"]["gate_scope"],
+            DRIFT_SCOPE_REGIME_CONTEXT,
+        )
+        self.assertEqual(
+            report["short_range"]["gate_scope"],
+            DRIFT_SCOPE_MODEL_STABILITY,
+        )
+        self.assertGreater(summary["max_regime_context_psi"], 0.25)
+        self.assertEqual(summary["max_stability_feature_psi"], 0.0)
+        self.assertEqual(
+            summary["max_feature_psi"],
+            summary["max_regime_context_psi"],
+        )
 
     def test_challenger_evaluator_uses_compact_matrix_loader(self):
         helper = phase43.T()
