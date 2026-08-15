@@ -1260,6 +1260,26 @@ class AutomaticTrainingOrchestrator:
         shutil.rmtree(path)
 
     def _status(self, status: str, **details) -> dict:
+        # Keep all configured evidence/cohort thresholds visible in every
+        # supervisor status.  The operator dashboard can then explain both
+        # the fresh-evidence trigger and the 50/20/20-style cumulative split
+        # even after a training cycle has completed and WAITING_FOR_DATA is
+        # written again.  This is status-only metadata; it does not alter any
+        # training gate.
+        details = dict(details)
+        thresholds = {
+            "min_new_outcomes": self.min_new_outcomes,
+            "min_new_market_events": self.min_new_market_events,
+            "min_train_market_events": self.min_train_market_events,
+            "min_validation_market_events": (
+                self.min_validation_market_events
+            ),
+            "min_test_market_events": self.min_test_market_events,
+        }
+        supplied_thresholds = details.pop("thresholds", None)
+        if isinstance(supplied_thresholds, dict):
+            thresholds.update(supplied_thresholds)
+
         document = {
             "schema_version": AUTO_TRAINING_SCHEMA_VERSION,
             "generated_at_ms": int(time.time() * 1000),
@@ -1271,6 +1291,7 @@ class AutomaticTrainingOrchestrator:
             "runtime_activation": "DISABLED",
             "paper_authority": "UNCHANGED",
             "real_order_authority": "NONE",
+            "thresholds": thresholds,
             **details,
         }
         self._write_json(self.status_path, document)

@@ -238,6 +238,10 @@ class AutoLearningStatusPublisher:
         required_events = int(
             training_thresholds.get("min_new_market_events", 0) or 0
         )
+        last_completed_training = self._last_completed_training(
+            models=models,
+            thresholds=training_thresholds,
+        )
 
         evidence = self._select_evidence(
             challenger_id=challenger_id,
@@ -350,6 +354,7 @@ class AutoLearningStatusPublisher:
             "training_data": {
                 "phase": training.get("phase") or "UNKNOWN",
                 "status": training.get("status") or "NOT_AVAILABLE",
+                # Backward-compatible fields retained for machine readers.
                 "completed_outcomes": completed_outcomes,
                 "required_outcomes": required_outcomes,
                 "remaining_outcomes": max(
@@ -360,14 +365,36 @@ class AutoLearningStatusPublisher:
                 "remaining_independent_market_events": max(
                     0, required_events - independent_events
                 ),
+                # Explicit cycle vocabulary for operators.  With the normal
+                # automatic-trainer source these counters are evidence AFTER
+                # the latest completed model cutoff, not lifetime totals.
+                "fresh_completed_outcomes": (
+                    completed_outcomes
+                    if training_count_basis
+                    == "AUTO_TRAINING_QUALIFIED_COHORT"
+                    else None
+                ),
+                "fresh_independent_market_events": (
+                    independent_events
+                    if training_count_basis
+                    == "AUTO_TRAINING_QUALIFIED_COHORT"
+                    else None
+                ),
+                "fresh_evidence_after_ms": int(
+                    inventory.get("after_ms", 0) or 0
+                ),
                 "outcome_type": self.training_outcome_type,
                 "count_basis": training_count_basis,
+                "thresholds": dict(training_thresholds),
                 "inventory_issue_count": int(
                     inventory.get("issue_count", 0) or 0
                 ),
                 "source_mode": inventory.get("scan_mode"),
                 "ledger_generation": inventory.get("ledger_generation"),
                 "total_qualified_outcomes": int(
+                    inventory.get("total_qualified_outcomes", 0) or 0
+                ),
+                "lifetime_qualified_outcomes": int(
                     inventory.get("total_qualified_outcomes", 0) or 0
                 ),
                 "pending_candidate_facts": int(
@@ -378,6 +405,7 @@ class AutoLearningStatusPublisher:
                 ),
                 "rejection_reasons": inventory.get("rejection_reasons") or {},
                 "cohort_readiness": cohort_readiness,
+                "last_completed_training": last_completed_training,
             },
             "forward_comparison": forward,
             "governance": {
@@ -427,6 +455,27 @@ class AutoLearningStatusPublisher:
             marker = "PASS" if actual >= required else "WAIT"
             return f"{actual:,} / {required:,} [{marker}]"
 
+        def _metric(value) -> str:
+            number = AutoLearningStatusPublisher._number(value)
+            return "N/A" if number is None else f"{number:.4f}"
+
+        def _gate_metric(check: dict, fallback=None) -> str:
+            if not isinstance(check, dict):
+                return _metric(fallback)
+            value = check.get("actual", fallback)
+            text = _metric(value)
+            if text == "N/A":
+                return text
+            if check.get("passed") is True:
+                return text + " [PASS]"
+            if check.get("passed") is False:
+                return text + " [FAIL]"
+            return text
+
+        fresh_outcomes = training.get("fresh_completed_outcomes")
+        fresh_events = training.get("fresh_independent_market_events")
+        has_fresh_cycle = fresh_outcomes is not None and fresh_events is not None
+
         lines = [
             "NBOT LEARNING STATUS",
             "================================================",
@@ -435,59 +484,152 @@ class AutoLearningStatusPublisher:
             f"Current challenger     : {document.get('current_challenger') or 'NONE'}",
             f"Challenger stage       : {document.get('challenger_stage') or 'NONE'}",
             "",
-            f"TRAINING ({training.get('phase', 'UNKNOWN')})",
-            f"Training status        : {training.get('status', 'NOT_AVAILABLE')}",
-            "Qualified outcomes     : " + _progress(
-                training.get("completed_outcomes"),
-                training.get("required_outcomes"),
-            ),
-            "Independent events     : " + _progress(
-                training.get("independent_market_events"),
-                training.get("required_independent_market_events"),
-            ),
+            "CHALLENGER TRAINING",
+            f"Cycle status           : {training.get('status', 'NOT_AVAILABLE')}",
         ]
+
+        if has_fresh_cycle:
+            lines.extend([
+                "Fresh qualified outcomes: " + _progress(
+                    fresh_outcomes,
+                    training.get("required_outcomes"),
+                ),
+                "Fresh independent events : " + _progress(
+                    fresh_events,
+                    training.get("required_independent_market_events"),
+                ),
+            ])
+        else:
+            lines.extend([
+                "Qualified outcomes       : " + _progress(
+                    training.get("completed_outcomes"),
+                    training.get("required_outcomes"),
+                ),
+                "Independent events       : " + _progress(
+                    training.get("independent_market_events"),
+                    training.get("required_independent_market_events"),
+                ),
+            ])
+
         if training.get("source_mode"):
             lines.extend([
-                f"Training source        : {training.get('source_mode')}",
-                f"Ledger generation      : {training.get('ledger_generation') or 'N/A'}",
-                f"Pending candidate facts: {int(training.get('pending_candidate_facts', 0) or 0):,}",
-                f"Rejected evidence      : {int(training.get('rejected_evidence', 0) or 0):,}",
+                f"Lifetime qualified ledger: {int(training.get('lifetime_qualified_outcomes', training.get('total_qualified_outcomes', 0)) or 0):,}",
+                f"Training source         : {training.get('source_mode')}",
+                f"Ledger generation       : {training.get('ledger_generation') or 'N/A'}",
+                f"Pending candidate facts : {int(training.get('pending_candidate_facts', 0) or 0):,}",
+                f"Rejected evidence       : {int(training.get('rejected_evidence', 0) or 0):,}",
             ])
 
         cohort = training.get("cohort_readiness") or {}
         cohort_checks = cohort.get("checks") or {}
+        training_thresholds = training.get("thresholds") or {}
         if cohort:
             split_events = cohort.get("split_market_events") or {}
             purging = cohort.get("purging") or {}
             embargo = cohort.get("embargo") or {}
 
-            def _cohort_required(name):
+            def _cohort_required(name, threshold_name):
                 check = cohort_checks.get(name) or {}
-                return int(check.get("required_min", 0) or 0)
+                return int(
+                    check.get(
+                        "required_min",
+                        training_thresholds.get(threshold_name, 0),
+                    )
+                    or 0
+                )
 
             lines.extend([
-                f"Cohort split status    : {cohort.get('split_status', 'UNKNOWN')}",
-                f"Cohort build mode      : {cohort.get('snapshot_build_mode', 'UNKNOWN')}",
-                f"Cohort split mode      : {cohort.get('split_build_mode', 'UNKNOWN')}",
-                "Cohort train events    : " + _progress(
+                "",
+                "CURRENT CUMULATIVE COHORT",
+                f"Cohort split status     : {cohort.get('split_status', 'UNKNOWN')}",
+                f"Cohort build mode       : {cohort.get('snapshot_build_mode', 'UNKNOWN')}",
+                f"Cohort split mode       : {cohort.get('split_build_mode', 'UNKNOWN')}",
+                "Cumulative train events : " + _progress(
                     split_events.get("train"),
-                    _cohort_required("train_market_events"),
+                    _cohort_required(
+                        "train_market_events", "min_train_market_events"
+                    ),
                 ),
-                "Cohort validation      : " + _progress(
+                "Cumulative validation   : " + _progress(
                     split_events.get("validation"),
-                    _cohort_required("validation_market_events"),
+                    _cohort_required(
+                        "validation_market_events",
+                        "min_validation_market_events",
+                    ),
                 ),
-                "Cohort test events     : " + _progress(
+                "Cumulative test events  : " + _progress(
                     split_events.get("test"),
-                    _cohort_required("test_market_events"),
+                    _cohort_required(
+                        "test_market_events", "min_test_market_events"
+                    ),
                 ),
                 f"Purged event groups    : {int(purging.get('candidate_groups_excluded', 0) or 0):,}",
                 f"Embargoed event groups : {int(embargo.get('candidate_groups_excluded', 0) or 0):,}",
             ])
 
+        last = training.get("last_completed_training") or {}
+        if last:
+            split_events = last.get("split_market_events") or {}
+            event_thresholds = last.get("event_thresholds") or {}
+            gates = last.get("offline_gate_results") or {}
+            checks = gates.get("checks") if isinstance(gates, dict) else {}
+            if not isinstance(checks, dict):
+                checks = {}
+            test_metrics = last.get("test_metrics") or {}
+            calibration = last.get("calibration_metrics") or {}
+            drift = last.get("drift_metrics") or {}
+            lines.extend([
+                "",
+                "LAST COMPLETED TRAINING",
+                f"Model                  : {last.get('model_id') or 'N/A'}",
+                f"Training result        : {last.get('offline_result') or 'UNKNOWN'}",
+                f"Lifecycle status       : {last.get('lifecycle_status') or 'UNKNOWN'}",
+                f"Selected candidate     : {last.get('selected_candidate') or 'N/A'}",
+                f"Cumulative snapshot events: {int(last.get('snapshot_independent_market_events', 0) or 0):,}",
+                "Cumulative train events : " + _progress(
+                    split_events.get("train"),
+                    event_thresholds.get("train"),
+                ),
+                "Cumulative validation   : " + _progress(
+                    split_events.get("validation"),
+                    event_thresholds.get("validation"),
+                ),
+                "Cumulative test events  : " + _progress(
+                    split_events.get("test"),
+                    event_thresholds.get("test"),
+                ),
+                "Test ROC AUC            : " + _gate_metric(
+                    checks.get("test_roc_auc"),
+                    test_metrics.get("roc_auc"),
+                ),
+                "Test Brier              : " + _gate_metric(
+                    checks.get("test_brier_score"),
+                    test_metrics.get("brier_score"),
+                ),
+                "Calibration gap         : " + _gate_metric(
+                    checks.get("test_calibration_gap"),
+                    calibration.get("test_max_abs_gap"),
+                ),
+                "Stable-feature PSI      : " + _gate_metric(
+                    checks.get("feature_drift_psi"),
+                    drift.get(
+                        "max_stability_feature_psi",
+                        drift.get("max_feature_psi"),
+                    ),
+                ),
+            ])
+            regime_psi = AutoLearningStatusPublisher._number(
+                drift.get("max_regime_context_psi")
+            )
+            if regime_psi is not None:
+                lines.append(
+                    "Regime-context PSI      : "
+                    f"{regime_psi:.4f} [DIAGNOSTIC]"
+                )
+
         lines.extend([
             "",
-            "FORWARD CHALLENGE (7.5)",
+            "SHADOW FORWARD VALIDATION",
             f"Comparison status      : {forward.get('status', 'NOT_AVAILABLE')}",
             "Matched outcomes       : " + _progress(
                 forward.get("matched_candidate_outcomes"),
@@ -519,10 +661,110 @@ class AutoLearningStatusPublisher:
             lines.append(f"Source warnings        : {', '.join(warnings)}")
         return "\n".join(lines)
 
+
     @classmethod
     def render_telegram_body(cls, document: dict) -> str:
         console = cls.render_console(document)
         return f"<pre>{html.escape(console)}</pre>"
+
+    @classmethod
+    def _last_completed_training(
+        cls,
+        *,
+        models: dict,
+        thresholds: dict,
+    ) -> dict:
+        """Return a compact summary of the latest completed training run.
+
+        Split counts are deliberately labelled as a cumulative snapshot.  A
+        fresh-evidence cutoff decides WHEN retraining may start, while the
+        trainer exports the whole qualified ledger and rebuilds the split for
+        WHAT the next challenger trains on.
+        """
+        completed = []
+        for model_id, record in models.items():
+            if not isinstance(record, dict):
+                continue
+            completed_at_ms = cls._int_or_none(
+                record.get("training_completed_at_ms")
+            )
+            if not completed_at_ms:
+                continue
+            completed.append((completed_at_ms, str(model_id), record))
+        if not completed:
+            return {}
+
+        _, model_id, record = max(
+            completed,
+            key=lambda item: (item[0], item[1]),
+        )
+        split_events = record.get("split_market_events")
+        if not isinstance(split_events, dict):
+            split_events = {}
+        validation_metrics = record.get("validation_metrics")
+        if not isinstance(validation_metrics, dict):
+            validation_metrics = {}
+        test_metrics = record.get("test_metrics")
+        if not isinstance(test_metrics, dict):
+            test_metrics = {}
+        calibration_metrics = record.get("calibration_metrics")
+        if not isinstance(calibration_metrics, dict):
+            calibration_metrics = {}
+        drift_metrics = record.get("drift_metrics")
+        if not isinstance(drift_metrics, dict):
+            drift_metrics = {}
+        offline_gates = record.get("offline_gate_results")
+        if not isinstance(offline_gates, dict):
+            offline_gates = {}
+
+        gates_passed = offline_gates.get("passed")
+        if gates_passed is True:
+            offline_result = "OFFLINE_VALIDATED"
+        elif gates_passed is False:
+            offline_result = "REJECTED"
+        else:
+            offline_result = str(record.get("status") or "UNKNOWN")
+
+        return {
+            "model_id": model_id,
+            "lifecycle_status": str(record.get("status") or "UNKNOWN"),
+            "offline_result": offline_result,
+            "selected_candidate": record.get("selected_candidate"),
+            "training_started_at_ms": cls._int_or_none(
+                record.get("training_started_at_ms")
+            ),
+            "training_completed_at_ms": cls._int_or_none(
+                record.get("training_completed_at_ms")
+            ),
+            "data_cutoff_ms": cls._int_or_none(record.get("data_cutoff_ms")),
+            "snapshot_independent_market_events": cls._int_or_none(
+                record.get("independent_event_count")
+            ),
+            "training_rows": cls._int_or_none(record.get("training_rows")),
+            "split_market_events": {
+                name: int(split_events.get(name, 0) or 0)
+                for name in ("train", "validation", "test")
+            },
+            "event_thresholds": {
+                "train": int(
+                    thresholds.get("min_train_market_events", 0) or 0
+                ),
+                "validation": int(
+                    thresholds.get("min_validation_market_events", 0) or 0
+                ),
+                "test": int(
+                    thresholds.get("min_test_market_events", 0) or 0
+                ),
+            },
+            "validation_metrics": validation_metrics,
+            "test_metrics": test_metrics,
+            "calibration_metrics": calibration_metrics,
+            "drift_metrics": drift_metrics,
+            "offline_gate_results": offline_gates,
+            "evaluation_diagnostics_retained": bool(
+                record.get("evaluation_diagnostics_retained", False)
+            ),
+        }
 
     def _challenger_id(
         self,

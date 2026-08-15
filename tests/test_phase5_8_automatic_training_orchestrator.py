@@ -294,6 +294,19 @@ class Phase58AutomaticTrainingTests(unittest.TestCase):
             )
             result = orchestrator.run_once()
             self.assertEqual(result["status"], "WAITING_FOR_DATA")
+            self.assertEqual(result["thresholds"]["min_new_outcomes"], 40)
+            self.assertEqual(
+                result["thresholds"]["min_new_market_events"], 40
+            )
+            self.assertEqual(
+                result["thresholds"]["min_train_market_events"], 1
+            )
+            self.assertEqual(
+                result["thresholds"]["min_validation_market_events"], 1
+            )
+            self.assertEqual(
+                result["thresholds"]["min_test_market_events"], 1
+            )
             self.assertFalse((Path(root) / "models").exists())
 
     def test_successful_pipeline_registers_provenance_without_promotion(self):

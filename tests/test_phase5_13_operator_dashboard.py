@@ -161,6 +161,109 @@ class Phase513OperatorDashboardTests(unittest.TestCase):
             self.assertIn("200 new completed outcomes", document["governance"]["next_automatic_action"])
             self.assertIn("40 new independent events", document["governance"]["next_automatic_action"])
 
+    def test_console_distinguishes_fresh_cycle_from_cumulative_training(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(root / "training.json", {
+                "status": "WAITING_FOR_DATA",
+                "inventory": {
+                    "after_ms": 1786758340885,
+                    "new_completed_outcomes": 563,
+                    "new_independent_market_events": 28,
+                    "total_qualified_outcomes": 42123,
+                    "pending_candidate_facts": 859,
+                    "rejected_evidence": 2147,
+                    "scan_mode": "QUALIFIED_EVIDENCE_LEDGER_V1",
+                    "ledger_generation": "PHASE7_LEDGER_V1",
+                },
+                "thresholds": {
+                    "min_new_outcomes": 1000,
+                    "min_new_market_events": 200,
+                    "min_train_market_events": 50,
+                    "min_validation_market_events": 20,
+                    "min_test_market_events": 20,
+                },
+            })
+            self._write(root / "registry.json", {
+                "current_champion_model_id": "RULE_SYSTEM_V1",
+                "latest_model_id": "CHALLENGER_2",
+                "models": {
+                    "CHALLENGER_2": {
+                        "status": "REJECTED",
+                        "training_started_at_ms": 1786758537837,
+                        "training_completed_at_ms": 1786758674679,
+                        "data_cutoff_ms": 1786758340885,
+                        "independent_event_count": 541,
+                        "training_rows": 30000,
+                        "selected_candidate": "ENSEMBLE",
+                        "split_market_events": {
+                            "train": 357,
+                            "validation": 45,
+                            "test": 71,
+                        },
+                        "validation_metrics": {"roc_auc": 0.4673},
+                        "test_metrics": {
+                            "roc_auc": 0.48726755056628296,
+                            "brier_score": 0.22638601050868173,
+                        },
+                        "calibration_metrics": {
+                            "test_max_abs_gap": 0.12697525971666024,
+                        },
+                        "drift_metrics": {
+                            "max_stability_feature_psi": 0.06348057460685741,
+                            "max_regime_context_psi": 9.338333703503224,
+                        },
+                        "offline_gate_results": {
+                            "passed": False,
+                            "checks": {
+                                "test_roc_auc": {
+                                    "actual": 0.48726755056628296,
+                                    "passed": False,
+                                },
+                                "test_brier_score": {
+                                    "actual": 0.22638601050868173,
+                                    "passed": True,
+                                },
+                                "test_calibration_gap": {
+                                    "actual": 0.12697525971666024,
+                                    "passed": False,
+                                },
+                                "feature_drift_psi": {
+                                    "actual": 0.06348057460685741,
+                                    "passed": True,
+                                },
+                            },
+                        },
+                    },
+                },
+                "authority": {},
+            })
+
+            document = self._publisher(root).refresh()
+            training = document["training_data"]
+            self.assertEqual(training["fresh_completed_outcomes"], 563)
+            self.assertEqual(training["fresh_independent_market_events"], 28)
+            self.assertEqual(training["lifetime_qualified_outcomes"], 42123)
+            last = training["last_completed_training"]
+            self.assertEqual(last["model_id"], "CHALLENGER_2")
+            self.assertEqual(last["split_market_events"]["train"], 357)
+
+            rendered = self._publisher(root).render_console(document)
+            self.assertIn("CHALLENGER TRAINING", rendered)
+            self.assertIn("Fresh qualified outcomes: 563 / 1,000 [WAIT]", rendered)
+            self.assertIn("Fresh independent events : 28 / 200 [WAIT]", rendered)
+            self.assertIn("Lifetime qualified ledger: 42,123", rendered)
+            self.assertIn("LAST COMPLETED TRAINING", rendered)
+            self.assertIn("Cumulative train events : 357 / 50 [PASS]", rendered)
+            self.assertIn("Cumulative validation   : 45 / 20 [PASS]", rendered)
+            self.assertIn("Cumulative test events  : 71 / 20 [PASS]", rendered)
+            self.assertIn("Test ROC AUC            : 0.4873 [FAIL]", rendered)
+            self.assertIn("Stable-feature PSI      : 0.0635 [PASS]", rendered)
+            self.assertIn("Regime-context PSI      : 9.3383 [DIAGNOSTIC]", rendered)
+            self.assertIn("SHADOW FORWARD VALIDATION", rendered)
+            self.assertNotIn("TRAINING (7.4)", rendered)
+            self.assertNotIn("FORWARD CHALLENGE (7.5)", rendered)
+
     def test_plain_english_rollback_reason_is_operator_readable(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -184,7 +287,8 @@ class Phase513OperatorDashboardTests(unittest.TestCase):
             text = AutoLearningStatusPublisher.render_console(document)
             for label in (
                 "Current champion", "Current challenger", "Challenger stage",
-                "Training status", "Qualified outcomes", "Independent events",
+                "CHALLENGER TRAINING", "Cycle status", "Qualified outcomes",
+                "Independent events", "SHADOW FORWARD VALIDATION",
                 "Comparison status", "Matched outcomes", "Disagreement events",
                 "Market regimes", "Champion average R", "Challenger average R",
                 "Lift", "Current verdict", "Reason", "Paper activation",
