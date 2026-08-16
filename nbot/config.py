@@ -28,7 +28,7 @@ class ObserverConfig:
 
     database_path: Path = Path("data/observer.db")
     backup_directory: Path = Path("data/backups")
-    schema_version: str = "NBOT_V2_MARKET_EVIDENCE_V2_3"
+    schema_version: str = "NBOT_V2_MARKET_EVIDENCE_V2_4"
     collector_version: str = "NBOT_V2_OBSERVER_EVIDENCE_V2_1"
 
     # Recovery never fabricates historical live spread/volume context. It may
@@ -163,6 +163,32 @@ class OutcomeConfig:
             raise ValueError("max_events_per_build must be positive")
 
 
+@dataclass(frozen=True)
+class PolicyConfig:
+    """Version-controlled V2.4 exit-policy laboratory definition."""
+
+    lab_version: str = "EXIT_POLICY_LAB_V1"
+    feature_version: str = "CANONICAL_FEATURES_V1"
+    outcome_version: str = "FUTURE_PATH_4H_V1"
+    risk_unit_version: str = "ATR14_1X_RESEARCH_R_V1"
+    max_horizon_bars: int = 48
+    max_events_per_build: int = 50
+
+    def validate(self) -> None:
+        if self.lab_version != "EXIT_POLICY_LAB_V1":
+            raise ValueError("V2.4 initial lab version is frozen as EXIT_POLICY_LAB_V1")
+        if self.feature_version != "CANONICAL_FEATURES_V1":
+            raise ValueError("V2.4 is tied to CANONICAL_FEATURES_V1")
+        if self.outcome_version != "FUTURE_PATH_4H_V1":
+            raise ValueError("V2.4 is tied to FUTURE_PATH_4H_V1")
+        if self.risk_unit_version != "ATR14_1X_RESEARCH_R_V1":
+            raise ValueError("V2.4 is tied to the V2.3 ATR14 research risk unit")
+        if self.max_horizon_bars != 48:
+            raise ValueError("V2.4 initial policy horizon is frozen at 48 bars")
+        if self.max_events_per_build <= 0:
+            raise ValueError("max_events_per_build must be positive")
+
+
 
 CONFIG = ObserverConfig()
 CONFIG.validate()
@@ -170,3 +196,5 @@ RESEARCH_CONFIG = ResearchConfig()
 RESEARCH_CONFIG.validate()
 OUTCOME_CONFIG = OutcomeConfig()
 OUTCOME_CONFIG.validate()
+POLICY_CONFIG = PolicyConfig()
+POLICY_CONFIG.validate()

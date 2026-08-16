@@ -82,3 +82,37 @@ exact funding events crossed, explicit after-cost return proxies, and favorable
 continuation after frozen hypothetical exit horizons. Missing future candles for
 symbols that leave the observation universe are cached separately as label-only
 historical klines; V2.2 features never read that cache.
+
+## V2.4 exit-policy / profit-capture laboratory
+
+V2.4 compares exit behavior on the same V2.3 future paths. It is research-only:
+it cannot select an entry, promote itself, recommend a trade, or place an order.
+Every policy starts with the exact same V2.3 ATR14 1R initial risk and may never
+loosen below that initial stop.
+
+```bash
+python3 nbot_admin.py policy-build
+python3 nbot_admin.py policy-status
+python3 nbot_admin.py policy-report
+python3 nbot_admin.py policy-audit
+```
+
+The frozen V1 catalog contains one control and seven challenger families:
+
+- `INTEGER_R_STEP_CONTROL`
+- `CONTINUOUS_R_GIVEBACK_V1`
+- `ATR_VOLATILITY_TRAIL_V1`
+- `CHANDELIER_TRAIL_V1`
+- `STRUCTURE_TRAIL_V1`
+- `RUNNER_POLICY_V1`
+- `STAGNATION_TIME_EXIT_V1`
+- `EXHAUSTION_TIGHTENING_V1`
+
+Stops for a future 5-minute bar are decided only from information available
+through the previous completed bar. The lab records after-cost net R, gross R,
+full-path MFE/MAE, winner capture ratio, peak giveback, holding time,
+post-exit favorable movement, missed extension, exit reason, compact stop-change
+history, and deterministic lineage back to the V2.3 future path.
+
+V2.4 does not auto-promote a policy. Promotion requires later unseen
+chronological evidence as defined by the rebuild roadmap.

@@ -8,11 +8,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from nbot.binance import BinancePublicClient, latest_closed_open_time_ms
-from nbot.config import CONFIG, OUTCOME_CONFIG, RESEARCH_CONFIG
+from nbot.config import CONFIG, OUTCOME_CONFIG, POLICY_CONFIG, RESEARCH_CONFIG
 from nbot.db import EvidenceDB
 from nbot.observer import MarketEvidenceObserver
 from nbot.research import ResearchEngine
 from nbot.outcomes import FuturePathEngine
+from nbot.policies import ExitPolicyLab
 
 
 def iso_ms(value: int) -> str:
@@ -211,6 +212,50 @@ def cmd_outcome_audit(_args: argparse.Namespace) -> int:
     )
     return 2 if failures else 0
 
+
+def build_policy_lab() -> ExitPolicyLab:
+    db = EvidenceDB(CONFIG)
+    db.initialize()
+    return ExitPolicyLab(CONFIG, POLICY_CONFIG, db)
+
+
+def cmd_policy_build(args: argparse.Namespace) -> int:
+    result = build_policy_lab().build(max_events=args.max_events, rebuild=args.rebuild)
+    print(json.dumps(result.__dict__, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_policy_status(_args: argparse.Namespace) -> int:
+    print(json.dumps(build_policy_lab().status(), indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_policy_report(_args: argparse.Namespace) -> int:
+    print(json.dumps(build_policy_lab().report(), indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_policy_audit(_args: argparse.Namespace) -> int:
+    report = build_policy_lab().audit()
+    print(json.dumps(report, indent=2, sort_keys=True))
+    failures = any(
+        report[key] != 0
+        for key in (
+            "lab_definition_mismatch",
+            "policy_definition_mismatches",
+            "result_digest_mismatches",
+            "invalid_results",
+            "invalid_initial_risk",
+            "source_path_mismatches",
+            "risk_unit_version_mismatches",
+            "annotation_count_mismatches",
+            "build_row_mismatches",
+            "build_digest_mismatches",
+            "build_source_digest_mismatches",
+        )
+    )
+    return 2 if failures else 0
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="NBOT V2 administration")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -236,6 +281,13 @@ def main() -> int:
     sub.add_parser("outcome-status")
     sub.add_parser("outcome-audit")
 
+    policy_build = sub.add_parser("policy-build")
+    policy_build.add_argument("--max-events", type=int, default=POLICY_CONFIG.max_events_per_build)
+    policy_build.add_argument("--rebuild", action="store_true")
+    sub.add_parser("policy-status")
+    sub.add_parser("policy-report")
+    sub.add_parser("policy-audit")
+
     args = parser.parse_args()
     commands = {
         "init": cmd_init,
@@ -253,6 +305,10 @@ def main() -> int:
         "outcome-build": cmd_outcome_build,
         "outcome-status": cmd_outcome_status,
         "outcome-audit": cmd_outcome_audit,
+        "policy-build": cmd_policy_build,
+        "policy-status": cmd_policy_status,
+        "policy-report": cmd_policy_report,
+        "policy-audit": cmd_policy_audit,
     }
     return commands[args.command](args)
 

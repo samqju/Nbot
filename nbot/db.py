@@ -348,6 +348,87 @@ CREATE TABLE IF NOT EXISTS future_path_attempts (
     detail TEXT
 );
 
+CREATE TABLE IF NOT EXISTS exit_policy_labs (
+    lab_version TEXT PRIMARY KEY,
+    outcome_version TEXT NOT NULL,
+    catalog_hash TEXT NOT NULL,
+    definition_json TEXT NOT NULL,
+    registered_at_ms INTEGER NOT NULL,
+    FOREIGN KEY (outcome_version) REFERENCES future_path_sets(outcome_version)
+);
+
+CREATE TABLE IF NOT EXISTS exit_policy_sets (
+    policy_version TEXT PRIMARY KEY,
+    lab_version TEXT NOT NULL,
+    family TEXT NOT NULL,
+    is_control INTEGER NOT NULL CHECK (is_control IN (0, 1)),
+    definition_hash TEXT NOT NULL,
+    definition_json TEXT NOT NULL,
+    registered_at_ms INTEGER NOT NULL,
+    FOREIGN KEY (lab_version) REFERENCES exit_policy_labs(lab_version)
+);
+
+CREATE TABLE IF NOT EXISTS exit_policy_results (
+    event_open_ms INTEGER NOT NULL,
+    symbol TEXT NOT NULL,
+    side TEXT NOT NULL CHECK (side IN ('LONG', 'SHORT')),
+    feature_version TEXT NOT NULL,
+    outcome_version TEXT NOT NULL,
+    lab_version TEXT NOT NULL,
+    policy_version TEXT NOT NULL,
+    built_at_ms INTEGER NOT NULL,
+    entry_price REAL NOT NULL,
+    initial_risk_frac REAL NOT NULL CHECK (initial_risk_frac > 0),
+    source_path_digest TEXT NOT NULL,
+    source_candle_digest TEXT NOT NULL,
+    exit_bar INTEGER NOT NULL CHECK (exit_bar BETWEEN 1 AND 48),
+    exit_time_ms INTEGER NOT NULL,
+    exit_price REAL NOT NULL,
+    exit_reason TEXT NOT NULL,
+    gross_return_frac REAL NOT NULL,
+    gross_r REAL NOT NULL,
+    funding_cost_frac REAL NOT NULL,
+    roundtrip_base_cost_frac REAL NOT NULL,
+    net_return_frac REAL NOT NULL,
+    net_r REAL NOT NULL,
+    mfe_r REAL NOT NULL,
+    mae_r REAL NOT NULL,
+    capture_ratio REAL,
+    peak_favorable_r REAL NOT NULL,
+    peak_giveback_r REAL NOT NULL,
+    time_to_mfe_min INTEGER NOT NULL,
+    holding_minutes INTEGER NOT NULL,
+    post_exit_mfe_r REAL NOT NULL,
+    missed_extension_r REAL NOT NULL,
+    stop_updates INTEGER NOT NULL,
+    stop_trace_json TEXT NOT NULL,
+    ambiguous_stop_bar INTEGER NOT NULL CHECK (ambiguous_stop_bar IN (0, 1)),
+    result_digest TEXT NOT NULL,
+    PRIMARY KEY (event_open_ms, symbol, side, policy_version),
+    FOREIGN KEY (event_open_ms, symbol, outcome_version)
+        REFERENCES future_paths(event_open_ms, symbol, outcome_version) ON DELETE CASCADE,
+    FOREIGN KEY (lab_version) REFERENCES exit_policy_labs(lab_version),
+    FOREIGN KEY (policy_version) REFERENCES exit_policy_sets(policy_version)
+);
+
+CREATE TABLE IF NOT EXISTS exit_policy_builds (
+    event_open_ms INTEGER NOT NULL,
+    lab_version TEXT NOT NULL,
+    built_at_ms INTEGER NOT NULL,
+    eligible_path_count INTEGER NOT NULL,
+    result_row_count INTEGER NOT NULL,
+    source_digest TEXT NOT NULL,
+    result_digest TEXT NOT NULL,
+    PRIMARY KEY (event_open_ms, lab_version),
+    FOREIGN KEY (event_open_ms) REFERENCES market_events(event_open_ms) ON DELETE CASCADE,
+    FOREIGN KEY (lab_version) REFERENCES exit_policy_labs(lab_version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_exit_policy_results_policy_side
+    ON exit_policy_results(policy_version, side, event_open_ms);
+CREATE INDEX IF NOT EXISTS idx_exit_policy_results_event
+    ON exit_policy_results(event_open_ms, symbol, side);
+
 CREATE INDEX IF NOT EXISTS idx_future_cache_symbol_time
     ON future_candle_cache(symbol, event_open_ms);
 CREATE INDEX IF NOT EXISTS idx_future_paths_symbol_time
