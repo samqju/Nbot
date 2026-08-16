@@ -28,7 +28,7 @@ class ObserverConfig:
 
     database_path: Path = Path("data/observer.db")
     backup_directory: Path = Path("data/backups")
-    schema_version: str = "NBOT_V2_MARKET_EVIDENCE_V2_1"
+    schema_version: str = "NBOT_V2_MARKET_EVIDENCE_V2_2"
     collector_version: str = "NBOT_V2_OBSERVER_EVIDENCE_V2_1"
 
     # Recovery never fabricates historical live spread/volume context. It may
@@ -78,5 +78,64 @@ class ObserverConfig:
             raise ValueError("cost assumptions must be non-negative")
 
 
+@dataclass(frozen=True)
+class ResearchConfig:
+    """Version-controlled V2.2 canonical feature and signal definitions."""
+
+    feature_version: str = "CANONICAL_FEATURES_V1"
+    return_lookback_bars: tuple[int, ...] = (1, 3, 6, 12, 24, 48)
+    realized_vol_1h_bars: int = 12
+    realized_vol_4h_bars: int = 48
+    atr_bars: int = 14
+    max_history_bars: int = 48
+    max_events_per_build: int = 500
+
+    csm_active_abs_score: float = 0.60
+    tsmom_active_abs_score: float = 0.50
+
+    intraday_directional_breadth_high: float = 0.65
+    intraday_directional_breadth_low: float = 0.35
+    intraday_balanced_breadth_low: float = 0.45
+    intraday_balanced_breadth_high: float = 0.55
+    intraday_momentum_percentile: float = 0.65
+    intraday_reversal_percentile: float = 0.90
+
+    def validate(self) -> None:
+        if self.feature_version != "CANONICAL_FEATURES_V1":
+            raise ValueError("V2.2 initial feature version is frozen as CANONICAL_FEATURES_V1")
+        if self.return_lookback_bars != (1, 3, 6, 12, 24, 48):
+            raise ValueError("V2.2 return lookbacks are frozen")
+        if self.max_history_bars < max(self.return_lookback_bars):
+            raise ValueError("max_history_bars must cover all return lookbacks")
+        if self.realized_vol_4h_bars > self.max_history_bars:
+            raise ValueError("4h volatility lookback exceeds max history")
+        if self.atr_bars <= 0 or self.realized_vol_1h_bars <= 0:
+            raise ValueError("volatility lookbacks must be positive")
+        if self.max_events_per_build <= 0:
+            raise ValueError("max_events_per_build must be positive")
+        for name, value in (
+            ("csm_active_abs_score", self.csm_active_abs_score),
+            ("tsmom_active_abs_score", self.tsmom_active_abs_score),
+        ):
+            if value <= 0:
+                raise ValueError(f"{name} must be positive")
+        for name, value in (
+            ("intraday_directional_breadth_high", self.intraday_directional_breadth_high),
+            ("intraday_directional_breadth_low", self.intraday_directional_breadth_low),
+            ("intraday_balanced_breadth_low", self.intraday_balanced_breadth_low),
+            ("intraday_balanced_breadth_high", self.intraday_balanced_breadth_high),
+            ("intraday_momentum_percentile", self.intraday_momentum_percentile),
+            ("intraday_reversal_percentile", self.intraday_reversal_percentile),
+        ):
+            if not 0 <= value <= 1:
+                raise ValueError(f"{name} must be between 0 and 1")
+        if not self.intraday_directional_breadth_low < self.intraday_directional_breadth_high:
+            raise ValueError("directional breadth bounds are invalid")
+        if not self.intraday_balanced_breadth_low <= self.intraday_balanced_breadth_high:
+            raise ValueError("balanced breadth bounds are invalid")
+
+
 CONFIG = ObserverConfig()
 CONFIG.validate()
+RESEARCH_CONFIG = ResearchConfig()
+RESEARCH_CONFIG.validate()

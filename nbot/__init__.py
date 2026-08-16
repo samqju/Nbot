@@ -1,3 +1,3 @@
 """NBOT V2 research-first market evidence system."""
 
-__version__ = "2.1.0-evidence-integrity"
+__version__ = "2.2.0-canonical-research"

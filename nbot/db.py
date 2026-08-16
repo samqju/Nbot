@@ -146,6 +146,99 @@ CREATE TABLE IF NOT EXISTS audit_runs (
     report_json TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS feature_sets (
+    feature_version TEXT PRIMARY KEY,
+    definition_hash TEXT NOT NULL,
+    definition_json TEXT NOT NULL,
+    registered_at_ms INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS canonical_features (
+    event_open_ms INTEGER NOT NULL,
+    symbol TEXT NOT NULL,
+    feature_version TEXT NOT NULL,
+    computed_at_ms INTEGER NOT NULL,
+    source_min_event_open_ms INTEGER NOT NULL,
+    source_max_event_open_ms INTEGER NOT NULL,
+    history_bars INTEGER NOT NULL,
+    full_history_4h INTEGER NOT NULL CHECK (full_history_4h IN (0, 1)),
+    close_price REAL NOT NULL,
+    ret_5m REAL,
+    ret_15m REAL,
+    ret_30m REAL,
+    ret_1h REAL,
+    ret_2h REAL,
+    ret_4h REAL,
+    realized_vol_1h REAL,
+    realized_vol_4h REAL,
+    atr14_frac REAL,
+    range_frac REAL,
+    quote_volume_24h_usd REAL NOT NULL,
+    spread_pct REAL NOT NULL,
+    funding_rate REAL,
+    minutes_to_next_funding REAL,
+    selection_rank INTEGER NOT NULL,
+    liquidity_percentile REAL,
+    ret_1h_percentile REAL,
+    ret_4h_percentile REAL,
+    volatility_percentile REAL,
+    btc_ret_5m REAL,
+    btc_ret_1h REAL,
+    btc_ret_4h REAL,
+    breadth_positive_5m REAL,
+    breadth_positive_1h REAL,
+    median_ret_5m REAL,
+    median_ret_1h REAL,
+    utc_hour INTEGER NOT NULL,
+    utc_minute INTEGER NOT NULL,
+    utc_day_of_week INTEGER NOT NULL,
+    context_delay_ms INTEGER NOT NULL,
+    PRIMARY KEY (event_open_ms, symbol, feature_version),
+    FOREIGN KEY (event_open_ms, symbol)
+        REFERENCES market_snapshots(event_open_ms, symbol) ON DELETE CASCADE,
+    FOREIGN KEY (feature_version) REFERENCES feature_sets(feature_version)
+);
+
+CREATE TABLE IF NOT EXISTS signal_sets (
+    signal_version TEXT PRIMARY KEY,
+    signal_name TEXT NOT NULL,
+    feature_version TEXT NOT NULL,
+    definition_hash TEXT NOT NULL,
+    definition_json TEXT NOT NULL,
+    registered_at_ms INTEGER NOT NULL,
+    FOREIGN KEY (feature_version) REFERENCES feature_sets(feature_version)
+);
+
+CREATE TABLE IF NOT EXISTS signal_annotations (
+    event_open_ms INTEGER NOT NULL,
+    symbol TEXT NOT NULL,
+    feature_version TEXT NOT NULL,
+    signal_version TEXT NOT NULL,
+    computed_at_ms INTEGER NOT NULL,
+    score REAL,
+    active INTEGER NOT NULL CHECK (active IN (0, 1)),
+    direction TEXT NOT NULL CHECK (direction IN ('LONG', 'SHORT', 'NONE')),
+    reason TEXT NOT NULL,
+    metadata_json TEXT NOT NULL,
+    PRIMARY KEY (event_open_ms, symbol, signal_version),
+    FOREIGN KEY (event_open_ms, symbol, feature_version)
+        REFERENCES canonical_features(event_open_ms, symbol, feature_version) ON DELETE CASCADE,
+    FOREIGN KEY (signal_version) REFERENCES signal_sets(signal_version)
+);
+
+CREATE TABLE IF NOT EXISTS feature_builds (
+    event_open_ms INTEGER NOT NULL,
+    feature_version TEXT NOT NULL,
+    built_at_ms INTEGER NOT NULL,
+    feature_row_count INTEGER NOT NULL,
+    feature_digest TEXT NOT NULL,
+    signal_annotation_count INTEGER NOT NULL,
+    signal_digest TEXT NOT NULL,
+    PRIMARY KEY (event_open_ms, feature_version),
+    FOREIGN KEY (event_open_ms) REFERENCES market_events(event_open_ms) ON DELETE CASCADE,
+    FOREIGN KEY (feature_version) REFERENCES feature_sets(feature_version)
+);
+
 CREATE INDEX IF NOT EXISTS idx_snapshots_symbol_time
     ON market_snapshots(symbol, event_open_ms);
 CREATE INDEX IF NOT EXISTS idx_candles_symbol_time
@@ -156,6 +249,10 @@ CREATE INDEX IF NOT EXISTS idx_funding_symbol_time
     ON funding_events(symbol, funding_time_ms);
 CREATE INDEX IF NOT EXISTS idx_attempts_event_time
     ON collection_attempts(event_open_ms, attempted_at_ms);
+CREATE INDEX IF NOT EXISTS idx_features_symbol_time
+    ON canonical_features(symbol, event_open_ms, feature_version);
+CREATE INDEX IF NOT EXISTS idx_signals_event_version
+    ON signal_annotations(event_open_ms, signal_version, active);
 """
 
 
@@ -172,6 +269,10 @@ class EvidenceDB:
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=30000")
         return conn
+
+    def connection(self) -> sqlite3.Connection:
+        """Open a configured connection for other NBOT modules using the canonical DB."""
+        return self._connect()
 
     def initialize(self) -> None:
         with self._connect() as conn:

@@ -8,9 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from nbot.binance import BinancePublicClient, latest_closed_open_time_ms
-from nbot.config import CONFIG
+from nbot.config import CONFIG, RESEARCH_CONFIG
 from nbot.db import EvidenceDB
 from nbot.observer import MarketEvidenceObserver
+from nbot.research import ResearchEngine
 
 
 def iso_ms(value: int) -> str:
@@ -128,6 +129,43 @@ def cmd_backup(args: argparse.Namespace) -> int:
     return 0
 
 
+
+def build_research() -> ResearchEngine:
+    db = EvidenceDB(CONFIG)
+    db.initialize()
+    return ResearchEngine(CONFIG, RESEARCH_CONFIG, db)
+
+
+def cmd_research_build(args: argparse.Namespace) -> int:
+    result = build_research().build(max_events=args.max_events, rebuild=args.rebuild)
+    print(json.dumps(result.__dict__, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_research_status(_args: argparse.Namespace) -> int:
+    print(json.dumps(build_research().status(), indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_research_audit(_args: argparse.Namespace) -> int:
+    report = build_research().audit()
+    print(json.dumps(report, indent=2, sort_keys=True))
+    failures = (
+        report["unbuilt_events"] != 0
+        or report["feature_definition_mismatch"] != 0
+        or report["signal_definition_mismatches"] != 0
+        or report["context_incomplete_feature_rows"] != 0
+        or report["feature_rows_without_snapshot"] != 0
+        or report["future_source_rows"] != 0
+        or report["invalid_percentiles"] != 0
+        or report["feature_row_count_mismatches"] != 0
+        or report["signal_rows_without_feature"] != 0
+        or report["annotation_count_mismatches"] != 0
+        or report["invalid_active_signals"] != 0
+        or report["digest_mismatches"] != 0
+    )
+    return 2 if failures else 0
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="NBOT V2 administration")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -141,6 +179,12 @@ def main() -> int:
     backup = sub.add_parser("backup")
     backup.add_argument("--output")
 
+    research_build = sub.add_parser("research-build")
+    research_build.add_argument("--max-events", type=int, default=RESEARCH_CONFIG.max_events_per_build)
+    research_build.add_argument("--rebuild", action="store_true")
+    sub.add_parser("research-status")
+    sub.add_parser("research-audit")
+
     args = parser.parse_args()
     commands = {
         "init": cmd_init,
@@ -152,6 +196,9 @@ def main() -> int:
         "audit": cmd_audit,
         "checkpoint": cmd_checkpoint,
         "backup": cmd_backup,
+        "research-build": cmd_research_build,
+        "research-status": cmd_research_status,
+        "research-audit": cmd_research_audit,
     }
     return commands[args.command](args)
 

@@ -37,3 +37,28 @@ python3 run_observation.py
 Runtime data is written to `data/observer.db` and is not committed.
 
 The rebuild plan is in `docs/NBOT_V2_REBUILD_ROADMAP.md`.
+
+## V2.2 canonical research layer
+
+V2.2 derives versioned features and transparent research-signal annotations
+from the canonical V2.1 evidence database. It does not change which raw market
+snapshots exist, does not place orders, and does not give any signal authority.
+
+```bash
+python3 nbot_admin.py research-build
+python3 nbot_admin.py research-status
+python3 nbot_admin.py research-audit
+```
+
+`CANONICAL_FEATURES_V1` uses only the target event and earlier canonical
+candles. Every research-ready point-in-time snapshot receives a feature row,
+even when long lookback history is incomplete. Every feature row receives all
+three initial signal annotations; inactive/no-signal annotations are retained.
+
+Initial annotations are research baselines only:
+
+- `CSM_RANK_1H_4H_V1`
+- `TSMOM_4H_VOL_ADJ_V1`
+- `INTRADAY_CONDITIONAL_MOM_REV_V1`
+
+They are not champions, recommendations, or execution instructions.

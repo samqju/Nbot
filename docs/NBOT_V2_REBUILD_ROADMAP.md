@@ -2,7 +2,7 @@
 
 Version: 2026-08-16
 Foundation generation: `NBOT_V2_FOUNDATION_V1`
-Current implementation baseline: **V2.0 complete; V2.1 evidence integrity; Observer-only; no trading authority**
+Current development baseline: **V2.1 evidence integrity under live validation; V2.2 canonical feature/signal layer in development; Observer-only; no trading authority**
 
 ---
 
@@ -364,13 +364,34 @@ If reintroduced, its old ten setup families are marked:
 
 They cannot become V2 champion by inheritance.
 
+## V2.2 implementation contract
+
+The first frozen feature version is `CANONICAL_FEATURES_V1`. A row is created
+for every research-ready point-in-time snapshot, including rows with incomplete
+long-history features and rows for which every signal is inactive. Derived rows
+store source-time bounds and deterministic digests. Reusing a feature/signal
+version with changed parameters is rejected.
+
+The first transparent signal annotations are:
+
+- `CSM_RANK_1H_4H_V1`;
+- `TSMOM_4H_VOL_ADJ_V1`;
+- `INTRADAY_CONDITIONAL_MOM_REV_V1`.
+
+These are research annotations only. They have no champion, recommendation or
+execution authority. The legacy Rule V1 is intentionally not reconstructed in
+this phase; if it returns later, it remains `LEGACY_BENCHMARK_ONLY`.
+
 ## Acceptance
 
 - feature generation is deterministic from raw evidence;
 - a feature version can be reproduced later;
 - no future candle is read;
+- every research-ready snapshot gets a canonical feature row;
+- incomplete-history/no-signal observations remain present;
 - signals never alter the existence of raw snapshots;
-- every signal has a version and frozen parameter set.
+- every signal has a version and frozen parameter set;
+- stored feature/signal digests reproduce exactly from the database.
 
 ---
 
