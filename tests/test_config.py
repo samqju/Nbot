@@ -3,6 +3,7 @@ from dataclasses import replace
 
 from nbot.config import CONFIG, OUTCOME_CONFIG, POLICY_CONFIG, RESEARCH_CONFIG
 from nbot.selection import SELECTION_CONFIG
+from nbot.champion import CHAMPION_CONFIG
 
 
 class ConfigTests(unittest.TestCase):
@@ -11,7 +12,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(CONFIG.role, "OBSERVER_RESEARCH")
         self.assertEqual(CONFIG.market_environment, "LIVE_PUBLIC")
         self.assertEqual(CONFIG.observation_universe_size, 200)
-        self.assertIn("V2_5", CONFIG.schema_version)
+        self.assertIn("V2_6", CONFIG.schema_version)
         self.assertTrue(CONFIG.gap_recovery_enabled)
 
     def test_execution_like_role_is_rejected(self):
@@ -60,6 +61,19 @@ class ConfigTests(unittest.TestCase):
     def test_selection_target_policy_cannot_silently_change(self):
         with self.assertRaises(ValueError):
             replace(SELECTION_CONFIG, target_policy_version="STRUCTURE_TRAIL_V1").validate()
+
+    def test_champion_config_is_frozen_and_research_only(self):
+        CHAMPION_CONFIG.validate()
+        self.assertEqual(CHAMPION_CONFIG.evaluation_version, "WALK_FORWARD_CHAMPION_V1")
+        self.assertEqual(CHAMPION_CONFIG.candidate_selector_version, "RIDGE_EXPECTED_NET_R_V1")
+        self.assertEqual(CHAMPION_CONFIG.exit_policy_version, "INTEGER_R_STEP_CONTROL")
+        self.assertEqual(CHAMPION_CONFIG.candidate_min_train_events, 20)
+        self.assertEqual(CHAMPION_CONFIG.min_validation_events, 20)
+        self.assertEqual(CHAMPION_CONFIG.min_test_events, 20)
+
+    def test_champion_final_test_window_cannot_silently_change(self):
+        with self.assertRaises(ValueError):
+            replace(CHAMPION_CONFIG, min_test_events=5).validate()
 
 
 if __name__ == "__main__":

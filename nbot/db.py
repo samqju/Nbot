@@ -522,6 +522,49 @@ CREATE TABLE IF NOT EXISTS entry_selection_prediction_builds (
     FOREIGN KEY (selector_version) REFERENCES entry_selector_sets(selector_version)
 );
 
+CREATE TABLE IF NOT EXISTS research_champion_sets (
+    evaluation_version TEXT PRIMARY KEY,
+    champion_version TEXT NOT NULL,
+    selection_lab_version TEXT NOT NULL,
+    candidate_selector_version TEXT NOT NULL,
+    exit_policy_version TEXT NOT NULL,
+    definition_hash TEXT NOT NULL,
+    definition_json TEXT NOT NULL,
+    registered_at_ms INTEGER NOT NULL,
+    FOREIGN KEY (selection_lab_version) REFERENCES entry_selection_labs(lab_version),
+    FOREIGN KEY (candidate_selector_version) REFERENCES entry_selector_sets(selector_version),
+    FOREIGN KEY (exit_policy_version) REFERENCES exit_policy_sets(policy_version)
+);
+
+CREATE TABLE IF NOT EXISTS research_champion_evaluations (
+    evaluation_version TEXT PRIMARY KEY,
+    evaluated_at_ms INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    candidate_scored_events INTEGER NOT NULL,
+    validation_event_count INTEGER NOT NULL,
+    test_event_count INTEGER NOT NULL,
+    post_test_event_count INTEGER NOT NULL,
+    benchmark_selector_version TEXT,
+    source_digest TEXT NOT NULL,
+    evaluation_json TEXT NOT NULL,
+    evaluation_digest TEXT NOT NULL,
+    FOREIGN KEY (evaluation_version) REFERENCES research_champion_sets(evaluation_version),
+    FOREIGN KEY (benchmark_selector_version) REFERENCES entry_selector_sets(selector_version)
+);
+
+CREATE TABLE IF NOT EXISTS research_champions (
+    champion_version TEXT PRIMARY KEY,
+    evaluation_version TEXT NOT NULL UNIQUE,
+    selector_version TEXT NOT NULL,
+    exit_policy_version TEXT NOT NULL,
+    promoted_at_ms INTEGER NOT NULL,
+    authority TEXT NOT NULL,
+    source_evaluation_digest TEXT NOT NULL,
+    FOREIGN KEY (evaluation_version) REFERENCES research_champion_sets(evaluation_version),
+    FOREIGN KEY (selector_version) REFERENCES entry_selector_sets(selector_version),
+    FOREIGN KEY (exit_policy_version) REFERENCES exit_policy_sets(policy_version)
+);
+
 CREATE INDEX IF NOT EXISTS idx_entry_selection_examples_event
     ON entry_selection_examples(event_open_ms, symbol, side);
 CREATE INDEX IF NOT EXISTS idx_entry_selection_predictions_selector_event

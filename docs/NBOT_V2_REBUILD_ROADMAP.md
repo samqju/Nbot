@@ -687,6 +687,20 @@ The first successful authority becomes:
 
 It still has **no order authority**.
 
+## V2.6 implementation contract
+
+The initial evaluator is `WALK_FORWARD_CHAMPION_V1`. It evaluates the frozen
+V2.5 `RIDGE_EXPECTED_NET_R_V1` challenger paired with the V2.4
+`INTEGER_R_STEP_CONTROL` reference exit. The first 20 genuinely forward-scored
+market events form validation; the next 20 form the untouched final test. The
+strongest transparent benchmark is selected using validation only. Later events
+do not alter the initial final-test promotion decision. Promotion requires
+positive after-cost event-level confidence, positive paired lift over the frozen
+benchmark, ordered bucket separation, cost-stress survival, drawdown/date/symbol
+robustness, no catastrophic covered regime, acceptable control-policy winner
+capture, clean V2.4/V2.5 lineage, and zero training leakage. A passing result is
+stored only as `RESEARCH_CHAMPION_V1` with research-only authority.
+
 ---
 
 # PHASE V2.7 — Execution Worker Rebuild

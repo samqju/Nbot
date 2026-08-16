@@ -15,6 +15,7 @@ from nbot.research import ResearchEngine
 from nbot.outcomes import FuturePathEngine
 from nbot.policies import ExitPolicyLab
 from nbot.selection import EntrySelectionLab, SELECTION_CONFIG
+from nbot.champion import CHAMPION_CONFIG, WalkForwardChampionEvaluator
 
 
 def iso_ms(value: int) -> str:
@@ -316,6 +317,59 @@ def cmd_selection_audit(_args: argparse.Namespace) -> int:
     )
     return 2 if failures else 0
 
+
+def build_champion_evaluator() -> WalkForwardChampionEvaluator:
+    db = EvidenceDB(CONFIG)
+    db.initialize()
+    ExitPolicyLab(CONFIG, POLICY_CONFIG, db).initialize()
+    EntrySelectionLab(CONFIG, SELECTION_CONFIG, db).initialize()
+    return WalkForwardChampionEvaluator(CONFIG, CHAMPION_CONFIG, db)
+
+
+def cmd_champion_evaluate(args: argparse.Namespace) -> int:
+    result = build_champion_evaluator().evaluate(rebuild=args.rebuild)
+    print(json.dumps(result.__dict__, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_champion_status(_args: argparse.Namespace) -> int:
+    print(json.dumps(build_champion_evaluator().status(), indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_champion_report(_args: argparse.Namespace) -> int:
+    print(json.dumps(build_champion_evaluator().report(), indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_champion_audit(_args: argparse.Namespace) -> int:
+    report = build_champion_evaluator().audit()
+    print(json.dumps(report, indent=2, sort_keys=True))
+    failures = any(
+        report[key] != 0
+        for key in (
+            "selection_integrity_failures",
+            "policy_integrity_failures",
+            "definition_mismatch",
+            "selection_lab_mismatch",
+            "candidate_selector_mismatch",
+            "exit_policy_mismatch",
+            "evaluation_missing",
+            "source_digest_mismatch",
+            "evaluation_digest_mismatch",
+            "window_mismatch",
+            "benchmark_mismatch",
+            "training_leakage",
+            "missing_source_predictions",
+            "selected_policy_digest_mismatches",
+            "champion_without_pass",
+            "champion_authority_mismatch",
+            "champion_source_digest_mismatch",
+            "unexpected_champion_rows",
+        )
+    )
+    return 2 if failures else 0
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="NBOT V2 administration")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -355,6 +409,12 @@ def main() -> int:
     sub.add_parser("selection-report")
     sub.add_parser("selection-audit")
 
+    champion_evaluate = sub.add_parser("champion-evaluate")
+    champion_evaluate.add_argument("--rebuild", action="store_true")
+    sub.add_parser("champion-status")
+    sub.add_parser("champion-report")
+    sub.add_parser("champion-audit")
+
     args = parser.parse_args()
     commands = {
         "init": cmd_init,
@@ -380,6 +440,10 @@ def main() -> int:
         "selection-status": cmd_selection_status,
         "selection-report": cmd_selection_report,
         "selection-audit": cmd_selection_audit,
+        "champion-evaluate": cmd_champion_evaluate,
+        "champion-status": cmd_champion_status,
+        "champion-report": cmd_champion_report,
+        "champion-audit": cmd_champion_audit,
     }
     return commands[args.command](args)
 
