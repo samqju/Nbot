@@ -1,58 +1,25 @@
-"""Start the public-data-only NBOT Observation Worker."""
-
+#!/usr/bin/env python3
 from __future__ import annotations
 
-import os
+import logging
 
-from communication.observation_server import ObservationHTTPServer
-from config import EXECUTION_MODE, OBSERVATION_CONTROL_TOKEN, TRADING_ENV
-from execution.binance_market_client import BinanceMarketClient
-from utils.logger import system_logger
-from utils.process_lock import BotAlreadyRunningError, SingleInstanceLock
-from workers.observation_worker import ObservationWorker
+from nbot.binance import BinancePublicClient
+from nbot.config import CONFIG
+from nbot.db import EvidenceDB
+from nbot.observer import MarketEvidenceObserver
 
 
 def main() -> int:
-    system_log = system_logger()
-    lock = SingleInstanceLock(
-        path=f"runtime/OBSERVATION_{TRADING_ENV}.lock"
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)sZ %(levelname)s %(name)s %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S",
     )
-    try:
-        lock.acquire(
-            environment=TRADING_ENV,
-            execution_mode=EXECUTION_MODE,
-        )
-    except BotAlreadyRunningError as exc:
-        system_log.critical(str(exc))
-        return 1
-
-    system_log.info(
-        "OBSERVATION_INSTANCE_LOCK_ACQUIRED | "
-        f"path={lock.path} | pid={os.getpid()}"
-    )
-    market_client = BinanceMarketClient(system_log=system_log)
-    worker = ObservationWorker(
-        system_log=system_log,
-        market_client=market_client,
-    )
-    api_server = ObservationHTTPServer(
-        target=worker,
-        host="127.0.0.1",
-        port=8765,
-        auth_token=OBSERVATION_CONTROL_TOKEN or None,
-        system_log=system_log,
-    )
-    api_server.start()
-    try:
-        worker.run_forever()
-    except KeyboardInterrupt:
-        system_log.info("OBSERVATION_KEYBOARD_INTERRUPT | shutting_down=true")
-        return 0
-    finally:
-        api_server.stop()
-        market_client.disconnect()
-        lock.release()
-        system_log.info("OBSERVATION_INSTANCE_LOCK_RELEASED")
+    logging.Formatter.converter = __import__("time").gmtime
+    logging.getLogger("nbot.v2").info("NBOT_V2_START")
+    db = EvidenceDB(CONFIG)
+    client = BinancePublicClient(CONFIG)
+    MarketEvidenceObserver(CONFIG, client, db).run_forever()
     return 0
 
 

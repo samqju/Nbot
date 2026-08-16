@@ -1,1 +1,0 @@
-"""Research-only operator scripts."""

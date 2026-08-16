@@ -1,34 +1,15 @@
-# ===============================
-# Secrets & machine-local environment
 .env
 .env.*
 !.env.example
-
-# Runtime / state
-logs/
-runtime/
-data/
-bot_state.json
-universe_snapshot.json
-*.log
-
-# Python environments and caches
 __pycache__/
 *.py[cod]
 .pytest_cache/
-venv/
 .venv/
-env/
-
-# Machine-learning outputs
-ml_dataset*.jsonl
+data/
+runtime/
+logs/
 models/
-
-# Generated reviews, backups, and local patches
-live_review_codebase*.txt
-nbot_*_audit.txt
-phase5_*_backup/
-*.patch
-*.bak
-*.orig
-old_vps_system.txt
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm

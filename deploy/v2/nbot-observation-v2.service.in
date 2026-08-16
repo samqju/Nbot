@@ -1,0 +1,17 @@
+[Unit]
+Description=NBOT V2 Observation Evidence Collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__REPO__
+ExecStart=__PYTHON__ __REPO__/run_observation.py
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
