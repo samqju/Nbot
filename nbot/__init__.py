@@ -1,3 +1,3 @@
-"""NBOT V2 research-first market evidence system."""
+"""NBOT V2 research-first market evidence and execution-boundary system."""
 
-__version__ = "2.3.0-future-path"
+__version__ = "2.7.0-execution-boundary"

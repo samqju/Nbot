@@ -747,6 +747,22 @@ The old architecture's strongest statement must again be true:
 > Observation can be powered off while a position is open and Execution still
 > manages, protects, reconciles and closes it safely.
 
+## V2.7 implementation contract
+
+The initial clean V2 execution boundary is `NBOT_V2_EXECUTION_V1`. It adds a
+versioned `ExecutionProposal`/`ExecutionOutcome` protocol, a separate atomic
+Execution state file, durable processed-proposal and pending-outcome state,
+flat-only proposal requests, independent price/spread/drift/margin/risk/stop
+validation, and the locally installed `INTEGER_R_STEP_CONTROL` mechanical exit
+implementation. The mechanical risk defaults retain the frozen V1 reference
+values ($10 initial risk, $1,000 notional, 5x leverage and 0.25% spread cap)
+only so later paper/Testnet mechanics can be reproduced; they do not grant
+trading authority. V2.7 ships with zero allowed entry authorities and zero
+approved exit policies by default, so the runtime is fail-closed until a later
+phase explicitly authorizes a proven pair. The open-position hot path imports
+no research, selection, champion or Observer module and never contacts the
+Observer. Real Binance order adapters remain out of scope until V2.8.
+
 ---
 
 # PHASE V2.8 — TESTNET TRADE Mechanical Canary

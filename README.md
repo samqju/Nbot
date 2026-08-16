@@ -116,3 +116,20 @@ history, and deterministic lineage back to the V2.3 future path.
 
 V2.4 does not auto-promote a policy. Promotion requires later unseen
 chronological evidence as defined by the rebuild roadmap.
+
+
+## V2.7 execution capital boundary
+
+V2.7 reintroduces the execution side as a clean, separate capital boundary.
+It does not import the V2 research/selection/champion stack and it has no
+approved entry authority by default. Real Binance order adapters are deferred
+to the V2.8 Testnet mechanical canary.
+
+```bash
+python3 run_execution.py --self-check
+```
+
+The self-check must report `entry_authority=NONE`, no approved exit policies,
+and `order_adapter=NONE_UNTIL_V2_8`. Execution state is separate from
+`data/observer.db` and is stored atomically in `data/execution_v2_state.json`
+when an execution adapter is used.
