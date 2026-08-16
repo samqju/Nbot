@@ -6,7 +6,7 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class ObserverConfig:
-    """Version-controlled, non-secret V2.0 Observation configuration."""
+    """Version-controlled, non-secret V2.1 Observation configuration."""
 
     role: str = "OBSERVER_RESEARCH"
     market_environment: str = "LIVE_PUBLIC"
@@ -23,10 +23,24 @@ class ObserverConfig:
 
     request_timeout_seconds: float = 12.0
     candle_fetch_workers: int = 16
+    max_server_clock_skew_ms: int = 5_000
+    max_live_context_delay_ms: int = 30_000
 
     database_path: Path = Path("data/observer.db")
-    schema_version: str = "NBOT_V2_MARKET_EVIDENCE_V1"
-    collector_version: str = "NBOT_V2_OBSERVER_FOUNDATION_V1"
+    backup_directory: Path = Path("data/backups")
+    schema_version: str = "NBOT_V2_MARKET_EVIDENCE_V2_1"
+    collector_version: str = "NBOT_V2_OBSERVER_EVIDENCE_V2_1"
+
+    # Recovery never fabricates historical live spread/volume context. It may
+    # recover canonical candles using the most recent preceding point-in-time
+    # universe only, and marks those events as context-incomplete.
+    gap_recovery_enabled: bool = True
+    gap_recovery_max_events_per_cycle: int = 24
+
+    # Exact funding history is synced independently from current premium-index
+    # context. The public funding endpoint is timestamped and therefore safe to
+    # ingest retrospectively.
+    funding_sync_interval_seconds: int = 5 * 60
 
     # Stored now so every later simulation uses one explicit cost contract.
     taker_fee_rate: float = 0.0005
@@ -35,13 +49,13 @@ class ObserverConfig:
 
     def validate(self) -> None:
         if self.role != "OBSERVER_RESEARCH":
-            raise ValueError("V2.0 permits only OBSERVER_RESEARCH")
+            raise ValueError("V2.1 permits only OBSERVER_RESEARCH")
         if self.market_environment != "LIVE_PUBLIC":
-            raise ValueError("V2.0 collects only LIVE public market evidence")
+            raise ValueError("V2.1 collects only LIVE public market evidence")
         if self.binance_base_url != "https://fapi.binance.com":
-            raise ValueError("V2.0 Binance base URL must be the LIVE USD-M public endpoint")
+            raise ValueError("V2.1 Binance base URL must be the LIVE USD-M public endpoint")
         if self.candle_interval != "5m" or self.candle_interval_ms != 300_000:
-            raise ValueError("V2.0 decision clock is fixed to completed 5-minute candles")
+            raise ValueError("V2.1 decision clock is fixed to completed 5-minute candles")
         if not 1 <= self.observation_universe_size <= 500:
             raise ValueError("observation_universe_size must be between 1 and 500")
         if self.min_quote_volume_24h_usd < 0:
@@ -52,6 +66,14 @@ class ObserverConfig:
             raise ValueError("candle_fetch_workers must be between 1 and 64")
         if self.request_timeout_seconds <= 0:
             raise ValueError("request_timeout_seconds must be positive")
+        if self.max_server_clock_skew_ms <= 0:
+            raise ValueError("max_server_clock_skew_ms must be positive")
+        if self.max_live_context_delay_ms <= 0:
+            raise ValueError("max_live_context_delay_ms must be positive")
+        if self.gap_recovery_max_events_per_cycle < 0:
+            raise ValueError("gap_recovery_max_events_per_cycle must be non-negative")
+        if self.funding_sync_interval_seconds <= 0:
+            raise ValueError("funding_sync_interval_seconds must be positive")
         if self.taker_fee_rate < 0 or self.entry_slippage_bps < 0 or self.exit_slippage_bps < 0:
             raise ValueError("cost assumptions must be non-negative")
 

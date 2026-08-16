@@ -2,17 +2,34 @@
 
 NBOT V2 is a research-first rebuild.
 
-The active V2.0 runtime has exactly one responsibility: collect unbiased, point-in-time LIVE Binance USD-M Futures market evidence into one SQLite database.
+The active V2.1 runtime has one responsibility: collect and preserve unbiased, time-safe LIVE Binance USD-M Futures market evidence in one SQLite database.
 
-It deliberately has **no strategy, model, champion, virtual-trade authority, recommendation API, paper execution, Testnet execution, or real execution**.
+It deliberately has **no strategy, model, champion, recommendation authority, paper execution, Testnet execution, or real execution**.
 
-## V2.0 commands
+## V2.1 evidence rules
+
+- complete 5-minute live events are atomic;
+- failed/partial captures are recorded as attempts, not accepted as research events;
+- live universe membership and spread/liquidity context are preserved point-in-time;
+- missed events may recover canonical historical candles, but unrecoverable historical bid/ask and ranking context are never fabricated;
+- recovered candle-only events are explicitly context-incomplete and cannot silently enter later decision-time training data;
+- exact timestamped funding history is stored separately from current premium-index funding context;
+- source timing, gap, integrity, coverage and storage-growth metrics are auditable;
+- local/Binance clock skew above 5 seconds fails closed;
+- live decision-time context captured more than 30 seconds after candle close is rejected rather than mislabeled as point-in-time evidence.
+
+## Commands
 
 ```bash
 python3 nbot_admin.py init
 python3 nbot_admin.py check-live
 python3 nbot_admin.py collect-once
 python3 nbot_admin.py status
+python3 nbot_admin.py audit
+python3 nbot_admin.py recover-gaps
+python3 nbot_admin.py sync-funding
+python3 nbot_admin.py checkpoint
+python3 nbot_admin.py backup
 python3 -m unittest discover -s tests -v
 python3 run_observation.py
 ```

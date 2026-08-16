@@ -2,7 +2,7 @@
 
 Version: 2026-08-16
 Foundation generation: `NBOT_V2_FOUNDATION_V1`
-Status after foundation patch: **Observer-only; no trading authority**
+Current implementation baseline: **V2.0 complete; V2.1 evidence integrity; Observer-only; no trading authority**
 
 ---
 
@@ -276,6 +276,24 @@ missing/stale data for false results.
 9. Add database integrity/checkpoint/backup commands.
 10. Add storage-growth telemetry and retention policy only if disk evidence
     proves one is necessary. Do not rotate raw evidence casually.
+
+### Recovery truthfulness rule
+
+Historical recovery must never manufacture decision-time context that Binance no
+longer exposes historically. Canonical candles and timestamped funding history
+may be recovered. A missed event's historical bid/ask, spread and 24h ranking
+must **not** be replaced with values observed later. Candle-only recovery is
+therefore explicitly marked context-incomplete and is excluded from later
+point-in-time selector training unless a future source can reconstruct that
+context honestly.
+
+### Live time-integrity rule
+
+A live event is research-ready only when its decision-time context is genuinely
+near the completed candle boundary. V2.1 fails closed when local time differs
+from Binance server time by more than 5 seconds, or when the live universe /
+spread context finishes more than 30 seconds after the candle close. A late
+missed candle may later be recovered only as context-incomplete evidence.
 
 ## Required metrics
 

@@ -1,12 +1,23 @@
 from __future__ import annotations
 
+import json
 import sqlite3
-from contextlib import contextmanager
+import time
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Sequence
 
-from .binance import Candle, UniverseRow
+from .binance import Candle, FundingEvent, SourceCapture, UniverseRow, validate_candle
 from .config import ObserverConfig
+
+
+class ClosingConnection(sqlite3.Connection):
+    """SQLite connection whose context-manager exit also closes the handle."""
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
 
 
 SCHEMA = """
@@ -62,10 +73,89 @@ CREATE TABLE IF NOT EXISTS market_snapshots (
     FOREIGN KEY (event_open_ms) REFERENCES market_events(event_open_ms) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS event_provenance (
+    event_open_ms INTEGER PRIMARY KEY,
+    evidence_mode TEXT NOT NULL,
+    context_complete INTEGER NOT NULL CHECK (context_complete IN (0, 1)),
+    membership_quality TEXT NOT NULL,
+    source_universe_event_open_ms INTEGER,
+    server_time_before_ms INTEGER,
+    server_time_after_ms INTEGER,
+    capture_started_at_ms INTEGER NOT NULL,
+    capture_finished_at_ms INTEGER NOT NULL,
+    recovery_reason TEXT,
+    FOREIGN KEY (event_open_ms) REFERENCES market_events(event_open_ms) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS universe_membership (
+    event_open_ms INTEGER NOT NULL,
+    symbol TEXT NOT NULL,
+    universe_rank INTEGER NOT NULL,
+    membership_quality TEXT NOT NULL,
+    source_universe_event_open_ms INTEGER,
+    PRIMARY KEY (event_open_ms, symbol),
+    FOREIGN KEY (event_open_ms) REFERENCES market_events(event_open_ms) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS source_captures (
+    event_open_ms INTEGER NOT NULL,
+    source TEXT NOT NULL,
+    started_at_ms INTEGER NOT NULL,
+    finished_at_ms INTEGER NOT NULL,
+    PRIMARY KEY (event_open_ms, source),
+    FOREIGN KEY (event_open_ms) REFERENCES market_events(event_open_ms) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS collection_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_open_ms INTEGER NOT NULL,
+    attempted_at_ms INTEGER NOT NULL,
+    requested_symbols INTEGER NOT NULL,
+    stored_symbols INTEGER NOT NULL,
+    error_count INTEGER NOT NULL,
+    result TEXT NOT NULL,
+    capture_duration_ms INTEGER NOT NULL,
+    detail TEXT
+);
+
+CREATE TABLE IF NOT EXISTS funding_events (
+    symbol TEXT NOT NULL,
+    funding_time_ms INTEGER NOT NULL,
+    funding_rate REAL NOT NULL,
+    mark_price REAL,
+    ingested_at_ms INTEGER NOT NULL,
+    PRIMARY KEY (symbol, funding_time_ms)
+);
+
+CREATE TABLE IF NOT EXISTS funding_sync_ranges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    start_ms INTEGER NOT NULL,
+    end_ms INTEGER NOT NULL,
+    captured_at_ms INTEGER NOT NULL,
+    row_count INTEGER NOT NULL,
+    collector_version TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS audit_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    captured_at_ms INTEGER NOT NULL,
+    database_bytes INTEGER NOT NULL,
+    wal_bytes INTEGER NOT NULL,
+    complete_events INTEGER NOT NULL,
+    research_ready_events INTEGER NOT NULL,
+    report_json TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_snapshots_symbol_time
     ON market_snapshots(symbol, event_open_ms);
 CREATE INDEX IF NOT EXISTS idx_candles_symbol_time
     ON candles_5m(symbol, event_open_ms);
+CREATE INDEX IF NOT EXISTS idx_membership_symbol_time
+    ON universe_membership(symbol, event_open_ms);
+CREATE INDEX IF NOT EXISTS idx_funding_symbol_time
+    ON funding_events(symbol, funding_time_ms);
+CREATE INDEX IF NOT EXISTS idx_attempts_event_time
+    ON collection_attempts(event_open_ms, attempted_at_ms);
 """
 
 
@@ -76,7 +166,7 @@ class EvidenceDB:
 
     def _connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self.path, timeout=30.0)
+        conn = sqlite3.connect(self.path, timeout=30.0, factory=ClosingConnection)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=FULL")
         conn.execute("PRAGMA foreign_keys=ON")
@@ -86,20 +176,122 @@ class EvidenceDB:
     def initialize(self) -> None:
         with self._connect() as conn:
             conn.executescript(SCHEMA)
+            for key, value in (
+                ("schema_version", self.config.schema_version),
+                ("role", self.config.role),
+                ("market_environment", self.config.market_environment),
+            ):
+                conn.execute(
+                    "INSERT INTO metadata(key, value) VALUES(?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    (key, value),
+                )
+
+            # V2.0 -> V2.1 migration. Preserve old snapshots, but only mark
+            # them research-ready when V2.0's own captured_at timestamp proves
+            # the context was inside V2.1's allowed post-close window. V2.0 did
+            # not store source-level timestamps, so late rows remain preserved
+            # as honest context-incomplete evidence rather than being deleted.
             conn.execute(
-                "INSERT INTO metadata(key, value) VALUES('schema_version', ?) "
-                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                (self.config.schema_version,),
+                """
+                INSERT OR IGNORE INTO event_provenance(
+                    event_open_ms, evidence_mode, context_complete,
+                    membership_quality, source_universe_event_open_ms,
+                    server_time_before_ms, server_time_after_ms,
+                    capture_started_at_ms, capture_finished_at_ms, recovery_reason
+                )
+                SELECT
+                    e.event_open_ms,
+                    'LIVE_V2_0_MIGRATED',
+                    CASE
+                        WHEN e.status='COMPLETE'
+                         AND e.captured_at_ms - e.event_close_ms <= ? THEN 1
+                        ELSE 0
+                    END,
+                    CASE
+                        WHEN e.status='COMPLETE'
+                         AND e.captured_at_ms - e.event_close_ms <= ? THEN 'POINT_IN_TIME'
+                        ELSE 'POINT_IN_TIME_LATE'
+                    END,
+                    e.event_open_ms,
+                    NULL,
+                    NULL,
+                    MAX(e.event_close_ms + 1, e.captured_at_ms - e.capture_duration_ms),
+                    e.captured_at_ms,
+                    CASE
+                        WHEN e.status='COMPLETE'
+                         AND e.captured_at_ms - e.event_close_ms <= ?
+                            THEN 'V2.0 did not store source-level timing'
+                        ELSE 'V2.0 context exceeded V2.1 live-context delay limit'
+                    END
+                FROM market_events e
+                """,
+                (
+                    self.config.max_live_context_delay_ms,
+                    self.config.max_live_context_delay_ms,
+                    self.config.max_live_context_delay_ms,
+                ),
             )
             conn.execute(
-                "INSERT INTO metadata(key, value) VALUES('role', ?) "
-                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                (self.config.role,),
+                """
+                INSERT OR IGNORE INTO universe_membership(
+                    event_open_ms, symbol, universe_rank,
+                    membership_quality, source_universe_event_open_ms
+                )
+                SELECT event_open_ms, symbol, universe_rank, 'POINT_IN_TIME', event_open_ms
+                FROM market_snapshots
+                """
+            )
+
+            # Repair databases already migrated by the first V2.1 patch. This
+            # is intentionally idempotent and only touches V2.0 migration rows.
+            conn.execute(
+                """
+                UPDATE event_provenance
+                SET context_complete = CASE
+                        WHEN (SELECT e.status FROM market_events e
+                              WHERE e.event_open_ms=event_provenance.event_open_ms)='COMPLETE'
+                         AND (SELECT e.captured_at_ms - e.event_close_ms FROM market_events e
+                              WHERE e.event_open_ms=event_provenance.event_open_ms) <= ? THEN 1
+                        ELSE 0
+                    END,
+                    membership_quality = CASE
+                        WHEN (SELECT e.status FROM market_events e
+                              WHERE e.event_open_ms=event_provenance.event_open_ms)='COMPLETE'
+                         AND (SELECT e.captured_at_ms - e.event_close_ms FROM market_events e
+                              WHERE e.event_open_ms=event_provenance.event_open_ms) <= ?
+                            THEN 'POINT_IN_TIME'
+                        ELSE 'POINT_IN_TIME_LATE'
+                    END,
+                    recovery_reason = CASE
+                        WHEN (SELECT e.status FROM market_events e
+                              WHERE e.event_open_ms=event_provenance.event_open_ms)='COMPLETE'
+                         AND (SELECT e.captured_at_ms - e.event_close_ms FROM market_events e
+                              WHERE e.event_open_ms=event_provenance.event_open_ms) <= ?
+                            THEN 'V2.0 did not store source-level timing'
+                        ELSE 'V2.0 context exceeded V2.1 live-context delay limit'
+                    END
+                WHERE evidence_mode='LIVE_V2_0_MIGRATED'
+                """,
+                (
+                    self.config.max_live_context_delay_ms,
+                    self.config.max_live_context_delay_ms,
+                    self.config.max_live_context_delay_ms,
+                ),
             )
             conn.execute(
-                "INSERT INTO metadata(key, value) VALUES('market_environment', ?) "
-                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                (self.config.market_environment,),
+                """
+                UPDATE universe_membership
+                SET membership_quality = COALESCE(
+                    (SELECT p.membership_quality FROM event_provenance p
+                     WHERE p.event_open_ms=universe_membership.event_open_ms),
+                    membership_quality
+                )
+                WHERE event_open_ms IN (
+                    SELECT event_open_ms FROM event_provenance
+                    WHERE evidence_mode='LIVE_V2_0_MIGRATED'
+                )
+                """
             )
 
     def has_complete_event(self, event_open_ms: int) -> bool:
@@ -109,6 +301,66 @@ class EvidenceDB:
                 (event_open_ms,),
             ).fetchone()
         return row is not None
+
+    def _record_attempt(
+        self,
+        *,
+        event_open_ms: int,
+        attempted_at_ms: int,
+        requested_symbols: int,
+        stored_symbols: int,
+        error_count: int,
+        result: str,
+        capture_duration_ms: int,
+        detail: str | None = None,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO collection_attempts(
+                    event_open_ms, attempted_at_ms, requested_symbols, stored_symbols,
+                    error_count, result, capture_duration_ms, detail
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_open_ms,
+                    attempted_at_ms,
+                    requested_symbols,
+                    stored_symbols,
+                    error_count,
+                    result,
+                    capture_duration_ms,
+                    detail,
+                ),
+            )
+
+    def _validated_live_rows(
+        self,
+        event_open_ms: int,
+        event_close_ms: int,
+        requested_symbols: int,
+        universe_rows: Iterable[UniverseRow],
+        candles: dict[str, Candle],
+    ) -> tuple[dict[str, UniverseRow], str | None]:
+        universe_list = list(universe_rows)
+        if len(universe_list) != requested_symbols:
+            return {}, "universe row count differs from requested_symbols"
+        symbols = [row.symbol for row in universe_list]
+        if len(set(symbols)) != len(symbols):
+            return {}, "duplicate symbol in live universe"
+        if set(symbols) != set(candles):
+            return {}, "live candle set differs from point-in-time universe"
+        for symbol in symbols:
+            candle = candles[symbol]
+            try:
+                validate_candle(candle, self.config.candle_interval_ms)
+            except ValueError as exc:
+                return {}, f"{symbol}: {exc}"
+            if candle.symbol != symbol or candle.open_time_ms != event_open_ms:
+                return {}, f"{symbol}: candle identity mismatch"
+            if candle.close_time_ms != event_close_ms:
+                return {}, f"{symbol}: candle close mismatch"
+        return {row.symbol: row for row in universe_list}, None
 
     def store_event(
         self,
@@ -121,10 +373,42 @@ class EvidenceDB:
         candles: dict[str, Candle],
         error_count: int,
         capture_duration_ms: int,
+        capture_started_at_ms: int | None = None,
+        server_time_before_ms: int | None = None,
+        server_time_after_ms: int | None = None,
+        source_captures: Sequence[SourceCapture] = (),
+        failure_detail: str | None = None,
     ) -> str:
-        rows = {row.symbol: row for row in universe_rows if row.symbol in candles}
-        stored_symbols = len(rows)
-        status = "COMPLETE" if stored_symbols == requested_symbols and error_count == 0 else "PARTIAL"
+        rows, validation_error = self._validated_live_rows(
+            event_open_ms,
+            event_close_ms,
+            requested_symbols,
+            universe_rows,
+            candles,
+        )
+        is_complete = error_count == 0 and validation_error is None
+        if not is_complete:
+            self._record_attempt(
+                event_open_ms=event_open_ms,
+                attempted_at_ms=captured_at_ms,
+                requested_symbols=requested_symbols,
+                stored_symbols=len(candles),
+                error_count=max(error_count, 1 if validation_error else 0),
+                result="PARTIAL_REJECTED",
+                capture_duration_ms=capture_duration_ms,
+                detail="; ".join(value for value in (failure_detail, validation_error) if value) or None,
+            )
+            return "PARTIAL"
+
+        started_at_ms = capture_started_at_ms
+        if started_at_ms is None:
+            started_at_ms = max(event_close_ms + 1, captured_at_ms - capture_duration_ms)
+
+        context_captured_at_ms = (
+            max(capture.finished_at_ms for capture in source_captures)
+            if source_captures
+            else captured_at_ms
+        )
 
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
@@ -135,20 +419,40 @@ class EvidenceDB:
                     event_open_ms, event_close_ms, captured_at_ms,
                     requested_symbols, stored_symbols, error_count,
                     status, collector_version, capture_duration_ms
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, 0, 'COMPLETE', ?, ?)
                 """,
                 (
                     event_open_ms,
                     event_close_ms,
                     captured_at_ms,
                     requested_symbols,
-                    stored_symbols,
-                    error_count,
-                    status,
+                    requested_symbols,
                     self.config.collector_version,
                     capture_duration_ms,
                 ),
             )
+            conn.execute(
+                """
+                INSERT INTO event_provenance VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_open_ms,
+                    "LIVE_POINT_IN_TIME",
+                    1,
+                    "POINT_IN_TIME",
+                    event_open_ms,
+                    server_time_before_ms,
+                    server_time_after_ms,
+                    started_at_ms,
+                    captured_at_ms,
+                    None,
+                ),
+            )
+            for capture in source_captures:
+                conn.execute(
+                    "INSERT INTO source_captures VALUES (?, ?, ?, ?)",
+                    (event_open_ms, capture.source, capture.started_at_ms, capture.finished_at_ms),
+                )
             for symbol, row in rows.items():
                 candle = candles[symbol]
                 conn.execute(
@@ -187,10 +491,257 @@ class EvidenceDB:
                         row.index_price,
                         row.funding_rate,
                         row.next_funding_time_ms,
-                        captured_at_ms,
+                        context_captured_at_ms,
                     ),
                 )
-        return status
+                conn.execute(
+                    "INSERT INTO universe_membership VALUES (?, ?, ?, 'POINT_IN_TIME', ?)",
+                    (event_open_ms, symbol, row.universe_rank, event_open_ms),
+                )
+            conn.execute(
+                """
+                INSERT INTO collection_attempts(
+                    event_open_ms, attempted_at_ms, requested_symbols, stored_symbols,
+                    error_count, result, capture_duration_ms, detail
+                ) VALUES (?, ?, ?, ?, 0, 'COMPLETE', ?, NULL)
+                """,
+                (event_open_ms, captured_at_ms, requested_symbols, requested_symbols, capture_duration_ms),
+            )
+        return "COMPLETE"
+
+    def point_in_time_universe_before(self, event_open_ms: int) -> tuple[int, list[tuple[str, int]]] | None:
+        self.initialize()
+        with self._connect() as conn:
+            source = conn.execute(
+                """
+                SELECT MAX(p.event_open_ms)
+                FROM event_provenance p
+                WHERE p.event_open_ms < ?
+                  AND p.context_complete=1
+                  AND p.membership_quality='POINT_IN_TIME'
+                """,
+                (event_open_ms,),
+            ).fetchone()[0]
+            if source is None:
+                return None
+            rows = conn.execute(
+                """
+                SELECT symbol, universe_rank
+                FROM universe_membership
+                WHERE event_open_ms=? AND membership_quality='POINT_IN_TIME'
+                ORDER BY universe_rank, symbol
+                """,
+                (source,),
+            ).fetchall()
+        if not rows:
+            return None
+        return int(source), [(str(symbol), int(rank)) for symbol, rank in rows]
+
+    def store_recovered_event(
+        self,
+        *,
+        event_open_ms: int,
+        source_universe_event_open_ms: int,
+        membership: Sequence[tuple[str, int]],
+        candles: dict[str, Candle],
+        captured_at_ms: int,
+        capture_duration_ms: int,
+        recovery_reason: str,
+    ) -> str:
+        requested_symbols = len(membership)
+        symbols = [symbol for symbol, _ in membership]
+        if requested_symbols == 0:
+            return "PARTIAL"
+        if len(set(symbols)) != requested_symbols or set(symbols) != set(candles):
+            self._record_attempt(
+                event_open_ms=event_open_ms,
+                attempted_at_ms=captured_at_ms,
+                requested_symbols=requested_symbols,
+                stored_symbols=len(candles),
+                error_count=max(1, requested_symbols - len(candles)),
+                result="RECOVERY_PARTIAL_REJECTED",
+                capture_duration_ms=capture_duration_ms,
+                detail="recovered candle set differs from inherited universe",
+            )
+            return "PARTIAL"
+
+        event_close_ms = event_open_ms + self.config.candle_interval_ms - 1
+        for symbol in symbols:
+            candle = candles[symbol]
+            try:
+                validate_candle(candle, self.config.candle_interval_ms)
+            except ValueError as exc:
+                self._record_attempt(
+                    event_open_ms=event_open_ms,
+                    attempted_at_ms=captured_at_ms,
+                    requested_symbols=requested_symbols,
+                    stored_symbols=len(candles),
+                    error_count=1,
+                    result="RECOVERY_PARTIAL_REJECTED",
+                    capture_duration_ms=capture_duration_ms,
+                    detail=f"{symbol}: {exc}",
+                )
+                return "PARTIAL"
+            if candle.open_time_ms != event_open_ms or candle.close_time_ms != event_close_ms:
+                return "PARTIAL"
+
+        started_at_ms = max(event_close_ms + 1, captured_at_ms - capture_duration_ms)
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute("DELETE FROM market_events WHERE event_open_ms=?", (event_open_ms,))
+            conn.execute(
+                """
+                INSERT INTO market_events VALUES (?, ?, ?, ?, ?, 0, 'COMPLETE', ?, ?)
+                """,
+                (
+                    event_open_ms,
+                    event_close_ms,
+                    captured_at_ms,
+                    requested_symbols,
+                    requested_symbols,
+                    self.config.collector_version,
+                    capture_duration_ms,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO event_provenance VALUES (?, 'BACKFILL_CANDLE_ONLY', 0, 'INHERITED', ?, NULL, NULL, ?, ?, ?)
+                """,
+                (
+                    event_open_ms,
+                    source_universe_event_open_ms,
+                    started_at_ms,
+                    captured_at_ms,
+                    recovery_reason,
+                ),
+            )
+            for symbol, rank in membership:
+                candle = candles[symbol]
+                conn.execute(
+                    """
+                    INSERT INTO candles_5m VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        event_open_ms,
+                        symbol,
+                        candle.open_time_ms,
+                        candle.close_time_ms,
+                        candle.open_price,
+                        candle.high_price,
+                        candle.low_price,
+                        candle.close_price,
+                        candle.base_volume,
+                        candle.quote_volume,
+                        candle.trade_count,
+                        candle.taker_buy_base_volume,
+                        candle.taker_buy_quote_volume,
+                    ),
+                )
+                conn.execute(
+                    "INSERT INTO universe_membership VALUES (?, ?, ?, 'INHERITED', ?)",
+                    (event_open_ms, symbol, rank, source_universe_event_open_ms),
+                )
+            conn.execute(
+                """
+                INSERT INTO collection_attempts(
+                    event_open_ms, attempted_at_ms, requested_symbols, stored_symbols,
+                    error_count, result, capture_duration_ms, detail
+                ) VALUES (?, ?, ?, ?, 0, 'RECOVERED_CANDLES_ONLY', ?, ?)
+                """,
+                (
+                    event_open_ms,
+                    captured_at_ms,
+                    requested_symbols,
+                    requested_symbols,
+                    capture_duration_ms,
+                    recovery_reason,
+                ),
+            )
+        return "COMPLETE"
+
+    def missing_event_opens(self, latest_open_ms: int) -> list[int]:
+        self.initialize()
+        with self._connect() as conn:
+            earliest = conn.execute("SELECT MIN(event_open_ms) FROM market_events").fetchone()[0]
+            if earliest is None or latest_open_ms < int(earliest):
+                return []
+            present = {
+                int(row[0])
+                for row in conn.execute(
+                    "SELECT event_open_ms FROM market_events WHERE status='COMPLETE' AND event_open_ms BETWEEN ? AND ?",
+                    (earliest, latest_open_ms),
+                )
+            }
+        interval = self.config.candle_interval_ms
+        return [value for value in range(int(earliest), latest_open_ms + 1, interval) if value not in present]
+
+    def funding_sync_bounds(self) -> tuple[int | None, int | None]:
+        self.initialize()
+        with self._connect() as conn:
+            row = conn.execute("SELECT MIN(start_ms), MAX(end_ms) FROM funding_sync_ranges").fetchone()
+        return (None if row[0] is None else int(row[0]), None if row[1] is None else int(row[1]))
+
+    def funding_sync_due(self, now_ms: int) -> bool:
+        self.initialize()
+        with self._connect() as conn:
+            last = conn.execute("SELECT MAX(captured_at_ms) FROM funding_sync_ranges").fetchone()[0]
+        return last is None or now_ms - int(last) >= self.config.funding_sync_interval_seconds * 1000
+
+    def funding_sync_start_ms(self) -> int | None:
+        self.initialize()
+        with self._connect() as conn:
+            synced = conn.execute("SELECT MAX(end_ms) FROM funding_sync_ranges").fetchone()[0]
+            if synced is not None:
+                return int(synced) + 1
+            earliest = conn.execute("SELECT MIN(event_open_ms) FROM market_events").fetchone()[0]
+        return None if earliest is None else int(earliest)
+
+    def store_funding_sync(
+        self,
+        *,
+        start_ms: int,
+        end_ms: int,
+        events: Sequence[FundingEvent],
+        captured_at_ms: int,
+    ) -> int:
+        if end_ms < start_ms:
+            return 0
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            for row in events:
+                conn.execute(
+                    """
+                    INSERT INTO funding_events(symbol, funding_time_ms, funding_rate, mark_price, ingested_at_ms)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(symbol, funding_time_ms) DO UPDATE SET
+                        funding_rate=excluded.funding_rate,
+                        mark_price=excluded.mark_price,
+                        ingested_at_ms=excluded.ingested_at_ms
+                    """,
+                    (row.symbol, row.funding_time_ms, row.funding_rate, row.mark_price, captured_at_ms),
+                )
+            conn.execute(
+                "INSERT INTO funding_sync_ranges(start_ms, end_ms, captured_at_ms, row_count, collector_version) VALUES (?, ?, ?, ?, ?)",
+                (start_ms, end_ms, captured_at_ms, len(events), self.config.collector_version),
+            )
+        return len(events)
+
+    def _funding_coverage_ms(self, start_ms: int, end_ms: int, conn: sqlite3.Connection) -> int:
+        if end_ms < start_ms:
+            return 0
+        ranges = conn.execute(
+            "SELECT start_ms, end_ms FROM funding_sync_ranges WHERE end_ms >= ? AND start_ms <= ? ORDER BY start_ms",
+            (start_ms, end_ms),
+        ).fetchall()
+        merged: list[list[int]] = []
+        for raw_start, raw_end in ranges:
+            left = max(start_ms, int(raw_start))
+            right = min(end_ms, int(raw_end))
+            if not merged or left > merged[-1][1] + 1:
+                merged.append([left, right])
+            else:
+                merged[-1][1] = max(merged[-1][1], right)
+        return sum(right - left + 1 for left, right in merged)
 
     def status(self) -> dict[str, object]:
         self.initialize()
@@ -198,20 +749,308 @@ class EvidenceDB:
             events = conn.execute("SELECT COUNT(*) FROM market_events").fetchone()[0]
             complete = conn.execute("SELECT COUNT(*) FROM market_events WHERE status='COMPLETE'").fetchone()[0]
             partial = conn.execute("SELECT COUNT(*) FROM market_events WHERE status='PARTIAL'").fetchone()[0]
+            research_ready = conn.execute(
+                "SELECT COUNT(*) FROM event_provenance WHERE context_complete=1"
+            ).fetchone()[0]
+            recovered = conn.execute(
+                "SELECT COUNT(*) FROM event_provenance WHERE evidence_mode='BACKFILL_CANDLE_ONLY'"
+            ).fetchone()[0]
             candles = conn.execute("SELECT COUNT(*) FROM candles_5m").fetchone()[0]
             snapshots = conn.execute("SELECT COUNT(*) FROM market_snapshots").fetchone()[0]
+            funding = conn.execute("SELECT COUNT(*) FROM funding_events").fetchone()[0]
             latest = conn.execute(
-                "SELECT event_open_ms, stored_symbols, requested_symbols, status, capture_duration_ms "
-                "FROM market_events ORDER BY event_open_ms DESC LIMIT 1"
+                """
+                SELECT e.event_open_ms, e.stored_symbols, e.requested_symbols, e.status,
+                       e.capture_duration_ms, p.evidence_mode, p.context_complete
+                FROM market_events e
+                LEFT JOIN event_provenance p USING(event_open_ms)
+                ORDER BY e.event_open_ms DESC LIMIT 1
+                """
             ).fetchone()
             meta = dict(conn.execute("SELECT key, value FROM metadata").fetchall())
         return {
             "events": events,
             "complete_events": complete,
             "partial_events": partial,
+            "research_ready_events": research_ready,
+            "recovered_events": recovered,
             "candles": candles,
             "snapshots": snapshots,
+            "funding_events": funding,
             "latest_event": latest,
             "metadata": meta,
             "database_path": str(self.path),
         }
+
+    def audit(self, *, now_ms: int | None = None, record: bool = False) -> dict[str, object]:
+        self.initialize()
+        now_ms = int(time.time() * 1000) if now_ms is None else int(now_ms)
+        db_bytes = self.path.stat().st_size if self.path.exists() else 0
+        wal_path = Path(str(self.path) + "-wal")
+        wal_bytes = wal_path.stat().st_size if wal_path.exists() else 0
+
+        with self._connect() as conn:
+            integrity = str(conn.execute("PRAGMA integrity_check").fetchone()[0])
+            foreign_keys = len(conn.execute("PRAGMA foreign_key_check").fetchall())
+            event_bounds = conn.execute("SELECT MIN(event_open_ms), MAX(event_open_ms) FROM market_events").fetchone()
+            earliest = None if event_bounds[0] is None else int(event_bounds[0])
+            latest = None if event_bounds[1] is None else int(event_bounds[1])
+            complete_events = int(conn.execute("SELECT COUNT(*) FROM market_events WHERE status='COMPLETE'").fetchone()[0])
+            research_ready = int(conn.execute("SELECT COUNT(*) FROM event_provenance WHERE context_complete=1").fetchone()[0])
+            context_incomplete_events = int(conn.execute(
+                "SELECT COUNT(*) FROM event_provenance WHERE context_complete=0"
+            ).fetchone()[0])
+            recovered = int(conn.execute(
+                "SELECT COUNT(*) FROM event_provenance WHERE evidence_mode='BACKFILL_CANDLE_ONLY'"
+            ).fetchone()[0])
+            late_migrated = int(conn.execute(
+                "SELECT COUNT(*) FROM event_provenance "
+                "WHERE evidence_mode='LIVE_V2_0_MIGRATED' AND context_complete=0"
+            ).fetchone()[0])
+            attempts_rejected = int(conn.execute("SELECT COUNT(*) FROM collection_attempts WHERE result LIKE '%REJECTED%'").fetchone()[0])
+            candles = int(conn.execute("SELECT COUNT(*) FROM candles_5m").fetchone()[0])
+            snapshots = int(conn.execute("SELECT COUNT(*) FROM market_snapshots").fetchone()[0])
+            membership_rows = int(conn.execute("SELECT COUNT(*) FROM universe_membership").fetchone()[0])
+            funding_events = int(conn.execute("SELECT COUNT(*) FROM funding_events").fetchone()[0])
+
+            missing_candles = int(conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM universe_membership u
+                LEFT JOIN candles_5m c
+                  ON c.event_open_ms=u.event_open_ms AND c.symbol=u.symbol
+                WHERE c.symbol IS NULL
+                """
+            ).fetchone()[0])
+            missing_snapshots = int(conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM universe_membership u
+                LEFT JOIN market_snapshots s
+                  ON s.event_open_ms=u.event_open_ms AND s.symbol=u.symbol
+                WHERE u.membership_quality='POINT_IN_TIME' AND s.symbol IS NULL
+                """
+            ).fetchone()[0])
+            incomplete_symbol_events = int(conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM market_events e
+                LEFT JOIN event_provenance p USING(event_open_ms)
+                WHERE e.status='COMPLETE'
+                  AND (
+                      e.stored_symbols != e.requested_symbols
+                      OR (SELECT COUNT(*) FROM universe_membership u WHERE u.event_open_ms=e.event_open_ms) != e.requested_symbols
+                      OR (SELECT COUNT(*) FROM candles_5m c WHERE c.event_open_ms=e.event_open_ms) != e.requested_symbols
+                      OR (p.context_complete=1 AND (SELECT COUNT(*) FROM market_snapshots s WHERE s.event_open_ms=e.event_open_ms) != e.requested_symbols)
+                  )
+                """
+            ).fetchone()[0])
+            duplicate_candles = int(conn.execute(
+                """
+                SELECT COALESCE(SUM(n - 1), 0) FROM (
+                    SELECT COUNT(*) n FROM candles_5m GROUP BY event_open_ms, symbol HAVING n > 1
+                )
+                """
+            ).fetchone()[0])
+            duplicate_snapshots = int(conn.execute(
+                """
+                SELECT COALESCE(SUM(n - 1), 0) FROM (
+                    SELECT COUNT(*) n FROM market_snapshots GROUP BY event_open_ms, symbol HAVING n > 1
+                )
+                """
+            ).fetchone()[0])
+            duplicate_memberships = int(conn.execute(
+                """
+                SELECT COALESCE(SUM(n - 1), 0) FROM (
+                    SELECT COUNT(*) n FROM universe_membership GROUP BY event_open_ms, symbol HAVING n > 1
+                )
+                """
+            ).fetchone()[0])
+            duplicate_conflicts = duplicate_candles + duplicate_snapshots + duplicate_memberships
+            invalid_candles = int(conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM candles_5m c
+                JOIN market_events e USING(event_open_ms)
+                WHERE c.open_time_ms != c.event_open_ms
+                   OR c.close_time_ms != e.event_close_ms
+                   OR c.open_price <= 0 OR c.high_price <= 0 OR c.low_price <= 0 OR c.close_price <= 0
+                   OR c.high_price < c.open_price OR c.high_price < c.close_price OR c.high_price < c.low_price
+                   OR c.low_price > c.open_price OR c.low_price > c.close_price OR c.low_price > c.high_price
+                   OR c.base_volume < 0 OR c.quote_volume < 0 OR c.trade_count < 0
+                """
+            ).fetchone()[0])
+            future_candles = int(conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM candles_5m c
+                JOIN market_events e USING(event_open_ms)
+                WHERE c.close_time_ms >= e.captured_at_ms
+                """
+            ).fetchone()[0])
+            invalid_spreads = int(conn.execute(
+                """
+                SELECT COUNT(*) FROM market_snapshots
+                WHERE bid_price <= 0 OR ask_price <= 0 OR ask_price < bid_price OR spread_pct < 0
+                """
+            ).fetchone()[0])
+            point_in_time_membership_rows = int(conn.execute(
+                "SELECT COUNT(*) FROM universe_membership WHERE membership_quality='POINT_IN_TIME'"
+            ).fetchone()[0])
+            spread_rows = int(conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM market_snapshots s
+                JOIN universe_membership u
+                  ON u.event_open_ms=s.event_open_ms AND u.symbol=s.symbol
+                WHERE u.membership_quality='POINT_IN_TIME'
+                """
+            ).fetchone()[0])
+            late_point_in_time_snapshots = int(conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM market_snapshots s
+                JOIN market_events e USING(event_open_ms)
+                JOIN event_provenance p USING(event_open_ms)
+                WHERE p.context_complete=1
+                  AND s.captured_at_ms - e.event_close_ms > ?
+                """,
+                (self.config.max_live_context_delay_ms,),
+            ).fetchone()[0])
+            context_skew = conn.execute(
+                """
+                SELECT MAX(max_finish - min_start), AVG(max_finish - min_start)
+                FROM (
+                    SELECT event_open_ms, MIN(started_at_ms) min_start, MAX(finished_at_ms) max_finish
+                    FROM source_captures GROUP BY event_open_ms
+                )
+                """
+            ).fetchone()
+            max_source_skew_ms = None if context_skew[0] is None else int(context_skew[0])
+            avg_source_skew_ms = None if context_skew[1] is None else int(context_skew[1])
+            clock_skew = conn.execute(
+                """
+                SELECT MAX(
+                    MAX(
+                        ABS(capture_started_at_ms - server_time_before_ms),
+                        ABS(capture_finished_at_ms - server_time_after_ms)
+                    )
+                )
+                FROM event_provenance
+                WHERE server_time_before_ms IS NOT NULL AND server_time_after_ms IS NOT NULL
+                """
+            ).fetchone()[0]
+            max_abs_server_clock_skew_ms = None if clock_skew is None else int(clock_skew)
+            capture_stats = conn.execute(
+                "SELECT MAX(capture_duration_ms), AVG(capture_duration_ms) FROM market_events WHERE status='COMPLETE'"
+            ).fetchone()
+            max_capture_duration_ms = None if capture_stats[0] is None else int(capture_stats[0])
+            avg_capture_duration_ms = None if capture_stats[1] is None else int(capture_stats[1])
+
+            if earliest is None or latest is None:
+                expected_events = 0
+                missing_events = 0
+                future_event_rows = 0
+                data_age_ms = None
+                funding_coverage_pct = None
+            else:
+                interval_ms = self.config.candle_interval_ms
+                expected_latest_open_ms = ((now_ms // interval_ms) - 1) * interval_ms
+                if expected_latest_open_ms < earliest:
+                    expected_events = 0
+                    complete_expected_events = 0
+                else:
+                    expected_events = ((expected_latest_open_ms - earliest) // interval_ms) + 1
+                    complete_expected_events = int(conn.execute(
+                        "SELECT COUNT(*) FROM market_events WHERE status='COMPLETE' AND event_open_ms BETWEEN ? AND ?",
+                        (earliest, expected_latest_open_ms),
+                    ).fetchone()[0])
+                missing_events = max(0, expected_events - complete_expected_events)
+                future_event_rows = int(conn.execute(
+                    "SELECT COUNT(*) FROM market_events WHERE event_open_ms > ?",
+                    (expected_latest_open_ms,),
+                ).fetchone()[0])
+                latest_close = latest + interval_ms - 1
+                data_age_ms = max(0, now_ms - latest_close)
+                total_funding_span = latest_close - earliest + 1
+                covered_ms = self._funding_coverage_ms(earliest, latest_close, conn)
+                funding_coverage_pct = round((covered_ms / total_funding_span) * 100.0, 6)
+
+            previous = conn.execute(
+                "SELECT captured_at_ms, database_bytes FROM audit_runs ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            if previous is None or now_ms <= int(previous[0]):
+                database_growth_bytes_per_hour = None
+            else:
+                elapsed_hours = (now_ms - int(previous[0])) / 3_600_000.0
+                database_growth_bytes_per_hour = round((db_bytes - int(previous[1])) / elapsed_hours, 3)
+
+            report: dict[str, object] = {
+                "integrity": integrity,
+                "foreign_key_violations": foreign_keys,
+                "expected_events": expected_events,
+                "complete_events": complete_events,
+                "missing_events": missing_events,
+                "research_ready_events": research_ready,
+                "context_incomplete_events": context_incomplete_events,
+                "context_incomplete_recovered_events": recovered,
+                "late_migrated_events": late_migrated,
+                "rejected_collection_attempts": attempts_rejected,
+                "candles": candles,
+                "snapshots": snapshots,
+                "universe_membership_rows": membership_rows,
+                "missing_membership_candles": missing_candles,
+                "candle_gaps": missing_candles,
+                "missing_point_in_time_snapshots": missing_snapshots,
+                "incomplete_symbol_events": incomplete_symbol_events,
+                "duplicate_conflicts": duplicate_conflicts,
+                "invalid_candles": invalid_candles,
+                "future_candles": future_candles,
+                "future_event_rows": future_event_rows,
+                "invalid_spreads": invalid_spreads,
+                "late_point_in_time_snapshots": late_point_in_time_snapshots,
+                "spread_coverage_pct": None if point_in_time_membership_rows == 0 else round((spread_rows / point_in_time_membership_rows) * 100.0, 6),
+                "funding_events": funding_events,
+                "funding_coverage_pct": funding_coverage_pct,
+                "data_age_ms": data_age_ms,
+                "max_capture_duration_ms": max_capture_duration_ms,
+                "avg_capture_duration_ms": avg_capture_duration_ms,
+                "max_source_capture_skew_ms": max_source_skew_ms,
+                "avg_source_capture_skew_ms": avg_source_skew_ms,
+                "max_abs_server_clock_skew_ms": max_abs_server_clock_skew_ms,
+                "database_bytes": db_bytes,
+                "wal_bytes": wal_bytes,
+                "database_growth_bytes_per_hour": database_growth_bytes_per_hour,
+            }
+            if record:
+                conn.execute(
+                    """
+                    INSERT INTO audit_runs(
+                        captured_at_ms, database_bytes, wal_bytes,
+                        complete_events, research_ready_events, report_json
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (now_ms, db_bytes, wal_bytes, complete_events, research_ready, json.dumps(report, sort_keys=True)),
+                )
+        return report
+
+    def checkpoint(self) -> tuple[int, int, int]:
+        self.initialize()
+        with self._connect() as conn:
+            row = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        return int(row[0]), int(row[1]), int(row[2])
+
+    def backup(self, destination: Path | None = None) -> Path:
+        self.initialize()
+        if destination is None:
+            stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+            destination = self.config.backup_directory / f"observer-{stamp}.db"
+        destination = Path(destination)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as source:
+            target = sqlite3.connect(destination)
+            try:
+                source.backup(target)
+            finally:
+                target.close()
+        return destination
