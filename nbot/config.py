@@ -28,7 +28,7 @@ class ObserverConfig:
 
     database_path: Path = Path("data/observer.db")
     backup_directory: Path = Path("data/backups")
-    schema_version: str = "NBOT_V2_MARKET_EVIDENCE_V2_2"
+    schema_version: str = "NBOT_V2_MARKET_EVIDENCE_V2_3"
     collector_version: str = "NBOT_V2_OBSERVER_EVIDENCE_V2_1"
 
     # Recovery never fabricates historical live spread/volume context. It may
@@ -135,7 +135,38 @@ class ResearchConfig:
             raise ValueError("balanced breadth bounds are invalid")
 
 
+@dataclass(frozen=True)
+class OutcomeConfig:
+    """Version-controlled V2.3 future-path / outcome definition."""
+
+    outcome_version: str = "FUTURE_PATH_4H_V1"
+    feature_version: str = "CANONICAL_FEATURES_V1"
+    forward_horizon_bars: tuple[int, ...] = (1, 3, 6, 12, 24, 48)
+    max_horizon_bars: int = 48
+    risk_unit_version: str = "ATR14_1X_RESEARCH_R_V1"
+    barrier_r_multiples: tuple[float, ...] = (0.5, 1.0, 2.0, 3.0)
+    cost_version: str = "TAKER_SPREAD_SLIPPAGE_FUNDING_PROXY_V1"
+    max_events_per_build: int = 100
+
+    def validate(self) -> None:
+        if self.outcome_version != "FUTURE_PATH_4H_V1":
+            raise ValueError("V2.3 initial outcome version is frozen as FUTURE_PATH_4H_V1")
+        if self.feature_version != "CANONICAL_FEATURES_V1":
+            raise ValueError("V2.3 is tied to CANONICAL_FEATURES_V1")
+        if self.forward_horizon_bars != (1, 3, 6, 12, 24, 48):
+            raise ValueError("V2.3 forward horizons are frozen")
+        if self.max_horizon_bars != max(self.forward_horizon_bars):
+            raise ValueError("max_horizon_bars must equal the largest frozen horizon")
+        if self.barrier_r_multiples != (0.5, 1.0, 2.0, 3.0):
+            raise ValueError("V2.3 R barriers are frozen")
+        if self.max_events_per_build <= 0:
+            raise ValueError("max_events_per_build must be positive")
+
+
+
 CONFIG = ObserverConfig()
 CONFIG.validate()
 RESEARCH_CONFIG = ResearchConfig()
 RESEARCH_CONFIG.validate()
+OUTCOME_CONFIG = OutcomeConfig()
+OUTCOME_CONFIG.validate()

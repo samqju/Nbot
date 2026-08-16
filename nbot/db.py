@@ -239,6 +239,122 @@ CREATE TABLE IF NOT EXISTS feature_builds (
     FOREIGN KEY (feature_version) REFERENCES feature_sets(feature_version)
 );
 
+CREATE TABLE IF NOT EXISTS future_path_sets (
+    outcome_version TEXT PRIMARY KEY,
+    feature_version TEXT NOT NULL,
+    definition_hash TEXT NOT NULL,
+    definition_json TEXT NOT NULL,
+    registered_at_ms INTEGER NOT NULL,
+    FOREIGN KEY (feature_version) REFERENCES feature_sets(feature_version)
+);
+
+CREATE TABLE IF NOT EXISTS future_candle_cache (
+    symbol TEXT NOT NULL,
+    event_open_ms INTEGER NOT NULL,
+    open_time_ms INTEGER NOT NULL,
+    close_time_ms INTEGER NOT NULL,
+    open_price REAL NOT NULL,
+    high_price REAL NOT NULL,
+    low_price REAL NOT NULL,
+    close_price REAL NOT NULL,
+    base_volume REAL NOT NULL,
+    quote_volume REAL NOT NULL,
+    trade_count INTEGER NOT NULL,
+    taker_buy_base_volume REAL NOT NULL,
+    taker_buy_quote_volume REAL NOT NULL,
+    source TEXT NOT NULL CHECK (source IN ('BINANCE_HISTORICAL_KLINE')),
+    ingested_at_ms INTEGER NOT NULL,
+    PRIMARY KEY (symbol, event_open_ms)
+);
+
+CREATE TABLE IF NOT EXISTS future_paths (
+    event_open_ms INTEGER NOT NULL,
+    symbol TEXT NOT NULL,
+    feature_version TEXT NOT NULL,
+    outcome_version TEXT NOT NULL,
+    built_at_ms INTEGER NOT NULL,
+    entry_price REAL NOT NULL,
+    source_min_event_open_ms INTEGER NOT NULL,
+    source_max_event_open_ms INTEGER NOT NULL,
+    future_candle_count INTEGER NOT NULL,
+    fallback_candle_count INTEGER NOT NULL,
+    source_candle_digest TEXT NOT NULL,
+    fwd_ret_5m REAL NOT NULL,
+    fwd_ret_15m REAL NOT NULL,
+    fwd_ret_30m REAL NOT NULL,
+    fwd_ret_1h REAL NOT NULL,
+    fwd_ret_2h REAL NOT NULL,
+    fwd_ret_4h REAL NOT NULL,
+    long_mfe_frac REAL NOT NULL,
+    long_mae_frac REAL NOT NULL,
+    short_mfe_frac REAL NOT NULL,
+    short_mae_frac REAL NOT NULL,
+    time_to_long_mfe_min INTEGER NOT NULL,
+    time_to_long_mae_min INTEGER NOT NULL,
+    time_to_short_mfe_min INTEGER NOT NULL,
+    time_to_short_mae_min INTEGER NOT NULL,
+    future_realized_vol_4h REAL NOT NULL,
+    risk_unit_version TEXT NOT NULL,
+    risk_unit_frac REAL,
+    barrier_hits_json TEXT NOT NULL,
+    continuation_json TEXT NOT NULL,
+    funding_complete INTEGER NOT NULL CHECK (funding_complete IN (0, 1)),
+    funding_event_count INTEGER NOT NULL,
+    funding_rate_sum REAL NOT NULL,
+    funding_events_json TEXT NOT NULL,
+    funding_source_digest TEXT NOT NULL,
+    cost_version TEXT NOT NULL,
+    roundtrip_base_cost_frac REAL NOT NULL,
+    net_long_5m REAL NOT NULL,
+    net_long_15m REAL NOT NULL,
+    net_long_30m REAL NOT NULL,
+    net_long_1h REAL NOT NULL,
+    net_long_2h REAL NOT NULL,
+    net_long_4h REAL NOT NULL,
+    net_short_5m REAL NOT NULL,
+    net_short_15m REAL NOT NULL,
+    net_short_30m REAL NOT NULL,
+    net_short_1h REAL NOT NULL,
+    net_short_2h REAL NOT NULL,
+    net_short_4h REAL NOT NULL,
+    path_digest TEXT NOT NULL,
+    PRIMARY KEY (event_open_ms, symbol, outcome_version),
+    FOREIGN KEY (event_open_ms, symbol, feature_version)
+        REFERENCES canonical_features(event_open_ms, symbol, feature_version) ON DELETE CASCADE,
+    FOREIGN KEY (outcome_version) REFERENCES future_path_sets(outcome_version)
+);
+
+CREATE TABLE IF NOT EXISTS future_path_builds (
+    event_open_ms INTEGER NOT NULL,
+    outcome_version TEXT NOT NULL,
+    built_at_ms INTEGER NOT NULL,
+    path_row_count INTEGER NOT NULL,
+    path_digest TEXT NOT NULL,
+    fallback_candle_count INTEGER NOT NULL,
+    PRIMARY KEY (event_open_ms, outcome_version),
+    FOREIGN KEY (event_open_ms) REFERENCES market_events(event_open_ms) ON DELETE CASCADE,
+    FOREIGN KEY (outcome_version) REFERENCES future_path_sets(outcome_version)
+);
+
+CREATE TABLE IF NOT EXISTS future_path_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_open_ms INTEGER NOT NULL,
+    attempted_at_ms INTEGER NOT NULL,
+    outcome_version TEXT NOT NULL,
+    result TEXT NOT NULL,
+    expected_symbols INTEGER NOT NULL,
+    completed_symbols INTEGER NOT NULL,
+    missing_candles INTEGER NOT NULL,
+    detail TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_future_cache_symbol_time
+    ON future_candle_cache(symbol, event_open_ms);
+CREATE INDEX IF NOT EXISTS idx_future_paths_symbol_time
+    ON future_paths(symbol, event_open_ms, outcome_version);
+CREATE INDEX IF NOT EXISTS idx_future_attempts_event_time
+    ON future_path_attempts(event_open_ms, attempted_at_ms);
+
 CREATE INDEX IF NOT EXISTS idx_snapshots_symbol_time
     ON market_snapshots(symbol, event_open_ms);
 CREATE INDEX IF NOT EXISTS idx_candles_symbol_time

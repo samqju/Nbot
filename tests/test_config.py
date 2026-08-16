@@ -1,7 +1,7 @@
 import unittest
 from dataclasses import replace
 
-from nbot.config import CONFIG, RESEARCH_CONFIG
+from nbot.config import CONFIG, OUTCOME_CONFIG, RESEARCH_CONFIG
 
 
 class ConfigTests(unittest.TestCase):
@@ -10,7 +10,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(CONFIG.role, "OBSERVER_RESEARCH")
         self.assertEqual(CONFIG.market_environment, "LIVE_PUBLIC")
         self.assertEqual(CONFIG.observation_universe_size, 200)
-        self.assertIn("V2_2", CONFIG.schema_version)
+        self.assertIn("V2_3", CONFIG.schema_version)
         self.assertTrue(CONFIG.gap_recovery_enabled)
 
     def test_execution_like_role_is_rejected(self):
@@ -29,6 +29,16 @@ class ConfigTests(unittest.TestCase):
     def test_changed_frozen_lookbacks_are_rejected(self):
         with self.assertRaises(ValueError):
             replace(RESEARCH_CONFIG, return_lookback_bars=(1, 12, 48)).validate()
+
+    def test_outcome_config_is_frozen_and_valid(self):
+        OUTCOME_CONFIG.validate()
+        self.assertEqual(OUTCOME_CONFIG.outcome_version, "FUTURE_PATH_4H_V1")
+        self.assertEqual(OUTCOME_CONFIG.forward_horizon_bars, (1, 3, 6, 12, 24, 48))
+        self.assertEqual(OUTCOME_CONFIG.risk_unit_version, "ATR14_1X_RESEARCH_R_V1")
+
+    def test_changed_outcome_horizons_are_rejected(self):
+        with self.assertRaises(ValueError):
+            replace(OUTCOME_CONFIG, forward_horizon_bars=(1, 12, 48)).validate()
 
 
 if __name__ == "__main__":

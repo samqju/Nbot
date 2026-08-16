@@ -62,3 +62,23 @@ Initial annotations are research baselines only:
 - `INTRADAY_CONDITIONAL_MOM_REV_V1`
 
 They are not champions, recommendations, or execution instructions.
+
+
+## V2.3 future-path / outcome layer
+
+V2.3 records what happened *after* each mature V2.2 feature row. Future data is
+label/evaluation evidence only and is never a decision-time feature.
+
+```bash
+python3 nbot_admin.py sync-funding
+python3 nbot_admin.py outcome-build
+python3 nbot_admin.py outcome-status
+python3 nbot_admin.py outcome-audit
+```
+
+`FUTURE_PATH_4H_V1` stores forward returns at 5m/15m/30m/1h/2h/4h, long and
+short MFE/MAE and timing, future volatility, research-R barrier sequencing,
+exact funding events crossed, explicit after-cost return proxies, and favorable
+continuation after frozen hypothetical exit horizons. Missing future candles for
+symbols that leave the observation universe are cached separately as label-only
+historical klines; V2.2 features never read that cache.

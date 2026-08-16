@@ -2,7 +2,7 @@
 
 Version: 2026-08-16
 Foundation generation: `NBOT_V2_FOUNDATION_V1`
-Current development baseline: **V2.1 evidence integrity under live validation; V2.2 canonical feature/signal layer in development; Observer-only; no trading authority**
+Current development baseline: **V2.1 evidence integrity under live validation; V2.2 canonical feature/signal code milestone complete; V2.3 future-path/outcome engine in development; Observer-only; no trading authority**
 
 ---
 
@@ -422,6 +422,38 @@ For each researchable snapshot, calculate or make reproducible:
 
 Future evidence is **not** an input feature for the same event. It is a label or
 simulation path only.
+
+## V2.3 implementation contract
+
+The first frozen outcome version is `FUTURE_PATH_4H_V1`. It labels only V2.2
+`CANONICAL_FEATURES_V1` rows after the full 4-hour future window has matured.
+The decision-event close is the entry reference. Forward closes at 5m, 15m,
+30m, 1h, 2h and 4h are stored alongside long/short MFE, MAE, excursion timing
+and realized future volatility.
+
+The research-only R unit is `ATR14_1X_RESEARCH_R_V1`: one R is exactly the
+decision-time ATR14 fraction when that feature exists. Rows without ATR remain
+valid future paths, but R-barrier fields are explicitly unavailable. If both a
+favorable and adverse R barrier are crossed inside the same 5-minute candle,
+the sequence is recorded as `AMBIGUOUS_SAME_CANDLE`; intrabar order is never
+invented.
+
+Future candles already present in canonical evidence are reused. If a symbol
+leaves the point-in-time observation universe during the 4-hour label window,
+only its missing historical Binance klines are cached in `future_candle_cache`.
+That table is label-only and V2.2 feature code never reads it. This preserves
+future paths without widening or contaminating decision-time evidence.
+
+Cost labels use `TAKER_SPREAD_SLIPPAGE_FUNDING_PROXY_V1`: two taker fees, frozen
+entry/exit slippage assumptions, the decision-time observed spread as the
+round-trip spread proxy, and the exact timestamped funding events crossed. No
+cost-complete path is committed unless funding-history coverage spans the whole
+future window. Source-candle and funding digests make later source corrections
+auditable and force an explicit rebuild rather than silently changing labels.
+
+Policy-neutral continuation evidence records the maximum favorable extension
+after hypothetical exits at each frozen horizon through the 4-hour endpoint.
+This gives V2.4 an objective basis for measuring missed winner extension.
 
 ## Acceptance
 

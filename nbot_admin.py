@@ -8,10 +8,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from nbot.binance import BinancePublicClient, latest_closed_open_time_ms
-from nbot.config import CONFIG, RESEARCH_CONFIG
+from nbot.config import CONFIG, OUTCOME_CONFIG, RESEARCH_CONFIG
 from nbot.db import EvidenceDB
 from nbot.observer import MarketEvidenceObserver
 from nbot.research import ResearchEngine
+from nbot.outcomes import FuturePathEngine
 
 
 def iso_ms(value: int) -> str:
@@ -166,6 +167,50 @@ def cmd_research_audit(_args: argparse.Namespace) -> int:
     )
     return 2 if failures else 0
 
+
+
+def build_outcomes() -> FuturePathEngine:
+    db = EvidenceDB(CONFIG)
+    db.initialize()
+    return FuturePathEngine(CONFIG, OUTCOME_CONFIG, db, BinancePublicClient(CONFIG))
+
+
+def cmd_outcome_build(args: argparse.Namespace) -> int:
+    result = build_outcomes().build(max_events=args.max_events, rebuild=args.rebuild)
+    print(json.dumps(result.__dict__, indent=2, sort_keys=True))
+    failures = result.funding_incomplete_events != 0 or result.path_incomplete_events != 0
+    return 2 if failures else 0
+
+
+def cmd_outcome_status(_args: argparse.Namespace) -> int:
+    print(json.dumps(build_outcomes().status(), indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_outcome_audit(_args: argparse.Namespace) -> int:
+    report = build_outcomes().audit()
+    print(json.dumps(report, indent=2, sort_keys=True))
+    failures = any(
+        report[key] != 0
+        for key in (
+            "definition_mismatch",
+            "paths_without_feature",
+            "invalid_source_bounds",
+            "invalid_path_values",
+            "cost_version_mismatches",
+            "risk_version_mismatches",
+            "build_row_mismatches",
+            "future_cache_conflicts",
+            "unresolved_attempt_events",
+            "json_errors",
+            "path_digest_mismatches",
+            "build_digest_mismatches",
+            "source_candle_digest_mismatches",
+            "funding_source_digest_mismatches",
+        )
+    )
+    return 2 if failures else 0
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="NBOT V2 administration")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -185,6 +230,12 @@ def main() -> int:
     sub.add_parser("research-status")
     sub.add_parser("research-audit")
 
+    outcome_build = sub.add_parser("outcome-build")
+    outcome_build.add_argument("--max-events", type=int, default=OUTCOME_CONFIG.max_events_per_build)
+    outcome_build.add_argument("--rebuild", action="store_true")
+    sub.add_parser("outcome-status")
+    sub.add_parser("outcome-audit")
+
     args = parser.parse_args()
     commands = {
         "init": cmd_init,
@@ -199,6 +250,9 @@ def main() -> int:
         "research-build": cmd_research_build,
         "research-status": cmd_research_status,
         "research-audit": cmd_research_audit,
+        "outcome-build": cmd_outcome_build,
+        "outcome-status": cmd_outcome_status,
+        "outcome-audit": cmd_outcome_audit,
     }
     return commands[args.command](args)
 
