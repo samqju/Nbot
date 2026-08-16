@@ -763,6 +763,97 @@ class BinanceMarketClient:
             candles.append((open_time, o, h, l, c))
         return candles
 
+    def get_historical_research_bars(
+        self,
+        *,
+        symbol: str,
+        interval: str,
+        limit: int,
+        end_time_ms: int | None = None,
+    ) -> list[dict]:
+        """Return fully closed public klines with volume for research only.
+
+        ``end_time_ms`` is an as-of boundary, not a promise that Binance will
+        return a bar ending exactly there.  The request is bounded to
+        ``endTime=end_time_ms-1`` and every response row is filtered again so
+        future/incomplete bars cannot enter point-in-time research history.
+
+        This method is read-only and exposes no account/order capability.
+        """
+        if not isinstance(limit, int) or not (1 <= limit <= 1500):
+            raise ValueError("RESEARCH_KLINE_LIMIT_INVALID")
+
+        symbol = str(symbol or "").strip().upper()
+        interval = str(interval or "").strip().lower()
+        if not symbol or not interval:
+            raise ValueError("RESEARCH_KLINE_REQUEST_INVALID")
+
+        cutoff_ms = (
+            int(end_time_ms)
+            if end_time_ms is not None
+            else int(time.time() * 1000)
+        )
+        if cutoff_ms <= 0:
+            raise ValueError("RESEARCH_KLINE_END_TIME_INVALID")
+
+        params = {
+            "symbol": symbol,
+            "interval": interval,
+            "limit": limit,
+            "endTime": cutoff_ms - 1,
+        }
+        data = self._public_get("/fapi/v1/klines", params)
+
+        bars = []
+        for candle in data:
+            if not isinstance(candle, (list, tuple)) or len(candle) < 8:
+                raise OperationalExchangeError(
+                    f"RESEARCH_KLINE_SCHEMA_INVALID | symbol={symbol}"
+                )
+
+            open_time = int(candle[0])
+            close_time = int(candle[6])
+            if close_time >= cutoff_ms:
+                continue
+
+            try:
+                o, h, l, c = map(float, candle[1:5])
+                base_volume = float(candle[5])
+                quote_volume = float(candle[7])
+                trade_count = int(candle[8]) if len(candle) > 8 else 0
+            except (TypeError, ValueError) as exc:
+                raise OperationalExchangeError(
+                    f"RESEARCH_KLINE_VALUES_INVALID | symbol={symbol} | "
+                    f"open_time={open_time}"
+                ) from exc
+
+            if (
+                min(o, h, l, c) <= 0
+                or h < max(o, c)
+                or l > min(o, c)
+                or base_volume < 0
+                or quote_volume < 0
+                or close_time <= open_time
+            ):
+                raise OperationalExchangeError(
+                    f"RESEARCH_KLINE_VALUES_INVALID | symbol={symbol} | "
+                    f"open_time={open_time}"
+                )
+
+            bars.append({
+                "open_time_ms": open_time,
+                "close_time_ms": close_time,
+                "open": o,
+                "high": h,
+                "low": l,
+                "close": c,
+                "base_volume": base_volume,
+                "quote_volume": quote_volume,
+                "trade_count": trade_count,
+            })
+
+        return bars
+
     def get_market_context_rows(self, *, symbols) -> dict[str, dict]:
         """Return bulk public 24h/liquidity measurements for Observation.
 
