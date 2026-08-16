@@ -14,6 +14,7 @@ from nbot.observer import MarketEvidenceObserver
 from nbot.research import ResearchEngine
 from nbot.outcomes import FuturePathEngine
 from nbot.policies import ExitPolicyLab
+from nbot.selection import EntrySelectionLab, SELECTION_CONFIG
 
 
 def iso_ms(value: int) -> str:
@@ -256,6 +257,65 @@ def cmd_policy_audit(_args: argparse.Namespace) -> int:
     )
     return 2 if failures else 0
 
+
+def build_selection_lab() -> EntrySelectionLab:
+    db = EvidenceDB(CONFIG)
+    db.initialize()
+    # V2.5 is explicitly downstream of the frozen V2.4 policy catalog.
+    ExitPolicyLab(CONFIG, POLICY_CONFIG, db).initialize()
+    return EntrySelectionLab(CONFIG, SELECTION_CONFIG, db)
+
+
+def cmd_selection_build(args: argparse.Namespace) -> int:
+    result = build_selection_lab().build(max_events=args.max_events, rebuild=args.rebuild)
+    print(json.dumps(result.__dict__, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_selection_status(_args: argparse.Namespace) -> int:
+    print(json.dumps(build_selection_lab().status(), indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_selection_report(_args: argparse.Namespace) -> int:
+    print(json.dumps(build_selection_lab().report(), indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_selection_audit(_args: argparse.Namespace) -> int:
+    report = build_selection_lab().audit()
+    print(json.dumps(report, indent=2, sort_keys=True))
+    failures = any(
+        report[key] != 0
+        for key in (
+            "lab_definition_mismatch",
+            "selector_definition_mismatches",
+            "target_policy_mismatches",
+            "examples_without_policy_result",
+            "policy_result_digest_mismatches",
+            "feature_source_digest_mismatches",
+            "signal_source_digest_mismatches",
+            "future_feature_source_rows",
+            "feature_vector_mismatches",
+            "example_digest_mismatches",
+            "example_build_row_mismatches",
+            "example_build_digest_mismatches",
+            "example_build_source_digest_mismatches",
+            "predictions_without_example",
+            "prediction_source_digest_mismatches",
+            "prediction_digest_mismatches",
+            "prediction_rank_mismatches",
+            "baseline_prediction_count_mismatches",
+            "learned_training_leakage",
+            "learned_before_min_train_events",
+            "learned_model_digest_mismatches",
+            "prediction_build_row_mismatches",
+            "prediction_build_digest_mismatches",
+            "prediction_build_source_digest_mismatches",
+        )
+    )
+    return 2 if failures else 0
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="NBOT V2 administration")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -288,6 +348,13 @@ def main() -> int:
     sub.add_parser("policy-report")
     sub.add_parser("policy-audit")
 
+    selection_build = sub.add_parser("selection-build")
+    selection_build.add_argument("--max-events", type=int, default=SELECTION_CONFIG.max_events_per_build)
+    selection_build.add_argument("--rebuild", action="store_true")
+    sub.add_parser("selection-status")
+    sub.add_parser("selection-report")
+    sub.add_parser("selection-audit")
+
     args = parser.parse_args()
     commands = {
         "init": cmd_init,
@@ -309,6 +376,10 @@ def main() -> int:
         "policy-status": cmd_policy_status,
         "policy-report": cmd_policy_report,
         "policy-audit": cmd_policy_audit,
+        "selection-build": cmd_selection_build,
+        "selection-status": cmd_selection_status,
+        "selection-report": cmd_selection_report,
+        "selection-audit": cmd_selection_audit,
     }
     return commands[args.command](args)
 

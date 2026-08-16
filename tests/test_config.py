@@ -2,6 +2,7 @@ import unittest
 from dataclasses import replace
 
 from nbot.config import CONFIG, OUTCOME_CONFIG, POLICY_CONFIG, RESEARCH_CONFIG
+from nbot.selection import SELECTION_CONFIG
 
 
 class ConfigTests(unittest.TestCase):
@@ -10,7 +11,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(CONFIG.role, "OBSERVER_RESEARCH")
         self.assertEqual(CONFIG.market_environment, "LIVE_PUBLIC")
         self.assertEqual(CONFIG.observation_universe_size, 200)
-        self.assertIn("V2_4", CONFIG.schema_version)
+        self.assertIn("V2_5", CONFIG.schema_version)
         self.assertTrue(CONFIG.gap_recovery_enabled)
 
     def test_execution_like_role_is_rejected(self):
@@ -49,6 +50,16 @@ class ConfigTests(unittest.TestCase):
     def test_changed_policy_horizon_is_rejected(self):
         with self.assertRaises(ValueError):
             replace(POLICY_CONFIG, max_horizon_bars=24).validate()
+
+    def test_selection_config_is_frozen_and_valid(self):
+        SELECTION_CONFIG.validate()
+        self.assertEqual(SELECTION_CONFIG.lab_version, "ENTRY_SELECTION_LAB_V1")
+        self.assertEqual(SELECTION_CONFIG.target_policy_version, "INTEGER_R_STEP_CONTROL")
+        self.assertEqual(SELECTION_CONFIG.learned_selector_version, "RIDGE_EXPECTED_NET_R_V1")
+
+    def test_selection_target_policy_cannot_silently_change(self):
+        with self.assertRaises(ValueError):
+            replace(SELECTION_CONFIG, target_policy_version="STRUCTURE_TRAIL_V1").validate()
 
 
 if __name__ == "__main__":

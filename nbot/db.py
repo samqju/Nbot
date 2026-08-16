@@ -424,6 +424,109 @@ CREATE TABLE IF NOT EXISTS exit_policy_builds (
     FOREIGN KEY (lab_version) REFERENCES exit_policy_labs(lab_version)
 );
 
+CREATE TABLE IF NOT EXISTS entry_selection_labs (
+    lab_version TEXT PRIMARY KEY,
+    feature_version TEXT NOT NULL,
+    policy_lab_version TEXT NOT NULL,
+    target_policy_version TEXT NOT NULL,
+    definition_hash TEXT NOT NULL,
+    definition_json TEXT NOT NULL,
+    registered_at_ms INTEGER NOT NULL,
+    FOREIGN KEY (feature_version) REFERENCES feature_sets(feature_version),
+    FOREIGN KEY (policy_lab_version) REFERENCES exit_policy_labs(lab_version),
+    FOREIGN KEY (target_policy_version) REFERENCES exit_policy_sets(policy_version)
+);
+
+CREATE TABLE IF NOT EXISTS entry_selector_sets (
+    selector_version TEXT PRIMARY KEY,
+    lab_version TEXT NOT NULL,
+    family TEXT NOT NULL,
+    is_learned INTEGER NOT NULL CHECK (is_learned IN (0, 1)),
+    definition_hash TEXT NOT NULL,
+    definition_json TEXT NOT NULL,
+    registered_at_ms INTEGER NOT NULL,
+    FOREIGN KEY (lab_version) REFERENCES entry_selection_labs(lab_version)
+);
+
+CREATE TABLE IF NOT EXISTS entry_selection_examples (
+    event_open_ms INTEGER NOT NULL,
+    symbol TEXT NOT NULL,
+    side TEXT NOT NULL CHECK (side IN ('LONG', 'SHORT')),
+    lab_version TEXT NOT NULL,
+    feature_version TEXT NOT NULL,
+    target_policy_version TEXT NOT NULL,
+    built_at_ms INTEGER NOT NULL,
+    target_net_r REAL NOT NULL,
+    target_net_return_frac REAL NOT NULL,
+    target_mfe_r REAL NOT NULL,
+    target_mae_r REAL NOT NULL,
+    source_policy_result_digest TEXT NOT NULL,
+    source_feature_digest TEXT NOT NULL,
+    source_signal_digest TEXT NOT NULL,
+    feature_vector_json TEXT NOT NULL,
+    example_digest TEXT NOT NULL,
+    PRIMARY KEY (event_open_ms, symbol, side, lab_version),
+    FOREIGN KEY (event_open_ms, symbol, side, target_policy_version)
+        REFERENCES exit_policy_results(event_open_ms, symbol, side, policy_version) ON DELETE CASCADE,
+    FOREIGN KEY (lab_version) REFERENCES entry_selection_labs(lab_version)
+);
+
+CREATE TABLE IF NOT EXISTS entry_selection_builds (
+    event_open_ms INTEGER NOT NULL,
+    lab_version TEXT NOT NULL,
+    built_at_ms INTEGER NOT NULL,
+    example_row_count INTEGER NOT NULL,
+    source_digest TEXT NOT NULL,
+    example_digest TEXT NOT NULL,
+    PRIMARY KEY (event_open_ms, lab_version),
+    FOREIGN KEY (event_open_ms) REFERENCES market_events(event_open_ms) ON DELETE CASCADE,
+    FOREIGN KEY (lab_version) REFERENCES entry_selection_labs(lab_version)
+);
+
+CREATE TABLE IF NOT EXISTS entry_selection_predictions (
+    event_open_ms INTEGER NOT NULL,
+    symbol TEXT NOT NULL,
+    side TEXT NOT NULL CHECK (side IN ('LONG', 'SHORT')),
+    lab_version TEXT NOT NULL,
+    selector_version TEXT NOT NULL,
+    scored_at_ms INTEGER NOT NULL,
+    score REAL NOT NULL,
+    rank_in_event INTEGER NOT NULL CHECK (rank_in_event > 0),
+    trained_through_event_ms INTEGER,
+    training_event_count INTEGER NOT NULL,
+    training_row_count INTEGER NOT NULL,
+    model_digest TEXT,
+    source_example_digest TEXT NOT NULL,
+    prediction_digest TEXT NOT NULL,
+    PRIMARY KEY (event_open_ms, symbol, side, selector_version),
+    FOREIGN KEY (event_open_ms, symbol, side, lab_version)
+        REFERENCES entry_selection_examples(event_open_ms, symbol, side, lab_version) ON DELETE CASCADE,
+    FOREIGN KEY (selector_version) REFERENCES entry_selector_sets(selector_version)
+);
+
+CREATE TABLE IF NOT EXISTS entry_selection_prediction_builds (
+    event_open_ms INTEGER NOT NULL,
+    lab_version TEXT NOT NULL,
+    selector_version TEXT NOT NULL,
+    built_at_ms INTEGER NOT NULL,
+    prediction_row_count INTEGER NOT NULL,
+    training_event_count INTEGER NOT NULL,
+    training_row_count INTEGER NOT NULL,
+    trained_through_event_ms INTEGER,
+    model_digest TEXT,
+    source_digest TEXT NOT NULL,
+    prediction_digest TEXT NOT NULL,
+    PRIMARY KEY (event_open_ms, lab_version, selector_version),
+    FOREIGN KEY (event_open_ms) REFERENCES market_events(event_open_ms) ON DELETE CASCADE,
+    FOREIGN KEY (lab_version) REFERENCES entry_selection_labs(lab_version),
+    FOREIGN KEY (selector_version) REFERENCES entry_selector_sets(selector_version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_entry_selection_examples_event
+    ON entry_selection_examples(event_open_ms, symbol, side);
+CREATE INDEX IF NOT EXISTS idx_entry_selection_predictions_selector_event
+    ON entry_selection_predictions(selector_version, event_open_ms, rank_in_event);
+
 CREATE INDEX IF NOT EXISTS idx_exit_policy_results_policy_side
     ON exit_policy_results(policy_version, side, event_open_ms);
 CREATE INDEX IF NOT EXISTS idx_exit_policy_results_event

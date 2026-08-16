@@ -2,7 +2,7 @@
 
 Version: 2026-08-16
 Foundation generation: `NBOT_V2_FOUNDATION_V1`
-Current development baseline: **V2.1 evidence integrity under live validation; V2.2 canonical feature/signal code milestone complete; V2.3 future-path/outcome engine in development; Observer-only; no trading authority**
+Current development baseline: **V2.1 evidence integrity under live validation; V2.2 canonical features complete; V2.3 future paths complete; V2.4 exit-policy lab code milestone complete; V2.5 entry-selection learning in development; Observer-only; no trading authority**
 
 ---
 

@@ -28,7 +28,7 @@ class ObserverConfig:
 
     database_path: Path = Path("data/observer.db")
     backup_directory: Path = Path("data/backups")
-    schema_version: str = "NBOT_V2_MARKET_EVIDENCE_V2_4"
+    schema_version: str = "NBOT_V2_MARKET_EVIDENCE_V2_5"
     collector_version: str = "NBOT_V2_OBSERVER_EVIDENCE_V2_1"
 
     # Recovery never fabricates historical live spread/volume context. It may
