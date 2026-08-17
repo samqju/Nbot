@@ -243,6 +243,19 @@ class ExecutionWorkerTests(unittest.TestCase):
         self.assertEqual(self.exchange.close_calls, 1)
         self.assertEqual(len(self.worker.state.data["pending_outcomes"]), 1)
 
+    def test_operator_force_close_finalizes_locally_without_observer(self):
+        self.assertEqual(self.worker.process_flat_cycle(), "ENTRY_OPENED")
+        calls_after_entry = self.proposals.calls
+        self.proposals.fail = True
+        self.assertEqual(
+            self.worker.force_close_open_position(reason="OPERATOR_TESTNET_FLATTEN"),
+            "POSITION_CLOSED",
+        )
+        self.assertEqual(self.proposals.calls, calls_after_entry)
+        self.assertIsNone(self.worker.state.open_position)
+        self.assertEqual(len(self.worker.state.data["pending_outcomes"]), 1)
+        self.assertEqual(self.exchange.close_calls, 1)
+
     def test_pending_outcome_is_delivered_before_next_request(self):
         self.assertEqual(self.worker.process_flat_cycle(), "ENTRY_OPENED")
         self.exchange.quote_value = Quote("BTCUSDT", 98.50, 98.52, self.now + 2_000)

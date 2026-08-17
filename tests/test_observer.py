@@ -94,21 +94,25 @@ class ObserverTests(unittest.TestCase):
     def test_partial_capture_is_rejected_atomically(self):
         tmp, db, observer = self._make(PartialClient())
         try:
-            result = observer.collect_once()
+            with self.assertLogs("nbot.v2.observer", level="WARNING") as captured:
+                result = observer.collect_once()
             self.assertEqual(result.status, "PARTIAL")
             self.assertEqual(db.status()["events"], 0)
+            self.assertTrue(any("simulated failure" in line for line in captured.output))
         finally:
             tmp.cleanup()
 
     def test_late_point_in_time_context_is_rejected_atomically(self):
         tmp, db, observer = self._make(LateContextClient())
         try:
-            result = observer.collect_once()
+            with self.assertLogs("nbot.v2.observer", level="WARNING") as captured:
+                result = observer.collect_once()
             self.assertEqual(result.status, "PARTIAL")
             self.assertEqual(db.status()["events"], 0)
             with db._connect() as conn:
                 detail = conn.execute("SELECT detail FROM collection_attempts ORDER BY id DESC LIMIT 1").fetchone()[0]
             self.assertIn("__LATE_CONTEXT__", detail)
+            self.assertTrue(any("__LATE_CONTEXT__" in line for line in captured.output))
         finally:
             tmp.cleanup()
 

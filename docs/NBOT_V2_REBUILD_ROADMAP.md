@@ -794,6 +794,24 @@ Repeated controlled Testnet sessions prove:
 - Observation outage does not affect an open position;
 - failures remain fail-closed.
 
+## V2.8 implementation contract
+
+The first mechanical authority is `TESTNET_MECHANICAL_CANARY_V1`. It exists
+only to exercise the Execution Worker and may never be accepted in LIVE. It is
+not a Research Champion, carries model version `NONE_MECHANICAL_CANARY`, and
+its outcomes are stored separately as `TESTNET_MECHANICAL_ONLY` with
+`research_evidence=false`. The canary retains the proven V1 Testnet safety
+patterns: explicit confirmation plus arm-file gating, deterministic client order
+IDs, no blind retry after ambiguous entry/close acknowledgements, exchange-truth
+reconciliation, immediate protective-stop verification, and place-new-stop
+before cancel-old replacement. USD-M conditional STOP_MARKET protection uses
+the Binance Algo Order service.
+
+Execution credentials exist only on the Execution VPS at
+`/home/ubuntu/.config/nbot/.env` (mode 0600, never committed). Execution-owned
+state and the Testnet arm file live under `/var/lib/nbot-execution/`. The
+Observation VPS never receives Testnet order credentials.
+
 ---
 
 # PHASE V2.9 — LIVE-MARKET Paper Operational Canary

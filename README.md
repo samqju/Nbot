@@ -133,3 +133,28 @@ The self-check must report `entry_authority=NONE`, no approved exit policies,
 and `order_adapter=NONE_UNTIL_V2_8`. Execution state is separate from
 `data/observer.db` and is stored atomically in `data/execution_v2_state.json`
 when an execution adapter is used.
+
+
+
+## V2.8 Binance Testnet mechanical canary
+
+V2.8 connects the V2.7 capital boundary to Binance USD-M Futures Testnet for
+**mechanical validation only**. `TESTNET_MECHANICAL_CANARY_V1` is a manual,
+Testnet-only canary authority; it is not a research champion and its outcomes
+are explicitly stored as `TESTNET_MECHANICAL_ONLY`, never research evidence.
+
+The real credential file is intentionally outside Git and exists only on the
+Execution VPS:
+
+```text
+/home/ubuntu/.config/nbot/.env
+```
+
+The tracked template is `deploy/v2/execution.env.example`. Execution-owned
+mutable state is stored under `/var/lib/nbot-execution/`, separate from the
+Observer database. The default self-check remains fail-closed and places no
+orders:
+
+```bash
+python3 run_execution.py --self-check
+```

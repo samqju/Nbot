@@ -376,7 +376,7 @@ class ExecutionWorker:
             return self._reject(proposal, "DUPLICATE")
 
         self.exchange.set_leverage(plan.symbol, plan.leverage)
-        client_order_id = f"NBV27-{proposal.proposal_id[:20]}"
+        client_order_id = f"NBV28-{proposal.proposal_id[:20]}"
         fill = self.exchange.open_market(plan, client_order_id=client_order_id)
         actual_stop = self._stop_for_fill(proposal.direction, fill.price, fill.quantity)
         try:
@@ -469,6 +469,25 @@ class ExecutionWorker:
         self.state.save()
         return "POSITION_MANAGED"
 
+    def force_close_open_position(self, *, reason: str = "OPERATOR_TESTNET_FLATTEN") -> str:
+        """Close the locally managed position without contacting Observation.
+
+        This exists for the V2.8 mechanical canary and emergency/operator cleanup.
+        It never creates a new entry and therefore remains available even when
+        new-entry authority is disabled after a position has been opened.
+        """
+        if not self._prepared:
+            self.prepare()
+        position = self.state.open_position
+        if position is None:
+            exchange_position = self.exchange.position_snapshot()
+            if exchange_position is not None:
+                raise ExecutionSafetyError("UNMANAGED_EXCHANGE_POSITION")
+            return "FLAT"
+        close = self.exchange.close_position(position["symbol"], position["side"], reason=reason)
+        self._finalize_closed_position(close.price, close.timestamp_ms, close.reason)
+        return "POSITION_CLOSED"
+
     def reconcile_open_position(self) -> str:
         """Exchange reconciliation only; deliberately no Observation dependency."""
         position = self.state.open_position
@@ -557,7 +576,7 @@ class ExecutionWorker:
 
     def status(self) -> dict[str, Any]:
         return {
-            "phase": "V2.7",
+            "phase": "V2.8" if self.config.allowed_entry_authorities else "V2.7",
             "role": "EXECUTION_CAPITAL_BOUNDARY",
             "environment": self.config.environment,
             "entry_authority": self.entry_authority,
