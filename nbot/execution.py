@@ -576,7 +576,7 @@ class ExecutionWorker:
 
     def status(self) -> dict[str, Any]:
         return {
-            "phase": "V2.8" if self.config.allowed_entry_authorities else "V2.7",
+            "phase": "V2.8",
             "role": "EXECUTION_CAPITAL_BOUNDARY",
             "environment": self.config.environment,
             "entry_authority": self.entry_authority,

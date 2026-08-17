@@ -188,6 +188,7 @@ class ExecutionWorkerTests(unittest.TestCase):
         self.assertEqual(cfg.allowed_exit_policies, ())
         worker = ExecutionWorker(cfg, FakeExchange(self.now), FakeProposalClient(), now_ms=lambda: self.now)
         self.assertEqual(worker.entry_authority, NO_ENTRY_AUTHORITY)
+        self.assertEqual(worker.status()["phase"], "V2.8")
 
     def test_entry_requires_local_validation_and_duplicate_reservation(self):
         self.assertEqual(self.worker.process_flat_cycle(), "ENTRY_OPENED")

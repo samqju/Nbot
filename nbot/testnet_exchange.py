@@ -351,6 +351,8 @@ class BinanceTestnetExchange:
                 except Exception as exc:
                     self._user_stream_healthy = False
                     self._user_stream_ready.clear()
+                    if self._user_stream_stop.is_set():
+                        break
                     self.log.warning("TESTNET_USER_STREAM_RESTARTING %s", exc)
                     if not self._user_stream_stop.wait(5):
                         continue
