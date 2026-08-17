@@ -36,6 +36,7 @@ class AdapterHarness(BinanceTestnetExchange):
         self.stops = []
         self.algo_history = {}
         self.trades = []
+        self.income = []
         self.next_algo_id = 100
         self.fail_cancel_ids = set()
 
@@ -126,6 +127,18 @@ class AdapterHarness(BinanceTestnetExchange):
                 rows = [row for row in rows if int(row.get("createTime", 0) or 0) >= int(params["startTime"])]
             if params.get("endTime") is not None:
                 rows = [row for row in rows if int(row.get("createTime", 0) or 0) <= int(params["endTime"])]
+            return rows
+        if path == "/fapi/v1/income":
+            params = params or {}
+            rows = [dict(row) for row in self.income]
+            if params.get("symbol") is not None:
+                rows = [row for row in rows if row.get("symbol") == params["symbol"]]
+            if params.get("incomeType") is not None:
+                rows = [row for row in rows if row.get("incomeType") == params["incomeType"]]
+            if params.get("startTime") is not None:
+                rows = [row for row in rows if int(row.get("time", 0) or 0) >= int(params["startTime"])]
+            if params.get("endTime") is not None:
+                rows = [row for row in rows if int(row.get("time", 0) or 0) <= int(params["endTime"])]
             return rows
         raise AssertionError(path)
 
@@ -414,6 +427,160 @@ class TestnetExchangeTests(unittest.TestCase):
         }
         close = ex.recover_closed_position(local)
         self.assertEqual(close.reason, "PROTECTIVE_STOP_TRIGGERED")
+
+    def test_external_close_recovery_falls_back_to_finished_algo_actual_order_and_income(self):
+        ex = AdapterHarness(self.cfg)
+        actual_order_id = 9011
+        algo_id = 555
+        ex.algo_history[str(algo_id)] = {
+            "algoId": algo_id,
+            "clientAlgoId": "aos-test-stop",
+            "algoStatus": "FINISHED",
+            "orderType": "STOP_MARKET",
+            "side": "SELL",
+            "positionSide": "BOTH",
+            "quantity": "1.000",
+            "actualQty": "1.000",
+            "actualPrice": "101.50",
+            "actualOrderId": str(actual_order_id),
+            "reduceOnly": True,
+            "createTime": 1_000_100,
+            "updateTime": 1_000_700,
+        }
+        ex.orders["aos-test-stop"] = {
+            "orderId": actual_order_id,
+            "clientOrderId": "aos-test-stop",
+            "status": "FILLED",
+            "side": "SELL",
+            "positionSide": "BOTH",
+            "type": "MARKET",
+            "origType": "MARKET",
+            "origQty": "1.000",
+            "executedQty": "1.000",
+            "avgPrice": "101.50",
+            "cumQuote": "101.50",
+            "reduceOnly": True,
+            "time": 1_000_690,
+            "updateTime": 1_000_700,
+        }
+        ex.income = [
+            {"symbol": "BTCUSDT", "incomeType": "REALIZED_PNL", "income": "0.50000000", "time": 1_000_000},
+            {"symbol": "BTCUSDT", "incomeType": "REALIZED_PNL", "income": "1.00000000", "time": 1_000_000},
+        ]
+        local = {
+            "symbol": "BTCUSDT", "side": "LONG", "quantity": 1.0,
+            "entry_price": 100.0, "entry_timestamp_ms": 1_000_000,
+            "entry_order_id": "7001",
+        }
+        with mock.patch("nbot.testnet_exchange.time.time", return_value=1100.0):
+            close = ex.recover_closed_position(local)
+        self.assertEqual(close.reason, "PROTECTIVE_STOP_TRIGGERED")
+        self.assertEqual(close.source, "ALGO_ACTUAL_ORDER_INCOME_RECOVERY")
+        self.assertEqual(close.order_ids, (str(actual_order_id),))
+        self.assertAlmostEqual(close.price, 101.5)
+        self.assertAlmostEqual(close.realized_pnl_usd, 1.5)
+        self.assertEqual(close.timestamp_ms, 1_000_700)
+
+    def test_algo_settlement_matches_observed_testnet_split_realized_pnl_case(self):
+        ex = AdapterHarness(self.cfg)
+        ex.algo_history["1000000170503496"] = {
+            "algoId": 1000000170503496,
+            "clientAlgoId": "aos_cbRouQdEszR7On3g4XCu",
+            "algoStatus": "FINISHED",
+            "orderType": "STOP_MARKET",
+            "side": "SELL",
+            "positionSide": "BOTH",
+            "quantity": "0.0157",
+            "actualQty": "0.0157",
+            "actualPrice": "63604.500000",
+            "triggerPrice": "63605.00",
+            "actualOrderId": "28544406888",
+            "reduceOnly": True,
+            "createTime": 1786973889265,
+            "updateTime": 1786973905768,
+        }
+        ex.orders["aos_cbRouQdEszR7On3g4XCu"] = {
+            "orderId": 28544406888,
+            "clientOrderId": "aos_cbRouQdEszR7On3g4XCu",
+            "status": "FILLED",
+            "side": "SELL",
+            "positionSide": "BOTH",
+            "type": "MARKET",
+            "origType": "MARKET",
+            "origQty": "0.0157",
+            "executedQty": "0.0157",
+            "avgPrice": "63604.500000",
+            "cumQuote": "998.590650",
+            "reduceOnly": True,
+            "time": 1786973905739,
+            "updateTime": 1786973905747,
+        }
+        ex.income = [
+            {"symbol": "BTCUSDT", "incomeType": "REALIZED_PNL", "income": "0.14360000", "time": 1786973905000},
+            {"symbol": "BTCUSDT", "incomeType": "REALIZED_PNL", "income": "2.11092000", "time": 1786973905000},
+        ]
+        local = {
+            "symbol": "BTCUSDT", "side": "LONG", "quantity": 0.0157,
+            "entry_price": 63460.9, "entry_timestamp_ms": 1786972931985,
+            "entry_order_id": "28544391514",
+            "protective_stop_algo_id": "1000000170487957",
+            "protective_stop_client_algo_id": "NBV28SL-3883fb3ef3ea45b480ea",
+        }
+        with mock.patch("nbot.testnet_exchange.time.time", return_value=1786974000.0):
+            close = ex.recover_closed_position(local)
+        self.assertAlmostEqual(close.price, 63604.5)
+        self.assertAlmostEqual(close.realized_pnl_usd, 2.25452)
+        self.assertEqual(close.reason, "PROTECTIVE_STOP_TRIGGERED")
+        self.assertEqual(close.order_ids, ("28544406888",))
+        self.assertEqual(close.source, "ALGO_ACTUAL_ORDER_INCOME_RECOVERY")
+
+    def test_algo_settlement_rejects_realized_pnl_mismatch(self):
+        ex = AdapterHarness(self.cfg)
+        actual_order_id = 9012
+        ex.algo_history["556"] = {
+            "algoId": 556, "clientAlgoId": "aos-mismatch", "algoStatus": "FINISHED",
+            "orderType": "STOP_MARKET", "side": "SELL", "positionSide": "BOTH",
+            "quantity": "1", "actualQty": "1", "actualPrice": "101.50",
+            "actualOrderId": str(actual_order_id), "reduceOnly": True,
+            "createTime": 1_000_100, "updateTime": 1_000_700,
+        }
+        ex.orders["aos-mismatch"] = {
+            "orderId": actual_order_id, "clientOrderId": "aos-mismatch", "status": "FILLED",
+            "side": "SELL", "positionSide": "BOTH", "executedQty": "1",
+            "avgPrice": "101.50", "reduceOnly": True, "updateTime": 1_000_700,
+        }
+        ex.income = [{
+            "symbol": "BTCUSDT", "incomeType": "REALIZED_PNL",
+            "income": "9.99", "time": 1_000_000,
+        }]
+        local = {
+            "symbol": "BTCUSDT", "side": "LONG", "quantity": 1.0,
+            "entry_price": 100.0, "entry_timestamp_ms": 1_000_000, "entry_order_id": "7001",
+        }
+        with self.assertRaisesRegex(TestnetExchangeError, "REALIZED_PNL_MISMATCH"):
+            ex._settle_local_position_from_finished_stop(local, 1_100_000)
+
+    def test_algo_settlement_rejects_ambiguous_multiple_finished_full_quantity_stops(self):
+        ex = AdapterHarness(self.cfg)
+        for algo_id, order_id, client in ((557, 9013, "aos-one"), (558, 9014, "aos-two")):
+            ex.algo_history[str(algo_id)] = {
+                "algoId": algo_id, "clientAlgoId": client, "algoStatus": "FINISHED",
+                "orderType": "STOP_MARKET", "side": "SELL", "positionSide": "BOTH",
+                "quantity": "1", "actualQty": "1", "actualPrice": "101",
+                "actualOrderId": str(order_id), "reduceOnly": True,
+                "createTime": 1_000_100 + algo_id, "updateTime": 1_000_700 + algo_id,
+            }
+            ex.orders[client] = {
+                "orderId": order_id, "clientOrderId": client, "status": "FILLED",
+                "side": "SELL", "positionSide": "BOTH", "executedQty": "1",
+                "avgPrice": "101", "reduceOnly": True, "updateTime": 1_000_700 + algo_id,
+            }
+        local = {
+            "symbol": "BTCUSDT", "side": "LONG", "quantity": 1.0,
+            "entry_price": 100.0, "entry_timestamp_ms": 1_000_000, "entry_order_id": "7001",
+        }
+        with self.assertRaisesRegex(TestnetExchangeError, "ALGO_CLOSE_EVIDENCE_AMBIGUOUS"):
+            ex._settle_local_position_from_finished_stop(local, 2_000_000)
 
     def test_external_close_recovery_fails_if_orphan_stop_cannot_be_removed(self):
         ex = AdapterHarness(self.cfg)

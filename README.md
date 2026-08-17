@@ -217,3 +217,28 @@ exchange execution modes.
 A recovered close is settled/delivered first and **never opens a new canary in
 the same CLI invocation**. A fresh entry always requires another explicit
 operator action.
+
+### V2.8.3 Testnet algo settlement fallback
+
+V2.8.3 hardens V2.8.2 against a real USD-M Testnet behavior observed during
+physical canary validation: a triggered reduce-only `STOP_MARKET` can appear as
+`FINISHED` in algo history with a populated `actualOrderId`, while
+`/fapi/v1/userTrades` returns no rows for either the position lifetime or that
+actual order ID.
+
+Recovery still prefers `userTrades`. If those fills are unavailable, V2.8.3
+accepts the algo-order fallback only when all independent exchange facts agree:
+
+- exactly one post-entry `FINISHED`, reduce-only `STOP_MARKET` matches the close
+  direction and full local quantity;
+- its `actualOrderId` resolves to a `FILLED`, reduce-only actual order with the
+  same direction and full executed quantity;
+- algo `actualPrice` and actual-order `avgPrice` agree within the symbol tick;
+- algo and actual-order client identities agree when both are present;
+- `REALIZED_PNL` income in the exact close second sums to the PnL independently
+  implied by durable entry price, actual exit price and quantity;
+- Binance is already flat and orphan protective stops can be removed/verified.
+
+Any missing, duplicate or contradictory evidence remains fail-closed. This
+fallback is Testnet execution accounting only and remains excluded from research
+evidence.

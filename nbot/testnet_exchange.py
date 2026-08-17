@@ -905,6 +905,126 @@ class BinanceTestnetExchange:
             source="USER_TRADES_RECOVERY",
         )
 
+    def _settle_local_position_from_finished_stop(self, local: dict[str, Any], end_ms: int) -> CloseFill:
+        """Recover a Testnet close when userTrades omits the spawned stop fill.
+
+        USD-M Testnet can expose a FINISHED reduce-only STOP_MARKET in algo
+        history and its FILLED child order while returning no rows from
+        ``/fapi/v1/userTrades``.  Accept that path only when independent
+        exchange evidence agrees on direction, quantity, price and realized
+        PnL.  Any disagreement remains fail-closed.
+        """
+        symbol = str(local["symbol"]).upper()
+        side = str(local["side"]).upper()
+        target_qty = float(local["quantity"])
+        entry_price = float(local.get("entry_price", 0) or 0)
+        entry_ts = int(local["entry_timestamp_ms"])
+        if target_qty <= 0 or entry_price <= 0:
+            raise TestnetExchangeError("TESTNET_ALGO_SETTLEMENT_LOCAL_POSITION_INVALID")
+
+        expected_side = "SELL" if side == "LONG" else "BUY"
+        step = float(self._filters[symbol]["market_step"])
+        tick = float(self._filters[symbol]["tick"])
+        qty_tolerance = max(step / 2.0, 1e-12)
+        price_tolerance = max(tick / 2.0, 1e-12)
+
+        candidates: list[tuple[dict[str, Any], dict[str, Any]]] = []
+        for algo in self._all_algo_orders_between(symbol, entry_ts, end_ms):
+            if str(algo.get("algoStatus") or "").upper() != "FINISHED":
+                continue
+            if str(algo.get("orderType") or algo.get("type") or "").upper() != "STOP_MARKET":
+                continue
+            if not self._is_true(algo.get("reduceOnly")):
+                continue
+            if str(algo.get("side") or "").upper() != expected_side:
+                continue
+            if str(algo.get("positionSide") or "BOTH").upper() != "BOTH":
+                raise TestnetExchangeError("TESTNET_ALGO_SETTLEMENT_HEDGE_MODE_UNSUPPORTED")
+            actual_order_id = str(algo.get("actualOrderId") or "").strip()
+            if not actual_order_id:
+                continue
+            algo_qty = float(algo.get("actualQty") or algo.get("quantity") or 0)
+            if abs(algo_qty - target_qty) > qty_tolerance:
+                continue
+
+            order = self._query_order_by_id(symbol, actual_order_id)
+            if order is None:
+                continue
+            if str(order.get("status") or "").upper() != "FILLED":
+                continue
+            if str(order.get("side") or "").upper() != expected_side:
+                continue
+            if str(order.get("positionSide") or "BOTH").upper() != "BOTH":
+                raise TestnetExchangeError("TESTNET_ALGO_SETTLEMENT_HEDGE_MODE_UNSUPPORTED")
+            if not self._is_true(order.get("reduceOnly")):
+                continue
+            executed_qty = float(order.get("executedQty", 0) or 0)
+            if abs(executed_qty - target_qty) > qty_tolerance:
+                continue
+            avg_price = float(order.get("avgPrice", 0) or 0)
+            if avg_price <= 0:
+                continue
+            actual_price = float(algo.get("actualPrice", 0) or 0)
+            if actual_price > 0 and abs(actual_price - avg_price) > price_tolerance:
+                raise TestnetExchangeError("TESTNET_ALGO_SETTLEMENT_PRICE_MISMATCH")
+            algo_client = str(algo.get("clientAlgoId") or "").strip()
+            order_client = str(order.get("clientOrderId") or "").strip()
+            if algo_client and order_client and algo_client != order_client:
+                raise TestnetExchangeError("TESTNET_ALGO_SETTLEMENT_CLIENT_ID_MISMATCH")
+            candidates.append((algo, order))
+
+        if not candidates:
+            raise TestnetExchangeError("TESTNET_ALGO_CLOSE_EVIDENCE_MISSING")
+        if len(candidates) != 1:
+            raise TestnetExchangeError("TESTNET_ALGO_CLOSE_EVIDENCE_AMBIGUOUS")
+
+        algo, order = candidates[0]
+        order_id = str(order.get("orderId") or algo.get("actualOrderId") or "").strip()
+        exit_price = float(order["avgPrice"])
+        close_ms = int(order.get("updateTime") or order.get("time") or algo.get("updateTime") or 0)
+        if close_ms < entry_ts:
+            raise TestnetExchangeError("TESTNET_ALGO_SETTLEMENT_TIMESTAMP_INVALID")
+
+        # Testnet may omit the corresponding userTrades rows.  REALIZED_PNL
+        # income is timestamped to the second, so sum only that exact close
+        # second and require it to match the PnL implied by the independently
+        # proven entry/exit prices and quantity.  This also catches hidden
+        # position mutation or unrelated close activity.
+        second_start = (close_ms // 1000) * 1000
+        income = self._signed_get(
+            "/fapi/v1/income",
+            {
+                "symbol": symbol,
+                "incomeType": "REALIZED_PNL",
+                "startTime": second_start,
+                "endTime": second_start + 999,
+                "limit": 1000,
+            },
+        )
+        realized_rows = [
+            row for row in income
+            if str(row.get("symbol") or "").upper() == symbol
+            and str(row.get("incomeType") or "").upper() == "REALIZED_PNL"
+        ]
+        if not realized_rows:
+            raise TestnetExchangeError("TESTNET_ALGO_SETTLEMENT_REALIZED_PNL_MISSING")
+        realized = sum(float(row.get("income", 0) or 0) for row in realized_rows)
+        expected = (exit_price - entry_price) * target_qty if side == "LONG" else (entry_price - exit_price) * target_qty
+        pnl_tolerance = max(1e-6, abs(expected) * 1e-7)
+        if abs(realized - expected) > pnl_tolerance:
+            raise TestnetExchangeError(
+                f"TESTNET_ALGO_SETTLEMENT_REALIZED_PNL_MISMATCH:{realized:.8f}!={expected:.8f}"
+            )
+
+        return CloseFill(
+            price=exit_price,
+            timestamp_ms=close_ms,
+            reason="PROTECTIVE_STOP_TRIGGERED",
+            realized_pnl_usd=realized,
+            order_ids=(order_id,),
+            source="ALGO_ACTUAL_ORDER_INCOME_RECOVERY",
+        )
+
     def _recover_close_reason(self, local: dict[str, Any], close_order_ids: tuple[str, ...], closed_ms: int) -> str:
         close_ids = set(close_order_ids)
         algo_id = local.get("protective_stop_algo_id")
@@ -965,14 +1085,32 @@ class BinanceTestnetExchange:
             raise TestnetExchangeError("TESTNET_RECOVERY_LOCAL_POSITION_INVALID")
         last_error: Exception | None = None
         for attempt in range(CLOSE_SETTLEMENT_RETRIES):
+            now_ms = int(time.time() * 1000)
             try:
-                rows = self._user_trades_since(symbol, entry_ts, int(time.time() * 1000))
+                rows = self._user_trades_since(symbol, entry_ts, now_ms)
                 close = self._settle_local_position_from_trades(local_position, rows)
                 self._cleanup_orphan_protective_stops(symbol)
                 return close
             except TestnetExchangeError as exc:
                 last_error = exc
                 if "TESTNET_CLOSE_EVIDENCE_INCOMPLETE" not in str(exc) and "TESTNET_CLOSE_EVIDENCE_MISSING" not in str(exc):
+                    raise
+
+            # Binance USD-M Testnet can expose the completed conditional algo
+            # and spawned actual order while returning an empty userTrades
+            # result.  Fall back only to the stricter cross-checked settlement
+            # path; all ambiguity still fails closed.
+            try:
+                close = self._settle_local_position_from_finished_stop(local_position, now_ms)
+                self._cleanup_orphan_protective_stops(symbol)
+                return close
+            except TestnetExchangeError as exc:
+                last_error = exc
+                retryable = (
+                    "TESTNET_ALGO_CLOSE_EVIDENCE_MISSING" in str(exc)
+                    or "TESTNET_ALGO_SETTLEMENT_REALIZED_PNL_MISSING" in str(exc)
+                )
+                if not retryable:
                     raise
                 if attempt + 1 < CLOSE_SETTLEMENT_RETRIES:
                     time.sleep(CLOSE_SETTLEMENT_RETRY_SECONDS)
