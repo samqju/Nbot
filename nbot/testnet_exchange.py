@@ -33,6 +33,7 @@ REQUIRED_CONFIRMATION = "I_ACCEPT_TESTNET_ORDER_EXECUTION"
 ARM_FILE_CONTENT = "ARM_TESTNET_TRADING"
 MECHANICAL_CANARY_AUTHORITY = "TESTNET_MECHANICAL_CANARY_V1"
 MECHANICAL_CANARY_MODEL = "NONE_MECHANICAL_CANARY"
+GUARD_STATE_VERSION = "NBOT_V2_TESTNET_GUARD_V1"
 
 
 class TestnetExchangeError(RuntimeError):
@@ -53,6 +54,7 @@ class TestnetExchangeConfig:
     recv_window_ms: int = 5_000
     user_stream_ready_timeout_seconds: float = 20.0
     arm_file: Path = Path("/var/lib/nbot-execution/TESTNET_TRADING_ARMED")
+    guard_state_path: Path = Path("/var/lib/nbot-execution/testnet_trading_guard.json")
     confirmation: str = ""
     max_session_entries: int = 100
     max_entry_notional_usd: float = 1000.0
@@ -68,6 +70,7 @@ class TestnetExchangeConfig:
             recv_window_ms=int(os.getenv("TESTNET_RECV_WINDOW_MS", "5000")),
             user_stream_ready_timeout_seconds=float(os.getenv("TESTNET_USER_STREAM_READY_TIMEOUT", "20")),
             arm_file=Path(os.getenv("TESTNET_TRADING_ARM_FILE", "/var/lib/nbot-execution/TESTNET_TRADING_ARMED")),
+            guard_state_path=Path(os.getenv("TESTNET_TRADING_GUARD_STATE_PATH", "/var/lib/nbot-execution/testnet_trading_guard.json")),
             confirmation=os.getenv("TESTNET_TRADING_CONFIRMATION", "").strip(),
             max_session_entries=int(os.getenv("TESTNET_MAX_SESSION_ENTRIES", "100")),
             max_entry_notional_usd=float(os.getenv("TESTNET_MAX_ENTRY_NOTIONAL_USD", "1000")),
@@ -91,51 +94,181 @@ class TestnetExchangeConfig:
 
 
 class TestnetTradingGuard:
-    """V1-proven explicit arming gate, retained for V2 Testnet order writes."""
+    """Persistent Testnet arming/session guard for order-writing entry actions.
+
+    Entry count is durable across Python restarts. Removing and recreating the
+    valid arm file creates a new explicit Testnet session and resets the count.
+    A missing/corrupt guard state while already armed fails closed rather than
+    silently granting a fresh counter.
+    """
 
     def __init__(self, config: TestnetExchangeConfig):
         self.config = config
-        self._session_entries = 0
         self._lock = threading.Lock()
 
-    def preflight(self) -> dict[str, Any]:
-        armed = False
-        reason = "NOT_ARMED"
-        if self.config.confirmation == REQUIRED_CONFIRMATION and self.config.arm_file.is_file():
-            try:
-                armed = self.config.arm_file.read_text().strip() == ARM_FILE_CONTENT
-            except OSError:
-                armed = False
-            reason = "ARMED" if armed else "ARM_FILE_INVALID"
-        elif self.config.confirmation != REQUIRED_CONFIRMATION:
-            reason = "CONFIRMATION_MISSING"
-        else:
-            reason = "ARM_FILE_MISSING"
+    @property
+    def _state_lock_path(self) -> Path:
+        return Path(str(self.config.guard_state_path) + ".lock")
+
+    def _arm_status(self) -> tuple[bool, str, str | None]:
+        if self.config.confirmation != REQUIRED_CONFIRMATION:
+            return False, "CONFIRMATION_MISSING", None
+        if not self.config.arm_file.is_file():
+            return False, "ARM_FILE_MISSING", None
+        try:
+            with self.config.arm_file.open("rb") as handle:
+                raw = handle.read()
+                stat = os.fstat(handle.fileno())
+        except OSError:
+            return False, "ARM_FILE_UNREADABLE", None
+        try:
+            content = raw.decode("utf-8").strip()
+        except UnicodeDecodeError:
+            return False, "ARM_FILE_INVALID", None
+        if content != ARM_FILE_CONTENT:
+            return False, "ARM_FILE_INVALID", None
+        identity = {
+            "device": int(stat.st_dev),
+            "inode": int(stat.st_ino),
+            "mtime_ns": int(stat.st_mtime_ns),
+            "ctime_ns": int(stat.st_ctime_ns),
+            "size": int(stat.st_size),
+            "content": content,
+        }
+        fingerprint = hashlib.sha256(
+            json.dumps(identity, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        return True, "ARMED", fingerprint
+
+    @staticmethod
+    def _empty_state() -> dict[str, Any]:
         return {
+            "state_version": GUARD_STATE_VERSION,
+            "arm_session_fingerprint": None,
+            "session_entries": 0,
+        }
+
+    def _load_state_locked(self, *, armed: bool) -> dict[str, Any]:
+        path = self.config.guard_state_path
+        if not path.exists():
+            if armed:
+                raise TestnetExchangeError("GUARD_STATE_MISSING_WHILE_ARMED")
+            state = self._empty_state()
+            self._save_state_locked(state)
+            return state
+        try:
+            state = json.loads(path.read_text())
+            if state.get("state_version") != GUARD_STATE_VERSION:
+                raise ValueError("version")
+            entries = state.get("session_entries")
+            fingerprint = state.get("arm_session_fingerprint")
+            if not isinstance(entries, int) or entries < 0:
+                raise ValueError("entries")
+            if fingerprint is not None and not isinstance(fingerprint, str):
+                raise ValueError("fingerprint")
+            return state
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            raise TestnetExchangeError("GUARD_STATE_INVALID") from exc
+
+    def _save_state_locked(self, state: dict[str, Any]) -> None:
+        path = self.config.guard_state_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{threading.get_ident()}")
+        payload = json.dumps(state, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n"
+        try:
+            with temp.open("w", encoding="utf-8") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(temp, 0o600)
+            os.replace(temp, path)
+            try:
+                directory_fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+            except OSError:
+                pass
+        finally:
+            try:
+                temp.unlink()
+            except FileNotFoundError:
+                pass
+
+    def _report_locked(self) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        armed, reason, fingerprint = self._arm_status()
+        try:
+            state = self._load_state_locked(armed=armed)
+        except TestnetExchangeError as exc:
+            return ({
+                "armed": False,
+                "reason": str(exc),
+                "session_entries": None,
+                "max_session_entries": self.config.max_session_entries,
+                "max_entry_notional_usd": self.config.max_entry_notional_usd,
+            }, None)
+        if armed and state.get("arm_session_fingerprint") != fingerprint:
+            state = self._empty_state()
+            state["arm_session_fingerprint"] = fingerprint
+            self._save_state_locked(state)
+        return ({
             "armed": armed,
             "reason": reason,
-            "session_entries": self._session_entries,
+            "session_entries": int(state["session_entries"]),
             "max_session_entries": self.config.max_session_entries,
             "max_entry_notional_usd": self.config.max_entry_notional_usd,
-        }
+        }, state)
+
+    def _with_state_lock(self):
+        class StateLock:
+            def __init__(inner_self, outer):
+                inner_self.outer = outer
+                inner_self.handle = None
+
+            def __enter__(inner_self):
+                outer = inner_self.outer
+                outer._state_lock_path.parent.mkdir(parents=True, exist_ok=True)
+                inner_self.handle = outer._state_lock_path.open("a+", encoding="utf-8")
+                os.chmod(outer._state_lock_path, 0o600)
+                import fcntl
+                fcntl.flock(inner_self.handle.fileno(), fcntl.LOCK_EX)
+                return inner_self
+
+            def __exit__(inner_self, exc_type, exc, tb):
+                import fcntl
+                fcntl.flock(inner_self.handle.fileno(), fcntl.LOCK_UN)
+                inner_self.handle.close()
+
+        return StateLock(self)
+
+    def preflight(self) -> dict[str, Any]:
+        with self._lock:
+            with self._with_state_lock():
+                report, _state = self._report_locked()
+                return report
 
     def authorize_entry(self, *, symbol: str, quantity: float, price: float, position: ExchangePosition | None) -> None:
         with self._lock:
-            report = self.preflight()
-            if not report["armed"]:
-                raise TestnetExchangeError(f"TESTNET_TRADING_NOT_ARMED:{report['reason']}")
-            if position is not None:
-                raise TestnetExchangeError("TESTNET_ENTRY_BLOCKED_POSITION_EXISTS")
-            if not symbol or quantity <= 0 or price <= 0:
-                raise TestnetExchangeError("TESTNET_ENTRY_PARAMETERS_INVALID")
-            notional = quantity * price
-            if notional > self.config.max_entry_notional_usd + 1e-9:
-                raise TestnetExchangeError(
-                    f"TESTNET_ENTRY_NOTIONAL_LIMIT_EXCEEDED:{notional:.8f}>{self.config.max_entry_notional_usd:.8f}"
-                )
-            if self._session_entries >= self.config.max_session_entries:
-                raise TestnetExchangeError("TESTNET_SESSION_ENTRY_LIMIT_REACHED")
-            self._session_entries += 1
+            with self._with_state_lock():
+                report, state = self._report_locked()
+                if not report["armed"] or state is None:
+                    raise TestnetExchangeError(f"TESTNET_TRADING_NOT_ARMED:{report['reason']}")
+                if position is not None:
+                    raise TestnetExchangeError("TESTNET_ENTRY_BLOCKED_POSITION_EXISTS")
+                if not symbol or quantity <= 0 or price <= 0:
+                    raise TestnetExchangeError("TESTNET_ENTRY_PARAMETERS_INVALID")
+                notional = quantity * price
+                if notional > self.config.max_entry_notional_usd + 1e-9:
+                    raise TestnetExchangeError(
+                        f"TESTNET_ENTRY_NOTIONAL_LIMIT_EXCEEDED:{notional:.8f}>{self.config.max_entry_notional_usd:.8f}"
+                    )
+                if int(state["session_entries"]) >= self.config.max_session_entries:
+                    raise TestnetExchangeError("TESTNET_SESSION_ENTRY_LIMIT_REACHED")
+                # Reserve the entry durably before any Binance entry POST can occur.
+                # A failed/ambiguous attempt conservatively consumes one session slot.
+                state["session_entries"] = int(state["session_entries"]) + 1
+                self._save_state_locked(state)
 
 
 class BinanceTestnetExchange:

@@ -11,6 +11,7 @@ from nbot.execution import (
     CloseFill,
     ExchangePosition,
     ExecutionConfig,
+    ExecutionInstanceLock,
     ExecutionSafetyError,
     ExecutionStateStore,
     ExecutionWorker,
@@ -180,6 +181,18 @@ class ExecutionWorkerTests(unittest.TestCase):
 
     def tearDown(self):
         self.tmp.cleanup()
+
+
+    def test_execution_instance_lock_is_single_process_and_released(self):
+        lock_path = Path(self.tmp.name) / "execution.lock"
+        first = ExecutionInstanceLock(lock_path).acquire()
+        try:
+            with self.assertRaisesRegex(ExecutionSafetyError, "EXECUTION_INSTANCE_LOCK_HELD"):
+                ExecutionInstanceLock(lock_path).acquire()
+        finally:
+            first.release()
+        with ExecutionInstanceLock(lock_path):
+            self.assertTrue(lock_path.exists())
 
     def test_default_config_has_no_entry_or_exit_authority(self):
         cfg = ExecutionConfig(state_path=self.path)

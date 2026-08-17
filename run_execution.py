@@ -11,6 +11,7 @@ from pathlib import Path
 
 from nbot.execution import (
     ExecutionConfig,
+    ExecutionInstanceLock,
     ExecutionSafetyError,
     ExecutionStateStore,
     ExecutionWorker,
@@ -23,6 +24,7 @@ from nbot.execution_protocol import ExecutionProposal, TradeResponse
 DEFAULT_ENV_FILE = Path("/home/ubuntu/.config/nbot/.env")
 DEFAULT_STATE_PATH = Path("/var/lib/nbot-execution/execution_v2_state.json")
 DEFAULT_OUTCOME_PATH = Path("/var/lib/nbot-execution/testnet_canary_outcomes.jsonl")
+DEFAULT_LOCK_PATH = Path("/var/lib/nbot-execution/execution_v2.lock")
 
 
 class StaticProposalClient:
@@ -201,64 +203,69 @@ def main() -> int:
 
     enable_canary = bool(args.testnet_canary)
     cfg = execution_config_from_env(enable_canary=enable_canary)
-    state = ExecutionStateStore(cfg.state_path)
-    proposal_client = StaticProposalClient()
-    worker = ExecutionWorker(cfg, exchange, proposal_client, outcome_sink, state=state)
+    lock_path = Path(os.getenv("TESTNET_EXECUTION_LOCK_PATH", str(DEFAULT_LOCK_PATH)))
 
-    if args.testnet_reconcile:
-        prepared = worker.prepare()
-        result = worker.reconcile_open_position() if prepared == "POSITION_OPEN" else "FLAT"
-        print(json.dumps({"prepare": prepared, "reconcile": result, "status": worker.status()}, indent=2, sort_keys=True))
-        exchange.disconnect()
-        return 0
+    # Capital-mutating/reconciliation actions are single-instance. Read-only
+    # preflight remains available from a second terminal while a canary runs.
+    with ExecutionInstanceLock(lock_path):
+        state = ExecutionStateStore(cfg.state_path)
+        proposal_client = StaticProposalClient()
+        worker = ExecutionWorker(cfg, exchange, proposal_client, outcome_sink, state=state)
 
-    if args.testnet_emergency_flat:
-        if not args.yes:
-            print("REFUSED: --testnet-emergency-flat requires --yes", file=sys.stderr)
-            return 2
-        worker.prepare()
-        result = worker.force_close_open_position(reason="OPERATOR_TESTNET_FLATTEN")
-        worker.process_flat_cycle()  # deliver mechanical-only outcome locally; no proposal authority
-        print(json.dumps({"result": result, "status": worker.status()}, indent=2, sort_keys=True))
-        exchange.disconnect()
-        return 0
-
-    if not args.yes:
-        print("REFUSED: --testnet-canary places Binance Testnet orders and requires --yes", file=sys.stderr)
-        return 2
-    prepared = worker.prepare()
-    if prepared == "FLAT":
-        proposal_client.proposal = make_canary_proposal(exchange, symbol=args.symbol.upper(), side=args.side)
-        worker.enable_new_entries()
-        result = worker.process_flat_cycle()
-        worker.disable_new_entries()
-        if result != "ENTRY_OPENED":
-            print(json.dumps({"entry_result": result, "status": worker.status()}, indent=2, sort_keys=True))
+        if args.testnet_reconcile:
+            prepared = worker.prepare()
+            result = worker.reconcile_open_position() if prepared == "POSITION_OPEN" else "FLAT"
+            print(json.dumps({"prepare": prepared, "reconcile": result, "status": worker.status()}, indent=2, sort_keys=True))
             exchange.disconnect()
+            return 0
+
+        if args.testnet_emergency_flat:
+            if not args.yes:
+                print("REFUSED: --testnet-emergency-flat requires --yes", file=sys.stderr)
+                return 2
+            worker.prepare()
+            result = worker.force_close_open_position(reason="OPERATOR_TESTNET_FLATTEN")
+            worker.process_flat_cycle()  # deliver mechanical-only outcome locally; no proposal authority
+            print(json.dumps({"result": result, "status": worker.status()}, indent=2, sort_keys=True))
+            exchange.disconnect()
+            return 0
+
+        if not args.yes:
+            print("REFUSED: --testnet-canary places Binance Testnet orders and requires --yes", file=sys.stderr)
             return 2
-    else:
-        result = "RESUMED_EXISTING_POSITION"
+        prepared = worker.prepare()
+        if prepared == "FLAT":
+            proposal_client.proposal = make_canary_proposal(exchange, symbol=args.symbol.upper(), side=args.side)
+            worker.enable_new_entries()
+            result = worker.process_flat_cycle()
+            worker.disable_new_entries()
+            if result != "ENTRY_OPENED":
+                print(json.dumps({"entry_result": result, "status": worker.status()}, indent=2, sort_keys=True))
+                exchange.disconnect()
+                return 2
+        else:
+            result = "RESUMED_EXISTING_POSITION"
 
-    print(json.dumps({"entry_result": result, "status": worker.status()}, indent=2, sort_keys=True))
-    print("V2.8 canary managing protected Testnet position. Ctrl+C leaves it protected for restart/reconcile testing.")
-    try:
-        position = worker.state.open_position
-        if position is None:
-            raise ExecutionSafetyError("TESTNET_CANARY_POSITION_MISSING_AFTER_ENTRY")
-        for symbol, price, timestamp_ms in exchange.position_price_stream(str(position["symbol"])):
-            state_result = worker.process_open_price(symbol, price, timestamp_ms)
-            if state_result == "POSITION_CLOSED":
-                break
-    except KeyboardInterrupt:
-        print("TESTNET_CANARY_INTERRUPTED_POSITION_LEFT_PROTECTED")
+        print(json.dumps({"entry_result": result, "status": worker.status()}, indent=2, sort_keys=True))
+        print("V2.8 canary managing protected Testnet position. Ctrl+C leaves it protected for restart/reconcile testing.")
+        try:
+            position = worker.state.open_position
+            if position is None:
+                raise ExecutionSafetyError("TESTNET_CANARY_POSITION_MISSING_AFTER_ENTRY")
+            for symbol, price, timestamp_ms in exchange.position_price_stream(str(position["symbol"])):
+                state_result = worker.process_open_price(symbol, price, timestamp_ms)
+                if state_result == "POSITION_CLOSED":
+                    break
+        except KeyboardInterrupt:
+            print("TESTNET_CANARY_INTERRUPTED_POSITION_LEFT_PROTECTED")
+            return 0
+        finally:
+            exchange.disconnect()
+
+        # Flat again: persist the mechanical result outside research evidence.
+        worker.process_flat_cycle()
+        print(json.dumps({"result": "CANARY_CLOSED", "status": worker.status()}, indent=2, sort_keys=True))
         return 0
-    finally:
-        exchange.disconnect()
-
-    # Flat again: persist the mechanical result outside research evidence.
-    worker.process_flat_cycle()
-    print(json.dumps({"result": "CANARY_CLOSED", "status": worker.status()}, indent=2, sort_keys=True))
-    return 0
 
 
 if __name__ == "__main__":

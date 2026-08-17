@@ -158,3 +158,21 @@ orders:
 ```bash
 python3 run_execution.py --self-check
 ```
+
+### V2.8.1 execution safety hardening
+
+V2.8.1 keeps the V2.8 mechanical Testnet trading behavior unchanged while
+hardening two operator/runtime boundaries discovered during the first physical
+canary:
+
+- Testnet session-entry counts are persisted in
+  `/var/lib/nbot-execution/testnet_trading_guard.json` before an entry order can
+  be submitted, so restarting Python does not reset the session limit. Removing
+  and recreating the valid arm file starts a new explicit Testnet session. A
+  missing/corrupt guard state while already armed fails closed.
+- Capital-mutating/reconciliation actions hold the kernel-backed single-instance
+  lock `/var/lib/nbot-execution/execution_v2.lock`. Read-only `--testnet-preflight`
+  remains available from a second terminal while a canary is running.
+
+These controls do not change strategy, risk sizing, leverage, exit policy, or
+Binance order endpoints.

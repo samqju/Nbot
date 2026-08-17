@@ -21,6 +21,59 @@ class ExecutionSafetyError(RuntimeError):
     pass
 
 
+class ExecutionInstanceLock:
+    """Linux process lock for capital-mutating Execution actions.
+
+    The lock file itself is intentionally not deleted on release. The kernel
+    flock is authoritative, so process death releases the lock without an
+    unlink/recreate race.
+    """
+
+    def __init__(self, path: Path):
+        self.path = Path(path)
+        self._handle = None
+
+    def acquire(self) -> "ExecutionInstanceLock":
+        if self._handle is not None:
+            return self
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        handle = self.path.open("a+", encoding="utf-8")
+        os.chmod(self.path, 0o600)
+        try:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            handle.close()
+            raise ExecutionSafetyError(f"EXECUTION_INSTANCE_LOCK_HELD:{self.path}") from exc
+        except Exception:
+            handle.close()
+            raise
+        handle.seek(0)
+        handle.truncate()
+        handle.write(json.dumps({"pid": os.getpid(), "acquired_at_ms": int(time.time() * 1000)}) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+        self._handle = handle
+        return self
+
+    def release(self) -> None:
+        handle = self._handle
+        if handle is None:
+            return
+        try:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
+            self._handle = None
+
+    def __enter__(self) -> "ExecutionInstanceLock":
+        return self.acquire()
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.release()
+
+
 @dataclass(frozen=True)
 class ExecutionConfig:
     """V2.7 capital-boundary defaults copied from the frozen V1 mechanics.

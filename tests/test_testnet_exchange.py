@@ -106,6 +106,7 @@ class TestnetExchangeTests(unittest.TestCase):
             api_key="key",
             api_secret="secret",
             arm_file=self.arm,
+            guard_state_path=Path(self.tmp.name) / "guard.json",
             confirmation=REQUIRED_CONFIRMATION,
         )
 
@@ -114,6 +115,13 @@ class TestnetExchangeTests(unittest.TestCase):
 
     def arm_trading(self):
         self.arm.write_text(ARM_FILE_CONTENT + "\n")
+
+    def initialize_disarmed_guard(self, cfg=None):
+        guard = TestnetTradingGuard(cfg or self.cfg)
+        report = guard.preflight()
+        self.assertFalse(report["armed"])
+        self.assertEqual(report["reason"], "ARM_FILE_MISSING")
+        return guard
 
     def plan(self):
         return EntryPlan("BTCUSDT", "LONG", 10.0, 100.0, 99.0, 10.0, 1000.0, 5)
@@ -126,15 +134,63 @@ class TestnetExchangeTests(unittest.TestCase):
             TestnetExchangeConfig("k", "s", ws_base_url="wss://fstream.binance.com/ws").validate()
 
     def test_explicit_arm_gate_is_required_only_for_entries(self):
-        guard = TestnetTradingGuard(self.cfg)
-        self.assertFalse(guard.preflight()["armed"])
+        guard = self.initialize_disarmed_guard()
         with self.assertRaisesRegex(TestnetExchangeError, "TESTNET_TRADING_NOT_ARMED"):
             guard.authorize_entry(symbol="BTCUSDT", quantity=1, price=100, position=None)
         self.arm_trading()
         guard.authorize_entry(symbol="BTCUSDT", quantity=1, price=100, position=None)
         self.assertEqual(guard.preflight()["session_entries"], 1)
 
+    def test_session_entry_count_survives_process_restart_and_enforces_limit(self):
+        cfg = TestnetExchangeConfig(
+            api_key="key", api_secret="secret", arm_file=self.arm,
+            guard_state_path=Path(self.tmp.name) / "guard-limit.json",
+            confirmation=REQUIRED_CONFIRMATION, max_session_entries=1,
+        )
+        self.initialize_disarmed_guard(cfg)
+        self.arm_trading()
+        first_process = TestnetTradingGuard(cfg)
+        first_process.authorize_entry(symbol="BTCUSDT", quantity=1, price=100, position=None)
+        self.assertEqual(first_process.preflight()["session_entries"], 1)
+
+        restarted_process = TestnetTradingGuard(cfg)
+        self.assertEqual(restarted_process.preflight()["session_entries"], 1)
+        with self.assertRaisesRegex(TestnetExchangeError, "TESTNET_SESSION_ENTRY_LIMIT_REACHED"):
+            restarted_process.authorize_entry(symbol="BTCUSDT", quantity=1, price=100, position=None)
+
+    def test_explicit_rearm_starts_new_persistent_session(self):
+        cfg = TestnetExchangeConfig(
+            api_key="key", api_secret="secret", arm_file=self.arm,
+            guard_state_path=Path(self.tmp.name) / "guard-rearm.json",
+            confirmation=REQUIRED_CONFIRMATION, max_session_entries=1,
+        )
+        guard = self.initialize_disarmed_guard(cfg)
+        self.arm_trading()
+        guard.authorize_entry(symbol="BTCUSDT", quantity=1, price=100, position=None)
+        self.assertEqual(guard.preflight()["session_entries"], 1)
+
+        self.arm.unlink()
+        self.assertFalse(TestnetTradingGuard(cfg).preflight()["armed"])
+        self.arm_trading()
+        fresh_session = TestnetTradingGuard(cfg)
+        report = fresh_session.preflight()
+        self.assertTrue(report["armed"])
+        self.assertEqual(report["session_entries"], 0)
+        fresh_session.authorize_entry(symbol="BTCUSDT", quantity=1, price=100, position=None)
+        self.assertEqual(fresh_session.preflight()["session_entries"], 1)
+
+    def test_missing_guard_state_while_already_armed_fails_closed(self):
+        self.arm_trading()
+        report = TestnetTradingGuard(self.cfg).preflight()
+        self.assertFalse(report["armed"])
+        self.assertEqual(report["reason"], "GUARD_STATE_MISSING_WHILE_ARMED")
+        with self.assertRaisesRegex(TestnetExchangeError, "GUARD_STATE_MISSING_WHILE_ARMED"):
+            TestnetTradingGuard(self.cfg).authorize_entry(
+                symbol="BTCUSDT", quantity=1, price=100, position=None
+            )
+
     def test_leverage_write_is_blocked_until_testnet_gate_is_armed(self):
+        self.initialize_disarmed_guard()
         ex = AdapterHarness(self.cfg)
         with self.assertRaisesRegex(TestnetExchangeError, "TESTNET_TRADING_NOT_ARMED"):
             ex.set_leverage("BTCUSDT", 5)
@@ -143,6 +199,7 @@ class TestnetExchangeTests(unittest.TestCase):
         self.assertTrue(any(c[0] == "POST" and c[1] == "/fapi/v1/leverage" for c in ex.calls))
 
     def test_market_entry_uses_client_id_and_single_order_submission(self):
+        self.initialize_disarmed_guard()
         self.arm_trading()
         ex = AdapterHarness(self.cfg)
         fill = ex.open_market(self.plan(), client_order_id="NBV28-ONE")
@@ -152,6 +209,7 @@ class TestnetExchangeTests(unittest.TestCase):
         self.assertEqual(fill.client_order_id, "NBV28-ONE")
 
     def test_ambiguous_entry_queries_same_client_id_and_never_blind_resubmits(self):
+        self.initialize_disarmed_guard()
         self.arm_trading()
         ex = AdapterHarness(self.cfg)
         original_post = ex._signed_post
