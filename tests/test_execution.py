@@ -71,6 +71,10 @@ class FakeExchange:
         self.ensure_stop_calls = 0
         self.fail_protection = False
         self.open_calls = 0
+        self.open_market_probe = None
+        self.recover_inflight_calls = 0
+        self.inflight_fill = None
+        self.inflight_recovery_error = None
         self.close_calls = 0
         self.recover_calls = 0
         self.recovery_error = None
@@ -101,9 +105,17 @@ class FakeExchange:
 
     def open_market(self, plan, *, client_order_id):
         self.open_calls += 1
+        if self.open_market_probe is not None:
+            self.open_market_probe(plan, client_order_id)
         fill = Fill(plan.expected_entry_price, plan.quantity, "ORDER-1", client_order_id, self.now_ms)
         self.position = ExchangePosition(plan.symbol, plan.side, plan.quantity, fill.price)
         return fill
+
+    def recover_inflight_entry(self, plan, *, client_order_id):
+        self.recover_inflight_calls += 1
+        if self.inflight_recovery_error is not None:
+            raise self.inflight_recovery_error
+        return self.inflight_fill
 
     def ensure_protective_stop(self, symbol, side, quantity, stop_price):
         self.ensure_stop_calls += 1
@@ -222,6 +234,126 @@ class ExecutionWorkerTests(unittest.TestCase):
         self.assertTrue(self.worker.state.has_processed("PROP-001"))
         self.assertIsNotNone(self.exchange.stop)
 
+    def test_entry_journal_is_durable_before_market_order_call(self):
+        observed = {}
+
+        def probe(_plan, client_order_id):
+            payload = json.loads(self.path.read_text())
+            observed.update(payload)
+            self.assertEqual(payload["entry_inflight"]["client_order_id"], client_order_id)
+            self.assertEqual(payload["entry_inflight"]["proposal"]["proposal_id"], "PROP-001")
+            self.assertIsNone(payload["entry_inflight"]["fill"])
+            self.assertIn("PROP-001", payload["processed_proposal_ids"])
+
+        self.exchange.open_market_probe = probe
+        self.assertEqual(self.worker.process_flat_cycle(), "ENTRY_OPENED")
+        self.assertTrue(observed)
+        self.assertIsNone(self.worker.state.entry_inflight)
+
+    def test_restart_recovers_inflight_filled_entry_without_duplicate_order_and_uses_persisted_risk(self):
+        path = Path(self.tmp.name) / "inflight.json"
+        cfg1 = replace(self.cfg, state_path=path, risk_per_trade_usd=10.0)
+        state = ExecutionStateStore(path)
+        proposal = make_proposal(self.now, proposal_id="PROP-INFLIGHT")
+        worker1 = ExecutionWorker(cfg1, self.exchange, self.proposals, self.outcomes, state=state, now_ms=lambda: self.now)
+        plan = worker1._build_plan(proposal, 100.0)
+        cid = "NBV28-PROP-INFLIGHT"
+        self.assertTrue(state.reserve(proposal.proposal_id))
+        state.begin_entry(proposal=proposal, plan=plan, client_order_id=cid, started_at_ms=self.now)
+
+        fill = Fill(100.2, plan.quantity, "ENTRY-RECOVERED", cid, self.now + 50)
+        self.exchange.inflight_fill = fill
+        self.exchange.position = ExchangePosition("BTCUSDT", "LONG", plan.quantity, fill.price)
+
+        # Simulate a config change after the crash. Recovery must retain the
+        # exact risk contract that was persisted with the original entry.
+        cfg2 = replace(cfg1, risk_per_trade_usd=50.0)
+        worker2 = ExecutionWorker(
+            cfg2, self.exchange, self.proposals, self.outcomes,
+            state=ExecutionStateStore(path), now_ms=lambda: self.now + 1_000,
+        )
+        self.assertEqual(worker2.prepare(), "POSITION_OPEN")
+        self.assertEqual(self.exchange.open_calls, 0)
+        self.assertEqual(self.exchange.recover_inflight_calls, 1)
+        self.assertIsNone(worker2.state.entry_inflight)
+        self.assertAlmostEqual(worker2.state.open_position["initial_risk_usd"], 10.0)
+        expected_stop = fill.price - 10.0 / fill.quantity
+        self.assertAlmostEqual(worker2.state.open_position["stop_price"], expected_stop)
+
+    def test_restart_recovers_inflight_entry_that_closed_before_local_open_was_persisted(self):
+        path = Path(self.tmp.name) / "inflight-closed.json"
+        cfg = replace(self.cfg, state_path=path)
+        state = ExecutionStateStore(path)
+        proposal = make_proposal(self.now, proposal_id="PROP-INFLIGHT-CLOSED")
+        worker1 = ExecutionWorker(cfg, self.exchange, self.proposals, self.outcomes, state=state, now_ms=lambda: self.now)
+        plan = worker1._build_plan(proposal, 100.0)
+        cid = "NBV28-PROP-INFLIGHT-CLOSED"
+        state.reserve(proposal.proposal_id)
+        state.begin_entry(proposal=proposal, plan=plan, client_order_id=cid, started_at_ms=self.now)
+        fill = Fill(100.0, plan.quantity, "ENTRY-CLOSED", cid, self.now + 10)
+        state.record_inflight_fill(fill)
+        self.exchange.position = None
+        self.exchange.recovery_close = CloseFill(
+            101.0, self.now + 500, "PROTECTIVE_STOP_TRIGGERED", 9.75,
+            ("STOP-CLOSE",), "EXCHANGE_RECOVERY", 10.0, -0.25,
+        )
+
+        worker2 = ExecutionWorker(
+            cfg, self.exchange, self.proposals, self.outcomes,
+            state=ExecutionStateStore(path), now_ms=lambda: self.now + 1_000,
+        )
+        self.assertEqual(worker2.prepare(), "RECOVERED_CLOSED_POSITION")
+        self.assertIsNone(worker2.state.open_position)
+        self.assertIsNone(worker2.state.entry_inflight)
+        self.assertEqual(len(worker2.state.data["pending_outcomes"]), 1)
+        self.assertAlmostEqual(worker2.state.data["pending_outcomes"][0]["realized_pnl_usd"], 9.75)
+
+    def test_restart_clears_known_unfilled_inflight_entry_when_exchange_is_flat(self):
+        path = Path(self.tmp.name) / "inflight-unfilled.json"
+        cfg = replace(self.cfg, state_path=path)
+        state = ExecutionStateStore(path)
+        proposal = make_proposal(self.now, proposal_id="PROP-NOFILL")
+        worker1 = ExecutionWorker(cfg, self.exchange, self.proposals, self.outcomes, state=state, now_ms=lambda: self.now)
+        plan = worker1._build_plan(proposal, 100.0)
+        state.reserve(proposal.proposal_id)
+        state.begin_entry(proposal=proposal, plan=plan, client_order_id="NBV28-NOFILL", started_at_ms=self.now)
+        self.exchange.inflight_fill = None
+        self.exchange.position = None
+        worker2 = ExecutionWorker(cfg, self.exchange, self.proposals, self.outcomes, state=ExecutionStateStore(path))
+        self.assertEqual(worker2.prepare(), "FLAT")
+        self.assertIsNone(worker2.state.entry_inflight)
+        self.assertEqual(self.exchange.open_calls, 0)
+
+    def test_restart_keeps_ambiguous_inflight_entry_fail_closed(self):
+        path = Path(self.tmp.name) / "inflight-ambiguous.json"
+        cfg = replace(self.cfg, state_path=path)
+        state = ExecutionStateStore(path)
+        proposal = make_proposal(self.now, proposal_id="PROP-AMB")
+        worker1 = ExecutionWorker(cfg, self.exchange, self.proposals, self.outcomes, state=state, now_ms=lambda: self.now)
+        plan = worker1._build_plan(proposal, 100.0)
+        state.reserve(proposal.proposal_id)
+        state.begin_entry(proposal=proposal, plan=plan, client_order_id="NBV28-AMB", started_at_ms=self.now)
+        self.exchange.inflight_recovery_error = RuntimeError("exchange order identity unresolved")
+        worker2 = ExecutionWorker(cfg, self.exchange, self.proposals, self.outcomes, state=ExecutionStateStore(path))
+        with self.assertRaisesRegex(ExecutionSafetyError, "ENTRY_INFLIGHT_RECOVERY_FAILED"):
+            worker2.prepare()
+        self.assertIsNotNone(ExecutionStateStore(path).entry_inflight)
+
+    def test_state_with_open_position_and_entry_inflight_is_rejected(self):
+        self.assertEqual(self.worker.process_flat_cycle(), "ENTRY_OPENED")
+        payload = json.loads(self.path.read_text())
+        payload["entry_inflight"] = {
+            "proposal": make_proposal(self.now, proposal_id="PROP-IMPOSSIBLE").to_dict(),
+            "plan": {}, "client_order_id": "x", "started_at_ms": self.now, "fill": None,
+        }
+        self.path.write_text(json.dumps(payload))
+        worker2 = ExecutionWorker(
+            self.cfg, self.exchange, self.proposals, self.outcomes,
+            state=ExecutionStateStore(self.path),
+        )
+        with self.assertRaisesRegex(ExecutionSafetyError, "OPEN_AND_ENTRY_INFLIGHT"):
+            worker2.prepare()
+
     def test_unapproved_authority_is_rejected_without_order(self):
         bad = make_proposal(self.now, proposal_id="PROP-BAD", entry_authority="UNAPPROVED_MODEL")
         self.proposals.response = TradeResponse.proposal_response(bad)
@@ -307,6 +439,31 @@ class ExecutionWorkerTests(unittest.TestCase):
         self.assertEqual(worker3.process_flat_cycle(), "ENTRY_DISABLED")
         self.assertEqual(len(self.outcomes.outcomes), 1)
         self.assertEqual(self.proposals.calls, calls_before)
+        history = worker3.state.data["execution_outcome_history"]
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["outcome_id"], outcome_id)
+
+    def test_exchange_realized_pnl_is_authoritative_and_local_variance_is_audit_only(self):
+        self.assertEqual(self.worker.process_flat_cycle(), "ENTRY_OPENED")
+        self.worker.disable_new_entries()
+        self.exchange.position = None
+        self.exchange.recovery_close = CloseFill(
+            101.0, self.now + 6_000, "PROTECTIVE_STOP_TRIGGERED",
+            4.808575, ("STOP-FILL-ACCOUNTING",), "ALGO_ACTUAL_ORDER_INCOME_RECOVERY",
+            4.806393, 0.002182,
+        )
+        worker2 = ExecutionWorker(
+            self.cfg, self.exchange, self.proposals, self.outcomes,
+            state=ExecutionStateStore(self.path), now_ms=lambda: self.now + 7_000,
+        )
+        self.assertEqual(worker2.prepare(), "RECOVERED_CLOSED_POSITION")
+        outcome = worker2.state.data["pending_outcomes"][0]
+        self.assertAlmostEqual(outcome["realized_pnl_usd"], 4.808575)
+        self.assertAlmostEqual(outcome["r_multiple"], 4.808575 / 10.0)
+        audit = worker2.state.data["last_close_audit"]
+        self.assertAlmostEqual(audit["exchange_realized_pnl_usd"], 4.808575)
+        self.assertAlmostEqual(audit["theoretical_pnl_usd"], 4.806393)
+        self.assertAlmostEqual(audit["pnl_variance_usd"], 0.002182)
 
     def test_external_close_recovery_failure_preserves_local_open_state(self):
         self.assertEqual(self.worker.process_flat_cycle(), "ENTRY_OPENED")
@@ -393,6 +550,12 @@ class ExecutionWorkerTests(unittest.TestCase):
         self.worker.state.save()
         payload = json.loads(self.path.read_text())
         self.assertEqual(payload["state_version"], "NBOT_V2_EXECUTION_STATE_V1")
+
+    def test_corrupt_execution_state_fails_closed_instead_of_resetting(self):
+        corrupt = Path(self.tmp.name) / "corrupt.json"
+        corrupt.write_text('{"state_version":')
+        with self.assertRaisesRegex(ExecutionSafetyError, "EXECUTION_STATE_CORRUPT"):
+            ExecutionStateStore(corrupt)
 
 
 if __name__ == "__main__":

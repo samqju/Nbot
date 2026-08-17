@@ -812,6 +812,33 @@ Execution credentials exist only on the Execution VPS at
 state and the Testnet arm file live under `/var/lib/nbot-execution/`. The
 Observation VPS never receives Testnet order credentials.
 
+## V2.8.4 execution consolidation contract
+
+Physical V2.8 testing showed that a small clean-room Execution rewrite had
+discarded some mature V1 reconciliation behavior. V2.8.4 therefore freezes a
+consolidated capital-boundary contract before V2.9:
+
+- preserve the V1 behavioral rule that exchange truth wins reconciliation;
+- preserve V2 deterministic identities, ambiguity handling, Testnet gating,
+  single-instance locking, environment separation and research isolation;
+- treat Binance position/order/fill/REALIZED_PNL data as authoritative exchange
+  accounting after execution identity is proven;
+- retain locally reconstructed PnL only as an audit diagnostic, never as a veto
+  over a proven exchange close;
+- fail closed on genuine identity contradictions or missing authoritative close
+  accounting rather than inventing zero values;
+- persist a complete in-flight entry journal before an order-capable entry call
+  so process death cannot turn an ambiguous first order into a duplicate second
+  entry;
+- retain durable local completed-execution history in addition to the pending
+  outcome-delivery queue;
+- keep Strategy, learning, champion and Observer dependencies outside the open
+  execution worker.
+
+This consolidation does not change candidate logic, risk-per-trade, leverage,
+spread limits or the control exit policy. LIVE-market local paper execution
+remains V2.9.
+
 ---
 
 # PHASE V2.9 — LIVE-MARKET Paper Operational Canary

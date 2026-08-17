@@ -38,6 +38,7 @@ class AdapterHarness(BinanceTestnetExchange):
         self.trades = []
         self.income = []
         self.next_algo_id = 100
+        self.next_order_id = 7
         self.fail_cancel_ids = set()
 
     def quote(self, symbol):
@@ -50,12 +51,22 @@ class AdapterHarness(BinanceTestnetExchange):
         self.calls.append(("POST", path, dict(params), ambiguous))
         if path == "/fapi/v1/order":
             cid = params["newClientOrderId"]
+            order_id = self.next_order_id
+            self.next_order_id += 1
             order = {
-                "orderId": 7,
+                "orderId": order_id,
                 "clientOrderId": cid,
+                "symbol": params["symbol"],
                 "status": "FILLED",
+                "side": params["side"],
+                "positionSide": "BOTH",
+                "type": "MARKET",
+                "origType": "MARKET",
+                "origQty": str(params["quantity"]),
                 "executedQty": str(params["quantity"]),
                 "avgPrice": "100",
+                "reduceOnly": params.get("reduceOnly") == "true",
+                "time": 1_000_001,
                 "updateTime": 1_000_001,
             }
             self.orders[cid] = order
@@ -110,6 +121,22 @@ class AdapterHarness(BinanceTestnetExchange):
                 rows = [row for row in rows if int(row.get("time", 0)) >= int(params["startTime"])]
             if params.get("endTime") is not None:
                 rows = [row for row in rows if int(row.get("time", 0)) <= int(params["endTime"])]
+            return rows
+        if path == "/fapi/v1/allOrders":
+            params = params or {}
+            rows = [dict(row) for row in self.orders.values()]
+            if params.get("symbol") is not None:
+                rows = [row for row in rows if row.get("symbol", "BTCUSDT") == params["symbol"]]
+            if params.get("startTime") is not None:
+                rows = [
+                    row for row in rows
+                    if int(row.get("updateTime") or row.get("time") or 0) >= int(params["startTime"])
+                ]
+            if params.get("endTime") is not None:
+                rows = [
+                    row for row in rows
+                    if int(row.get("updateTime") or row.get("time") or 0) <= int(params["endTime"])
+                ]
             return rows
         if path == "/fapi/v1/algoOrder":
             params = params or {}
@@ -303,6 +330,31 @@ class TestnetExchangeTests(unittest.TestCase):
         self.assertEqual(payload["algoType"], "CONDITIONAL")
         self.assertEqual(payload["type"], "STOP_MARKET")
         self.assertEqual(payload["reduceOnly"], "true")
+
+    def test_restart_recovers_exact_inflight_filled_entry_without_new_post(self):
+        ex = AdapterHarness(self.cfg)
+        cid = "NBV28-RECOVER-ENTRY"
+        ex.orders[cid] = {
+            "orderId": 8001, "clientOrderId": cid, "symbol": "BTCUSDT",
+            "status": "FILLED", "side": "BUY", "positionSide": "BOTH",
+            "type": "MARKET", "origType": "MARKET", "origQty": "10",
+            "executedQty": "10", "avgPrice": "100", "reduceOnly": False,
+            "time": 1_000_001, "updateTime": 1_000_001,
+        }
+        ex.position = ExchangePosition("BTCUSDT", "LONG", 10.0, 100.0)
+        fill = ex.recover_inflight_entry(self.plan(), client_order_id=cid)
+        self.assertIsNotNone(fill)
+        self.assertEqual(fill.order_id, "8001")
+        self.assertEqual(fill.client_order_id, cid)
+        self.assertFalse(any(c[0] == "POST" and c[1] == "/fapi/v1/order" for c in ex.calls))
+
+    def test_restart_clears_inflight_when_exact_order_is_repeatedly_missing_and_exchange_flat(self):
+        ex = AdapterHarness(self.cfg)
+        with mock.patch("nbot.testnet_exchange.time.monotonic", side_effect=[0.0, 0.0, 11.0]), \
+             mock.patch("nbot.testnet_exchange.time.sleep", return_value=None):
+            fill = ex.recover_inflight_entry(self.plan(), client_order_id="NBV28-NEVER-SUBMITTED")
+        self.assertIsNone(fill)
+        self.assertFalse(any(c[0] == "POST" and c[1] == "/fapi/v1/order" for c in ex.calls))
 
     def test_stop_replacement_verifies_new_before_canceling_old(self):
         ex = AdapterHarness(self.cfg)
@@ -534,31 +586,42 @@ class TestnetExchangeTests(unittest.TestCase):
         self.assertEqual(close.order_ids, ("28544406888",))
         self.assertEqual(close.source, "ALGO_ACTUAL_ORDER_INCOME_RECOVERY")
 
-    def test_algo_settlement_rejects_realized_pnl_mismatch(self):
+    def test_algo_settlement_trusts_exchange_realized_pnl_and_audits_local_variance(self):
+        # Regression for the physical V2.8.3 failure: Binance accounting is
+        # authoritative after identity/quantity/price are independently proven.
+        # A local arithmetic difference is audit evidence, never a close veto.
         ex = AdapterHarness(self.cfg)
         actual_order_id = 9012
         ex.algo_history["556"] = {
             "algoId": 556, "clientAlgoId": "aos-mismatch", "algoStatus": "FINISHED",
             "orderType": "STOP_MARKET", "side": "SELL", "positionSide": "BOTH",
-            "quantity": "1", "actualQty": "1", "actualPrice": "101.50",
+            "quantity": "0.0157", "actualQty": "0.0157", "actualPrice": "63604.50",
             "actualOrderId": str(actual_order_id), "reduceOnly": True,
             "createTime": 1_000_100, "updateTime": 1_000_700,
         }
         ex.orders["aos-mismatch"] = {
-            "orderId": actual_order_id, "clientOrderId": "aos-mismatch", "status": "FILLED",
-            "side": "SELL", "positionSide": "BOTH", "executedQty": "1",
-            "avgPrice": "101.50", "reduceOnly": True, "updateTime": 1_000_700,
+            "orderId": actual_order_id, "clientOrderId": "aos-mismatch", "symbol": "BTCUSDT",
+            "status": "FILLED", "side": "SELL", "positionSide": "BOTH",
+            "executedQty": "0.0157", "avgPrice": "63604.50", "reduceOnly": True,
+            "time": 1_000_690, "updateTime": 1_000_700,
         }
         ex.income = [{
             "symbol": "BTCUSDT", "incomeType": "REALIZED_PNL",
-            "income": "9.99", "time": 1_000_000,
+            "income": "4.80857500", "time": 1_000_000,
         }]
+        # Choose the stored aggregate entry so the simple local reconstruction
+        # is the exact 4.806393 value observed in the physical failure.
+        local_entry = 63604.50 - (4.806393 / 0.0157)
         local = {
-            "symbol": "BTCUSDT", "side": "LONG", "quantity": 1.0,
-            "entry_price": 100.0, "entry_timestamp_ms": 1_000_000, "entry_order_id": "7001",
+            "symbol": "BTCUSDT", "side": "LONG", "quantity": 0.0157,
+            "entry_price": local_entry, "entry_timestamp_ms": 1_000_000,
+            "entry_order_id": "7001",
         }
-        with self.assertRaisesRegex(TestnetExchangeError, "REALIZED_PNL_MISMATCH"):
-            ex._settle_local_position_from_finished_stop(local, 1_100_000)
+        close = ex._settle_local_position_from_finished_stop(local, 1_100_000)
+        self.assertAlmostEqual(close.realized_pnl_usd, 4.808575)
+        self.assertAlmostEqual(close.theoretical_pnl_usd, 4.806393)
+        self.assertAlmostEqual(close.pnl_variance_usd, 0.002182)
+        self.assertEqual(close.reason, "PROTECTIVE_STOP_TRIGGERED")
 
     def test_algo_settlement_rejects_ambiguous_multiple_finished_full_quantity_stops(self):
         ex = AdapterHarness(self.cfg)
@@ -581,6 +644,133 @@ class TestnetExchangeTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(TestnetExchangeError, "ALGO_CLOSE_EVIDENCE_AMBIGUOUS"):
             ex._settle_local_position_from_finished_stop(local, 2_000_000)
+
+    def test_algo_settlement_rejects_unexpected_filled_order_even_when_pnl_exists(self):
+        ex = AdapterHarness(self.cfg)
+        ex.algo_history["559"] = {
+            "algoId": 559, "clientAlgoId": "aos-close", "algoStatus": "FINISHED",
+            "orderType": "STOP_MARKET", "side": "SELL", "positionSide": "BOTH",
+            "quantity": "1", "actualQty": "1", "actualPrice": "101",
+            "actualOrderId": "9015", "reduceOnly": True,
+            "createTime": 1_000_100, "updateTime": 1_000_700,
+        }
+        ex.orders["aos-close"] = {
+            "orderId": 9015, "clientOrderId": "aos-close", "symbol": "BTCUSDT",
+            "status": "FILLED", "side": "SELL", "positionSide": "BOTH",
+            "executedQty": "1", "avgPrice": "101", "reduceOnly": True,
+            "time": 1_000_690, "updateTime": 1_000_700,
+        }
+        # Any other fill while Execution was offline is a genuine identity /
+        # position-mutation contradiction and remains fail-closed.
+        ex.orders["unexpected"] = {
+            "orderId": 7777, "clientOrderId": "unexpected", "symbol": "BTCUSDT",
+            "status": "FILLED", "side": "BUY", "positionSide": "BOTH",
+            "executedQty": "0.1", "avgPrice": "100.5", "reduceOnly": False,
+            "time": 1_000_500, "updateTime": 1_000_500,
+        }
+        ex.income = [{
+            "symbol": "BTCUSDT", "incomeType": "REALIZED_PNL",
+            "income": "1", "time": 1_000_000,
+        }]
+        local = {
+            "symbol": "BTCUSDT", "side": "LONG", "quantity": 1.0,
+            "entry_price": 100.0, "entry_timestamp_ms": 1_000_000,
+            "entry_order_id": "7001",
+        }
+        with self.assertRaisesRegex(TestnetExchangeError, "POSITION_MUTATED_WHILE_EXECUTION_OFFLINE"):
+            ex._settle_local_position_from_finished_stop(local, 2_000_000)
+
+    def test_external_manual_close_recovers_from_order_history_and_exchange_income(self):
+        ex = AdapterHarness(self.cfg)
+        ex.orders["entry"] = {
+            "orderId": 7001, "clientOrderId": "entry", "symbol": "BTCUSDT",
+            "status": "FILLED", "side": "BUY", "positionSide": "BOTH",
+            "executedQty": "1", "avgPrice": "100", "reduceOnly": False,
+            "time": 1_000_001, "updateTime": 1_000_001,
+        }
+        ex.orders["manual-close"] = {
+            "orderId": 9001, "clientOrderId": "manual-close", "symbol": "BTCUSDT",
+            "status": "FILLED", "side": "SELL", "positionSide": "BOTH",
+            "executedQty": "1", "avgPrice": "101.25", "reduceOnly": False,
+            "time": 1_000_700, "updateTime": 1_000_700,
+        }
+        ex.income = [{
+            "symbol": "BTCUSDT", "incomeType": "REALIZED_PNL",
+            "income": "1.2345", "time": 1_000_000,
+        }]
+        local = {
+            "symbol": "BTCUSDT", "side": "LONG", "quantity": 1.0,
+            "entry_price": 100.0, "entry_timestamp_ms": 1_000_000,
+            "entry_order_id": "7001",
+        }
+        with mock.patch("nbot.testnet_exchange.time.time", return_value=1100.0):
+            close = ex.recover_closed_position(local)
+        self.assertEqual(close.source, "ORDER_HISTORY_INCOME_RECOVERY")
+        self.assertEqual(close.reason, "EXCHANGE_FLAT_RECOVERED_AFTER_RESTART")
+        self.assertAlmostEqual(close.price, 101.25)
+        self.assertAlmostEqual(close.realized_pnl_usd, 1.2345)
+        self.assertEqual(close.order_ids, ("9001",))
+
+    def test_order_history_recovery_rejects_same_side_position_mutation(self):
+        ex = AdapterHarness(self.cfg)
+        ex.orders["entry"] = {
+            "orderId": 7001, "clientOrderId": "entry", "symbol": "BTCUSDT",
+            "status": "FILLED", "side": "BUY", "positionSide": "BOTH",
+            "executedQty": "1", "avgPrice": "100", "reduceOnly": False,
+            "time": 1_000_001, "updateTime": 1_000_001,
+        }
+        ex.orders["added-long"] = {
+            "orderId": 7002, "clientOrderId": "added-long", "symbol": "BTCUSDT",
+            "status": "FILLED", "side": "BUY", "positionSide": "BOTH",
+            "executedQty": "0.2", "avgPrice": "100.5", "reduceOnly": False,
+            "time": 1_000_300, "updateTime": 1_000_300,
+        }
+        ex.orders["close"] = {
+            "orderId": 9001, "clientOrderId": "close", "symbol": "BTCUSDT",
+            "status": "FILLED", "side": "SELL", "positionSide": "BOTH",
+            "executedQty": "1.2", "avgPrice": "101", "reduceOnly": False,
+            "time": 1_000_700, "updateTime": 1_000_700,
+        }
+        local = {
+            "symbol": "BTCUSDT", "side": "LONG", "quantity": 1.0,
+            "entry_price": 100.0, "entry_timestamp_ms": 1_000_000,
+            "entry_order_id": "7001",
+        }
+        with self.assertRaisesRegex(TestnetExchangeError, "POSITION_MUTATED_WHILE_EXECUTION_OFFLINE"):
+            ex._settle_local_position_from_order_history(local, 2_000_000)
+
+    def test_local_close_uses_filled_order_and_exchange_income_when_user_trades_empty(self):
+        ex = AdapterHarness(self.cfg)
+        position = ExchangePosition("BTCUSDT", "LONG", 1.0, 100.0)
+        order = {
+            "orderId": 9100, "clientOrderId": "close", "symbol": "BTCUSDT",
+            "status": "FILLED", "side": "SELL", "positionSide": "BOTH",
+            "executedQty": "1", "avgPrice": "99.5", "reduceOnly": True,
+            "time": 1_000_700, "updateTime": 1_000_700,
+        }
+        ex.income = [{
+            "symbol": "BTCUSDT", "incomeType": "REALIZED_PNL",
+            "income": "-0.4975", "time": 1_000_000,
+        }]
+        close = ex._settle_close_order(position, order, None, "OPERATOR_TESTNET_FLATTEN")
+        self.assertEqual(close.source, "ORDER_INCOME_SETTLEMENT")
+        self.assertAlmostEqual(close.realized_pnl_usd, -0.4975)
+        self.assertAlmostEqual(close.theoretical_pnl_usd, -0.5)
+
+    def test_local_close_without_exchange_accounting_never_invents_pnl(self):
+        ex = AdapterHarness(self.cfg)
+        position = ExchangePosition("BTCUSDT", "LONG", 1.0, 100.0)
+        order = {
+            "orderId": 9101, "clientOrderId": "close", "symbol": "BTCUSDT",
+            "status": "FILLED", "side": "SELL", "positionSide": "BOTH",
+            "executedQty": "1", "avgPrice": "99.5", "reduceOnly": True,
+            "time": 1_000_700, "updateTime": 1_000_700,
+        }
+        from nbot.execution import Fill
+        fallback = Fill(99.5, 1.0, "9101", "close", 1_000_700)
+        with mock.patch("nbot.testnet_exchange.time.sleep", return_value=None):
+            with self.assertRaisesRegex(TestnetExchangeError, "CLOSE_ACCOUNTING_UNAVAILABLE"):
+                ex._settle_close_order(position, order, fallback, "OPERATOR_TESTNET_FLATTEN")
 
     def test_external_close_recovery_fails_if_orphan_stop_cannot_be_removed(self):
         ex = AdapterHarness(self.cfg)

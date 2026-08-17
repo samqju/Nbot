@@ -242,3 +242,47 @@ accepts the algo-order fallback only when all independent exchange facts agree:
 Any missing, duplicate or contradictory evidence remains fail-closed. This
 fallback is Testnet execution accounting only and remains excluded from research
 evidence.
+
+### V2.8.4 execution consolidation
+
+V2.8.4 is a deliberate consolidation after physical Testnet testing exposed
+that the clean V2 Execution rewrite had discarded several mature V1 execution
+behaviors. The governing rule is again simple: **Binance is authoritative for
+exchange position, order, fill and realized-PnL truth; NBOT is authoritative
+for permission, risk, protection policy, MAE/MFE, R-multiple, durable local
+identity and audit.** A local theoretical PnL may be recorded as an audit
+variance, but it can never veto an otherwise fully proven Binance close.
+
+The patch keeps V2's stronger safety additions while restoring the useful V1
+behavioral baseline:
+
+- local `OPEN` + Binance `FLAT` is a normal reconciliation case, not a permanent
+  dead end;
+- close settlement prefers `userTrades`, then a proven conditional-algo child
+  order, then generic Binance order history for manual/external closes;
+- exchange `REALIZED_PNL` is stored as realized PnL. The simple local
+  entry/exit arithmetic is retained only in `last_close_audit` as
+  `theoretical_pnl_usd` and `pnl_variance_usd`;
+- identity contradictions still fail closed: wrong symbol/side/quantity,
+  hedge/multiple-position state, unexpected additional fills, ambiguous full
+  close orders, missing authoritative accounting, or unresolved order identity;
+- the complete entry proposal/plan/client-order identity is fsync'd as
+  `entry_inflight` before the market-order call. A restart resolves that exact
+  client order without submitting a second entry, then restores protection or
+  settles an already-closed position;
+- a crash before the entry ever reaches Binance is cleared only after repeated
+  exact-order-missing plus exchange-flat evidence;
+- execution state uses fsync + atomic replace and corrupt state fails closed;
+- completed outcomes remain in a bounded local execution history even after the
+  pending delivery copy is ACKed and removed;
+- new-stop-before-old-stop removal, deterministic IDs, single-instance locking,
+  persistent Testnet session guards, orphan-stop cleanup, and no Observation
+  dependency while open are preserved.
+
+V2.8.4 does **not** restore V1 learning writes, Strategy/Universe imports, or
+V1's unsafe fallback that could settle an unknown close at zero price/PnL. It
+also does not prematurely add the V2.9 LIVE-market paper adapter. The useful V1
+paper mechanisms (durable one-position state, atomic persistence, immutable
+trade history, exchange-like stop lifecycle and restart recovery) are now
+represented in the common execution-state/reconciliation contract and remain
+the baseline for V2.9.

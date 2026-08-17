@@ -154,12 +154,23 @@ class ProtectiveStopRef:
 
 @dataclass(frozen=True)
 class CloseFill:
+    """Authoritative close evidence returned by the execution adapter.
+
+    For exchange-backed execution, ``realized_pnl_usd`` is exchange accounting
+    truth when available. ``theoretical_pnl_usd`` and ``pnl_variance_usd`` are
+    audit-only diagnostics; they must never veto an otherwise proven exchange
+    close. This restores V1's exchange-truth reconciliation principle without
+    restoring V1's unsafe zero-value accounting fallback.
+    """
+
     price: float
     timestamp_ms: int
     reason: str
     realized_pnl_usd: float | None = None
     order_ids: tuple[str, ...] = ()
     source: str = "ORDER_RESULT"
+    theoretical_pnl_usd: float | None = None
+    pnl_variance_usd: float | None = None
 
 
 @dataclass(frozen=True)
@@ -191,6 +202,7 @@ class ExchangePort(Protocol):
     def validate_protective_stop(self, symbol: str, side: str, stop_price: float) -> bool: ...
     def set_leverage(self, symbol: str, leverage: int) -> None: ...
     def open_market(self, plan: EntryPlan, *, client_order_id: str) -> Fill: ...
+    def recover_inflight_entry(self, plan: EntryPlan, *, client_order_id: str) -> Fill | None: ...
     def ensure_protective_stop(self, symbol: str, side: str, quantity: float, stop_price: float) -> ProtectiveStopRef: ...
     def replace_protective_stop(self, symbol: str, side: str, quantity: float, stop_price: float) -> ProtectiveStopRef: ...
     def close_position(self, symbol: str, side: str, *, reason: str) -> CloseFill: ...
@@ -217,26 +229,57 @@ class ExecutionStateStore:
             "state_version": EXECUTION_STATE_VERSION,
             "trading_enabled": False,
             "open_position": None,
+            "entry_inflight": None,
             "processed_proposal_ids": [],
             "pending_outcomes": [],
+            "execution_outcome_history": [],
             "previous_rejection": None,
+            "last_close_audit": None,
         }
 
     def load(self) -> None:
         if not self.path.exists():
             self.data = self._empty()
             return
-        raw = json.loads(self.path.read_text())
+        try:
+            raw = json.loads(self.path.read_text())
+        except Exception as exc:
+            raise ExecutionSafetyError(f"EXECUTION_STATE_CORRUPT:{type(exc).__name__}") from exc
+        if not isinstance(raw, dict):
+            raise ExecutionSafetyError("EXECUTION_STATE_CORRUPT_NOT_OBJECT")
         if raw.get("state_version") != EXECUTION_STATE_VERSION:
             raise ExecutionSafetyError("EXECUTION_STATE_VERSION_MISMATCH")
+        raw.setdefault("entry_inflight", None)
+        raw.setdefault("execution_outcome_history", [])
+        raw.setdefault("last_close_audit", None)
+        if raw.get("open_position") is not None and not isinstance(raw.get("open_position"), dict):
+            raise ExecutionSafetyError("EXECUTION_STATE_OPEN_POSITION_INVALID")
+        if raw.get("entry_inflight") is not None and not isinstance(raw.get("entry_inflight"), dict):
+            raise ExecutionSafetyError("EXECUTION_STATE_ENTRY_INFLIGHT_INVALID")
+        for field_name in ("processed_proposal_ids", "pending_outcomes", "execution_outcome_history"):
+            if not isinstance(raw.get(field_name, []), list):
+                raise ExecutionSafetyError(f"EXECUTION_STATE_{field_name.upper()}_INVALID")
         self.data = raw
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temp = self.path.with_suffix(self.path.suffix + ".tmp")
         payload = json.dumps(self.data, sort_keys=True, separators=(",", ":"), allow_nan=False)
-        temp.write_text(payload + "\n")
+        with temp.open("w", encoding="utf-8") as handle:
+            handle.write(payload + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
         os.replace(temp, self.path)
+        try:
+            directory_fd = os.open(str(self.path.parent), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except OSError:
+            # File fsync + atomic replace is the primary durability contract.
+            # Some filesystems do not permit directory fsync.
+            pass
 
     @property
     def open_position(self) -> dict[str, Any] | None:
@@ -245,6 +288,46 @@ class ExecutionStateStore:
     @open_position.setter
     def open_position(self, value: dict[str, Any] | None) -> None:
         self.data["open_position"] = value
+
+    @property
+    def entry_inflight(self) -> dict[str, Any] | None:
+        return self.data.get("entry_inflight")
+
+    def begin_entry(self, *, proposal: ExecutionProposal, plan: EntryPlan, client_order_id: str, started_at_ms: int) -> None:
+        if self.open_position is not None:
+            raise ExecutionSafetyError("EXECUTION_BEGIN_ENTRY_WHILE_OPEN")
+        if self.entry_inflight is not None:
+            raise ExecutionSafetyError("EXECUTION_ENTRY_ALREADY_INFLIGHT")
+        self.data["entry_inflight"] = {
+            "proposal": proposal.to_dict(),
+            "plan": asdict(plan),
+            "client_order_id": str(client_order_id),
+            "started_at_ms": int(started_at_ms),
+            "fill": None,
+        }
+        self.save()
+
+    def record_inflight_fill(self, fill: Fill) -> None:
+        row = self.entry_inflight
+        if row is None:
+            raise ExecutionSafetyError("EXECUTION_ENTRY_INFLIGHT_MISSING")
+        row = dict(row)
+        row["fill"] = asdict(fill)
+        self.data["entry_inflight"] = row
+        self.save()
+
+    def promote_inflight_position(self, position: dict[str, Any]) -> None:
+        if self.entry_inflight is None:
+            raise ExecutionSafetyError("EXECUTION_ENTRY_INFLIGHT_MISSING")
+        if self.open_position is not None:
+            raise ExecutionSafetyError("EXECUTION_PROMOTE_ENTRY_WHILE_OPEN")
+        self.data["open_position"] = position
+        self.data["entry_inflight"] = None
+        self.save()
+
+    def clear_entry_inflight(self) -> None:
+        self.data["entry_inflight"] = None
+        self.save()
 
     def has_processed(self, proposal_id: str) -> bool:
         return proposal_id in set(self.data.get("processed_proposal_ids", []))
@@ -263,6 +346,10 @@ class ExecutionStateStore:
         if not any(row.get("outcome_id") == outcome.outcome_id for row in rows):
             rows.append(outcome.to_dict())
         self.data["pending_outcomes"] = rows
+        history = list(self.data.get("execution_outcome_history", []))
+        if not any(row.get("outcome_id") == outcome.outcome_id for row in history):
+            history.append(outcome.to_dict())
+        self.data["execution_outcome_history"] = history[-10_000:]
         self.save()
 
     def remove_outcome(self, outcome_id: str) -> None:
@@ -288,7 +375,12 @@ class ExecutionStateStore:
         if not any(row.get("outcome_id") == outcome.outcome_id for row in rows):
             rows.append(outcome.to_dict())
         self.data["pending_outcomes"] = rows
+        history = list(self.data.get("execution_outcome_history", []))
+        if not any(row.get("outcome_id") == outcome.outcome_id for row in history):
+            history.append(outcome.to_dict())
+        self.data["execution_outcome_history"] = history[-10_000:]
         self.data["open_position"] = None
+        self.data["entry_inflight"] = None
         self.save()
 
 
@@ -344,7 +436,17 @@ class ExecutionWorker:
         self.exchange.connect()
         exchange_position = self.exchange.position_snapshot()
         local = self.state.open_position
+        inflight = self.state.entry_inflight
+        if local is not None and inflight is not None:
+            raise ExecutionSafetyError("EXECUTION_STATE_OPEN_AND_ENTRY_INFLIGHT")
+        if local is None and inflight is not None:
+            result = self._recover_inflight_entry(inflight, exchange_position)
+            self._prepared = True
+            return result
         if local is None and exchange_position is not None:
+            # A position with no local V2 entry journal cannot be assigned a
+            # proposal/risk/policy identity safely. Keep the proven V1 rule
+            # that exchange truth wins, but do not fabricate missing metadata.
             raise ExecutionSafetyError("UNMANAGED_EXCHANGE_POSITION")
         if local is not None:
             self._load_exit_policy(str(local["exit_policy_version"]))
@@ -369,6 +471,108 @@ class ExecutionWorker:
         position["stop_price"] = float(stop_ref.trigger_price)
         position["protective_stop_algo_id"] = stop_ref.algo_id
         position["protective_stop_client_algo_id"] = stop_ref.client_algo_id
+
+    def _position_from_fill(
+        self,
+        proposal: ExecutionProposal,
+        plan: EntryPlan,
+        fill: Fill,
+        stop_ref: ProtectiveStopRef | None,
+    ) -> dict[str, Any]:
+        # Recovery must use the risk contract that was durably persisted before
+        # the entry order, not whatever configuration happens to be loaded after
+        # a restart.  The stop is still adjusted to the actual exchange fill so
+        # the original dollar risk is preserved.
+        actual_stop = self._stop_for_fill(
+            proposal.direction,
+            float(fill.price),
+            float(fill.quantity),
+            risk_usd=float(plan.initial_risk_usd),
+        )
+        position = {
+            "proposal_id": proposal.proposal_id,
+            "environment": proposal.environment,
+            "symbol": proposal.symbol,
+            "side": proposal.direction,
+            "entry_price": float(fill.price),
+            "quantity": float(fill.quantity),
+            "initial_risk_usd": float(plan.initial_risk_usd),
+            "stop_price": actual_stop,
+            "mfe_r": 0.0,
+            "mae_r": 0.0,
+            "entry_timestamp_ms": int(fill.timestamp_ms),
+            "entry_order_id": fill.order_id,
+            "entry_client_order_id": fill.client_order_id,
+            "entry_authority": proposal.entry_authority,
+            "model_version": proposal.model_version,
+            "exit_policy_version": proposal.exit_policy_version,
+            "feature_version": proposal.feature_version,
+            "data_generation_id": proposal.data_generation_id,
+            "market_event_id": proposal.market_event_id,
+            "reference_price": proposal.reference_price,
+            "advisory_initial_risk": proposal.advisory_initial_risk,
+            "protective_stop_algo_id": None,
+            "protective_stop_client_algo_id": None,
+        }
+        self._store_stop_ref(position, stop_ref)
+        return position
+
+    def _recover_inflight_entry(
+        self, inflight: dict[str, Any], exchange_position: ExchangePosition | None,
+    ) -> str:
+        """Recover the crash window between entry intent and durable OPEN state.
+
+        V1 had mature restart reconciliation. V2.8.4 restores that behavior
+        without guessing: the persisted client order ID plus exchange order and
+        position truth must prove the entry. No new entry order is submitted.
+        """
+        try:
+            proposal = ExecutionProposal.from_dict(inflight["proposal"])
+            plan = EntryPlan(**dict(inflight["plan"]))
+            client_order_id = str(inflight["client_order_id"])
+        except Exception as exc:
+            raise ExecutionSafetyError("EXECUTION_ENTRY_INFLIGHT_CORRUPT") from exc
+        if proposal.environment != self.config.environment:
+            raise ExecutionSafetyError("EXECUTION_ENTRY_INFLIGHT_ENVIRONMENT_MISMATCH")
+        self._load_exit_policy(proposal.exit_policy_version)
+
+        stored_fill = inflight.get("fill")
+        fill = Fill(**dict(stored_fill)) if isinstance(stored_fill, dict) else None
+        if fill is None:
+            try:
+                fill = self.exchange.recover_inflight_entry(plan, client_order_id=client_order_id)
+            except Exception as exc:
+                raise ExecutionSafetyError(
+                    f"ENTRY_INFLIGHT_RECOVERY_FAILED:{type(exc).__name__}:{exc}"
+                ) from exc
+        if fill is None:
+            if exchange_position is not None:
+                raise ExecutionSafetyError("ENTRY_INFLIGHT_NOT_FILLED_BUT_POSITION_EXISTS")
+            self.state.clear_entry_inflight()
+            return "FLAT"
+
+        if str(fill.client_order_id) != client_order_id:
+            raise ExecutionSafetyError("ENTRY_INFLIGHT_CLIENT_ORDER_ID_MISMATCH")
+        if fill.quantity <= 0 or fill.price <= 0:
+            raise ExecutionSafetyError("ENTRY_INFLIGHT_FILL_INVALID")
+        self.state.record_inflight_fill(fill)
+        position = self._position_from_fill(proposal, plan, fill, None)
+
+        # The entry may itself have opened and closed while Execution was down.
+        # Persist its proven identity first, then run the same exchange-truth
+        # close recovery used for any other locally known position.
+        if exchange_position is None:
+            self.state.promote_inflight_position(position)
+            self._recover_exchange_flat(position)
+            return "RECOVERED_CLOSED_POSITION"
+
+        self._assert_position_match(position, exchange_position)
+        stop_ref = self.exchange.ensure_protective_stop(
+            position["symbol"], position["side"], float(position["quantity"]), float(position["stop_price"])
+        )
+        self._store_stop_ref(position, stop_ref)
+        self.state.promote_inflight_position(position)
+        return "POSITION_OPEN"
 
     def _recover_exchange_flat(self, position: dict[str, Any]) -> None:
         """Recover a close that occurred while Execution was offline.
@@ -490,53 +694,48 @@ class ExecutionWorker:
 
         self.exchange.set_leverage(plan.symbol, plan.leverage)
         client_order_id = f"NBV28-{proposal.proposal_id[:20]}"
+        # Persist the complete entry identity BEFORE the first order-capable
+        # call. A process death from this point onward is recoverable without a
+        # duplicate market order.
+        self.state.begin_entry(
+            proposal=proposal, plan=plan, client_order_id=client_order_id, started_at_ms=now,
+        )
         fill = self.exchange.open_market(plan, client_order_id=client_order_id)
-        actual_stop = self._stop_for_fill(proposal.direction, fill.price, fill.quantity)
+        self.state.record_inflight_fill(fill)
+        actual_stop = self._stop_for_fill(
+            proposal.direction, fill.price, fill.quantity,
+            risk_usd=plan.initial_risk_usd,
+        )
         try:
             stop_ref = self.exchange.ensure_protective_stop(plan.symbol, plan.side, fill.quantity, actual_stop)
         except Exception as exc:
             close = self.exchange.close_position(plan.symbol, plan.side, reason="PROTECTION_FAILED")
-            self._queue_failed_entry_outcome(proposal, fill, close, actual_stop)
+            self._queue_failed_entry_outcome(proposal, plan, fill, close, actual_stop)
+            self.state.clear_entry_inflight()
             raise ExecutionSafetyError("PROTECTION_FAILED_EMERGENCY_CLOSED") from exc
 
-        self.state.open_position = {
-            "proposal_id": proposal.proposal_id,
-            "environment": proposal.environment,
-            "symbol": proposal.symbol,
-            "side": proposal.direction,
-            "entry_price": float(fill.price),
-            "quantity": float(fill.quantity),
-            "initial_risk_usd": self.config.risk_per_trade_usd,
-            "stop_price": actual_stop,
-            "mfe_r": 0.0,
-            "mae_r": 0.0,
-            "entry_timestamp_ms": int(fill.timestamp_ms),
-            "entry_order_id": fill.order_id,
-            "entry_client_order_id": fill.client_order_id,
-            "entry_authority": proposal.entry_authority,
-            "model_version": proposal.model_version,
-            "exit_policy_version": proposal.exit_policy_version,
-            "feature_version": proposal.feature_version,
-            "data_generation_id": proposal.data_generation_id,
-            "market_event_id": proposal.market_event_id,
-            "reference_price": proposal.reference_price,
-            "advisory_initial_risk": proposal.advisory_initial_risk,
-            "protective_stop_algo_id": None if stop_ref is None else stop_ref.algo_id,
-            "protective_stop_client_algo_id": None if stop_ref is None else stop_ref.client_algo_id,
-        }
-        self.state.save()
+        position = self._position_from_fill(proposal, plan, fill, stop_ref)
+        self.state.promote_inflight_position(position)
         return "ENTRY_OPENED"
 
     def _build_plan(self, proposal: ExecutionProposal, entry_price: float) -> EntryPlan:
         quantity = self.config.max_notional_usd / entry_price
-        stop = self._stop_for_fill(proposal.direction, entry_price, quantity)
+        stop = self._stop_for_fill(
+            proposal.direction, entry_price, quantity,
+            risk_usd=self.config.risk_per_trade_usd,
+        )
         return EntryPlan(
             proposal.symbol, proposal.direction, quantity, entry_price, stop,
             self.config.risk_per_trade_usd, self.config.max_notional_usd, self.config.leverage,
         )
 
-    def _stop_for_fill(self, side: str, price: float, quantity: float) -> float:
-        risk_per_unit = self.config.risk_per_trade_usd / quantity
+    def _stop_for_fill(
+        self, side: str, price: float, quantity: float, *, risk_usd: float | None = None,
+    ) -> float:
+        risk = self.config.risk_per_trade_usd if risk_usd is None else float(risk_usd)
+        if risk <= 0:
+            raise ExecutionSafetyError("INITIAL_RISK_INVALID")
+        risk_per_unit = risk / quantity
         stop = price - risk_per_unit if side == "LONG" else price + risk_per_unit
         if stop <= 0:
             raise ExecutionSafetyError("INITIAL_STOP_INVALID")
@@ -642,6 +841,21 @@ class ExecutionWorker:
         entry = float(position["entry_price"])
         price_pnl = (close.price - entry) * qty if position["side"] == "LONG" else (entry - close.price) * qty
         pnl = price_pnl if close.realized_pnl_usd is None else float(close.realized_pnl_usd)
+        # Exchange accounting wins whenever the adapter supplies it. Local PnL
+        # is retained only as an audit comparison and never vetoes settlement.
+        theoretical = price_pnl if close.theoretical_pnl_usd is None else float(close.theoretical_pnl_usd)
+        variance = (pnl - theoretical) if close.pnl_variance_usd is None else float(close.pnl_variance_usd)
+        self.state.data["last_close_audit"] = {
+            "proposal_id": position.get("proposal_id"),
+            "symbol": position.get("symbol"),
+            "source": close.source,
+            "reason": close.reason,
+            "order_ids": list(close.order_ids),
+            "exchange_realized_pnl_usd": None if close.realized_pnl_usd is None else float(close.realized_pnl_usd),
+            "theoretical_pnl_usd": theoretical,
+            "pnl_variance_usd": variance,
+            "closed_timestamp_ms": int(close.timestamp_ms),
+        }
         risk = float(position["initial_risk_usd"])
         outcome = ExecutionOutcome.create(
             outcome_id=self._deterministic_outcome_id(position),
@@ -669,9 +883,21 @@ class ExecutionWorker:
         )
         self.state.finalize_open_position(outcome)
 
-    def _queue_failed_entry_outcome(self, proposal: ExecutionProposal, fill: Fill, close: CloseFill, stop: float) -> None:
-        pnl = (close.price - fill.price) * fill.quantity if proposal.direction == "LONG" else (fill.price - close.price) * fill.quantity
-        risk = self.config.risk_per_trade_usd
+    def _queue_failed_entry_outcome(
+        self,
+        proposal: ExecutionProposal,
+        plan: EntryPlan,
+        fill: Fill,
+        close: CloseFill,
+        stop: float,
+    ) -> None:
+        theoretical = (
+            (close.price - fill.price) * fill.quantity
+            if proposal.direction == "LONG"
+            else (fill.price - close.price) * fill.quantity
+        )
+        pnl = theoretical if close.realized_pnl_usd is None else float(close.realized_pnl_usd)
+        risk = float(plan.initial_risk_usd)
         outcome = ExecutionOutcome.create(
             outcome_id=f"OUT-{uuid.uuid5(uuid.NAMESPACE_URL, 'nbot-v2-failed-entry|' + proposal.proposal_id + '|' + fill.order_id).hex}", proposal_id=proposal.proposal_id,
             environment=proposal.environment, symbol=proposal.symbol, side=proposal.direction,
@@ -712,6 +938,8 @@ class ExecutionWorker:
             "approved_exit_policies": list(self.config.allowed_exit_policies),
             "trading_enabled": bool(self.state.data.get("trading_enabled", False)),
             "position": "OPEN" if self.state.open_position else "FLAT",
+            "entry_inflight": self.state.entry_inflight is not None,
             "pending_outcomes": len(self.state.data.get("pending_outcomes", [])),
+            "outcome_history": len(self.state.data.get("execution_outcome_history", [])),
             "research_imports": "NONE",
         }

@@ -678,6 +678,45 @@ class BinanceTestnetExchange:
             raise TestnetExchangeError("TESTNET_ENTRY_NOT_CONFIRMED_BY_POSITION")
         return fill
 
+    def recover_inflight_entry(self, plan: EntryPlan, *, client_order_id: str) -> Fill | None:
+        """Resolve a persisted pre-order journal without submitting a new entry.
+
+        A known terminal non-fill may be cleared. Any still-ambiguous state
+        remains fail-closed; a real exchange position is never guessed away.
+        """
+        deadline = time.monotonic() + 10.0
+        last_status = "UNKNOWN"
+        last_position = None
+        while time.monotonic() < deadline:
+            order = self._query_order(plan.symbol, client_order_id)
+            position = self.position_snapshot()
+            last_position = position
+            if order is None:
+                last_status = "MISSING"
+            if order is not None:
+                status = str(order.get("status") or "").upper()
+                last_status = status or "UNKNOWN"
+                fill = self._fill_from_order(order, plan.expected_entry_price, plan.quantity)
+                if status == "FILLED" and fill is not None:
+                    if position is not None and (position.symbol != plan.symbol or position.side != plan.side):
+                        raise TestnetExchangeError("TESTNET_INFLIGHT_ENTRY_POSITION_MISMATCH")
+                    return fill
+                if status in {"CANCELED", "EXPIRED", "REJECTED"} and position is None:
+                    return None
+            if position is not None:
+                # Position exists but the exact entry order is not yet proven.
+                # Never adopt it from symbol/side coincidence alone.
+                if position.symbol != plan.symbol or position.side != plan.side:
+                    raise TestnetExchangeError("TESTNET_INFLIGHT_ENTRY_POSITION_MISMATCH")
+            time.sleep(0.25)
+        # _query_order returns None only for Binance's authoritative
+        # "order does not exist" response; transport/API failures propagate.
+        # After a bounded recheck window, exact-order missing + exchange flat
+        # proves that a crash occurred before the entry reached Binance.
+        if last_status == "MISSING" and last_position is None:
+            return None
+        raise TestnetExchangeError(f"TESTNET_INFLIGHT_ENTRY_UNRESOLVED:{last_status}")
+
     def _active_stops(self, symbol: str) -> list[dict[str, Any]]:
         rows = self._signed_get("/fapi/v1/openAlgoOrders", {"symbol": symbol})
         result = []
@@ -851,6 +890,153 @@ class BinanceTestnetExchange:
             cursor = window_end + 1
         return sorted(rows.values(), key=lambda row: (int(row.get("createTime", 0) or 0), int(row.get("algoId", 0) or 0)))
 
+    def _all_orders_between(self, symbol: str, start_ms: int, end_ms: int) -> list[dict[str, Any]]:
+        if start_ms <= 0 or end_ms < start_ms:
+            raise TestnetExchangeError("TESTNET_ORDER_HISTORY_RANGE_INVALID")
+        rows: dict[str, dict[str, Any]] = {}
+        cursor = int(start_ms)
+        while cursor <= end_ms:
+            window_end = min(end_ms, cursor + USER_TRADES_MAX_WINDOW_MS - 1)
+            batch = self._signed_get(
+                "/fapi/v1/allOrders",
+                {"symbol": symbol, "startTime": cursor, "endTime": window_end, "limit": 1000},
+            )
+            if len(batch) >= 1000:
+                raise TestnetExchangeError("TESTNET_ORDER_HISTORY_WINDOW_TRUNCATED")
+            for row in batch:
+                key = str(row.get("orderId") or row.get("clientOrderId") or "")
+                if key:
+                    rows[key] = row
+            cursor = window_end + 1
+        return sorted(
+            rows.values(),
+            key=lambda row: (int(row.get("updateTime") or row.get("time") or 0), int(row.get("orderId", 0) or 0)),
+        )
+
+    def _realized_pnl_income(self, symbol: str, start_ms: int, end_ms: int) -> float | None:
+        if start_ms <= 0 or end_ms < start_ms:
+            raise TestnetExchangeError("TESTNET_INCOME_HISTORY_RANGE_INVALID")
+        rows = self._signed_get(
+            "/fapi/v1/income",
+            {
+                "symbol": symbol,
+                "incomeType": "REALIZED_PNL",
+                "startTime": int(start_ms),
+                "endTime": int(end_ms),
+                "limit": 1000,
+            },
+        )
+        realized_rows = [
+            row for row in rows
+            if str(row.get("symbol") or "").upper() == symbol
+            and str(row.get("incomeType") or "").upper() == "REALIZED_PNL"
+        ]
+        if not realized_rows:
+            return None
+        return sum(float(row.get("income", 0) or 0) for row in realized_rows)
+
+    @staticmethod
+    def _theoretical_close_pnl(local: dict[str, Any], exit_price: float, quantity: float) -> float | None:
+        entry = float(local.get("entry_price", 0) or 0)
+        side = str(local.get("side") or "").upper()
+        if entry <= 0 or quantity <= 0 or side not in {"LONG", "SHORT"}:
+            return None
+        return (exit_price - entry) * quantity if side == "LONG" else (entry - exit_price) * quantity
+
+    def _assert_no_unexpected_filled_orders(
+        self, local: dict[str, Any], *, allowed_order_ids: set[str], end_ms: int,
+    ) -> None:
+        symbol = str(local["symbol"]).upper()
+        entry_ts = int(local["entry_timestamp_ms"])
+        entry_order_id = str(local.get("entry_order_id") or "")
+        allowed = set(allowed_order_ids)
+        if entry_order_id:
+            allowed.add(entry_order_id)
+        for order in self._all_orders_between(symbol, entry_ts, end_ms):
+            order_id = str(order.get("orderId") or "")
+            executed_qty = float(order.get("executedQty", 0) or 0)
+            if executed_qty <= 0 or order_id in allowed:
+                continue
+            when = int(order.get("updateTime") or order.get("time") or 0)
+            if when < entry_ts:
+                continue
+            raise TestnetExchangeError(
+                f"TESTNET_POSITION_MUTATED_WHILE_EXECUTION_OFFLINE:UNEXPECTED_ORDER:{order_id or 'UNKNOWN'}"
+            )
+
+    def _settle_local_position_from_order_history(self, local: dict[str, Any], end_ms: int) -> CloseFill:
+        """Generic V1-style exchange-flat recovery when userTrades is absent.
+
+        Binance order history proves the exact opposite-side executed quantity
+        and price; Binance REALIZED_PNL income remains the accounting authority.
+        Local arithmetic is audit-only.
+        """
+        symbol = str(local["symbol"]).upper()
+        side = str(local["side"]).upper()
+        target_qty = float(local["quantity"])
+        entry_ts = int(local["entry_timestamp_ms"])
+        entry_order_id = str(local.get("entry_order_id") or "")
+        exit_side = "SELL" if side == "LONG" else "BUY"
+        entry_side = "BUY" if side == "LONG" else "SELL"
+        step = float(self._filters[symbol]["market_step"])
+        tolerance = max(step / 2.0, 1e-12)
+        exit_orders: list[dict[str, Any]] = []
+        exit_qty = 0.0
+
+        for order in self._all_orders_between(symbol, entry_ts, end_ms):
+            order_id = str(order.get("orderId") or "")
+            if entry_order_id and order_id == entry_order_id:
+                continue
+            executed_qty = float(order.get("executedQty", 0) or 0)
+            if executed_qty <= 0:
+                continue
+            when = int(order.get("updateTime") or order.get("time") or 0)
+            if when < entry_ts:
+                continue
+            if str(order.get("positionSide") or "BOTH").upper() != "BOTH":
+                raise TestnetExchangeError("TESTNET_CLOSE_ORDER_HISTORY_HEDGE_MODE_UNSUPPORTED")
+            order_side = str(order.get("side") or "").upper()
+            if order_side == entry_side:
+                raise TestnetExchangeError("TESTNET_POSITION_MUTATED_WHILE_EXECUTION_OFFLINE")
+            if order_side != exit_side:
+                continue
+            avg_price = float(order.get("avgPrice", 0) or 0)
+            if avg_price <= 0:
+                raise TestnetExchangeError("TESTNET_CLOSE_ORDER_HISTORY_PRICE_INVALID")
+            exit_orders.append(order)
+            exit_qty += executed_qty
+
+        if exit_qty < target_qty - tolerance:
+            raise TestnetExchangeError("TESTNET_CLOSE_ORDER_EVIDENCE_INCOMPLETE")
+        if exit_qty > target_qty + tolerance:
+            raise TestnetExchangeError("TESTNET_CLOSE_ORDER_EVIDENCE_AMBIGUOUS_QUANTITY")
+        if not exit_orders:
+            raise TestnetExchangeError("TESTNET_CLOSE_ORDER_EVIDENCE_MISSING")
+
+        weighted = sum(float(row["executedQty"]) * float(row["avgPrice"]) for row in exit_orders)
+        exit_price = weighted / exit_qty
+        close_ms = max(int(row.get("updateTime") or row.get("time") or 0) for row in exit_orders)
+        first_ms = min(int(row.get("updateTime") or row.get("time") or 0) for row in exit_orders)
+        start_second = (first_ms // 1000) * 1000
+        end_second = (close_ms // 1000) * 1000 + 999
+        realized = self._realized_pnl_income(symbol, start_second, end_second)
+        if realized is None:
+            raise TestnetExchangeError("TESTNET_CLOSE_ORDER_REALIZED_PNL_MISSING")
+        order_ids = tuple(sorted(str(row.get("orderId")) for row in exit_orders if row.get("orderId") is not None))
+        reason = self._recover_close_reason(local, order_ids, close_ms)
+        theoretical = self._theoretical_close_pnl(local, exit_price, exit_qty)
+        variance = None if theoretical is None else realized - theoretical
+        if variance is not None and abs(variance) > 1e-6:
+            self.log.warning(
+                "TESTNET_ACCOUNTING_AUDIT_VARIANCE source=ORDER_HISTORY symbol=%s exchange_pnl=%.8f theoretical_pnl=%.8f variance=%.8f",
+                symbol, realized, theoretical, variance,
+            )
+        return CloseFill(
+            price=exit_price, timestamp_ms=close_ms, reason=reason,
+            realized_pnl_usd=realized, order_ids=order_ids, source="ORDER_HISTORY_INCOME_RECOVERY",
+            theoretical_pnl_usd=theoretical, pnl_variance_usd=variance,
+        )
+
     def _settle_local_position_from_trades(self, local: dict[str, Any], rows: list[dict[str, Any]]) -> CloseFill:
         symbol = str(local["symbol"]).upper()
         side = str(local["side"]).upper()
@@ -896,6 +1082,8 @@ class BinanceTestnetExchange:
         closed_ms = max(int(row.get("time", 0) or 0) for row in exit_rows)
         order_ids = tuple(sorted({str(row.get("orderId") or "") for row in exit_rows if row.get("orderId") is not None}))
         reason = self._recover_close_reason(local, order_ids, closed_ms)
+        theoretical = self._theoretical_close_pnl(local, exit_price, exit_qty)
+        variance = None if theoretical is None else realized - theoretical
         return CloseFill(
             price=exit_price,
             timestamp_ms=closed_ms,
@@ -903,6 +1091,8 @@ class BinanceTestnetExchange:
             realized_pnl_usd=realized,
             order_ids=order_ids,
             source="USER_TRADES_RECOVERY",
+            theoretical_pnl_usd=theoretical,
+            pnl_variance_usd=variance,
         )
 
     def _settle_local_position_from_finished_stop(self, local: dict[str, Any], end_ms: int) -> CloseFill:
@@ -985,35 +1175,29 @@ class BinanceTestnetExchange:
         if close_ms < entry_ts:
             raise TestnetExchangeError("TESTNET_ALGO_SETTLEMENT_TIMESTAMP_INVALID")
 
-        # Testnet may omit the corresponding userTrades rows.  REALIZED_PNL
-        # income is timestamped to the second, so sum only that exact close
-        # second and require it to match the PnL implied by the independently
-        # proven entry/exit prices and quantity.  This also catches hidden
-        # position mutation or unrelated close activity.
-        second_start = (close_ms // 1000) * 1000
-        income = self._signed_get(
-            "/fapi/v1/income",
-            {
-                "symbol": symbol,
-                "incomeType": "REALIZED_PNL",
-                "startTime": second_start,
-                "endTime": second_start + 999,
-                "limit": 1000,
-            },
+        # Testnet may omit the corresponding userTrades rows. The finished
+        # reduce-only STOP_MARKET and its FILLED child order prove execution
+        # identity. Before attributing same-symbol REALIZED_PNL income, reject
+        # any other filled order during the local position lifetime.
+        self._assert_no_unexpected_filled_orders(
+            local, allowed_order_ids={order_id}, end_ms=close_ms,
         )
-        realized_rows = [
-            row for row in income
-            if str(row.get("symbol") or "").upper() == symbol
-            and str(row.get("incomeType") or "").upper() == "REALIZED_PNL"
-        ]
-        if not realized_rows:
+        first_fill_ms = int(order.get("time") or close_ms)
+        income_start = (min(first_fill_ms, close_ms) // 1000) * 1000
+        income_end = (max(first_fill_ms, close_ms) // 1000) * 1000 + 999
+        realized = self._realized_pnl_income(symbol, income_start, income_end)
+        if realized is None:
             raise TestnetExchangeError("TESTNET_ALGO_SETTLEMENT_REALIZED_PNL_MISSING")
-        realized = sum(float(row.get("income", 0) or 0) for row in realized_rows)
-        expected = (exit_price - entry_price) * target_qty if side == "LONG" else (entry_price - exit_price) * target_qty
-        pnl_tolerance = max(1e-6, abs(expected) * 1e-7)
-        if abs(realized - expected) > pnl_tolerance:
-            raise TestnetExchangeError(
-                f"TESTNET_ALGO_SETTLEMENT_REALIZED_PNL_MISMATCH:{realized:.8f}!={expected:.8f}"
+
+        theoretical = self._theoretical_close_pnl(local, exit_price, target_qty)
+        variance = None if theoretical is None else realized - theoretical
+        # Exchange accounting is authoritative. The local reconstruction is a
+        # diagnostic only because Binance may use fill-level cost basis/precision
+        # that differs slightly from our stored aggregate entry price.
+        if variance is not None and abs(variance) > 1e-6:
+            self.log.warning(
+                "TESTNET_ACCOUNTING_AUDIT_VARIANCE source=ALGO symbol=%s exchange_pnl=%.8f theoretical_pnl=%.8f variance=%.8f",
+                symbol, realized, theoretical, variance,
             )
 
         return CloseFill(
@@ -1023,6 +1207,8 @@ class BinanceTestnetExchange:
             realized_pnl_usd=realized,
             order_ids=(order_id,),
             source="ALGO_ACTUAL_ORDER_INCOME_RECOVERY",
+            theoretical_pnl_usd=theoretical,
+            pnl_variance_usd=variance,
         )
 
     def _recover_close_reason(self, local: dict[str, Any], close_order_ids: tuple[str, ...], closed_ms: int) -> str:
@@ -1098,8 +1284,8 @@ class BinanceTestnetExchange:
 
             # Binance USD-M Testnet can expose the completed conditional algo
             # and spawned actual order while returning an empty userTrades
-            # result.  Fall back only to the stricter cross-checked settlement
-            # path; all ambiguity still fails closed.
+            # result. Identity is proven from exchange order state; Binance
+            # REALIZED_PNL is accounting truth. Local arithmetic is audit-only.
             try:
                 close = self._settle_local_position_from_finished_stop(local_position, now_ms)
                 self._cleanup_orphan_protective_stops(symbol)
@@ -1112,6 +1298,24 @@ class BinanceTestnetExchange:
                 )
                 if not retryable:
                     raise
+
+            # V1 reconciled any exchange-side close, not only stops. If
+            # userTrades and algo history cannot settle it, use full Binance
+            # order history plus REALIZED_PNL income. Unexpected extra fills
+            # remain a hard mutation error rather than being guessed through.
+            try:
+                close = self._settle_local_position_from_order_history(local_position, now_ms)
+                self._cleanup_orphan_protective_stops(symbol)
+                return close
+            except TestnetExchangeError as exc:
+                last_error = exc
+                retryable = (
+                    "TESTNET_CLOSE_ORDER_EVIDENCE_MISSING" in str(exc)
+                    or "TESTNET_CLOSE_ORDER_EVIDENCE_INCOMPLETE" in str(exc)
+                    or "TESTNET_CLOSE_ORDER_REALIZED_PNL_MISSING" in str(exc)
+                )
+                if not retryable:
+                    raise
                 if attempt + 1 < CLOSE_SETTLEMENT_RETRIES:
                     time.sleep(CLOSE_SETTLEMENT_RETRY_SECONDS)
         raise TestnetExchangeError(f"TESTNET_EXTERNAL_CLOSE_SETTLEMENT_FAILED:{last_error}")
@@ -1120,7 +1324,10 @@ class BinanceTestnetExchange:
         order_id = order.get("orderId")
         if order_id is not None:
             for attempt in range(CLOSE_SETTLEMENT_RETRIES):
-                rows = self._signed_get("/fapi/v1/userTrades", {"symbol": position.symbol, "orderId": int(order_id), "limit": 1000})
+                rows = self._signed_get(
+                    "/fapi/v1/userTrades",
+                    {"symbol": position.symbol, "orderId": int(order_id), "limit": 1000},
+                )
                 if rows:
                     qty = sum(float(row.get("qty", 0) or 0) for row in rows)
                     if qty > 0:
@@ -1128,11 +1335,38 @@ class BinanceTestnetExchange:
                         realized = sum(float(row.get("realizedPnl", 0) or 0) for row in rows)
                         ts = max(int(row.get("time", 0) or 0) for row in rows)
                         return CloseFill(price, ts, reason, realized, (str(order_id),), "USER_TRADES_ORDER")
+
+                # Testnet may omit userTrades even for an order that Binance
+                # itself reports FILLED. In that case use the order's exchange
+                # price/quantity and Binance REALIZED_PNL, never local PnL as
+                # authoritative accounting.
+                known = order if order else self._query_order_by_id(position.symbol, str(order_id))
+                if known is not None and str(known.get("status") or "").upper() == "FILLED":
+                    qty = float(known.get("executedQty", 0) or 0)
+                    price = float(known.get("avgPrice", 0) or 0)
+                    ts = int(known.get("updateTime") or known.get("time") or 0)
+                    step = float(self._filters[position.symbol]["market_step"])
+                    if abs(qty - float(position.quantity)) <= max(step / 2.0, 1e-12) and price > 0 and ts > 0:
+                        first_fill_ms = int(known.get("time") or ts)
+                        income_start = (min(first_fill_ms, ts) // 1000) * 1000
+                        income_end = (max(first_fill_ms, ts) // 1000) * 1000 + 999
+                        realized = self._realized_pnl_income(position.symbol, income_start, income_end)
+                        if realized is not None:
+                            theoretical = (price - position.entry_price) * qty if position.side == "LONG" else (position.entry_price - price) * qty
+                            return CloseFill(
+                                price, ts, reason, realized, (str(order_id),), "ORDER_INCOME_SETTLEMENT",
+                                theoretical, realized - theoretical,
+                            )
                 if attempt + 1 < CLOSE_SETTLEMENT_RETRIES:
                     time.sleep(CLOSE_SETTLEMENT_RETRY_SECONDS)
         if fallback is None:
             raise TestnetExchangeError("TESTNET_CLOSE_FILL_EVIDENCE_MISSING")
-        return CloseFill(fallback.price, fallback.timestamp_ms, reason, None, (() if order_id is None else (str(order_id),)), "ORDER_RESULT")
+        # A flat exchange plus a returned fill proves the price/quantity but not
+        # authoritative realized PnL. Preserve local OPEN so restart recovery
+        # can retry Binance accounting rather than inventing a close result.
+        raise TestnetExchangeError(
+            f"TESTNET_CLOSE_ACCOUNTING_UNAVAILABLE:order_id={order_id}:price={fallback.price}:qty={fallback.quantity}"
+        )
 
     def _flatten_unprotected(self, position: ExchangePosition, *, reason: str) -> CloseFill:
         return self._close_existing(position, reason=reason)
