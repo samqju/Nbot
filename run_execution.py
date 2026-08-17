@@ -214,7 +214,13 @@ def main() -> int:
 
         if args.testnet_reconcile:
             prepared = worker.prepare()
-            result = worker.reconcile_open_position() if prepared == "POSITION_OPEN" else "FLAT"
+            if prepared == "POSITION_OPEN":
+                result = worker.reconcile_open_position()
+            elif prepared == "RECOVERED_CLOSED_POSITION":
+                worker.process_flat_cycle()  # deliver recovered mechanical outcome; never requests a trade here
+                result = "POSITION_CLOSE_RECOVERED"
+            else:
+                result = "FLAT"
             print(json.dumps({"prepare": prepared, "reconcile": result, "status": worker.status()}, indent=2, sort_keys=True))
             exchange.disconnect()
             return 0
@@ -234,6 +240,11 @@ def main() -> int:
             print("REFUSED: --testnet-canary places Binance Testnet orders and requires --yes", file=sys.stderr)
             return 2
         prepared = worker.prepare()
+        if prepared == "RECOVERED_CLOSED_POSITION":
+            worker.process_flat_cycle()  # settle/deliver first; require a fresh explicit invocation for any new entry
+            print(json.dumps({"entry_result": "RECOVERED_CLOSED_POSITION_NO_ENTRY", "status": worker.status()}, indent=2, sort_keys=True))
+            exchange.disconnect()
+            return 0
         if prepared == "FLAT":
             proposal_client.proposal = make_canary_proposal(exchange, symbol=args.symbol.upper(), side=args.side)
             worker.enable_new_entries()

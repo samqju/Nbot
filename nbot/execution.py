@@ -146,10 +146,20 @@ class Fill:
 
 
 @dataclass(frozen=True)
+class ProtectiveStopRef:
+    trigger_price: float
+    algo_id: str | None = None
+    client_algo_id: str | None = None
+
+
+@dataclass(frozen=True)
 class CloseFill:
     price: float
     timestamp_ms: int
     reason: str
+    realized_pnl_usd: float | None = None
+    order_ids: tuple[str, ...] = ()
+    source: str = "ORDER_RESULT"
 
 
 @dataclass(frozen=True)
@@ -181,9 +191,10 @@ class ExchangePort(Protocol):
     def validate_protective_stop(self, symbol: str, side: str, stop_price: float) -> bool: ...
     def set_leverage(self, symbol: str, leverage: int) -> None: ...
     def open_market(self, plan: EntryPlan, *, client_order_id: str) -> Fill: ...
-    def ensure_protective_stop(self, symbol: str, side: str, quantity: float, stop_price: float) -> None: ...
-    def replace_protective_stop(self, symbol: str, side: str, quantity: float, stop_price: float) -> None: ...
+    def ensure_protective_stop(self, symbol: str, side: str, quantity: float, stop_price: float) -> ProtectiveStopRef: ...
+    def replace_protective_stop(self, symbol: str, side: str, quantity: float, stop_price: float) -> ProtectiveStopRef: ...
     def close_position(self, symbol: str, side: str, *, reason: str) -> CloseFill: ...
+    def recover_closed_position(self, local_position: dict[str, Any]) -> CloseFill: ...
 
 
 class ProposalClient(Protocol):
@@ -260,6 +271,26 @@ class ExecutionStateStore:
         ]
         self.save()
 
+    def finalize_open_position(self, outcome: ExecutionOutcome) -> None:
+        """Atomically queue a close outcome and clear the local position.
+
+        V1 paper state persisted capital/accounting truth before any learning
+        work. V2 keeps that useful rule but makes the close transition one
+        atomic execution-state replacement. Deterministic outcome IDs make a
+        retry after process death idempotent.
+        """
+        current = self.open_position
+        if current is None:
+            raise ExecutionSafetyError("EXECUTION_FINALIZE_WITHOUT_OPEN_POSITION")
+        if str(current.get("proposal_id") or "") != outcome.proposal_id:
+            raise ExecutionSafetyError("EXECUTION_FINALIZE_PROPOSAL_MISMATCH")
+        rows = list(self.data.get("pending_outcomes", []))
+        if not any(row.get("outcome_id") == outcome.outcome_id for row in rows):
+            rows.append(outcome.to_dict())
+        self.data["pending_outcomes"] = rows
+        self.data["open_position"] = None
+        self.save()
+
 
 class IntegerRStepExitPolicy:
     version = INTEGER_R_STEP_CONTROL
@@ -316,15 +347,44 @@ class ExecutionWorker:
         if local is None and exchange_position is not None:
             raise ExecutionSafetyError("UNMANAGED_EXCHANGE_POSITION")
         if local is not None:
-            if exchange_position is None:
-                raise ExecutionSafetyError("LOCAL_POSITION_MISSING_ON_EXCHANGE")
-            self._assert_position_match(local, exchange_position)
             self._load_exit_policy(str(local["exit_policy_version"]))
-            self.exchange.ensure_protective_stop(
+            if exchange_position is None:
+                self._recover_exchange_flat(local)
+                self._prepared = True
+                return "RECOVERED_CLOSED_POSITION"
+            self._assert_position_match(local, exchange_position)
+            stop_ref = self.exchange.ensure_protective_stop(
                 local["symbol"], local["side"], float(local["quantity"]), float(local["stop_price"])
             )
+            self._store_stop_ref(local, stop_ref)
+            self.state.open_position = local
+            self.state.save()
         self._prepared = True
         return "POSITION_OPEN" if local is not None else "FLAT"
+
+    @staticmethod
+    def _store_stop_ref(position: dict[str, Any], stop_ref: ProtectiveStopRef | None) -> None:
+        if stop_ref is None:
+            return
+        position["stop_price"] = float(stop_ref.trigger_price)
+        position["protective_stop_algo_id"] = stop_ref.algo_id
+        position["protective_stop_client_algo_id"] = stop_ref.client_algo_id
+
+    def _recover_exchange_flat(self, position: dict[str, Any]) -> None:
+        """Recover a close that occurred while Execution was offline.
+
+        Exchange truth is authoritative, as in the proven V1 reconciliation
+        path, but V2 refuses to invent a zero-price close. The adapter must
+        provide sufficient close evidence or local OPEN state is preserved and
+        new entries remain blocked.
+        """
+        try:
+            close = self.exchange.recover_closed_position(position)
+        except Exception as exc:
+            raise ExecutionSafetyError(
+                f"EXTERNAL_CLOSE_RECOVERY_FAILED:{type(exc).__name__}:{exc}"
+            ) from exc
+        self._finalize_closed_position(close)
 
     def _assert_position_match(self, local: dict[str, Any], exchange_position: ExchangePosition) -> None:
         if (
@@ -433,7 +493,7 @@ class ExecutionWorker:
         fill = self.exchange.open_market(plan, client_order_id=client_order_id)
         actual_stop = self._stop_for_fill(proposal.direction, fill.price, fill.quantity)
         try:
-            self.exchange.ensure_protective_stop(plan.symbol, plan.side, fill.quantity, actual_stop)
+            stop_ref = self.exchange.ensure_protective_stop(plan.symbol, plan.side, fill.quantity, actual_stop)
         except Exception as exc:
             close = self.exchange.close_position(plan.symbol, plan.side, reason="PROTECTION_FAILED")
             self._queue_failed_entry_outcome(proposal, fill, close, actual_stop)
@@ -461,6 +521,8 @@ class ExecutionWorker:
             "market_event_id": proposal.market_event_id,
             "reference_price": proposal.reference_price,
             "advisory_initial_risk": proposal.advisory_initial_risk,
+            "protective_stop_algo_id": None if stop_ref is None else stop_ref.algo_id,
+            "protective_stop_client_algo_id": None if stop_ref is None else stop_ref.client_algo_id,
         }
         self.state.save()
         return "ENTRY_OPENED"
@@ -494,7 +556,7 @@ class ExecutionWorker:
 
         exchange_position = self.exchange.position_snapshot()
         if exchange_position is None:
-            self._finalize_closed_position(price, timestamp_ms, "EXCHANGE_POSITION_CLOSED")
+            self._recover_exchange_flat(position)
             return "POSITION_CLOSED"
         self._assert_position_match(position, exchange_position)
 
@@ -509,13 +571,14 @@ class ExecutionWorker:
         policy = self._load_exit_policy(str(position["exit_policy_version"]))
         next_stop = policy.next_stop(position)
         if next_stop is not None:
-            self.exchange.replace_protective_stop(position["symbol"], position["side"], qty, next_stop)
+            stop_ref = self.exchange.replace_protective_stop(position["symbol"], position["side"], qty, next_stop)
             position["stop_price"] = next_stop
+            self._store_stop_ref(position, stop_ref)
 
         breached = price <= float(position["stop_price"]) if position["side"] == "LONG" else price >= float(position["stop_price"])
         if breached:
             close = self.exchange.close_position(position["symbol"], position["side"], reason="LOCAL_STOP_BREACH")
-            self._finalize_closed_position(close.price, close.timestamp_ms, close.reason)
+            self._finalize_closed_position(close)
             return "POSITION_CLOSED"
 
         self.state.open_position = position
@@ -538,7 +601,7 @@ class ExecutionWorker:
                 raise ExecutionSafetyError("UNMANAGED_EXCHANGE_POSITION")
             return "FLAT"
         close = self.exchange.close_position(position["symbol"], position["side"], reason=reason)
-        self._finalize_closed_position(close.price, close.timestamp_ms, close.reason)
+        self._finalize_closed_position(close)
         return "POSITION_CLOSED"
 
     def reconcile_open_position(self) -> str:
@@ -550,29 +613,44 @@ class ExecutionWorker:
                 raise ExecutionSafetyError("UNMANAGED_EXCHANGE_POSITION")
             return "FLAT"
         if exchange_position is None:
-            raise ExecutionSafetyError("LOCAL_POSITION_MISSING_ON_EXCHANGE")
+            self._recover_exchange_flat(position)
+            return "POSITION_CLOSE_RECOVERED"
         self._assert_position_match(position, exchange_position)
-        self.exchange.ensure_protective_stop(
+        stop_ref = self.exchange.ensure_protective_stop(
             position["symbol"], position["side"], float(position["quantity"]), float(position["stop_price"])
         )
+        self._store_stop_ref(position, stop_ref)
+        self.state.open_position = position
+        self.state.save()
         return "POSITION_RECONCILED"
 
-    def _finalize_closed_position(self, exit_price: float, timestamp_ms: int, reason: str) -> None:
+    @staticmethod
+    def _deterministic_outcome_id(position: dict[str, Any]) -> str:
+        identity = "|".join((
+            str(position.get("environment") or ""),
+            str(position.get("proposal_id") or ""),
+            str(position.get("entry_order_id") or ""),
+            str(position.get("entry_client_order_id") or ""),
+        ))
+        return f"OUT-{uuid.uuid5(uuid.NAMESPACE_URL, 'nbot-v2-execution-outcome|' + identity).hex}"
+
+    def _finalize_closed_position(self, close: CloseFill) -> None:
         position = self.state.open_position
         if position is None:
             return
         qty = float(position["quantity"])
         entry = float(position["entry_price"])
-        pnl = (exit_price - entry) * qty if position["side"] == "LONG" else (entry - exit_price) * qty
+        price_pnl = (close.price - entry) * qty if position["side"] == "LONG" else (entry - close.price) * qty
+        pnl = price_pnl if close.realized_pnl_usd is None else float(close.realized_pnl_usd)
         risk = float(position["initial_risk_usd"])
         outcome = ExecutionOutcome.create(
-            outcome_id=f"OUT-{uuid.uuid4().hex}",
+            outcome_id=self._deterministic_outcome_id(position),
             proposal_id=position["proposal_id"],
             environment=position["environment"],
             symbol=position["symbol"],
             side=position["side"],
             entry_price=entry,
-            exit_price=float(exit_price),
+            exit_price=float(close.price),
             quantity=qty,
             initial_risk_usd=risk,
             realized_pnl_usd=pnl,
@@ -580,8 +658,8 @@ class ExecutionWorker:
             mae_r=float(position.get("mae_r", 0.0)),
             mfe_r=float(position.get("mfe_r", 0.0)),
             entry_timestamp_ms=int(position["entry_timestamp_ms"]),
-            closed_timestamp_ms=int(timestamp_ms),
-            exit_reason=reason,
+            closed_timestamp_ms=int(close.timestamp_ms),
+            exit_reason=close.reason,
             entry_authority=position["entry_authority"],
             model_version=position["model_version"],
             exit_policy_version=position["exit_policy_version"],
@@ -589,15 +667,13 @@ class ExecutionWorker:
             data_generation_id=position["data_generation_id"],
             market_event_id=position["market_event_id"],
         )
-        self.state.queue_outcome(outcome)
-        self.state.open_position = None
-        self.state.save()
+        self.state.finalize_open_position(outcome)
 
     def _queue_failed_entry_outcome(self, proposal: ExecutionProposal, fill: Fill, close: CloseFill, stop: float) -> None:
         pnl = (close.price - fill.price) * fill.quantity if proposal.direction == "LONG" else (fill.price - close.price) * fill.quantity
         risk = self.config.risk_per_trade_usd
         outcome = ExecutionOutcome.create(
-            outcome_id=f"OUT-{uuid.uuid4().hex}", proposal_id=proposal.proposal_id,
+            outcome_id=f"OUT-{uuid.uuid5(uuid.NAMESPACE_URL, 'nbot-v2-failed-entry|' + proposal.proposal_id + '|' + fill.order_id).hex}", proposal_id=proposal.proposal_id,
             environment=proposal.environment, symbol=proposal.symbol, side=proposal.direction,
             entry_price=fill.price, exit_price=close.price, quantity=fill.quantity,
             initial_risk_usd=risk, realized_pnl_usd=pnl, r_multiple=pnl / risk,

@@ -24,6 +24,7 @@ from .execution import (
     EntryPlan,
     ExchangePosition,
     Fill,
+    ProtectiveStopRef,
     Quote,
 )
 
@@ -34,6 +35,9 @@ ARM_FILE_CONTENT = "ARM_TESTNET_TRADING"
 MECHANICAL_CANARY_AUTHORITY = "TESTNET_MECHANICAL_CANARY_V1"
 MECHANICAL_CANARY_MODEL = "NONE_MECHANICAL_CANARY"
 GUARD_STATE_VERSION = "NBOT_V2_TESTNET_GUARD_V1"
+USER_TRADES_MAX_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+CLOSE_SETTLEMENT_RETRIES = 5
+CLOSE_SETTLEMENT_RETRY_SECONDS = 0.5
 
 
 class TestnetExchangeError(RuntimeError):
@@ -567,6 +571,28 @@ class BinanceTestnetExchange:
                 return None
             raise
 
+    def _query_order_by_id(self, symbol: str, order_id: str):
+        try:
+            return self._signed_get("/fapi/v1/order", {"symbol": symbol, "orderId": int(order_id)})
+        except TestnetExchangeError as exc:
+            text = str(exc)
+            if "-2013" in text or "Order does not exist" in text:
+                return None
+            raise
+
+    @staticmethod
+    def _stop_ref(row: dict[str, Any], *, fallback_client_id: str | None = None) -> ProtectiveStopRef:
+        trigger = float(row.get("triggerPrice", 0) or 0)
+        if trigger <= 0:
+            raise TestnetExchangeError("TESTNET_STOP_TRIGGER_PRICE_MISSING")
+        algo_id = row.get("algoId")
+        client = str(row.get("clientAlgoId") or fallback_client_id or "").strip() or None
+        return ProtectiveStopRef(
+            trigger_price=trigger,
+            algo_id=None if algo_id is None else str(algo_id),
+            client_algo_id=client,
+        )
+
     def _fill_from_order(self, order: dict[str, Any], fallback_price: float, requested_qty: float) -> Fill | None:
         executed = float(order.get("executedQty", 0) or 0)
         if executed <= 0:
@@ -667,57 +693,308 @@ class BinanceTestnetExchange:
     def _cancel_algo(self, symbol: str, algo_id: int) -> None:
         self._signed_delete("/fapi/v1/algoOrder", {"symbol": symbol, "algoId": int(algo_id)})
 
-    def _place_stop(self, symbol: str, side: str, quantity: float, stop_price: float) -> dict[str, Any]:
+    def _query_algo_order(self, *, algo_id: str | None = None, client_algo_id: str | None = None):
+        if algo_id is None and not client_algo_id:
+            raise TestnetExchangeError("TESTNET_ALGO_QUERY_ID_MISSING")
+        params: dict[str, Any] = {}
+        if algo_id is not None:
+            params["algoId"] = int(algo_id)
+        else:
+            params["clientAlgoId"] = str(client_algo_id)
+        try:
+            return self._signed_get("/fapi/v1/algoOrder", params)
+        except TestnetExchangeError as exc:
+            text = str(exc)
+            if "-2013" in text or "Order does not exist" in text:
+                return None
+            raise
+
+    def _resolve_ambiguous_stop(self, symbol: str, client_algo_id: str, *, timeout_seconds: float = 10.0) -> ProtectiveStopRef:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            try:
+                row = self._query_algo_order(client_algo_id=client_algo_id)
+                if row is not None:
+                    status = str(row.get("algoStatus") or "").upper()
+                    if status == "NEW":
+                        return self._stop_ref(row, fallback_client_id=client_algo_id)
+                    if status in {"TRIGGERED", "FINISHED"}:
+                        raise TestnetExchangeError("TESTNET_STOP_TRIGGERED_DURING_AMBIGUOUS_PLACEMENT")
+                    if status in {"CANCELED", "EXPIRED", "REJECTED"}:
+                        raise TestnetExchangeError(f"TESTNET_STOP_NOT_ACTIVE:{status}")
+            except TestnetExchangeError as exc:
+                if "TESTNET_STOP_TRIGGERED_DURING_AMBIGUOUS_PLACEMENT" in str(exc) or "TESTNET_STOP_NOT_ACTIVE" in str(exc):
+                    raise
+            for active in self._active_stops(symbol):
+                if str(active.get("clientAlgoId") or "") == client_algo_id:
+                    return self._stop_ref(active, fallback_client_id=client_algo_id)
+            time.sleep(0.25)
+        raise TestnetExchangeError("TESTNET_AMBIGUOUS_STOP_RESOLUTION_TIMEOUT")
+
+    def _place_stop(self, symbol: str, side: str, quantity: float, stop_price: float) -> ProtectiveStopRef:
         qty = self._quantity(symbol, quantity)
         stop = self._stop_price(symbol, stop_price)
         if not self.validate_protective_stop(symbol, side, stop):
             raise TestnetExchangeError("TESTNET_STOP_ALREADY_BREACHED_OR_INVALID")
         client_algo_id = f"NBV28SL-{uuid.uuid4().hex[:20]}"
-        data = self._signed_post(
-            "/fapi/v1/algoOrder",
-            {
-                "algoType": "CONDITIONAL",
-                "symbol": symbol,
-                "side": "SELL" if side == "LONG" else "BUY",
-                "type": "STOP_MARKET",
-                "quantity": qty,
-                "triggerPrice": stop,
-                "workingType": "CONTRACT_PRICE",
-                "priceProtect": "true",
-                "reduceOnly": "true",
-                "clientAlgoId": client_algo_id,
-            },
-        )
+        params = {
+            "algoType": "CONDITIONAL",
+            "symbol": symbol,
+            "side": "SELL" if side == "LONG" else "BUY",
+            "type": "STOP_MARKET",
+            "quantity": qty,
+            "triggerPrice": stop,
+            "workingType": "CONTRACT_PRICE",
+            "priceProtect": "true",
+            "reduceOnly": "true",
+            "clientAlgoId": client_algo_id,
+        }
+        try:
+            data = self._signed_post("/fapi/v1/algoOrder", params, ambiguous=True)
+        except AmbiguousExecutionError:
+            return self._resolve_ambiguous_stop(symbol, client_algo_id)
         algo_id = data.get("algoId")
         if algo_id is None:
-            raise TestnetExchangeError("TESTNET_STOP_ALGO_ID_MISSING")
+            # The write returned, but without a usable identifier. Recover by
+            # the deterministic clientAlgoId rather than submitting again.
+            return self._resolve_ambiguous_stop(symbol, client_algo_id)
         for row in self._active_stops(symbol):
             if int(row.get("algoId", -1)) == int(algo_id):
-                return row
+                return self._stop_ref(row, fallback_client_id=client_algo_id)
+        recovered = self._query_algo_order(algo_id=str(algo_id))
+        if recovered is not None and str(recovered.get("algoStatus") or "").upper() == "NEW":
+            return self._stop_ref(recovered, fallback_client_id=client_algo_id)
         raise TestnetExchangeError("TESTNET_STOP_PLACEMENT_NOT_CONFIRMED")
 
-    def ensure_protective_stop(self, symbol: str, side: str, quantity: float, stop_price: float) -> None:
+    def _prune_protective_stops(self, symbol: str, keep_algo_id: str | None) -> None:
+        keep = None if keep_algo_id is None else int(keep_algo_id)
+        for row in self._active_stops(symbol):
+            algo_id = row.get("algoId")
+            if algo_id is None or (keep is not None and int(algo_id) == keep):
+                continue
+            try:
+                self._cancel_algo(symbol, int(algo_id))
+            except Exception as exc:
+                # A DELETE timeout can itself be ambiguous. Verify exchange
+                # truth instead of assuming the cancellation failed.
+                remaining = {int(r["algoId"]) for r in self._active_stops(symbol) if r.get("algoId") is not None}
+                if int(algo_id) in remaining:
+                    raise TestnetExchangeError(f"TESTNET_OLD_STOP_CANCEL_UNRESOLVED:{algo_id}:{exc}") from exc
+        remaining = [r for r in self._active_stops(symbol) if r.get("algoId") is not None]
+        if keep is None:
+            if remaining:
+                raise TestnetExchangeError("TESTNET_ORPHAN_PROTECTIVE_STOP_REMAINS")
+            return
+        kept = [r for r in remaining if int(r["algoId"]) == keep]
+        extras = [r for r in remaining if int(r["algoId"]) != keep]
+        if len(kept) != 1 or extras:
+            raise TestnetExchangeError("TESTNET_PROTECTIVE_STOP_SET_NOT_CANONICAL")
+
+    def ensure_protective_stop(self, symbol: str, side: str, quantity: float, stop_price: float) -> ProtectiveStopRef:
         expected = self._stop_price(symbol, stop_price)
         tick = self._filters[symbol]["tick"]
         existing = self._active_stops(symbol)
+        ref = None
         for row in existing:
             trigger = float(row.get("triggerPrice", 0) or 0)
             if abs(trigger - expected) <= tick / 2 + 1e-12:
-                return
-        self._place_stop(symbol, side, quantity, expected)
+                ref = self._stop_ref(row)
+                break
+        if ref is None:
+            ref = self._place_stop(symbol, side, quantity, expected)
+        self._prune_protective_stops(symbol, ref.algo_id)
+        return ref
 
-    def replace_protective_stop(self, symbol: str, side: str, quantity: float, stop_price: float) -> None:
-        old = self._active_stops(symbol)
+    def replace_protective_stop(self, symbol: str, side: str, quantity: float, stop_price: float) -> ProtectiveStopRef:
+        # Preserve V1's capital-first invariant: establish and verify the new
+        # stop before removing any existing protection.
         new = self._place_stop(symbol, side, quantity, stop_price)
-        new_id = int(new["algoId"])
-        for row in old:
-            old_id = row.get("algoId")
-            if old_id is None or int(old_id) == new_id:
+        self._prune_protective_stops(symbol, new.algo_id)
+        return new
+
+    def _user_trades_since(self, symbol: str, start_ms: int, end_ms: int) -> list[dict[str, Any]]:
+        if start_ms <= 0 or end_ms < start_ms:
+            raise TestnetExchangeError("TESTNET_CLOSE_HISTORY_RANGE_INVALID")
+        rows: dict[str, dict[str, Any]] = {}
+        cursor = int(start_ms)
+        while cursor <= end_ms:
+            window_end = min(end_ms, cursor + USER_TRADES_MAX_WINDOW_MS - 1)
+            batch = self._signed_get(
+                "/fapi/v1/userTrades",
+                {"symbol": symbol, "startTime": cursor, "endTime": window_end, "limit": 1000},
+            )
+            if len(batch) >= 1000:
+                raise TestnetExchangeError("TESTNET_CLOSE_HISTORY_WINDOW_TRUNCATED")
+            for row in batch:
+                key = str(row.get("id") or f"{row.get('orderId')}:{row.get('time')}:{row.get('qty')}:{row.get('price')}")
+                rows[key] = row
+            cursor = window_end + 1
+        return sorted(rows.values(), key=lambda row: (int(row.get("time", 0) or 0), int(row.get("id", 0) or 0)))
+
+    def _all_algo_orders_between(self, symbol: str, start_ms: int, end_ms: int) -> list[dict[str, Any]]:
+        if start_ms <= 0 or end_ms < start_ms:
+            raise TestnetExchangeError("TESTNET_ALGO_HISTORY_RANGE_INVALID")
+        rows: dict[str, dict[str, Any]] = {}
+        cursor = int(start_ms)
+        while cursor <= end_ms:
+            window_end = min(end_ms, cursor + USER_TRADES_MAX_WINDOW_MS - 1)
+            batch = self._signed_get(
+                "/fapi/v1/allAlgoOrders",
+                {"symbol": symbol, "startTime": cursor, "endTime": window_end, "limit": 1000},
+            )
+            if len(batch) >= 1000:
+                raise TestnetExchangeError("TESTNET_ALGO_HISTORY_WINDOW_TRUNCATED")
+            for row in batch:
+                key = str(row.get("algoId") or row.get("clientAlgoId") or "")
+                if key:
+                    rows[key] = row
+            cursor = window_end + 1
+        return sorted(rows.values(), key=lambda row: (int(row.get("createTime", 0) or 0), int(row.get("algoId", 0) or 0)))
+
+    def _settle_local_position_from_trades(self, local: dict[str, Any], rows: list[dict[str, Any]]) -> CloseFill:
+        symbol = str(local["symbol"]).upper()
+        side = str(local["side"]).upper()
+        target_qty = float(local["quantity"])
+        entry_order_id = str(local.get("entry_order_id") or "")
+        entry_ts = int(local["entry_timestamp_ms"])
+        exit_side = "SELL" if side == "LONG" else "BUY"
+        entry_side = "BUY" if side == "LONG" else "SELL"
+        step = float(self._filters[symbol]["market_step"])
+        tolerance = max(step / 2.0, 1e-12)
+        exit_rows: list[dict[str, Any]] = []
+        exit_qty = 0.0
+
+        for row in rows:
+            if int(row.get("time", 0) or 0) < entry_ts:
                 continue
+            if str(row.get("positionSide") or "BOTH").upper() != "BOTH":
+                raise TestnetExchangeError("TESTNET_CLOSE_HISTORY_HEDGE_MODE_UNSUPPORTED")
+            order_id = str(row.get("orderId") or "")
+            if entry_order_id and order_id == entry_order_id:
+                continue
+            trade_side = str(row.get("side") or "").upper()
+            qty = float(row.get("qty", 0) or 0)
+            price = float(row.get("price", 0) or 0)
+            if qty <= 0 or price <= 0:
+                raise TestnetExchangeError("TESTNET_CLOSE_HISTORY_TRADE_INVALID")
+            if trade_side == entry_side:
+                raise TestnetExchangeError("TESTNET_POSITION_MUTATED_WHILE_EXECUTION_OFFLINE")
+            if trade_side != exit_side:
+                continue
+            exit_rows.append(row)
+            exit_qty += qty
+
+        if exit_qty < target_qty - tolerance:
+            raise TestnetExchangeError("TESTNET_CLOSE_EVIDENCE_INCOMPLETE")
+        if exit_qty > target_qty + tolerance:
+            raise TestnetExchangeError("TESTNET_CLOSE_EVIDENCE_AMBIGUOUS_QUANTITY")
+        weighted = sum(float(row["qty"]) * float(row["price"]) for row in exit_rows)
+        if not exit_rows or exit_qty <= 0:
+            raise TestnetExchangeError("TESTNET_CLOSE_EVIDENCE_MISSING")
+        exit_price = weighted / exit_qty
+        realized = sum(float(row.get("realizedPnl", 0) or 0) for row in exit_rows)
+        closed_ms = max(int(row.get("time", 0) or 0) for row in exit_rows)
+        order_ids = tuple(sorted({str(row.get("orderId") or "") for row in exit_rows if row.get("orderId") is not None}))
+        reason = self._recover_close_reason(local, order_ids, closed_ms)
+        return CloseFill(
+            price=exit_price,
+            timestamp_ms=closed_ms,
+            reason=reason,
+            realized_pnl_usd=realized,
+            order_ids=order_ids,
+            source="USER_TRADES_RECOVERY",
+        )
+
+    def _recover_close_reason(self, local: dict[str, Any], close_order_ids: tuple[str, ...], closed_ms: int) -> str:
+        close_ids = set(close_order_ids)
+        algo_id = local.get("protective_stop_algo_id")
+        client_algo_id = local.get("protective_stop_client_algo_id")
+        if algo_id is not None or client_algo_id:
             try:
-                self._cancel_algo(symbol, int(old_id))
+                row = self._query_algo_order(
+                    algo_id=None if algo_id is None else str(algo_id),
+                    client_algo_id=None if algo_id is not None else str(client_algo_id),
+                )
+                if row is not None:
+                    actual_order_id = str(row.get("actualOrderId") or "").strip()
+                    if (
+                        str(row.get("orderType") or row.get("type") or "").upper() == "STOP_MARKET"
+                        and self._is_true(row.get("reduceOnly"))
+                        and actual_order_id in close_ids
+                    ):
+                        return "PROTECTIVE_STOP_TRIGGERED"
             except Exception as exc:
-                self.log.warning("TESTNET_OLD_STOP_CANCEL_FAILED symbol=%s algo_id=%s error=%s", symbol, old_id, exc)
+                self.log.warning("TESTNET_STOP_HISTORY_LOOKUP_FAILED %s", exc)
+
+        # The operator/exchange may have replaced the original stop while the
+        # worker was offline. Current Binance algo history exposes the actual
+        # child order ID after a conditional order triggers, so scan the
+        # position lifetime and only call it a stop when that exact child order
+        # is one of the closing fills. If this cannot be proven, stay
+        # conservative rather than guessing the reason.
+        try:
+            start_ms = int(local.get("entry_timestamp_ms") or 0)
+            if start_ms > 0 and closed_ms >= start_ms:
+                expected_side = "SELL" if str(local.get("side") or "").upper() == "LONG" else "BUY"
+                for row in self._all_algo_orders_between(str(local["symbol"]).upper(), start_ms, closed_ms):
+                    actual_order_id = str(row.get("actualOrderId") or "").strip()
+                    if (
+                        str(row.get("orderType") or row.get("type") or "").upper() == "STOP_MARKET"
+                        and self._is_true(row.get("reduceOnly"))
+                        and str(row.get("side") or "").upper() == expected_side
+                        and actual_order_id in close_ids
+                    ):
+                        return "PROTECTIVE_STOP_TRIGGERED"
+        except Exception as exc:
+            self.log.warning("TESTNET_ALL_STOP_HISTORY_LOOKUP_FAILED %s", exc)
+        return "EXCHANGE_FLAT_RECOVERED_AFTER_RESTART"
+
+    def _cleanup_orphan_protective_stops(self, symbol: str) -> None:
+        # A flat account with a lingering reduce-only stop is not a clean
+        # execution boundary: that orphan could interfere with a later entry.
+        # Reuse the same verified pruning path and fail closed if exchange truth
+        # cannot confirm that all protective stops are gone.
+        self._prune_protective_stops(symbol, None)
+
+    def recover_closed_position(self, local_position: dict[str, Any]) -> CloseFill:
+        if self.position_snapshot() is not None:
+            raise TestnetExchangeError("TESTNET_RECOVERY_POSITION_NOT_FLAT")
+        symbol = str(local_position.get("symbol") or "").upper()
+        entry_ts = int(local_position.get("entry_timestamp_ms") or 0)
+        if symbol not in self._filters or entry_ts <= 0:
+            raise TestnetExchangeError("TESTNET_RECOVERY_LOCAL_POSITION_INVALID")
+        last_error: Exception | None = None
+        for attempt in range(CLOSE_SETTLEMENT_RETRIES):
+            try:
+                rows = self._user_trades_since(symbol, entry_ts, int(time.time() * 1000))
+                close = self._settle_local_position_from_trades(local_position, rows)
+                self._cleanup_orphan_protective_stops(symbol)
+                return close
+            except TestnetExchangeError as exc:
+                last_error = exc
+                if "TESTNET_CLOSE_EVIDENCE_INCOMPLETE" not in str(exc) and "TESTNET_CLOSE_EVIDENCE_MISSING" not in str(exc):
+                    raise
+                if attempt + 1 < CLOSE_SETTLEMENT_RETRIES:
+                    time.sleep(CLOSE_SETTLEMENT_RETRY_SECONDS)
+        raise TestnetExchangeError(f"TESTNET_EXTERNAL_CLOSE_SETTLEMENT_FAILED:{last_error}")
+
+    def _settle_close_order(self, position: ExchangePosition, order: dict[str, Any], fallback: Fill | None, reason: str) -> CloseFill:
+        order_id = order.get("orderId")
+        if order_id is not None:
+            for attempt in range(CLOSE_SETTLEMENT_RETRIES):
+                rows = self._signed_get("/fapi/v1/userTrades", {"symbol": position.symbol, "orderId": int(order_id), "limit": 1000})
+                if rows:
+                    qty = sum(float(row.get("qty", 0) or 0) for row in rows)
+                    if qty > 0:
+                        price = sum(float(row["qty"]) * float(row["price"]) for row in rows) / qty
+                        realized = sum(float(row.get("realizedPnl", 0) or 0) for row in rows)
+                        ts = max(int(row.get("time", 0) or 0) for row in rows)
+                        return CloseFill(price, ts, reason, realized, (str(order_id),), "USER_TRADES_ORDER")
+                if attempt + 1 < CLOSE_SETTLEMENT_RETRIES:
+                    time.sleep(CLOSE_SETTLEMENT_RETRY_SECONDS)
+        if fallback is None:
+            raise TestnetExchangeError("TESTNET_CLOSE_FILL_EVIDENCE_MISSING")
+        return CloseFill(fallback.price, fallback.timestamp_ms, reason, None, (() if order_id is None else (str(order_id),)), "ORDER_RESULT")
 
     def _flatten_unprotected(self, position: ExchangePosition, *, reason: str) -> CloseFill:
         return self._close_existing(position, reason=reason)
@@ -748,22 +1025,21 @@ class BinanceTestnetExchange:
                 raise TestnetExchangeError("TESTNET_CLOSE_AMBIGUOUS_POSITION_STILL_OPEN")
         if self.position_snapshot() is not None:
             raise TestnetExchangeError("TESTNET_CLOSE_NOT_CONFIRMED_FLAT")
-        try:
-            for row in self._active_stops(position.symbol):
-                if row.get("algoId") is not None:
-                    self._cancel_algo(position.symbol, int(row["algoId"]))
-        except Exception as exc:
-            self.log.warning("TESTNET_ORPHAN_STOP_CLEANUP_FAILED %s", exc)
-        fallback = self.quote(position.symbol).mid
-        fill = self._fill_from_order(order or {}, fallback, quantity)
-        price = fill.price if fill else fallback
-        timestamp_ms = fill.timestamp_ms if fill else int(time.time() * 1000)
-        return CloseFill(price=price, timestamp_ms=timestamp_ms, reason=reason)
+        self._cleanup_orphan_protective_stops(position.symbol)
+        fallback_price = self.quote(position.symbol).mid
+        fill = self._fill_from_order(order or {}, fallback_price, quantity)
+        if fill is None and order is None:
+            # Ambiguous close can still be settled from the exact client ID.
+            recovered_order = self._query_order(position.symbol, client_order_id)
+            if recovered_order is not None:
+                order = recovered_order
+                fill = self._fill_from_order(order, fallback_price, quantity)
+        return self._settle_close_order(position, order or {}, fill, reason)
 
     def close_position(self, symbol: str, side: str, *, reason: str) -> CloseFill:
         position = self.position_snapshot()
         if position is None:
-            return CloseFill(price=self.quote(symbol).mid, timestamp_ms=int(time.time() * 1000), reason=f"{reason}_ALREADY_FLAT")
+            raise TestnetExchangeError("TESTNET_CLOSE_POSITION_ALREADY_FLAT_USE_RECOVERY")
         if position.symbol != symbol or position.side != side:
             raise TestnetExchangeError("TESTNET_CLOSE_POSITION_MISMATCH")
         return self._close_existing(position, reason=reason)

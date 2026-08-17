@@ -17,6 +17,7 @@ from nbot.execution import (
     ExecutionWorker,
     Fill,
     INTEGER_R_STEP_CONTROL,
+    ProtectiveStopRef,
     NO_ENTRY_AUTHORITY,
     Quote,
 )
@@ -71,6 +72,9 @@ class FakeExchange:
         self.fail_protection = False
         self.open_calls = 0
         self.close_calls = 0
+        self.recover_calls = 0
+        self.recovery_error = None
+        self.recovery_close = CloseFill(98.0, now_ms + 2_000, "EXCHANGE_FLAT_RECOVERED_AFTER_RESTART", -2.0, ("CLOSE-1",), "FAKE_RECOVERY")
         self.leverage = None
 
     def connect(self):
@@ -106,16 +110,24 @@ class FakeExchange:
         if self.fail_protection:
             raise RuntimeError("stop failed")
         self.stop = stop_price
+        return ProtectiveStopRef(stop_price, "STOP-1", "STOP-CID-1")
 
     def replace_protective_stop(self, symbol, side, quantity, stop_price):
         self.stop = stop_price
         self.stop_updates.append(stop_price)
+        return ProtectiveStopRef(stop_price, f"STOP-{len(self.stop_updates)+1}", f"STOP-CID-{len(self.stop_updates)+1}")
 
     def close_position(self, symbol, side, *, reason):
         self.close_calls += 1
         price = self.quote_value.bid if side == "LONG" else self.quote_value.ask
         self.position = None
         return CloseFill(price, self.now_ms + 1_000, reason)
+
+    def recover_closed_position(self, local_position):
+        self.recover_calls += 1
+        if self.recovery_error is not None:
+            raise self.recovery_error
+        return self.recovery_close
 
 
 def make_proposal(now_ms=1_000_000, **overrides):
@@ -248,6 +260,77 @@ class ExecutionWorkerTests(unittest.TestCase):
         self.assertEqual(self.proposals.calls, calls)
         self.assertGreaterEqual(self.exchange.ensure_stop_calls, 2)
         self.assertEqual(worker2.reconcile_open_position(), "POSITION_RECONCILED")
+
+    def test_restart_recovers_exchange_side_close_and_queues_exactly_one_outcome(self):
+        self.assertEqual(self.worker.process_flat_cycle(), "ENTRY_OPENED")
+        original = dict(self.worker.state.open_position)
+        self.exchange.position = None
+        self.exchange.recovery_close = CloseFill(99.0, self.now + 6_000, "PROTECTIVE_STOP_TRIGGERED", -1.25, ("STOP-FILL-1",), "USER_TRADES_RECOVERY")
+
+        worker2 = ExecutionWorker(
+            self.cfg, self.exchange, self.proposals, self.outcomes,
+            state=ExecutionStateStore(self.path), now_ms=lambda: self.now + 7_000,
+        )
+        self.assertEqual(worker2.prepare(), "RECOVERED_CLOSED_POSITION")
+        self.assertIsNone(worker2.state.open_position)
+        self.assertEqual(self.exchange.recover_calls, 1)
+        rows = worker2.state.data["pending_outcomes"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["realized_pnl_usd"], -1.25)
+        self.assertEqual(rows[0]["exit_reason"], "PROTECTIVE_STOP_TRIGGERED")
+        expected_id = worker2._deterministic_outcome_id(original)
+        self.assertEqual(rows[0]["outcome_id"], expected_id)
+
+    def test_recovered_close_delivery_is_idempotent_across_restart(self):
+        self.assertEqual(self.worker.process_flat_cycle(), "ENTRY_OPENED")
+        self.worker.disable_new_entries()
+        self.exchange.position = None
+        self.exchange.recovery_close = CloseFill(99.0, self.now + 6_000, "PROTECTIVE_STOP_TRIGGERED", -1.0, ("STOP-FILL-1",), "USER_TRADES_RECOVERY")
+        worker2 = ExecutionWorker(
+            self.cfg, self.exchange, self.proposals, self.outcomes,
+            state=ExecutionStateStore(self.path), now_ms=lambda: self.now + 7_000,
+        )
+        self.assertEqual(worker2.prepare(), "RECOVERED_CLOSED_POSITION")
+        outcome_id = worker2.state.data["pending_outcomes"][0]["outcome_id"]
+        calls_before = self.proposals.calls
+        self.assertEqual(worker2.process_flat_cycle(), "ENTRY_DISABLED")
+        self.assertEqual(self.proposals.calls, calls_before)
+        self.assertEqual(len(self.outcomes.outcomes), 1)
+        self.assertEqual(self.outcomes.outcomes[0].outcome_id, outcome_id)
+        self.assertEqual(worker2.state.data["pending_outcomes"], [])
+
+        worker3 = ExecutionWorker(
+            self.cfg, self.exchange, self.proposals, self.outcomes,
+            state=ExecutionStateStore(self.path), now_ms=lambda: self.now + 8_000,
+        )
+        self.assertEqual(worker3.prepare(), "FLAT")
+        self.assertEqual(worker3.process_flat_cycle(), "ENTRY_DISABLED")
+        self.assertEqual(len(self.outcomes.outcomes), 1)
+        self.assertEqual(self.proposals.calls, calls_before)
+
+    def test_external_close_recovery_failure_preserves_local_open_state(self):
+        self.assertEqual(self.worker.process_flat_cycle(), "ENTRY_OPENED")
+        proposal_id = self.worker.state.open_position["proposal_id"]
+        self.exchange.position = None
+        self.exchange.recovery_error = RuntimeError("trade history unavailable")
+        worker2 = ExecutionWorker(
+            self.cfg, self.exchange, self.proposals, self.outcomes,
+            state=ExecutionStateStore(self.path), now_ms=lambda: self.now + 7_000,
+        )
+        with self.assertRaisesRegex(ExecutionSafetyError, "EXTERNAL_CLOSE_RECOVERY_FAILED"):
+            worker2.prepare()
+        self.assertEqual(worker2.state.open_position["proposal_id"], proposal_id)
+        self.assertEqual(worker2.state.data["pending_outcomes"], [])
+
+    def test_stop_identity_is_persisted_on_entry_and_trailing_replacement(self):
+        self.assertEqual(self.worker.process_flat_cycle(), "ENTRY_OPENED")
+        position = self.worker.state.open_position
+        self.assertEqual(position["protective_stop_algo_id"], "STOP-1")
+        self.assertEqual(position["protective_stop_client_algo_id"], "STOP-CID-1")
+        self.worker.process_open_price("BTCUSDT", 102.20, self.now + 2_000)
+        position = self.worker.state.open_position
+        self.assertEqual(position["protective_stop_algo_id"], "STOP-2")
+        self.assertEqual(position["protective_stop_client_algo_id"], "STOP-CID-2")
 
     def test_protection_failure_emergency_closes_and_queues_outcome(self):
         self.exchange.fail_protection = True

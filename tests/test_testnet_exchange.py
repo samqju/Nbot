@@ -34,7 +34,10 @@ class AdapterHarness(BinanceTestnetExchange):
         self.position = None
         self.orders = {}
         self.stops = []
+        self.algo_history = {}
+        self.trades = []
         self.next_algo_id = 100
+        self.fail_cancel_ids = set()
 
     def quote(self, symbol):
         return Quote(symbol, 99.9, 100.1, 1_000_000)
@@ -66,13 +69,20 @@ class AdapterHarness(BinanceTestnetExchange):
             self.next_algo_id += 1
             row = {
                 "algoId": algo_id,
+                "clientAlgoId": params.get("clientAlgoId"),
                 "algoType": "CONDITIONAL",
                 "orderType": "STOP_MARKET",
                 "reduceOnly": True,
                 "triggerPrice": str(params["triggerPrice"]),
+                "algoStatus": "NEW",
+                "actualOrderId": "",
+                "symbol": params["symbol"],
+                "side": params["side"],
+                "createTime": 1_000_010,
             }
             self.stops.append(row)
-            return {"algoId": algo_id}
+            self.algo_history[str(algo_id)] = row
+            return {"algoId": algo_id, "clientAlgoId": params.get("clientAlgoId")}
         if path == "/fapi/v1/leverage":
             return {"leverage": params["leverage"]}
         raise AssertionError(path)
@@ -82,7 +92,41 @@ class AdapterHarness(BinanceTestnetExchange):
         if path == "/fapi/v1/openAlgoOrders":
             return list(self.stops)
         if path == "/fapi/v1/order":
-            return self.orders.get((params or {}).get("origClientOrderId")) or self._missing_order()
+            params = params or {}
+            if params.get("origClientOrderId") is not None:
+                return self.orders.get(params.get("origClientOrderId")) or self._missing_order()
+            if params.get("orderId") is not None:
+                for order in self.orders.values():
+                    if int(order.get("orderId", -1)) == int(params["orderId"]):
+                        return order
+                return self._missing_order()
+        if path == "/fapi/v1/userTrades":
+            params = params or {}
+            rows = list(self.trades)
+            if params.get("orderId") is not None:
+                rows = [row for row in rows if int(row.get("orderId", -1)) == int(params["orderId"])]
+            if params.get("startTime") is not None:
+                rows = [row for row in rows if int(row.get("time", 0)) >= int(params["startTime"])]
+            if params.get("endTime") is not None:
+                rows = [row for row in rows if int(row.get("time", 0)) <= int(params["endTime"])]
+            return rows
+        if path == "/fapi/v1/algoOrder":
+            params = params or {}
+            if params.get("algoId") is not None:
+                row = self.algo_history.get(str(params["algoId"]))
+            else:
+                row = next((r for r in self.algo_history.values() if r.get("clientAlgoId") == params.get("clientAlgoId")), None)
+            if row is None:
+                raise TestnetExchangeError("REST_FAILED:GET:/fapi/v1/algoOrder:400:code=-2013 msg=Order does not exist")
+            return dict(row)
+        if path == "/fapi/v1/allAlgoOrders":
+            params = params or {}
+            rows = [dict(row) for row in self.algo_history.values()]
+            if params.get("startTime") is not None:
+                rows = [row for row in rows if int(row.get("createTime", 0) or 0) >= int(params["startTime"])]
+            if params.get("endTime") is not None:
+                rows = [row for row in rows if int(row.get("createTime", 0) or 0) <= int(params["endTime"])]
+            return rows
         raise AssertionError(path)
 
     @staticmethod
@@ -94,7 +138,11 @@ class AdapterHarness(BinanceTestnetExchange):
         if path != "/fapi/v1/algoOrder":
             raise AssertionError(path)
         target = int(params["algoId"])
+        if target in self.fail_cancel_ids:
+            raise TestnetExchangeError("REST_TIMEOUT:DELETE:/fapi/v1/algoOrder")
         self.stops = [row for row in self.stops if int(row["algoId"]) != target]
+        if str(target) in self.algo_history:
+            self.algo_history[str(target)]["algoStatus"] = "CANCELED"
         return {"algoId": target}
 
 
@@ -255,6 +303,139 @@ class TestnetExchangeTests(unittest.TestCase):
         self.assertLess(sequence.index(("POST", "/fapi/v1/algoOrder")), sequence.index(("DELETE", "/fapi/v1/algoOrder")))
         self.assertEqual(len(ex.stops), 1)
         self.assertAlmostEqual(float(ex.stops[0]["triggerPrice"]), 99.5)
+
+    def test_external_close_recovery_uses_user_trades_and_proves_known_stop(self):
+        ex = AdapterHarness(self.cfg)
+        stop = ex._place_stop("BTCUSDT", "LONG", 1.0, 99.0)
+        self.assertIsNotNone(stop.algo_id)
+        close_order_id = 9001
+        ex.algo_history[str(stop.algo_id)]["algoStatus"] = "FINISHED"
+        ex.algo_history[str(stop.algo_id)]["actualOrderId"] = str(close_order_id)
+        ex.stops = []
+        ex.trades = [
+            {"id": 1, "orderId": 7001, "price": "100", "qty": "1", "realizedPnl": "0", "side": "BUY", "positionSide": "BOTH", "time": 1_000_001},
+            {"id": 2, "orderId": close_order_id, "price": "99.1", "qty": "0.4", "realizedPnl": "-0.36", "side": "SELL", "positionSide": "BOTH", "time": 1_000_500},
+            {"id": 3, "orderId": close_order_id, "price": "99.0", "qty": "0.6", "realizedPnl": "-0.60", "side": "SELL", "positionSide": "BOTH", "time": 1_000_600},
+        ]
+        local = {
+            "symbol": "BTCUSDT", "side": "LONG", "quantity": 1.0,
+            "entry_timestamp_ms": 1_000_000, "entry_order_id": "7001",
+            "protective_stop_algo_id": stop.algo_id,
+            "protective_stop_client_algo_id": stop.client_algo_id,
+        }
+        close = ex.recover_closed_position(local)
+        self.assertAlmostEqual(close.price, 99.04)
+        self.assertAlmostEqual(close.realized_pnl_usd, -0.96)
+        self.assertEqual(close.reason, "PROTECTIVE_STOP_TRIGGERED")
+        self.assertEqual(close.order_ids, (str(close_order_id),))
+        self.assertEqual(close.source, "USER_TRADES_RECOVERY")
+
+    def test_external_close_recovery_accepts_zero_realized_break_even_fill(self):
+        ex = AdapterHarness(self.cfg)
+        ex.trades = [
+            {"id": 1, "orderId": 7001, "price": "100", "qty": "1", "realizedPnl": "0", "side": "BUY", "positionSide": "BOTH", "time": 1_000_001},
+            {"id": 2, "orderId": 9001, "price": "100", "qty": "1", "realizedPnl": "0", "side": "SELL", "positionSide": "BOTH", "time": 1_000_500},
+        ]
+        local = {"symbol": "BTCUSDT", "side": "LONG", "quantity": 1.0, "entry_timestamp_ms": 1_000_000, "entry_order_id": "7001"}
+        close = ex.recover_closed_position(local)
+        self.assertEqual(close.realized_pnl_usd, 0.0)
+        self.assertEqual(close.reason, "EXCHANGE_FLAT_RECOVERED_AFTER_RESTART")
+
+    def test_external_close_recovery_rejects_position_mutation_while_offline(self):
+        ex = AdapterHarness(self.cfg)
+        ex.trades = [
+            {"id": 1, "orderId": 7001, "price": "100", "qty": "1", "realizedPnl": "0", "side": "BUY", "positionSide": "BOTH", "time": 1_000_001},
+            {"id": 2, "orderId": 7002, "price": "101", "qty": "0.5", "realizedPnl": "0", "side": "BUY", "positionSide": "BOTH", "time": 1_000_200},
+            {"id": 3, "orderId": 9001, "price": "99", "qty": "1.5", "realizedPnl": "-2", "side": "SELL", "positionSide": "BOTH", "time": 1_000_500},
+        ]
+        local = {"symbol": "BTCUSDT", "side": "LONG", "quantity": 1.0, "entry_timestamp_ms": 1_000_000, "entry_order_id": "7001"}
+        with self.assertRaisesRegex(TestnetExchangeError, "POSITION_MUTATED_WHILE_EXECUTION_OFFLINE"):
+            ex.recover_closed_position(local)
+
+    def test_stop_methods_return_persistable_identity(self):
+        ex = AdapterHarness(self.cfg)
+        ex.position = ExchangePosition("BTCUSDT", "LONG", 10.0, 100.0)
+        ref = ex.ensure_protective_stop("BTCUSDT", "LONG", 10.0, 99.0)
+        self.assertEqual(ref.trigger_price, 99.0)
+        self.assertIsNotNone(ref.algo_id)
+        self.assertTrue(ref.client_algo_id.startswith("NBV28SL-"))
+
+    def test_ambiguous_stop_placement_recovers_same_client_algo_id_without_resubmit(self):
+        ex = AdapterHarness(self.cfg)
+        ex.position = ExchangePosition("BTCUSDT", "LONG", 10.0, 100.0)
+        original_post = ex._signed_post
+        attempts = {"n": 0}
+
+        def ambiguous_stop(path, params, *, ambiguous=False):
+            if path == "/fapi/v1/algoOrder":
+                attempts["n"] += 1
+                result = original_post(path, params, ambiguous=ambiguous)
+                raise AmbiguousExecutionError("timeout after exchange accepted stop")
+            return original_post(path, params, ambiguous=ambiguous)
+
+        ex._signed_post = ambiguous_stop
+        ref = ex.ensure_protective_stop("BTCUSDT", "LONG", 10.0, 99.0)
+        self.assertEqual(attempts["n"], 1)
+        self.assertEqual(len(ex.stops), 1)
+        self.assertIsNotNone(ref.algo_id)
+
+    def test_ensure_stop_prunes_obsolete_stop_only_after_new_is_verified(self):
+        ex = AdapterHarness(self.cfg)
+        ex.position = ExchangePosition("BTCUSDT", "LONG", 10.0, 100.0)
+        old = ex._place_stop("BTCUSDT", "LONG", 10.0, 98.0)
+        ex.calls.clear()
+        new = ex.ensure_protective_stop("BTCUSDT", "LONG", 10.0, 99.0)
+        sequence = [(c[0], c[1]) for c in ex.calls]
+        self.assertIn(("POST", "/fapi/v1/algoOrder"), sequence)
+        self.assertIn(("DELETE", "/fapi/v1/algoOrder"), sequence)
+        self.assertLess(sequence.index(("POST", "/fapi/v1/algoOrder")), sequence.index(("DELETE", "/fapi/v1/algoOrder")))
+        self.assertNotEqual(old.algo_id, new.algo_id)
+        self.assertEqual([str(row["algoId"]) for row in ex.stops], [str(new.algo_id)])
+
+    def test_external_close_recovery_can_prove_replaced_stop_from_algo_history(self):
+        ex = AdapterHarness(self.cfg)
+        stop = ex._place_stop("BTCUSDT", "LONG", 1.0, 99.0)
+        close_order_id = 9010
+        history = ex.algo_history[str(stop.algo_id)]
+        history["algoStatus"] = "FINISHED"
+        history["actualOrderId"] = str(close_order_id)
+        history["createTime"] = 1_000_100
+        ex.stops = []
+        ex.trades = [
+            {"id": 1, "orderId": 7001, "price": "100", "qty": "1", "realizedPnl": "0", "side": "BUY", "positionSide": "BOTH", "time": 1_000_001},
+            {"id": 2, "orderId": close_order_id, "price": "99", "qty": "1", "realizedPnl": "-1", "side": "SELL", "positionSide": "BOTH", "time": 1_000_500},
+        ]
+        # Simulate an operator/exchange stop replacement: local identity is
+        # unavailable/stale, but Binance history can still prove which STOP_MARKET
+        # created the exact closing child order.
+        local = {
+            "symbol": "BTCUSDT", "side": "LONG", "quantity": 1.0,
+            "entry_timestamp_ms": 1_000_000, "entry_order_id": "7001",
+        }
+        close = ex.recover_closed_position(local)
+        self.assertEqual(close.reason, "PROTECTIVE_STOP_TRIGGERED")
+
+    def test_external_close_recovery_fails_if_orphan_stop_cannot_be_removed(self):
+        ex = AdapterHarness(self.cfg)
+        orphan = ex._place_stop("BTCUSDT", "LONG", 1.0, 99.0)
+        ex.trades = [
+            {"id": 1, "orderId": 7001, "price": "100", "qty": "1", "realizedPnl": "0", "side": "BUY", "positionSide": "BOTH", "time": 1_000_001},
+            {"id": 2, "orderId": 9001, "price": "99", "qty": "1", "realizedPnl": "-1", "side": "SELL", "positionSide": "BOTH", "time": 1_000_500},
+        ]
+        ex.fail_cancel_ids.add(int(orphan.algo_id))
+        local = {"symbol": "BTCUSDT", "side": "LONG", "quantity": 1.0, "entry_timestamp_ms": 1_000_000, "entry_order_id": "7001"}
+        with self.assertRaisesRegex(TestnetExchangeError, "OLD_STOP_CANCEL_UNRESOLVED"):
+            ex.recover_closed_position(local)
+
+    def test_incomplete_close_evidence_is_rejected_instead_of_inventing_zero_exit(self):
+        ex = AdapterHarness(self.cfg)
+        rows = [
+            {"id": 1, "orderId": 7001, "price": "100", "qty": "1", "realizedPnl": "0", "side": "BUY", "positionSide": "BOTH", "time": 1_000_001},
+            {"id": 2, "orderId": 9001, "price": "99", "qty": "0.4", "realizedPnl": "-0.4", "side": "SELL", "positionSide": "BOTH", "time": 1_000_500},
+        ]
+        local = {"symbol": "BTCUSDT", "side": "LONG", "quantity": 1.0, "entry_timestamp_ms": 1_000_000, "entry_order_id": "7001"}
+        with self.assertRaisesRegex(TestnetExchangeError, "CLOSE_EVIDENCE_INCOMPLETE"):
+            ex._settle_local_position_from_trades(local, rows)
 
     def test_position_snapshot_rejects_hedge_or_multiple_positions(self):
         ex = BinanceTestnetExchange(self.cfg)

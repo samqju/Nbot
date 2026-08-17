@@ -176,3 +176,44 @@ canary:
 
 These controls do not change strategy, risk sizing, leverage, exit policy, or
 Binance order endpoints.
+
+### V2.8.2 exchange-close recovery and proven execution mechanics
+
+V2.8.2 restores the useful V1 reconciliation rule that **exchange truth wins**
+without restoring V1's learning coupling. If Execution restarts with a durable
+local position but Binance is already flat, it now settles that close from
+Binance account trade history instead of stopping permanently at
+`LOCAL_POSITION_MISSING_ON_EXCHANGE`.
+
+The recovery path is deliberately stricter than V1:
+
+- `GET /fapi/v1/userTrades` is used to reconstruct the exact closing fill
+  quantity, weighted exit price, realized PnL and close timestamp;
+- same-direction post-entry fills or ambiguous quantities fail closed instead
+  of guessing which trade belongs to the position;
+- protective algo identity is persisted with the position and Binance algo
+  history is matched to the actual closing order ID before labeling a close
+  `PROTECTIVE_STOP_TRIGGERED`; otherwise the conservative reason
+  `EXCHANGE_FLAT_RECOVERED_AFTER_RESTART` is used;
+- the recovered outcome ID is deterministic from the immutable entry identity,
+  so crash/retry cannot create a second outcome for the same execution;
+- queueing the outcome and clearing `open_position` happen in one atomic
+  execution-state replacement;
+- incomplete close evidence fails closed. V2 never substitutes an invented
+  zero exit price or zero PnL;
+- stop writes retain V1's no-blind-retry principle: an ambiguous conditional
+  order is recovered by `clientAlgoId`, and stop replacement verifies the new
+  stop before removing older protection;
+- a flat account must also be free of orphan protective stops before recovery
+  is accepted.
+
+The V1 paper-account ideas that remain useful (durable local paper balance and
+position state, fee/slippage accounting, restart restoration, and applying the
+same open-position market stream to simulated stops) are retained as design
+inputs for V2.9 LIVE-market paper execution. They are intentionally not added
+to the V2.8 Testnet adapter, so this recovery patch does not mix paper and
+exchange execution modes.
+
+A recovered close is settled/delivered first and **never opens a new canary in
+the same CLI invocation**. A fresh entry always requires another explicit
+operator action.
