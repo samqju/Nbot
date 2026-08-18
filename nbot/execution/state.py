@@ -588,10 +588,41 @@ class ExecutionStateStore:
             raise ExecutionStateError("EXECUTION_RECOVERY_INVALID")
         self._commit(replace(self._snapshot, recovery=recovery))
 
-    def _clear_open_after_durable_close(self) -> None:
+    def _clear_open_after_durable_close(self, *, daily_risk: DailyRisk | None = None) -> None:
+        """Atomically clear OPEN state after outcome/history durability is proven.
+
+        ``daily_risk`` is committed in the same state replacement as the clear so
+        a crash cannot settle the position while losing or double-applying the
+        daily accounting update.  The method is intentionally internal: callers
+        must first make the completed outcome durable.
+        """
         if self._snapshot.open_position is None:
             return
-        self._commit(replace(self._snapshot, open_position=None))
+        next_daily = self._snapshot.daily_risk if daily_risk is None else daily_risk
+        if not isinstance(next_daily, DailyRisk):
+            raise ExecutionStateError("EXECUTION_DAILY_RISK_INVALID")
+        self._commit(
+            replace(
+                self._snapshot,
+                open_position=None,
+                daily_risk=next_daily,
+            )
+        )
+
+    def _clear_inflight_after_durable_close(self, *, daily_risk: DailyRisk | None = None) -> None:
+        """Atomically settle a proven entry-inflight close after durable outcome writes."""
+        if self._snapshot.entry_inflight is None:
+            return
+        next_daily = self._snapshot.daily_risk if daily_risk is None else daily_risk
+        if not isinstance(next_daily, DailyRisk):
+            raise ExecutionStateError("EXECUTION_DAILY_RISK_INVALID")
+        self._commit(
+            replace(
+                self._snapshot,
+                entry_inflight=None,
+                daily_risk=next_daily,
+            )
+        )
 
     def export_dict(self) -> dict[str, Any]:
         return copy.deepcopy(_snapshot_to_dict(self._snapshot))

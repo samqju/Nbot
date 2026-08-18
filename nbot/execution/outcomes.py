@@ -15,6 +15,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Mapping
 
+from nbot.execution.models import DailyRisk
 from nbot.execution.state import ExecutionStateError, _fsync_dir, _secure_dir
 
 
@@ -232,7 +233,13 @@ class ExecutionDurableStore:
         self.history = ExecutionHistoryStore(self.paths.history_file)
         self.outbox = PendingOutcomeOutbox(self.paths.pending_outcomes_dir)
 
-    def finalize_closed_position(self, outcome_id: str, payload: Mapping[str, Any]) -> None:
+    def finalize_closed_position(
+        self,
+        outcome_id: str,
+        payload: Mapping[str, Any],
+        *,
+        daily_risk: DailyRisk | None = None,
+    ) -> None:
         if self.state.open_position is None:
             raise ExecutionStateError("EXECUTION_FINALIZE_WITHOUT_OPEN_POSITION")
         canonical = _canonical_payload(outcome_id, payload)
@@ -246,9 +253,47 @@ class ExecutionDurableStore:
             raise ExecutionStateError("EXECUTION_OUTCOME_SYMBOL_MISMATCH")
         if body["side"] != self.state.open_position.side:
             raise ExecutionStateError("EXECUTION_OUTCOME_SIDE_MISMATCH")
+        if daily_risk is not None and not isinstance(daily_risk, DailyRisk):
+            raise ExecutionStateError("EXECUTION_DAILY_RISK_INVALID")
 
         # The sequence is the safety contract. Each earlier step is idempotent,
-        # so a restart may safely retry if state clearing was not reached.
+        # so a restart may safely retry if state clearing was not reached.  The
+        # final state commit clears OPEN and updates daily risk atomically.
         self.outbox.enqueue(outcome_id, body)
         self.history.append(outcome_id, body)
-        self.state._clear_open_after_durable_close()
+        self.state._clear_open_after_durable_close(daily_risk=daily_risk)
+
+    def finalize_closed_inflight(
+        self,
+        outcome_id: str,
+        payload: Mapping[str, Any],
+        *,
+        daily_risk: DailyRisk | None = None,
+    ) -> None:
+        """Durably settle an entry that filled and closed before OPEN promotion.
+
+        This is the V3.1.6 crash-window counterpart to ``finalize_closed_position``.
+        The exact proposal/order identity remains in ``entry_inflight`` until
+        outbox and history writes are durable; only then are the inflight journal
+        and daily-risk update committed together.
+        """
+        inflight = self.state.entry_inflight
+        if inflight is None or inflight.fill is None:
+            raise ExecutionStateError("EXECUTION_FINALIZE_WITHOUT_FILLED_INFLIGHT")
+        canonical = _canonical_payload(outcome_id, payload)
+        body = canonical["payload"]
+        required_identity = {"outcome_id", "proposal_id", "symbol", "side"}
+        if not required_identity.issubset(body):
+            raise ExecutionStateError("EXECUTION_OUTCOME_IDENTITY_INCOMPLETE")
+        if body["proposal_id"] != inflight.proposal_id:
+            raise ExecutionStateError("EXECUTION_OUTCOME_PROPOSAL_MISMATCH")
+        if body["symbol"] != inflight.plan.symbol:
+            raise ExecutionStateError("EXECUTION_OUTCOME_SYMBOL_MISMATCH")
+        if body["side"] != inflight.plan.side:
+            raise ExecutionStateError("EXECUTION_OUTCOME_SIDE_MISMATCH")
+        if daily_risk is not None and not isinstance(daily_risk, DailyRisk):
+            raise ExecutionStateError("EXECUTION_DAILY_RISK_INVALID")
+
+        self.outbox.enqueue(outcome_id, body)
+        self.history.append(outcome_id, body)
+        self.state._clear_inflight_after_durable_close(daily_risk=daily_risk)
