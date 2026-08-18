@@ -1787,6 +1787,39 @@ Reimplement V2.8.5 safety properties:
 * persistent session limit;
 * single instance.
 
+## V3.1.10 Execution Worker integration
+
+Added during the V3.1 implementation audit after the component lifecycles were complete.
+This subphase does not change trading logic; it assembles the proven components into the capital-first `ExecutionWorker`.
+
+Required ordering/invariants:
+
+* one canonical exchange/state/risk identity across Entry, Position and Reconciliation;
+* reconciliation before any flat-side proposal opportunity;
+* pending outcome delivery/ACK before another proposal request;
+* OPEN hot path has no ProposalClient/OutcomeClient dependency;
+* irrelevant symbols are ignored early;
+* PAPER market tick settlement occurs before position management;
+* restart can adopt and continue a durable protected position.
+
+## V3.1.11 Runtime and acceptance closure
+
+Added during the V3.1 implementation audit because the V3.0 runtime/operator skeleton still reported Execution as unimplemented after the component code existed.
+This is an operational closure subphase, not a trading-semantics change.
+
+Implement/verify:
+
+* `run_execution.py` is a real capital-first Execution entrypoint;
+* V3.1 Testnet runtime starts only after explicit profile, arm and authenticated preflight;
+* the V3.1 runtime starts with new entries disabled and no integrated recommendation authority;
+* local `nbotctl start/stop/restart/status/logs` execution controls exist;
+* PID convenience controls verify process identity before signalling;
+* real V3.1 doctor checks replace the old `DEFERRED_UNTIL_V3_1` placeholders;
+* existing/corrupt state, history, pending outcomes and single-instance lock are surfaced fail-closed;
+* LIVE_PAPER remains non-runnable until its independent LIVE public market path is available in the later LIVE/PAPER phase;
+* LIVE_TRADE remains forbidden until V3.10;
+* final V3.1 acceptance audit passes before the phase tag is created.
+
 ## V3.1 acceptance gate
 
 * \[ ] Execution imports no Observation/research/training modules;

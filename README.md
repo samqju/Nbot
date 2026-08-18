@@ -11,9 +11,11 @@ V3 starts from clean runtime state and clean databases. V1/V2 remain engineering
 
 ## Current phase
 
-`V3.0 CLEAN FOUNDATION`
+`V3.1 EXECUTION CORE — ACCEPTANCE CLOSURE`
 
-This phase provides role identity, named operating profiles, fail-closed profile validation, common utility primitives, `nbotctl` bootstrap commands, and the clean repository layout. Trading/research workers are intentionally not implemented yet.
+The V3.1 Execution capital components and `ExecutionWorker` are implemented. The local Execution runtime can now perform capital-first startup/reconciliation for the permanent `testnet-trade` laboratory, but V3.1 intentionally contains no integrated recommendation source. New Testnet entries therefore remain disabled until an explicit V3.2 mechanical canary supplies one.
+
+`live-paper` remains non-runnable until the independent LIVE public market source is built for the later LIVE/PAPER phase. `live-trade` remains forbidden until V3.10. Observation/research/communication are later phases.
 
 ## Local role identity
 
@@ -35,14 +37,16 @@ OBSERVATION
 - `live-paper`
 - `live-trade`
 
-Run foundation checks with:
+Execution checks:
 
 ```bash
+./nbotctl doctor live-paper
 ./nbotctl doctor testnet-trade
 ./nbotctl status
-python3 -m unittest discover -s tests -v
+./run_execution.py --profile testnet-trade --self-check
+python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
-`LIVE_TRADE` remains fail-closed unless explicitly armed, and no V3 worker can place orders in V3.0 because exchange/runtime workers have not yet been built.
+Do **not** arm `testnet-trade` merely to make `doctor` pass. V3.2 is the deliberate Testnet mechanical-canary phase.
 
 The canonical implementation contract is `docs/NBOT_V3_ROADMAP.md`.

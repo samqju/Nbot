@@ -6,7 +6,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=@NBOT_ROOT@
-ExecStart=@NBOT_ROOT@/.venv/bin/python @NBOT_ROOT@/run_execution.py
+Environment=NBOT_PROFILE=@NBOT_PROFILE@
+ExecStart=@NBOT_ROOT@/.venv/bin/python @NBOT_ROOT@/run_execution.py --profile @NBOT_PROFILE@
 Restart=on-failure
 RestartSec=5
 

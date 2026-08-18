@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 import os
 from pathlib import Path
+import fcntl
 import shutil
 import subprocess
 from typing import Mapping
@@ -217,23 +218,155 @@ def validate_host_foundation(
         warnings.append("GIT_STATUS_UNAVAILABLE")
         ok = False
 
-    # Deferred checks are visible so V3 never mistakes a foundation doctor for
-    # exchange/database/protocol readiness.
-    if role is MachineRole.EXECUTION:
-        warnings.extend(
-            (
-                "EXECUTION_EXCHANGE_ENDPOINT_CHECK_DEFERRED_UNTIL_V3_1",
-                "EXECUTION_STATE_INTEGRITY_CHECK_DEFERRED_UNTIL_V3_1",
-                "EXECUTION_LOCK_CHECK_DEFERRED_UNTIL_V3_1",
-                "EXECUTION_PENDING_OUTCOME_CHECK_DEFERRED_UNTIL_V3_1",
-            )
-        )
-    else:
+    # Phase-specific readiness is layered by nbotctl.  Foundation validation
+    # keeps only checks that genuinely belong to later architecture phases.
+    if role is MachineRole.OBSERVATION:
         warnings.append("OBSERVATION_DATABASE_INTEGRITY_CHECK_DEFERRED_UNTIL_V3_3")
     warnings.append("CROSS_VPS_PROTOCOL_CHECK_DEFERRED_UNTIL_V3_5")
 
     return DoctorResult(ok=ok, checks=tuple(checks), warnings=tuple(warnings))
 
+
+
+def _execution_lock_available(path: Path) -> bool:
+    """Probe a pre-existing lock file without claiming persistent authority."""
+    if not path.exists():
+        return True
+    try:
+        handle = path.open("a+", encoding="utf-8")
+    except OSError:
+        return False
+    try:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return False
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        return True
+    finally:
+        handle.close()
+
+
+def validate_execution_v31(
+    *,
+    repo_root: Path | str,
+    profile: Profile,
+    environment: Mapping[str, str] | None = None,
+) -> DoctorResult:
+    """Validate V3.1 Execution artifacts without placing orders.
+
+    This check is deliberately read-mostly.  It validates any existing durable
+    state/history/outbox, Testnet endpoint pinning, profile adapter boundaries,
+    and the single-instance lock.  A local OPEN/inflight state is reported as
+    requiring startup reconciliation rather than blocking the very runtime that
+    must perform that reconciliation.
+    """
+    root = Path(repo_root)
+    env = os.environ if environment is None else environment
+    checks: list[str] = []
+    warnings: list[str] = []
+    ok = True
+
+    try:
+        if profile.name == "testnet-trade":
+            from nbot.exchange.binance_testnet import (
+                TESTNET_REST_BASE_URL,
+                TESTNET_WS_BASE_URL,
+                TestnetExchangeConfig,
+            )
+
+            cfg = TestnetExchangeConfig(
+                api_key=str(env.get("TESTNET_API_KEY", "")).strip(),
+                api_secret=str(env.get("TESTNET_API_SECRET", "")).strip(),
+                repo_root=root,
+                base_url=str(env.get("TESTNET_BASE_URL", TESTNET_REST_BASE_URL)).strip(),
+                ws_base_url=str(env.get("TESTNET_WS_BASE_URL", TESTNET_WS_BASE_URL)).strip(),
+            )
+            cfg.validate(require_credentials=False)
+            checks.append("EXECUTION_TESTNET_ENDPOINTS_PINNED")
+            if cfg.api_key and cfg.api_secret:
+                checks.append("EXECUTION_TESTNET_CREDENTIALS_PRESENT")
+            else:
+                warnings.append("EXECUTION_TESTNET_CREDENTIALS_REQUIRED_FOR_V3_2_RUNTIME")
+        elif profile.name == "live-paper":
+            from nbot.exchange.paper import PaperExchangeConfig
+
+            PaperExchangeConfig()
+            if profile.binance_order_writes or profile.real_capital:
+                raise ValueError("LIVE_PAPER_ORDER_AUTHORITY_INVALID")
+            checks.append("EXECUTION_PAPER_EXCHANGE_AVAILABLE")
+            checks.append("LIVE_PAPER_BINANCE_WRITES_DISABLED_BY_PROFILE")
+            warnings.append("LIVE_PAPER_PUBLIC_MARKET_RUNTIME_DEFERRED_UNTIL_V3_8")
+        elif profile.name == "live-trade":
+            warnings.append("LIVE_TRADE_ADAPTER_FORBIDDEN_BEFORE_V3_10")
+            ok = False
+        else:
+            raise ValueError("EXECUTION_PROFILE_UNSUPPORTED")
+    except Exception as exc:
+        warnings.append(f"EXECUTION_EXCHANGE_CONTRACT_INVALID:{type(exc).__name__}:{exc}")
+        ok = False
+
+    try:
+        from nbot.execution.outcomes import ExecutionHistoryStore, PendingOutcomeOutbox
+        from nbot.execution.state import ExecutionStatePaths, ExecutionStateStore
+
+        paths = ExecutionStatePaths.for_profile(root, profile.name)
+        state_present = paths.state_file.is_file()
+        history_present = paths.history_file.is_file()
+
+        state = None
+        if state_present:
+            state = ExecutionStateStore(
+                paths.state_file,
+                profile=profile.name,
+                market_environment=profile.market_environment,
+            )
+            checks.append("EXECUTION_STATE_INTEGRITY_VALID")
+        else:
+            checks.append("EXECUTION_STATE_CLEAN_START_READY")
+
+        if history_present:
+            ExecutionHistoryStore(paths.history_file).records()
+            checks.append("EXECUTION_HISTORY_INTEGRITY_VALID")
+        else:
+            checks.append("EXECUTION_HISTORY_EMPTY")
+
+        outbox = PendingOutcomeOutbox(paths.pending_outcomes_dir)
+        pending_count = outbox.pending_count()
+        checks.append(f"EXECUTION_PENDING_OUTCOMES:{pending_count}")
+
+        if not state_present and (history_present or pending_count):
+            warnings.append("EXECUTION_STATE_MISSING_WITH_DURABLE_EVIDENCE")
+            ok = False
+        if pending_count:
+            warnings.append(f"EXECUTION_PENDING_OUTCOMES_BLOCK_NEW_REQUEST:{pending_count}")
+        if state is not None:
+            if state.open_position is not None:
+                warnings.append("EXECUTION_OPEN_POSITION_REQUIRES_STARTUP_RECONCILIATION")
+            if state.entry_inflight is not None:
+                warnings.append("EXECUTION_ENTRY_INFLIGHT_REQUIRES_STARTUP_RECONCILIATION")
+            if state.recovery.critical:
+                warnings.append(
+                    "EXECUTION_CRITICAL_RECOVERY_STATE:"
+                    + str(state.recovery.critical_reason or "UNKNOWN")
+                )
+    except Exception as exc:
+        warnings.append(f"EXECUTION_DURABLE_STATE_INVALID:{type(exc).__name__}:{exc}")
+        ok = False
+
+    leaf = {
+        "testnet-trade": "testnet",
+        "live-paper": "paper",
+        "live-trade": "real",
+    }[profile.name]
+    lock_path = root / "runtime" / "execution" / leaf / "execution.lock"
+    if _execution_lock_available(lock_path):
+        checks.append("EXECUTION_SINGLE_INSTANCE_LOCK_AVAILABLE")
+    else:
+        warnings.append("EXECUTION_SINGLE_INSTANCE_LOCK_HELD")
+
+    checks.append("EXECUTION_V3_1_COMPONENTS_PRESENT")
+    return DoctorResult(ok=ok, checks=tuple(checks), warnings=tuple(warnings))
 
 def validate_role_profile(
     *,
@@ -259,11 +392,6 @@ def validate_role_profile(
         if forbidden:
             raise ValueError("NBOT_OBSERVATION_PRIVATE_CREDENTIAL_FORBIDDEN:" + ",".join(forbidden))
         checks.append("OBSERVATION_PRIVATE_ORDER_SECRET_ABSENT")
-
-    # V3.0 intentionally has no exchange worker yet. Missing execution credentials
-    # are therefore warnings, not fabricated readiness.
-    if role is MachineRole.EXECUTION and profile.binance_order_writes:
-        warnings.append("EXECUTION_ORDER_CREDENTIAL_CHECK_DEFERRED_UNTIL_EXCHANGE_PHASE")
 
     if role is MachineRole.EXECUTION and profile.requires_arm_gate and not profile_is_armed(root, profile):
         warnings.append("PROFILE_DISARMED")

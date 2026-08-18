@@ -1,19 +1,39 @@
 # NBOT V3 Operations
 
-V3.0 supports foundation-only commands:
+## Current operating boundary
+
+V3.1 closes the Execution core in code. Actual Binance Testnet mechanical validation is V3.2; Observation deployment begins later.
+
+### Read-only / safe checks
 
 ```bash
-./nbotctl bootstrap
-./nbotctl doctor <profile>
 ./nbotctl status
-./nbotctl arm testnet-trade
-./nbotctl disarm testnet-trade
-./nbotctl arm live-trade
-./nbotctl disarm live-trade
+./nbotctl doctor live-paper
+./nbotctl doctor testnet-trade
+./run_execution.py --profile testnet-trade --self-check
 ```
 
-`bootstrap` creates only ignored role-owned runtime directories and enforces their foundation permissions. It does not create credentials, databases, state, arm files, orders, or worker authority.
+`testnet-trade` doctor is expected to fail while DISARMED. Do not arm it before the V3.2 canary procedure. Missing Testnet credentials are reported as V3.2 runtime readiness, not hidden as V3.1 readiness.
 
-`doctor` verifies the V3 foundation that can already be proven: role/profile validity, local virtualenv, runtime layout, secret-directory permissions, absence of legacy root `.env`, Observation order-secret separation, disk headroom, clock synchronization, Git cleanliness, and the profile arm gate. Exchange/state/database/protocol checks remain explicitly reported as deferred until the phase that implements them.
+### Testnet runtime controls
 
-Worker start/restart/cluster commands intentionally fail closed until their roadmap phases are implemented.
+After the V3.2 procedure deliberately installs credentials and arms Testnet:
+
+```bash
+./nbotctl start testnet-trade
+./nbotctl status
+./nbotctl logs testnet-trade
+./nbotctl stop
+```
+
+`start` performs an authenticated Testnet preflight before spawning the Execution process. The process must create its READY marker only after capital-first reconciliation succeeds. It starts with new entries disabled and no proposal source.
+
+`stop` sends SIGTERM and waits for graceful shutdown; it does not automatically SIGKILL the capital process if shutdown times out.
+
+### Deferred profiles
+
+- `live-paper`: runtime start deferred until the independent LIVE public market path required for LIVE/PAPER exists.
+- `live-trade`: runtime and arming forbidden until V3.10.
+- cluster commands: deferred until the V3.5/V3.6 communication and two-VPS integration phases.
+
+Runtime state, locks, PID/READY markers and logs remain under the role/profile-specific ignored `data/`, `runtime/`, and `logs/` directories.
