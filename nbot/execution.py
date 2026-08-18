@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import time
 import uuid
+from datetime import datetime, timezone
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -91,6 +93,19 @@ class ExecutionConfig:
     max_reference_price_drift_pct: float = 0.25
     max_quote_age_ms: int = 5_000
     max_future_proposal_skew_ms: int = 5_000
+
+    # Proven V1 execution-policy parity. These defaults intentionally preserve
+    # the frozen V1 behavior; they are configurable so later paper/real phases
+    # can change policy deliberately rather than through an architecture patch.
+    notional_tolerance_pct: float = 1.0
+    risk_tolerance_pct: float = 10.0
+    max_entry_slippage_pct: float = 1.0
+    daily_profit_lock_trigger_r: float = 100.0
+    daily_normal_giveback_r: float = 95.0
+    daily_profit_giveback_r: float = 3.0
+    emergency_flatten_attempts: int = 2
+    emergency_verify_delay_seconds: float = 0.5
+
     allowed_entry_authorities: tuple[str, ...] = ()
     allowed_exit_policies: tuple[str, ...] = ()
 
@@ -107,6 +122,20 @@ class ExecutionConfig:
             raise ValueError("EXECUTION_DRIFT_LIMIT_INVALID")
         if self.max_quote_age_ms <= 0 or self.max_future_proposal_skew_ms < 0:
             raise ValueError("EXECUTION_TIME_LIMIT_INVALID")
+        if not 0 <= self.notional_tolerance_pct <= 5:
+            raise ValueError("EXECUTION_NOTIONAL_TOLERANCE_INVALID")
+        if not 0 <= self.risk_tolerance_pct <= 20:
+            raise ValueError("EXECUTION_RISK_TOLERANCE_INVALID")
+        if not 0 <= self.max_entry_slippage_pct <= 10:
+            raise ValueError("EXECUTION_SLIPPAGE_LIMIT_INVALID")
+        if self.daily_profit_lock_trigger_r <= 0:
+            raise ValueError("EXECUTION_DAILY_PROFIT_LOCK_TRIGGER_INVALID")
+        if self.daily_normal_giveback_r <= 0 or self.daily_profit_giveback_r <= 0:
+            raise ValueError("EXECUTION_DAILY_GIVEBACK_INVALID")
+        if self.emergency_flatten_attempts < 1 or self.emergency_flatten_attempts > 10:
+            raise ValueError("EXECUTION_EMERGENCY_ATTEMPTS_INVALID")
+        if self.emergency_verify_delay_seconds < 0 or self.emergency_verify_delay_seconds > 10:
+            raise ValueError("EXECUTION_EMERGENCY_DELAY_INVALID")
         for authority in self.allowed_entry_authorities:
             if not authority.strip():
                 raise ValueError("EXECUTION_ENTRY_AUTHORITY_INVALID")
@@ -235,6 +264,16 @@ class ExecutionStateStore:
             "execution_outcome_history": [],
             "previous_rejection": None,
             "last_close_audit": None,
+            "daily_risk": {
+                "utc_day": None,
+                "realized_pnl_usd": 0.0,
+                "peak_realized_pnl_usd": 0.0,
+                "loss_floor_usd": None,
+                "highest_unrealized_usd": 0.0,
+                "halted": False,
+                "halt_reason": None,
+                "trades_closed": 0,
+            },
         }
 
     def load(self) -> None:
@@ -252,6 +291,40 @@ class ExecutionStateStore:
         raw.setdefault("entry_inflight", None)
         raw.setdefault("execution_outcome_history", [])
         raw.setdefault("last_close_audit", None)
+        if "daily_risk" not in raw:
+            # V2.8.4 -> V2.8.5 migration: reconstruct the current UTC day's
+            # accounting from durable completed-execution history instead of
+            # silently pretending the day started at zero. The configured loss
+            # floor is calculated by ExecutionWorker after state load.
+            daily = dict(self._empty()["daily_risk"])
+            now_ms = int(time.time() * 1000)
+            today = self.utc_day(now_ms)
+            daily["utc_day"] = today
+            realized = 0.0
+            peak = 0.0
+            highest_unrealized = 0.0
+            trades = 0
+            history = list(raw.get("execution_outcome_history", []))
+            history.sort(key=lambda row: int(row.get("closed_timestamp_ms") or 0))
+            for row in history:
+                closed_ms = int(row.get("closed_timestamp_ms") or 0)
+                if closed_ms <= 0 or self.utc_day(closed_ms) != today:
+                    continue
+                pnl = float(row.get("realized_pnl_usd") or 0.0)
+                realized += pnl
+                peak = max(peak, realized)
+                highest_unrealized = max(
+                    highest_unrealized,
+                    float(row.get("mfe_r") or 0.0) * float(row.get("initial_risk_usd") or 0.0),
+                )
+                trades += 1
+            daily.update({
+                "realized_pnl_usd": realized,
+                "peak_realized_pnl_usd": peak,
+                "highest_unrealized_usd": highest_unrealized,
+                "trades_closed": trades,
+            })
+            raw["daily_risk"] = daily
         if raw.get("open_position") is not None and not isinstance(raw.get("open_position"), dict):
             raise ExecutionSafetyError("EXECUTION_STATE_OPEN_POSITION_INVALID")
         if raw.get("entry_inflight") is not None and not isinstance(raw.get("entry_inflight"), dict):
@@ -259,7 +332,61 @@ class ExecutionStateStore:
         for field_name in ("processed_proposal_ids", "pending_outcomes", "execution_outcome_history"):
             if not isinstance(raw.get(field_name, []), list):
                 raise ExecutionSafetyError(f"EXECUTION_STATE_{field_name.upper()}_INVALID")
+        daily = raw.get("daily_risk")
+        if not isinstance(daily, dict):
+            raise ExecutionSafetyError("EXECUTION_STATE_DAILY_RISK_INVALID")
+        defaults = self._empty()["daily_risk"]
+        for key, value in defaults.items():
+            daily.setdefault(key, value)
+        for key in ("realized_pnl_usd", "peak_realized_pnl_usd", "highest_unrealized_usd"):
+            try:
+                daily[key] = float(daily[key])
+            except (TypeError, ValueError) as exc:
+                raise ExecutionSafetyError(f"EXECUTION_STATE_DAILY_{key.upper()}_INVALID") from exc
+        if daily.get("loss_floor_usd") is not None:
+            try:
+                daily["loss_floor_usd"] = float(daily["loss_floor_usd"])
+            except (TypeError, ValueError) as exc:
+                raise ExecutionSafetyError("EXECUTION_STATE_DAILY_LOSS_FLOOR_INVALID") from exc
+        if daily["peak_realized_pnl_usd"] + 1e-9 < daily["realized_pnl_usd"]:
+            raise ExecutionSafetyError("EXECUTION_STATE_DAILY_PEAK_INCONSISTENT")
+        if int(daily.get("trades_closed", 0)) < 0:
+            raise ExecutionSafetyError("EXECUTION_STATE_DAILY_TRADES_INVALID")
+        daily["trades_closed"] = int(daily.get("trades_closed", 0))
+        daily["halted"] = bool(daily.get("halted", False))
+        raw["daily_risk"] = daily
         self.data = raw
+
+    @staticmethod
+    def utc_day(timestamp_ms: int) -> str:
+        return datetime.fromtimestamp(int(timestamp_ms) / 1000.0, tz=timezone.utc).strftime("%Y-%m-%d")
+
+    def roll_daily(self, timestamp_ms: int) -> bool:
+        """Reset realized daily accounting on UTC-day rollover.
+
+        Operator entry enablement is independent of this reset. A daily halt is
+        automatically cleared for the new UTC day, matching the intended
+        semantics of a *daily* risk boundary.
+        """
+        day = self.utc_day(timestamp_ms)
+        daily = dict(self.data.get("daily_risk") or {})
+        if daily.get("utc_day") == day:
+            return False
+        self.data["daily_risk"] = {
+            "utc_day": day,
+            "realized_pnl_usd": 0.0,
+            "peak_realized_pnl_usd": 0.0,
+            "loss_floor_usd": None,
+            "highest_unrealized_usd": 0.0,
+            "halted": False,
+            "halt_reason": None,
+            "trades_closed": 0,
+        }
+        self.save()
+        return True
+
+    def set_daily_risk(self, daily: dict[str, Any]) -> None:
+        self.data["daily_risk"] = dict(daily)
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -341,7 +468,7 @@ class ExecutionStateStore:
         self.save()
         return True
 
-    def queue_outcome(self, outcome: ExecutionOutcome) -> None:
+    def queue_outcome(self, outcome: ExecutionOutcome, *, daily_risk: dict[str, Any] | None = None) -> None:
         rows = list(self.data.get("pending_outcomes", []))
         if not any(row.get("outcome_id") == outcome.outcome_id for row in rows):
             rows.append(outcome.to_dict())
@@ -350,6 +477,8 @@ class ExecutionStateStore:
         if not any(row.get("outcome_id") == outcome.outcome_id for row in history):
             history.append(outcome.to_dict())
         self.data["execution_outcome_history"] = history[-10_000:]
+        if daily_risk is not None:
+            self.data["daily_risk"] = dict(daily_risk)
         self.save()
 
     def remove_outcome(self, outcome_id: str) -> None:
@@ -358,7 +487,7 @@ class ExecutionStateStore:
         ]
         self.save()
 
-    def finalize_open_position(self, outcome: ExecutionOutcome) -> None:
+    def finalize_open_position(self, outcome: ExecutionOutcome, *, daily_risk: dict[str, Any] | None = None) -> None:
         """Atomically queue a close outcome and clear the local position.
 
         V1 paper state persisted capital/accounting truth before any learning
@@ -381,6 +510,8 @@ class ExecutionStateStore:
         self.data["execution_outcome_history"] = history[-10_000:]
         self.data["open_position"] = None
         self.data["entry_inflight"] = None
+        if daily_risk is not None:
+            self.data["daily_risk"] = dict(daily_risk)
         self.save()
 
 
@@ -406,6 +537,40 @@ class IntegerRStepExitPolicy:
 EXIT_POLICIES = {INTEGER_R_STEP_CONTROL: IntegerRStepExitPolicy()}
 
 
+class ExecutionHealth:
+    """Low-overhead execution-only health counters for operator visibility."""
+
+    def __init__(self):
+        self.counters: dict[str, int] = {
+            "prepare_calls": 0,
+            "flat_cycles": 0,
+            "open_position_ticks": 0,
+            "stop_updates": 0,
+            "emergency_exits": 0,
+            "reconciliations": 0,
+            "proposal_rejections": 0,
+        }
+        self.last_position_manage_ms = 0.0
+        self.max_position_manage_ms = 0.0
+        self.last_event: str | None = None
+
+    def inc(self, key: str, amount: int = 1) -> None:
+        self.counters[key] = int(self.counters.get(key, 0)) + int(amount)
+
+    def observe_manage_ms(self, value: float) -> None:
+        value = max(0.0, float(value))
+        self.last_position_manage_ms = value
+        self.max_position_manage_ms = max(self.max_position_manage_ms, value)
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            **self.counters,
+            "last_position_manage_ms": self.last_position_manage_ms,
+            "max_position_manage_ms": self.max_position_manage_ms,
+            "last_event": self.last_event,
+        }
+
+
 class ExecutionWorker:
     """V2.7 capital-only worker. No research/selection/champion dependency."""
 
@@ -418,6 +583,10 @@ class ExecutionWorker:
         *,
         state: ExecutionStateStore | None = None,
         now_ms=None,
+        logger: logging.Logger | None = None,
+        trade_logger: logging.Logger | None = None,
+        notifier: Any | None = None,
+        sleep_fn=None,
     ):
         config.validate()
         self.config = config
@@ -426,14 +595,152 @@ class ExecutionWorker:
         self.outcome_client = outcome_client
         self.state = state or ExecutionStateStore(config.state_path)
         self._now_ms = now_ms or (lambda: int(time.time() * 1000))
+        self._sleep = sleep_fn or time.sleep
+        self.logger = logger or logging.getLogger("nbot.v2.execution")
+        self.trade_logger = trade_logger or logging.getLogger("nbot.v2.execution.trade")
+        self.notifier = notifier
+        self.health = ExecutionHealth()
         self._prepared = False
 
     @property
     def entry_authority(self) -> str:
         return self.config.allowed_entry_authorities[0] if self.config.allowed_entry_authorities else NO_ENTRY_AUTHORITY
 
+    def _log(self, level: str, event: str, **fields: Any) -> None:
+        message = event
+        if fields:
+            message += " " + " ".join(f"{key}={value}" for key, value in fields.items())
+        getattr(self.logger, level, self.logger.info)(message)
+        self.health.last_event = event
+
+    def _trade_log(self, event: str, **fields: Any) -> None:
+        message = event
+        if fields:
+            message += " " + " ".join(f"{key}={value}" for key, value in fields.items())
+        self.trade_logger.info(message)
+
+    def _notify(self, level: str, title: str, body: str = "") -> None:
+        if self.notifier is None:
+            return
+        try:
+            getattr(self.notifier, level)(title, body)
+        except Exception as exc:
+            # Operator visibility can fail; capital management cannot.
+            self._log("error", "OPERATOR_NOTIFICATION_FAILED", error=f"{type(exc).__name__}:{exc}")
+
+    def _daily_floor_usd(self, peak_realized_pnl_usd: float) -> float:
+        peak_r = float(peak_realized_pnl_usd) / self.config.risk_per_trade_usd
+        giveback_r = (
+            self.config.daily_profit_giveback_r
+            if peak_r >= self.config.daily_profit_lock_trigger_r
+            else self.config.daily_normal_giveback_r
+        )
+        return (peak_r - giveback_r) * self.config.risk_per_trade_usd
+
+    def _roll_daily(self, timestamp_ms: int) -> None:
+        previous = (self.state.data.get("daily_risk") or {}).get("utc_day")
+        if self.state.roll_daily(timestamp_ms):
+            current = self.state.data["daily_risk"]["utc_day"]
+            self._log("info", "UTC_DAY_ROLLOVER", previous=previous, current=current)
+        daily = dict(self.state.data.get("daily_risk") or {})
+        floor = self._daily_floor_usd(float(daily.get("peak_realized_pnl_usd", 0.0)))
+        realized = float(daily.get("realized_pnl_usd", 0.0))
+        halted = realized < floor
+        changed = (
+            daily.get("loss_floor_usd") != floor
+            or bool(daily.get("halted", False)) != halted
+            or daily.get("halt_reason") != ("DAILY_LOSS_FLOOR_BREACH" if halted else None)
+        )
+        if changed:
+            daily["loss_floor_usd"] = floor
+            daily["halted"] = halted
+            daily["halt_reason"] = "DAILY_LOSS_FLOOR_BREACH" if halted else None
+            self.state.set_daily_risk(daily)
+            self.state.save()
+
+    def _daily_after_close(self, outcome: ExecutionOutcome) -> dict[str, Any]:
+        # A close belongs to the UTC day on which Binance/execution says it
+        # closed, not the day on which the position was opened.
+        self._roll_daily(outcome.closed_timestamp_ms)
+        daily = dict(self.state.data.get("daily_risk") or {})
+        realized = float(daily.get("realized_pnl_usd", 0.0)) + float(outcome.realized_pnl_usd)
+        peak = max(float(daily.get("peak_realized_pnl_usd", 0.0)), realized)
+        floor = self._daily_floor_usd(peak)
+        halted = realized < floor
+        daily.update({
+            "realized_pnl_usd": realized,
+            "peak_realized_pnl_usd": peak,
+            "loss_floor_usd": floor,
+            "halted": halted,
+            "halt_reason": "DAILY_LOSS_FLOOR_BREACH" if halted else None,
+            "trades_closed": int(daily.get("trades_closed", 0)) + 1,
+        })
+        return daily
+
+    def _daily_entry_allowed(self) -> bool:
+        self._roll_daily(self._now_ms())
+        daily = dict(self.state.data.get("daily_risk") or {})
+        if bool(daily.get("halted", False)):
+            self._log(
+                "error", "DAILY_HALT",
+                realized=daily.get("realized_pnl_usd"),
+                peak=daily.get("peak_realized_pnl_usd"),
+                floor=daily.get("loss_floor_usd"),
+            )
+            return False
+        return True
+
+    def _verified_emergency_close(self, symbol: str, side: str, *, reason: str) -> CloseFill:
+        self.health.inc("emergency_exits")
+        self._log("error", "EMERGENCY_EXIT_TRIGGERED", symbol=symbol, side=side, reason=reason)
+        self._notify("critical", "EXECUTION EMERGENCY EXIT", f"Symbol: {symbol}\nSide: {side}\nReason: {reason}")
+        last_close: CloseFill | None = None
+        last_error: Exception | None = None
+        for attempt in range(1, self.config.emergency_flatten_attempts + 1):
+            try:
+                last_close = self.exchange.close_position(symbol, side, reason=reason)
+            except Exception as exc:
+                last_error = exc
+                self._log("error", "EMERGENCY_EXIT_SEND_FAILED", attempt=attempt, error=f"{type(exc).__name__}:{exc}")
+            if self.config.emergency_verify_delay_seconds:
+                self._sleep(self.config.emergency_verify_delay_seconds)
+            try:
+                remaining = self.exchange.position_snapshot()
+            except Exception as exc:
+                last_error = exc
+                self._log("error", "EMERGENCY_EXIT_VERIFY_FAILED", attempt=attempt, error=f"{type(exc).__name__}:{exc}")
+                continue
+            if remaining is None:
+                if last_close is None:
+                    raise ExecutionSafetyError("EMERGENCY_EXIT_FLAT_WITHOUT_CLOSE_ACCOUNTING")
+                self._log("info", "EMERGENCY_EXIT_CONFIRMED_FLAT", attempt=attempt, symbol=symbol)
+                return last_close
+            self._log("error", "EMERGENCY_EXIT_STILL_EXPOSED", attempt=attempt, symbol=remaining.symbol, side=remaining.side, quantity=remaining.quantity)
+        suffix = "" if last_error is None else f":{type(last_error).__name__}:{last_error}"
+        raise ExecutionSafetyError(f"EMERGENCY_EXIT_FAILED_NOT_FLAT{suffix}")
+
+    def _post_fill_violation(
+        self, proposal: ExecutionProposal, plan: EntryPlan, fill: Fill, stop_ref: ProtectiveStopRef,
+    ) -> str | None:
+        tolerance = self.config.notional_tolerance_pct / 100.0
+        executed_notional = float(fill.price) * float(fill.quantity)
+        min_notional = float(plan.notional_usd) * (1.0 - tolerance)
+        max_notional = float(plan.notional_usd) * (1.0 + tolerance)
+        if not (min_notional <= executed_notional <= max_notional):
+            return "POST_FILL_NOTIONAL_BREACH"
+        slippage_pct = abs(float(fill.price) - float(plan.expected_entry_price)) / float(plan.expected_entry_price) * 100.0
+        if slippage_pct > self.config.max_entry_slippage_pct:
+            return "POST_FILL_SLIPPAGE_BREACH"
+        actual_risk = abs(float(fill.price) - float(stop_ref.trigger_price)) * float(fill.quantity)
+        max_risk = float(plan.initial_risk_usd) * (1.0 + self.config.risk_tolerance_pct / 100.0)
+        if actual_risk > max_risk + 1e-9:
+            return "POST_FILL_RISK_BREACH"
+        return None
+
     def prepare(self) -> str:
+        self.health.inc("prepare_calls")
         self.exchange.connect()
+        self._roll_daily(self._now_ms())
         exchange_position = self.exchange.position_snapshot()
         local = self.state.open_position
         inflight = self.state.entry_inflight
@@ -442,6 +749,7 @@ class ExecutionWorker:
         if local is None and inflight is not None:
             result = self._recover_inflight_entry(inflight, exchange_position)
             self._prepared = True
+            self._log("info", "EXECUTION_PREPARED", result=result)
             return result
         if local is None and exchange_position is not None:
             # A position with no local V2 entry journal cannot be assigned a
@@ -453,6 +761,7 @@ class ExecutionWorker:
             if exchange_position is None:
                 self._recover_exchange_flat(local)
                 self._prepared = True
+                self._log("info", "EXECUTION_PREPARED", result="RECOVERED_CLOSED_POSITION")
                 return "RECOVERED_CLOSED_POSITION"
             self._assert_position_match(local, exchange_position)
             stop_ref = self.exchange.ensure_protective_stop(
@@ -462,7 +771,9 @@ class ExecutionWorker:
             self.state.open_position = local
             self.state.save()
         self._prepared = True
-        return "POSITION_OPEN" if local is not None else "FLAT"
+        result = "POSITION_OPEN" if local is not None else "FLAT"
+        self._log("info", "EXECUTION_PREPARED", result=result)
+        return result
 
     @staticmethod
     def _store_stop_ref(position: dict[str, Any], stop_ref: ProtectiveStopRef | None) -> None:
@@ -571,7 +882,16 @@ class ExecutionWorker:
             position["symbol"], position["side"], float(position["quantity"]), float(position["stop_price"])
         )
         self._store_stop_ref(position, stop_ref)
+        violation = self._post_fill_violation(proposal, plan, fill, stop_ref)
+        if violation is not None:
+            # The recovered fill is already protected; flatten it rather than
+            # silently adopting a position outside the persisted entry contract.
+            self.state.promote_inflight_position(position)
+            close = self._verified_emergency_close(position["symbol"], position["side"], reason=violation)
+            self._finalize_closed_position(close)
+            return "RECOVERED_CLOSED_POSITION"
         self.state.promote_inflight_position(position)
+        self._log("info", "ENTRY_INFLIGHT_RECOVERED", proposal_id=proposal.proposal_id, symbol=position["symbol"])
         return "POSITION_OPEN"
 
     def _recover_exchange_flat(self, position: dict[str, Any]) -> None:
@@ -605,14 +925,20 @@ class ExecutionWorker:
         return policy
 
     def enable_new_entries(self) -> None:
+        self._roll_daily(self._now_ms())
+        if bool((self.state.data.get("daily_risk") or {}).get("halted", False)):
+            raise ExecutionSafetyError("DAILY_RISK_HALT_ACTIVE")
         self.state.data["trading_enabled"] = True
         self.state.save()
+        self._log("info", "EXECUTION_NEW_ENTRIES_ENABLED")
 
     def disable_new_entries(self) -> None:
         self.state.data["trading_enabled"] = False
         self.state.save()
+        self._log("info", "EXECUTION_NEW_ENTRIES_DISABLED")
 
     def process_flat_cycle(self) -> str:
+        self.health.inc("flat_cycles")
         if not self._prepared:
             self.prepare()
         if self.state.open_position is not None:
@@ -621,6 +947,8 @@ class ExecutionWorker:
             return "PENDING_OUTCOME"
         if not self.state.data.get("trading_enabled", False):
             return "ENTRY_DISABLED"
+        if not self._daily_entry_allowed():
+            return "DAILY_BLOCKED"
         if not self.config.allowed_entry_authorities or not self.config.allowed_exit_policies:
             return "NO_APPROVED_AUTHORITY"
         now = self._now_ms()
@@ -632,10 +960,20 @@ class ExecutionWorker:
             previous_proposal_id=previous.get("proposal_id"),
             previous_rejection_reason=previous.get("reason"),
         )
+        self._log(
+            "info", "TRADE_REQUEST_CREATED", request_id=request.request_id,
+            previous_proposal_id=request.previous_proposal_id,
+            previous_rejection_reason=request.previous_rejection_reason,
+        )
         try:
             response = self.proposal_client.request_trade(request)
-        except Exception:
+        except Exception as exc:
+            self._log("warning", "OBSERVATION_REQUEST_FAILED", request_id=request.request_id, error=f"{type(exc).__name__}:{exc}")
             return "OBSERVATION_UNAVAILABLE"
+        self._log(
+            "info", "TRADE_REQUEST_RESULT", request_id=request.request_id, status=response.status,
+            proposal_id=None if response.proposal is None else response.proposal.proposal_id,
+        )
         self.state.data["previous_rejection"] = None
         self.state.save()
         if response.status == "NOT_READY":
@@ -645,8 +983,10 @@ class ExecutionWorker:
         return self._validate_and_enter(response.proposal)
 
     def _reject(self, proposal: ExecutionProposal, reason: str) -> str:
+        self.health.inc("proposal_rejections")
         self.state.data["previous_rejection"] = {"proposal_id": proposal.proposal_id, "reason": reason}
         self.state.save()
+        self._log("info", "EXECUTION_PROPOSAL_REJECTED", proposal_id=proposal.proposal_id, reason=reason)
         return f"PROPOSAL_REJECTED:{reason}"
 
     def _validate_and_enter(self, proposal: ExecutionProposal | None) -> str:
@@ -709,13 +1049,36 @@ class ExecutionWorker:
         try:
             stop_ref = self.exchange.ensure_protective_stop(plan.symbol, plan.side, fill.quantity, actual_stop)
         except Exception as exc:
-            close = self.exchange.close_position(plan.symbol, plan.side, reason="PROTECTION_FAILED")
+            close = self._verified_emergency_close(plan.symbol, plan.side, reason="PROTECTION_FAILED")
             self._queue_failed_entry_outcome(proposal, plan, fill, close, actual_stop)
             self.state.clear_entry_inflight()
             raise ExecutionSafetyError("PROTECTION_FAILED_EMERGENCY_CLOSED") from exc
 
+        violation = self._post_fill_violation(proposal, plan, fill, stop_ref)
+        if violation is not None:
+            close = self._verified_emergency_close(plan.symbol, plan.side, reason=violation)
+            self._queue_failed_entry_outcome(proposal, plan, fill, close, stop_ref.trigger_price)
+            self.state.clear_entry_inflight()
+            raise ExecutionSafetyError(f"{violation}_EMERGENCY_CLOSED")
+
         position = self._position_from_fill(proposal, plan, fill, stop_ref)
         self.state.promote_inflight_position(position)
+        self._log(
+            "info", "POSITION_OPENED", proposal_id=proposal.proposal_id, symbol=plan.symbol, side=plan.side,
+            entry=fill.price, quantity=fill.quantity, initial_stop=stop_ref.trigger_price,
+            risk_usd=plan.initial_risk_usd, leverage=plan.leverage, entry_order_id=fill.order_id,
+            market_event_id=proposal.market_event_id, model_version=proposal.model_version,
+        )
+        self._trade_log(
+            "TRADE_OPEN", proposal_id=proposal.proposal_id, symbol=plan.symbol, side=plan.side,
+            entry=fill.price, quantity=fill.quantity, risk_usd=plan.initial_risk_usd,
+            entry_order_id=fill.order_id, entry_client_order_id=fill.client_order_id,
+            market_event_id=proposal.market_event_id, model_version=proposal.model_version,
+        )
+        self._notify(
+            "info", "TRADE OPEN",
+            f"Symbol: {plan.symbol}\nSide: {plan.side}\nEntry: {fill.price}\nQty: {fill.quantity}\nRisk: ${plan.initial_risk_usd:.2f}\nStop: {stop_ref.trigger_price}",
+        )
         return "ENTRY_OPENED"
 
     def _build_plan(self, proposal: ExecutionProposal, entry_price: float) -> EntryPlan:
@@ -743,46 +1106,74 @@ class ExecutionWorker:
 
     def process_open_price(self, symbol: str, price: float, timestamp_ms: int) -> str:
         """Capital hot path. Never contacts proposal or outcome clients."""
-        if not self._prepared:
-            self.prepare()
-        position = self.state.open_position
-        if position is None:
-            return "FLAT"
-        if symbol != position["symbol"]:
-            return "IGNORED_OTHER_SYMBOL"
-        if not math.isfinite(price) or price <= 0:
-            raise ExecutionSafetyError("OPEN_POSITION_PRICE_INVALID")
+        started = time.perf_counter()
+        self.health.inc("open_position_ticks")
+        try:
+            if not self._prepared:
+                self.prepare()
+            position = self.state.open_position
+            if position is None:
+                return "FLAT"
+            if symbol != position["symbol"]:
+                return "IGNORED_OTHER_SYMBOL"
+            if not math.isfinite(price) or price <= 0:
+                raise ExecutionSafetyError("OPEN_POSITION_PRICE_INVALID")
 
-        exchange_position = self.exchange.position_snapshot()
-        if exchange_position is None:
-            self._recover_exchange_flat(position)
-            return "POSITION_CLOSED"
-        self._assert_position_match(position, exchange_position)
+            self._roll_daily(timestamp_ms)
+            exchange_position = self.exchange.position_snapshot()
+            if exchange_position is None:
+                self._recover_exchange_flat(position)
+                return "POSITION_CLOSED"
+            self._assert_position_match(position, exchange_position)
 
-        entry = float(position["entry_price"])
-        qty = float(position["quantity"])
-        risk = float(position["initial_risk_usd"])
-        pnl = (price - entry) * qty if position["side"] == "LONG" else (entry - price) * qty
-        r = pnl / risk
-        position["mfe_r"] = max(float(position.get("mfe_r", 0.0)), r)
-        position["mae_r"] = min(float(position.get("mae_r", 0.0)), r)
+            entry = float(position["entry_price"])
+            qty = float(position["quantity"])
+            risk = float(position["initial_risk_usd"])
+            pnl = (price - entry) * qty if position["side"] == "LONG" else (entry - price) * qty
+            r = pnl / risk
+            position["mfe_r"] = max(float(position.get("mfe_r", 0.0)), r)
+            position["mae_r"] = min(float(position.get("mae_r", 0.0)), r)
 
-        policy = self._load_exit_policy(str(position["exit_policy_version"]))
-        next_stop = policy.next_stop(position)
-        if next_stop is not None:
-            stop_ref = self.exchange.replace_protective_stop(position["symbol"], position["side"], qty, next_stop)
-            position["stop_price"] = next_stop
-            self._store_stop_ref(position, stop_ref)
+            daily = dict(self.state.data.get("daily_risk") or {})
+            daily["highest_unrealized_usd"] = max(float(daily.get("highest_unrealized_usd", 0.0)), pnl)
+            self.state.set_daily_risk(daily)
 
-        breached = price <= float(position["stop_price"]) if position["side"] == "LONG" else price >= float(position["stop_price"])
-        if breached:
-            close = self.exchange.close_position(position["symbol"], position["side"], reason="LOCAL_STOP_BREACH")
-            self._finalize_closed_position(close)
-            return "POSITION_CLOSED"
+            # V1 parity: a protective stop is primary, but an observed loss that
+            # exceeds the immutable risk contract plus tolerance is a verified
+            # emergency-flatten condition rather than a reason to keep waiting.
+            max_allowed_loss = risk * (1.0 + self.config.risk_tolerance_pct / 100.0)
+            if pnl < -max_allowed_loss:
+                close = self._verified_emergency_close(
+                    position["symbol"], position["side"], reason="RISK_CONTRACT_BREACH",
+                )
+                self._finalize_closed_position(close)
+                return "POSITION_CLOSED"
 
-        self.state.open_position = position
-        self.state.save()
-        return "POSITION_MANAGED"
+            policy = self._load_exit_policy(str(position["exit_policy_version"]))
+            next_stop = policy.next_stop(position)
+            if next_stop is not None:
+                stop_ref = self.exchange.replace_protective_stop(position["symbol"], position["side"], qty, next_stop)
+                position["stop_price"] = next_stop
+                self._store_stop_ref(position, stop_ref)
+                self.health.inc("stop_updates")
+                self._log(
+                    "info", "PROTECTIVE_STOP_UPDATED", symbol=position["symbol"],
+                    proposal_id=position.get("proposal_id"), stop=position["stop_price"], mfe_r=position["mfe_r"],
+                )
+
+            breached = price <= float(position["stop_price"]) if position["side"] == "LONG" else price >= float(position["stop_price"])
+            if breached:
+                close = self._verified_emergency_close(
+                    position["symbol"], position["side"], reason="LOCAL_STOP_BREACH",
+                )
+                self._finalize_closed_position(close)
+                return "POSITION_CLOSED"
+
+            self.state.open_position = position
+            self.state.save()
+            return "POSITION_MANAGED"
+        finally:
+            self.health.observe_manage_ms((time.perf_counter() - started) * 1000.0)
 
     def force_close_open_position(self, *, reason: str = "OPERATOR_TESTNET_FLATTEN") -> str:
         """Close the locally managed position without contacting Observation.
@@ -799,12 +1190,13 @@ class ExecutionWorker:
             if exchange_position is not None:
                 raise ExecutionSafetyError("UNMANAGED_EXCHANGE_POSITION")
             return "FLAT"
-        close = self.exchange.close_position(position["symbol"], position["side"], reason=reason)
+        close = self._verified_emergency_close(position["symbol"], position["side"], reason=reason)
         self._finalize_closed_position(close)
         return "POSITION_CLOSED"
 
     def reconcile_open_position(self) -> str:
         """Exchange reconciliation only; deliberately no Observation dependency."""
+        self.health.inc("reconciliations")
         position = self.state.open_position
         exchange_position = self.exchange.position_snapshot()
         if position is None:
@@ -881,7 +1273,28 @@ class ExecutionWorker:
             data_generation_id=position["data_generation_id"],
             market_event_id=position["market_event_id"],
         )
-        self.state.finalize_open_position(outcome)
+        daily = self._daily_after_close(outcome)
+        self.state.finalize_open_position(outcome, daily_risk=daily)
+        self._log(
+            "info", "POSITION_CLOSED", outcome_id=outcome.outcome_id, proposal_id=outcome.proposal_id, symbol=outcome.symbol, side=outcome.side,
+            exit=outcome.exit_price, realized_pnl_usd=outcome.realized_pnl_usd, r_multiple=outcome.r_multiple,
+            exit_reason=outcome.exit_reason, daily_realized_pnl_usd=daily["realized_pnl_usd"],
+            daily_loss_floor_usd=daily["loss_floor_usd"],
+        )
+        self._trade_log(
+            "TRADE_CLOSE", outcome_id=outcome.outcome_id, proposal_id=outcome.proposal_id, symbol=outcome.symbol, side=outcome.side,
+            exit=outcome.exit_price, realized_pnl_usd=outcome.realized_pnl_usd, r_multiple=outcome.r_multiple,
+            exit_reason=outcome.exit_reason, market_event_id=outcome.market_event_id, model_version=outcome.model_version,
+        )
+        self._notify(
+            "info", "TRADE CLOSED",
+            f"Symbol: {outcome.symbol}\nSide: {outcome.side}\nExit: {outcome.exit_price}\nPnL: ${outcome.realized_pnl_usd:+.4f}\nResult: {outcome.r_multiple:+.3f}R\nReason: {outcome.exit_reason}",
+        )
+        if daily["halted"]:
+            self._notify(
+                "critical", "DAILY RISK HALT",
+                f"Realized: ${daily['realized_pnl_usd']:+.2f}\nPeak: ${daily['peak_realized_pnl_usd']:+.2f}\nFloor: ${daily['loss_floor_usd']:+.2f}",
+            )
 
     def _queue_failed_entry_outcome(
         self,
@@ -910,7 +1323,18 @@ class ExecutionWorker:
             feature_version=proposal.feature_version, data_generation_id=proposal.data_generation_id,
             market_event_id=proposal.market_event_id,
         )
-        self.state.queue_outcome(outcome)
+        daily = self._daily_after_close(outcome)
+        self.state.queue_outcome(outcome, daily_risk=daily)
+        self._trade_log(
+            "TRADE_CLOSE", outcome_id=outcome.outcome_id, proposal_id=outcome.proposal_id, symbol=outcome.symbol, side=outcome.side,
+            exit=outcome.exit_price, realized_pnl_usd=outcome.realized_pnl_usd, r_multiple=outcome.r_multiple,
+            exit_reason=outcome.exit_reason, market_event_id=outcome.market_event_id, model_version=outcome.model_version,
+        )
+        if daily["halted"]:
+            self._notify(
+                "critical", "DAILY RISK HALT",
+                f"Realized: ${daily['realized_pnl_usd']:+.2f}\nPeak: ${daily['peak_realized_pnl_usd']:+.2f}\nFloor: ${daily['loss_floor_usd']:+.2f}",
+            )
 
     def _deliver_pending_outcomes(self) -> bool:
         rows = list(self.state.data.get("pending_outcomes", []))
@@ -925,11 +1349,14 @@ class ExecutionWorker:
             except Exception:
                 return False
             if ack not in {"RECORDED", "ALREADY_RECORDED"}:
+                self._log("warning", "OUTCOME_DELIVERY_REJECTED", outcome_id=outcome.outcome_id, ack=ack)
                 return False
+            self._log("info", "OUTCOME_DELIVERED", outcome_id=outcome.outcome_id, proposal_id=outcome.proposal_id, ack=ack)
             self.state.remove_outcome(outcome.outcome_id)
         return True
 
     def status(self) -> dict[str, Any]:
+        daily = dict(self.state.data.get("daily_risk") or {})
         return {
             "phase": "V2.8",
             "role": "EXECUTION_CAPITAL_BOUNDARY",
@@ -941,5 +1368,18 @@ class ExecutionWorker:
             "entry_inflight": self.state.entry_inflight is not None,
             "pending_outcomes": len(self.state.data.get("pending_outcomes", [])),
             "outcome_history": len(self.state.data.get("execution_outcome_history", [])),
+            "daily_risk": daily,
+            "risk_policy": {
+                "risk_per_trade_usd": self.config.risk_per_trade_usd,
+                "max_notional_usd": self.config.max_notional_usd,
+                "leverage": self.config.leverage,
+                "risk_tolerance_pct": self.config.risk_tolerance_pct,
+                "notional_tolerance_pct": self.config.notional_tolerance_pct,
+                "max_entry_slippage_pct": self.config.max_entry_slippage_pct,
+                "daily_profit_lock_trigger_r": self.config.daily_profit_lock_trigger_r,
+                "daily_normal_giveback_r": self.config.daily_normal_giveback_r,
+                "daily_profit_giveback_r": self.config.daily_profit_giveback_r,
+            },
+            "health": self.health.snapshot(),
             "research_imports": "NONE",
         }

@@ -286,3 +286,46 @@ paper mechanisms (durable one-position state, atomic persistence, immutable
 trade history, exchange-like stop lifecycle and restart recovery) are now
 represented in the common execution-state/reconciliation contract and remain
 the baseline for V2.9.
+
+### V2.8.5 execution parity and operator operations
+
+V2.8.5 completes the pre-V2.9 Execution feature-parity restoration after the
+V1/V2 audit. It does not change candidate selection, research authority or the
+approved `INTEGER_R_STEP_CONTROL` exit policy. It restores capital-management
+and operator mechanisms that belonged to the proven V1 Execution side but were
+not yet represented in the clean V2 runtime:
+
+- V1-parity post-fill notional, slippage and dollar-risk checks. A filled
+  position is protected first; any contract breach is then flattened and
+  exchange-flatness is verified rather than leaving exposure unprotected;
+- V1-parity position risk-contract fallback: the exchange stop remains primary,
+  while an observed loss beyond initial risk plus tolerance triggers verified
+  emergency flattening;
+- verified emergency close with bounded retries and exchange-position checks;
+- durable UTC-day realized PnL, peak PnL, loss floor, highest unrealized PnL,
+  close count and daily halt state;
+- V1 daily-profit giveback logic as explicit configurable parity defaults
+  (`100R` trigger, `95R` normal giveback, `3R` giveback after the trigger).
+  These values preserve the frozen V1 behavior; they are not a claim that the
+  thresholds are economically optimal and must be deliberately reviewed before
+  real capital;
+- new-entry blocking after a daily floor breach while reconciliation and open
+  position management remain fully active; a new UTC day resets only the daily
+  boundary and never silently overrides an operator disable;
+- low-overhead execution health counters and position-management latency;
+- separate rotating role logs: Execution operations, Execution trade audit and
+  Observation operations never share a mutable log file;
+- optional split Telegram operator surfaces. Execution Telegram exposes capital
+  status/PnL/health/recent trade and enable/disable of *new* entries only.
+  Observation Telegram is read-only intelligence/evidence status and requires
+  separate role-specific credentials so two VPSs never race one bot's
+  `getUpdates` stream. Telegram failures never interrupt trading or observation.
+
+Default runtime log paths are `/var/lib/nbot-execution/logs/execution.log` and
+`/var/lib/nbot-execution/logs/execution-trades.log` on Execution, and
+`logs/observation.log` on Observation unless overridden. All files rotate at
+5 MiB with three backups by V1-parity default.
+
+This is the final Execution parity/operations step before V2.9. The V2.9
+LIVE-market paper adapter remains intentionally separate so paper-account
+simulation is not mixed into this capital-boundary restoration patch.

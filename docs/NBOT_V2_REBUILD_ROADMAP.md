@@ -839,6 +839,38 @@ This consolidation does not change candidate logic, risk-per-trade, leverage,
 spread limits or the control exit policy. LIVE-market local paper execution
 remains V2.9.
 
+## V2.8.5 Execution parity and operator-operations gate
+
+Before V2.9, the V1/V2 parity audit must restore the mature Execution
+responsibilities that are part of the two-worker architecture but were not yet
+represented in V2.8.4. This is a preservation/safety phase, not strategy
+optimization.
+
+Required capabilities are:
+
+- post-fill notional, slippage and actual protected-risk validation;
+- immutable initial-risk contract monitoring with verified emergency flatten;
+- bounded emergency-close retries plus exchange-flat verification;
+- durable UTC-day realized/peak PnL and daily risk-halt state;
+- daily profit giveback protection. Initial defaults preserve frozen V1 parity
+  (`100R` profit-lock trigger, `95R` normal giveback, `3R` post-trigger
+  giveback) and remain configurable rather than being silently redesigned;
+- daily halt blocks only new entries. Open-position management, stop protection
+  and reconciliation continue; UTC rollover clears the daily halt but never an
+  operator's explicit new-entry disable;
+- execution health counters/position-management latency;
+- separate rotating logs for Execution operations, Execution trade audit and
+  Observation operations;
+- split optional Telegram controls: Execution owns capital/operator status and
+  new-entry enable/disable; Observation Telegram is read-only intelligence and
+  cannot place/close orders. Separate Observation Telegram credentials prevent
+  two long-poll consumers from sharing one bot;
+- operator/Telegram/logging failure is observational only and can never sit in
+  the open-position capital hot path.
+
+V2.8.5 still does not add the LIVE-market paper account/exchange. That remains
+V2.9, where these restored common execution controls must be reused.
+
 ---
 
 # PHASE V2.9 — LIVE-MARKET Paper Operational Canary

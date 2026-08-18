@@ -19,12 +19,15 @@ from nbot.execution import (
     NO_ENTRY_AUTHORITY,
 )
 from nbot.execution_protocol import ExecutionProposal, TradeResponse
+from nbot.runtime_ops import TelegramOperator, configure_role_logging, telegram_escape_plain
 
 
 DEFAULT_ENV_FILE = Path("/home/ubuntu/.config/nbot/.env")
 DEFAULT_STATE_PATH = Path("/var/lib/nbot-execution/execution_v2_state.json")
 DEFAULT_OUTCOME_PATH = Path("/var/lib/nbot-execution/testnet_canary_outcomes.jsonl")
 DEFAULT_LOCK_PATH = Path("/var/lib/nbot-execution/execution_v2.lock")
+DEFAULT_EXECUTION_LOG_PATH = Path("/var/lib/nbot-execution/logs/execution.log")
+DEFAULT_TRADE_LOG_PATH = Path("/var/lib/nbot-execution/logs/execution-trades.log")
 
 
 class StaticProposalClient:
@@ -102,6 +105,14 @@ def execution_config_from_env(*, enable_canary: bool) -> ExecutionConfig:
         leverage=int(os.getenv("TESTNET_LEVERAGE", "5")),
         max_spread_pct=float(os.getenv("TESTNET_MAX_SPREAD_PCT", "0.25")),
         max_reference_price_drift_pct=float(os.getenv("TESTNET_MAX_REFERENCE_PRICE_DRIFT_PCT", "0.25")),
+        notional_tolerance_pct=float(os.getenv("NBOT_EXECUTION_NOTIONAL_TOLERANCE_PCT", "1.0")),
+        risk_tolerance_pct=float(os.getenv("NBOT_EXECUTION_RISK_TOLERANCE_PCT", "10.0")),
+        max_entry_slippage_pct=float(os.getenv("NBOT_EXECUTION_MAX_ENTRY_SLIPPAGE_PCT", "1.0")),
+        daily_profit_lock_trigger_r=float(os.getenv("NBOT_EXECUTION_DAILY_PROFIT_LOCK_TRIGGER_R", "100.0")),
+        daily_normal_giveback_r=float(os.getenv("NBOT_EXECUTION_DAILY_NORMAL_GIVEBACK_R", "95.0")),
+        daily_profit_giveback_r=float(os.getenv("NBOT_EXECUTION_DAILY_PROFIT_GIVEBACK_R", "3.0")),
+        emergency_flatten_attempts=int(os.getenv("NBOT_EXECUTION_EMERGENCY_FLATTEN_ATTEMPTS", "2")),
+        emergency_verify_delay_seconds=float(os.getenv("NBOT_EXECUTION_EMERGENCY_VERIFY_DELAY_SECONDS", "0.5")),
         allowed_entry_authorities=(),
         allowed_exit_policies=(),
     )
@@ -146,6 +157,110 @@ def make_canary_proposal(exchange, *, symbol: str, side: str) -> ExecutionPropos
     )
 
 
+def _execution_status_text(worker: ExecutionWorker) -> str:
+    status = worker.status()
+    daily = status.get("daily_risk") or {}
+    position = worker.state.open_position
+    position_text = "FLAT"
+    if position is not None:
+        position_text = (
+            f"OPEN {position.get('symbol')} {position.get('side')} "
+            f"qty={position.get('quantity')} stop={position.get('stop_price')}"
+        )
+    return (
+        f"Environment: {status['environment']}\n"
+        f"Position: {position_text}\n"
+        f"New entries: {'ENABLED' if status['trading_enabled'] else 'DISABLED'}\n"
+        f"Entry inflight: {status['entry_inflight']}\n"
+        f"Pending outcomes: {status['pending_outcomes']}\n"
+        f"Daily realized: ${float(daily.get('realized_pnl_usd', 0.0)):+.2f}\n"
+        f"Daily peak: ${float(daily.get('peak_realized_pnl_usd', 0.0)):+.2f}\n"
+        f"Daily floor: {daily.get('loss_floor_usd')}\n"
+        f"Daily halted: {bool(daily.get('halted', False))}"
+    )
+
+
+def _execution_operator_command(worker: ExecutionWorker, operator: TelegramOperator, text: str) -> None:
+    parts = str(text or "").strip().split()
+    if not parts:
+        return
+    command = parts[0].split("@", 1)[0].lower()
+    try:
+        if command in {"/status", "/execution"}:
+            operator.info("EXECUTION STATUS", _execution_status_text(worker))
+        elif command == "/pnl":
+            daily = worker.status().get("daily_risk") or {}
+            operator.info(
+                "DAILY PNL",
+                f"UTC day: {daily.get('utc_day')}\n"
+                f"Realized: ${float(daily.get('realized_pnl_usd', 0.0)):+.2f}\n"
+                f"Peak: ${float(daily.get('peak_realized_pnl_usd', 0.0)):+.2f}\n"
+                f"Loss floor: {daily.get('loss_floor_usd')}\n"
+                f"Trades closed: {int(daily.get('trades_closed', 0))}\n"
+                f"Halted: {bool(daily.get('halted', False))}",
+            )
+        elif command == "/position":
+            position = worker.state.open_position
+            operator.info(
+                "EXECUTION POSITION",
+                "FLAT" if position is None else json.dumps(position, indent=2, sort_keys=True),
+            )
+        elif command in {"/health", "/heartbeat"}:
+            health = worker.status().get("health") or {}
+            operator.info(
+                "EXECUTION HEALTH",
+                f"Prepare calls: {int(health.get('prepare_calls', 0))}\n"
+                f"Flat cycles: {int(health.get('flat_cycles', 0))}\n"
+                f"Open ticks: {int(health.get('open_position_ticks', 0))}\n"
+                f"Stop updates: {int(health.get('stop_updates', 0))}\n"
+                f"Emergency exits: {int(health.get('emergency_exits', 0))}\n"
+                f"Reconciliations: {int(health.get('reconciliations', 0))}\n"
+                f"Last manage ms: {float(health.get('last_position_manage_ms', 0.0)):.3f}\n"
+                f"Max manage ms: {float(health.get('max_position_manage_ms', 0.0)):.3f}\n"
+                f"Last event: {telegram_escape_plain(health.get('last_event'))}",
+            )
+        elif command == "/recent":
+            history = list(worker.state.data.get("execution_outcome_history", []))
+            if not history:
+                operator.info("RECENT EXECUTION", "No completed execution outcome recorded.")
+            else:
+                row = history[-1]
+                operator.info(
+                    "RECENT EXECUTION",
+                    f"{row.get('symbol')} {row.get('side')}\n"
+                    f"PnL: ${float(row.get('realized_pnl_usd', 0.0)):+.4f}\n"
+                    f"R: {float(row.get('r_multiple', 0.0)):+.3f}\n"
+                    f"Reason: {telegram_escape_plain(row.get('exit_reason'))}\n"
+                    f"Outcome: {telegram_escape_plain(row.get('outcome_id'))}",
+                )
+        elif command == "/disable":
+            worker.disable_new_entries()
+            operator.warning("NEW ENTRIES DISABLED", "Open-position management and reconciliation remain active.")
+        elif command == "/enable":
+            # This does not bypass Testnet arm gates, proposal authority, daily
+            # risk, exchange health, spread, margin, or any local risk check.
+            worker.enable_new_entries()
+            operator.info("NEW ENTRIES ENABLED", "All normal local safety gates still apply.")
+        elif command == "/help":
+            operator.info(
+                "EXECUTION COMMANDS",
+                "/status — capital-boundary status\n"
+                "/position — current local position\n"
+                "/health — execution hot-path health/latency\n"
+                "/recent — latest completed execution\n"
+                "/pnl — current UTC-day PnL/risk floor\n"
+                "/enable — allow new entries subject to every safety gate\n"
+                "/disable — block new entries only\n"
+                "/help — show commands\n\n"
+                "Emergency flatten remains an explicit local/CLI action; Telegram cannot bypass that boundary.",
+            )
+        else:
+            operator.warning("UNKNOWN EXECUTION COMMAND", f"{telegram_escape_plain(command)}\nUse /help.")
+    except Exception as exc:
+        worker.logger.error("OPERATOR_TELEGRAM_COMMAND_FAILED command=%s error=%s:%s", command, type(exc).__name__, exc)
+        operator.warning("COMMAND FAILED", f"{telegram_escape_plain(command)}: {telegram_escape_plain(type(exc).__name__)}")
+
+
 def self_check() -> int:
     cfg = ExecutionConfig()
     cfg.validate()
@@ -185,6 +300,18 @@ def main() -> int:
         return self_check()
 
     load_env_file(args.env_file)
+    execution_log_path = Path(os.getenv("NBOT_EXECUTION_LOG_PATH", str(DEFAULT_EXECUTION_LOG_PATH)))
+    trade_log_path = Path(os.getenv("NBOT_EXECUTION_TRADE_LOG_PATH", str(DEFAULT_TRADE_LOG_PATH)))
+    execution_log, trade_log = configure_role_logging(
+        "EXECUTION", log_path=execution_log_path, trade_log_path=trade_log_path, stderr=True,
+    )
+    execution_log.info("NBOT_EXECUTION_START action=%s", next(
+        name for name, enabled in (
+            ("PREFLIGHT", args.testnet_preflight), ("RECONCILE", args.testnet_reconcile),
+            ("CANARY", args.testnet_canary), ("EMERGENCY_FLAT", args.testnet_emergency_flat),
+        ) if enabled
+    ))
+    operator = TelegramOperator.from_env("EXECUTION", execution_log)
     exchange = build_exchange()
     outcome_path = Path(os.getenv("TESTNET_CANARY_OUTCOMES_PATH", str(DEFAULT_OUTCOME_PATH)))
     outcome_sink = MechanicalOutcomeSink(outcome_path)
@@ -210,7 +337,10 @@ def main() -> int:
     with ExecutionInstanceLock(lock_path):
         state = ExecutionStateStore(cfg.state_path)
         proposal_client = StaticProposalClient()
-        worker = ExecutionWorker(cfg, exchange, proposal_client, outcome_sink, state=state)
+        worker = ExecutionWorker(
+            cfg, exchange, proposal_client, outcome_sink, state=state,
+            logger=execution_log, trade_logger=trade_log, notifier=operator,
+        )
 
         if args.testnet_reconcile:
             prepared = worker.prepare()
@@ -239,6 +369,9 @@ def main() -> int:
         if not args.yes:
             print("REFUSED: --testnet-canary places Binance Testnet orders and requires --yes", file=sys.stderr)
             return 2
+        if operator is not None:
+            operator.start_listener(lambda text: _execution_operator_command(worker, operator, text))
+            operator.info("EXECUTION CANARY STARTED", "Testnet mechanical canary process is active. Use /status for state.")
         prepared = worker.prepare()
         if prepared == "RECOVERED_CLOSED_POSITION":
             worker.process_flat_cycle()  # settle/deliver first; require a fresh explicit invocation for any new entry

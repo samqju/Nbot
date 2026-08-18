@@ -1,6 +1,7 @@
 import ast
 import json
 import tempfile
+import time
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -67,15 +68,19 @@ class FakeExchange:
         self.balance = 10_000.0
         self.position = None
         self.stop = None
+        self.stop_trigger_override = None
         self.stop_updates = []
         self.ensure_stop_calls = 0
         self.fail_protection = False
         self.open_calls = 0
         self.open_market_probe = None
+        self.fill_price = None
+        self.fill_quantity = None
         self.recover_inflight_calls = 0
         self.inflight_fill = None
         self.inflight_recovery_error = None
         self.close_calls = 0
+        self.close_leave_open_attempts = 0
         self.recover_calls = 0
         self.recovery_error = None
         self.recovery_close = CloseFill(98.0, now_ms + 2_000, "EXCHANGE_FLAT_RECOVERED_AFTER_RESTART", -2.0, ("CLOSE-1",), "FAKE_RECOVERY")
@@ -107,8 +112,10 @@ class FakeExchange:
         self.open_calls += 1
         if self.open_market_probe is not None:
             self.open_market_probe(plan, client_order_id)
-        fill = Fill(plan.expected_entry_price, plan.quantity, "ORDER-1", client_order_id, self.now_ms)
-        self.position = ExchangePosition(plan.symbol, plan.side, plan.quantity, fill.price)
+        fill_price = plan.expected_entry_price if self.fill_price is None else float(self.fill_price)
+        fill_quantity = plan.quantity if self.fill_quantity is None else float(self.fill_quantity)
+        fill = Fill(fill_price, fill_quantity, "ORDER-1", client_order_id, self.now_ms)
+        self.position = ExchangePosition(plan.symbol, plan.side, fill.quantity, fill.price)
         return fill
 
     def recover_inflight_entry(self, plan, *, client_order_id):
@@ -121,8 +128,9 @@ class FakeExchange:
         self.ensure_stop_calls += 1
         if self.fail_protection:
             raise RuntimeError("stop failed")
-        self.stop = stop_price
-        return ProtectiveStopRef(stop_price, "STOP-1", "STOP-CID-1")
+        trigger = float(stop_price) if self.stop_trigger_override is None else float(self.stop_trigger_override)
+        self.stop = trigger
+        return ProtectiveStopRef(trigger, "STOP-1", "STOP-CID-1")
 
     def replace_protective_stop(self, symbol, side, quantity, stop_price):
         self.stop = stop_price
@@ -132,7 +140,8 @@ class FakeExchange:
     def close_position(self, symbol, side, *, reason):
         self.close_calls += 1
         price = self.quote_value.bid if side == "LONG" else self.quote_value.ask
-        self.position = None
+        if self.close_calls > self.close_leave_open_attempts:
+            self.position = None
         return CloseFill(price, self.now_ms + 1_000, reason)
 
     def recover_closed_position(self, local_position):
@@ -556,6 +565,181 @@ class ExecutionWorkerTests(unittest.TestCase):
         corrupt.write_text('{"state_version":')
         with self.assertRaisesRegex(ExecutionSafetyError, "EXECUTION_STATE_CORRUPT"):
             ExecutionStateStore(corrupt)
+
+
+    def test_v1_execution_policy_parity_defaults_are_explicit(self):
+        cfg = ExecutionConfig(state_path=self.path)
+        self.assertEqual(cfg.risk_per_trade_usd, 10.0)
+        self.assertEqual(cfg.max_notional_usd, 1000.0)
+        self.assertEqual(cfg.leverage, 5)
+        self.assertEqual(cfg.risk_tolerance_pct, 10.0)
+        self.assertEqual(cfg.notional_tolerance_pct, 1.0)
+        self.assertEqual(cfg.max_entry_slippage_pct, 1.0)
+        self.assertEqual(cfg.daily_profit_lock_trigger_r, 100.0)
+        self.assertEqual(cfg.daily_normal_giveback_r, 95.0)
+        self.assertEqual(cfg.daily_profit_giveback_r, 3.0)
+        self.assertEqual(cfg.emergency_flatten_attempts, 2)
+
+    def test_daily_risk_floor_preserves_v1_parity_default(self):
+        daily = self.worker.status()["daily_risk"]
+        self.assertEqual(daily["realized_pnl_usd"], 0.0)
+        self.assertEqual(daily["peak_realized_pnl_usd"], 0.0)
+        self.assertEqual(daily["loss_floor_usd"], -950.0)
+        self.assertFalse(daily["halted"])
+
+    def test_daily_profit_lock_halts_after_giveback_from_100r_peak(self):
+        daily = dict(self.worker.state.data["daily_risk"])
+        daily.update({
+            "realized_pnl_usd": 1000.0,
+            "peak_realized_pnl_usd": 1000.0,
+            "loss_floor_usd": 970.0,
+            "halted": False,
+        })
+        self.worker.state.set_daily_risk(daily)
+        # A $40 giveback from +$1000 leaves +$960, below the V1-parity +$970 floor.
+        outcome = type("Outcome", (), {"realized_pnl_usd": -40.0, "closed_timestamp_ms": self.now})()
+        after = self.worker._daily_after_close(outcome)
+        self.assertEqual(after["realized_pnl_usd"], 960.0)
+        self.assertEqual(after["peak_realized_pnl_usd"], 1000.0)
+        self.assertEqual(after["loss_floor_usd"], 970.0)
+        self.assertTrue(after["halted"])
+        self.assertEqual(after["halt_reason"], "DAILY_LOSS_FLOOR_BREACH")
+        self.worker.state.set_daily_risk(after)
+        self.worker.state.save()
+        self.worker.disable_new_entries()
+        with self.assertRaisesRegex(ExecutionSafetyError, "DAILY_RISK_HALT_ACTIVE"):
+            self.worker.enable_new_entries()
+
+    def test_utc_day_rollover_resets_daily_accounting_and_halt(self):
+        daily = dict(self.worker.state.data["daily_risk"])
+        daily.update({
+            "realized_pnl_usd": -950.01,
+            "peak_realized_pnl_usd": 0.0,
+            "loss_floor_usd": -950.0,
+            "halted": True,
+            "halt_reason": "DAILY_LOSS_FLOOR_BREACH",
+            "trades_closed": 7,
+        })
+        self.worker.state.set_daily_risk(daily)
+        self.worker.state.save()
+        next_day = self.now + 86_400_000
+        self.worker._roll_daily(next_day)
+        rolled = self.worker.state.data["daily_risk"]
+        self.assertNotEqual(rolled["utc_day"], daily["utc_day"])
+        self.assertEqual(rolled["realized_pnl_usd"], 0.0)
+        self.assertEqual(rolled["peak_realized_pnl_usd"], 0.0)
+        self.assertEqual(rolled["loss_floor_usd"], -950.0)
+        self.assertEqual(rolled["trades_closed"], 0)
+        self.assertFalse(rolled["halted"])
+
+    def test_close_updates_daily_realized_peak_and_trade_count(self):
+        self.assertEqual(self.worker.process_flat_cycle(), "ENTRY_OPENED")
+        self.exchange.quote_value = Quote("BTCUSDT", 101.0, 101.02, self.now + 1_000)
+        self.assertEqual(self.worker.force_close_open_position(reason="OPERATOR_TEST"), "POSITION_CLOSED")
+        daily = self.worker.state.data["daily_risk"]
+        expected = (101.0 - 100.01) * (1000.0 / 100.01)
+        self.assertAlmostEqual(daily["realized_pnl_usd"], expected)
+        self.assertAlmostEqual(daily["peak_realized_pnl_usd"], expected)
+        self.assertEqual(daily["trades_closed"], 1)
+        self.assertAlmostEqual(daily["loss_floor_usd"], expected - 950.0)
+
+    def test_risk_contract_breach_verified_emergency_flattens(self):
+        self.assertEqual(self.worker.process_flat_cycle(), "ENTRY_OPENED")
+        # $10 initial risk with 10% tolerance means worse than -$11 is an emergency.
+        self.exchange.quote_value = Quote("BTCUSDT", 98.8, 98.82, self.now + 2_000)
+        self.assertEqual(self.worker.process_open_price("BTCUSDT", 98.8, self.now + 2_000), "POSITION_CLOSED")
+        self.assertIsNone(self.exchange.position)
+        self.assertIsNone(self.worker.state.open_position)
+        self.assertEqual(self.exchange.close_calls, 1)
+        self.assertEqual(self.worker.state.data["pending_outcomes"][-1]["exit_reason"], "RISK_CONTRACT_BREACH")
+
+    def test_emergency_flatten_retries_and_verifies_exchange_flat(self):
+        self.assertEqual(self.worker.process_flat_cycle(), "ENTRY_OPENED")
+        self.exchange.close_leave_open_attempts = 1
+        self.assertEqual(self.worker.force_close_open_position(reason="EMERGENCY_TEST"), "POSITION_CLOSED")
+        self.assertEqual(self.exchange.close_calls, 2)
+        self.assertIsNone(self.exchange.position)
+        self.assertIsNone(self.worker.state.open_position)
+
+    def test_emergency_failure_keeps_local_position_fail_closed(self):
+        self.assertEqual(self.worker.process_flat_cycle(), "ENTRY_OPENED")
+        self.exchange.close_leave_open_attempts = 99
+        with self.assertRaisesRegex(ExecutionSafetyError, "EMERGENCY_EXIT_FAILED_NOT_FLAT"):
+            self.worker.force_close_open_position(reason="EMERGENCY_TEST")
+        self.assertIsNotNone(self.exchange.position)
+        self.assertIsNotNone(self.worker.state.open_position)
+
+    def test_post_fill_slippage_breach_is_protected_then_emergency_closed(self):
+        self.exchange.fill_price = 102.0
+        self.exchange.fill_quantity = 1000.0 / 102.0
+        with self.assertRaisesRegex(ExecutionSafetyError, "POST_FILL_SLIPPAGE_BREACH_EMERGENCY_CLOSED"):
+            self.worker.process_flat_cycle()
+        self.assertGreaterEqual(self.exchange.ensure_stop_calls, 1)
+        self.assertIsNone(self.exchange.position)
+        self.assertIsNone(self.worker.state.open_position)
+        self.assertEqual(self.worker.state.data["pending_outcomes"][-1]["exit_reason"], "POST_FILL_SLIPPAGE_BREACH")
+
+    def test_post_fill_notional_breach_is_protected_then_emergency_closed(self):
+        self.exchange.fill_quantity = 10.2
+        with self.assertRaisesRegex(ExecutionSafetyError, "POST_FILL_NOTIONAL_BREACH_EMERGENCY_CLOSED"):
+            self.worker.process_flat_cycle()
+        self.assertGreaterEqual(self.exchange.ensure_stop_calls, 1)
+        self.assertIsNone(self.exchange.position)
+        self.assertEqual(self.worker.state.data["pending_outcomes"][-1]["exit_reason"], "POST_FILL_NOTIONAL_BREACH")
+
+    def test_post_fill_risk_breach_is_protected_then_emergency_closed(self):
+        self.exchange.stop_trigger_override = 98.0
+        with self.assertRaisesRegex(ExecutionSafetyError, "POST_FILL_RISK_BREACH_EMERGENCY_CLOSED"):
+            self.worker.process_flat_cycle()
+        self.assertGreaterEqual(self.exchange.ensure_stop_calls, 1)
+        self.assertIsNone(self.exchange.position)
+        self.assertEqual(self.worker.state.data["pending_outcomes"][-1]["exit_reason"], "POST_FILL_RISK_BREACH")
+
+    def test_health_status_tracks_hot_path_and_emergency_activity(self):
+        self.assertEqual(self.worker.process_flat_cycle(), "ENTRY_OPENED")
+        self.assertEqual(self.worker.process_open_price("BTCUSDT", 100.2, self.now + 1_000), "POSITION_MANAGED")
+        status = self.worker.status()
+        self.assertGreaterEqual(status["health"]["flat_cycles"], 1)
+        self.assertGreaterEqual(status["health"]["open_position_ticks"], 1)
+        self.assertGreaterEqual(status["health"]["last_position_manage_ms"], 0.0)
+        self.assertEqual(status["risk_policy"]["risk_per_trade_usd"], 10.0)
+        self.assertEqual(status["risk_policy"]["risk_tolerance_pct"], 10.0)
+
+    def test_old_v284_state_without_daily_risk_migrates_safely(self):
+        state = ExecutionStateStore(self.path)
+        state.save()
+        payload = json.loads(self.path.read_text())
+        payload.pop("daily_risk", None)
+        self.path.write_text(json.dumps(payload))
+        migrated = ExecutionStateStore(self.path)
+        self.assertIn("daily_risk", migrated.data)
+        self.assertEqual(migrated.data["daily_risk"]["realized_pnl_usd"], 0.0)
+        self.assertFalse(migrated.data["daily_risk"]["halted"])
+
+    def test_v284_migration_reconstructs_current_day_from_durable_history(self):
+        old_path = Path(self.tmp.name) / "old-v284.json"
+        state = ExecutionStateStore(old_path)
+        now_ms = int(time.time() * 1000)
+        state.data["execution_outcome_history"] = [
+            {
+                "outcome_id": "OUT-MIGRATE",
+                "closed_timestamp_ms": now_ms,
+                "realized_pnl_usd": 12.5,
+                "mfe_r": 2.0,
+                "initial_risk_usd": 10.0,
+            }
+        ]
+        state.save()
+        payload = json.loads(old_path.read_text())
+        payload.pop("daily_risk", None)
+        old_path.write_text(json.dumps(payload))
+        migrated = ExecutionStateStore(old_path)
+        daily = migrated.data["daily_risk"]
+        self.assertAlmostEqual(daily["realized_pnl_usd"], 12.5)
+        self.assertAlmostEqual(daily["peak_realized_pnl_usd"], 12.5)
+        self.assertAlmostEqual(daily["highest_unrealized_usd"], 20.0)
+        self.assertEqual(daily["trades_closed"], 1)
+        self.assertEqual(daily["utc_day"], ExecutionStateStore.utc_day(now_ms))
 
 
 if __name__ == "__main__":
