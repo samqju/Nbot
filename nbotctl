@@ -120,6 +120,16 @@ def cmd_arm(args: argparse.Namespace) -> int:
         f"profile={profile.name}\nsha={identity['sha']}\narmed_at={utc_iso()}\n",
         mode=0o600,
     )
+    if profile.name == "testnet-trade":
+        # Bind a fresh durable session counter to this exact explicit arm.
+        # A crash between arm creation and this initialization remains fail-closed.
+        from nbot.exchange.binance_testnet import initialize_testnet_guard_for_arm
+
+        try:
+            initialize_testnet_guard_for_arm(ROOT)
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
     print(f"ARMED {profile.name} {path}")
     return 0
 
