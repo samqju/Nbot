@@ -21,15 +21,20 @@ from nbot.exchange.binance_testnet import (
     BinanceTestnetExchange,
     TestnetExchangeConfig,
 )
+from nbot.execution.canary import (
+    MechanicalCanaryOutcomeClient,
+    OneShotMechanicalProposalClient,
+    TESTNET_MECHANICAL_AUTHORITY,
+    make_mechanical_proposal,
+    mechanical_outcome_path,
+)
 from nbot.execution.emergency import EmergencyFlattener
 from nbot.execution.entry import EntryLifecycle, EntryLifecycleConfig
-from nbot.execution.execution import ExecutionWorker
+from nbot.execution.execution import ExecutionWorker, OutcomeClient, ProposalClient
 from nbot.execution.outcomes import ExecutionDurableStore
 from nbot.execution.position import INTEGER_R_STEP_CONTROL, PositionLifecycle
 from nbot.execution.reconciliation import ReconciliationLifecycle
 from nbot.execution.risk import RiskManager
-
-TESTNET_MECHANICAL_AUTHORITY = "TESTNET_MECHANICAL_ONLY"
 
 
 def _positive_float(environment: Mapping[str, str], key: str, default: float) -> float:
@@ -105,6 +110,8 @@ def build_execution_worker(
     repo_root: Path,
     profile_name: str,
     exchange: BinanceTestnetExchange,
+    proposal_client: ProposalClient | None = None,
+    outcome_client: OutcomeClient | None = None,
 ) -> ExecutionWorker:
     profile = get_profile(profile_name)
     if profile.name != "testnet-trade":
@@ -144,8 +151,8 @@ def build_execution_worker(
         entry=entry,
         position=position,
         reconciliation=reconciliation,
-        proposal_client=None,
-        outcome_client=None,
+        proposal_client=proposal_client,
+        outcome_client=outcome_client,
     )
 
 
@@ -165,12 +172,14 @@ def self_check(repo_root: Path, profile_name: str) -> int:
     print(
         json.dumps(
             {
-                "phase": "V3.1",
+                "phase": "V3.2",
                 "role": "EXECUTION",
                 "profile": profile.name,
                 "status": status,
                 "proposal_source": "NONE_V3_1_FAIL_CLOSED",
                 "outcome_transport": "NONE_V3_1_DURABLE_LOCAL_ONLY",
+                "v3_2_canary_proposal_source": "TESTNET_MECHANICAL_ONLY_EXPLICIT_INVOCATION",
+                "v3_2_canary_outcome_transport": "TESTNET_MECHANICAL_LOCAL_ACK_ONLY",
             },
             indent=2,
             sort_keys=True,
@@ -189,7 +198,7 @@ def preflight_testnet(
     exchange.connect()
     try:
         report = exchange.preflight_report(symbol.upper())
-        report["phase"] = "V3.1"
+        report["phase"] = "V3.2"
         report["runtime_authority"] = "TESTNET_MECHANICAL_ONLY"
         report["status"] = "PASS" if report.get("connected") else "FAIL"
         print(json.dumps(report, indent=2, sort_keys=True))
@@ -197,6 +206,134 @@ def preflight_testnet(
     finally:
         exchange.disconnect()
 
+
+
+def run_testnet_canary(
+    *,
+    repo_root: Path,
+    environment: Mapping[str, str],
+    symbol: str,
+    side: str,
+    confirmed: bool,
+    open_poll_seconds: float,
+) -> int:
+    """Run one explicit standalone V3.2 Testnet mechanical canary.
+
+    A fresh invocation may create at most one proposal.  If restart recovery
+    finds an already-open protected position, no new proposal is created and
+    the invocation resumes management of that existing capital state instead.
+    """
+    profile = get_profile("testnet-trade")
+    if not confirmed:
+        raise ValueError("NBOT_TESTNET_CANARY_REQUIRES_EXPLICIT_YES")
+    if not profile_is_armed(repo_root, profile):
+        raise ValueError("NBOT_TESTNET_CANARY_REQUIRES_EXPLICIT_ARM")
+    if side not in {"LONG", "SHORT"}:
+        raise ValueError("NBOT_TESTNET_CANARY_SIDE_INVALID")
+
+    exchange = build_testnet_exchange(repo_root, environment)
+    proposal_client = OneShotMechanicalProposalClient()
+    outcome_client = MechanicalCanaryOutcomeClient(mechanical_outcome_path(repo_root))
+    worker = build_execution_worker(
+        repo_root=repo_root,
+        profile_name=profile.name,
+        exchange=exchange,
+        proposal_client=proposal_client,
+        outcome_client=outcome_client,
+    )
+
+    try:
+        prepared = worker.prepare()
+        # Never inherit an enabled entry gate from a previous interrupted
+        # operator session.  One explicit canary invocation owns one proposal.
+        worker.disable_new_entries()
+
+        if worker.state.open_position is None:
+            # Deliver any already-completed standalone outcome first.  With the
+            # gate disabled this cycle cannot create a new entry.
+            worker.process_flat_cycle()
+            if worker.durable.outbox.pending_count():
+                raise ValueError("NBOT_TESTNET_CANARY_PENDING_OUTCOME_NOT_ACKED")
+
+            quote = exchange.quote(symbol.upper())
+            proposal_client.offer(make_mechanical_proposal(quote, side=side))
+            worker.enable_new_entries()
+            try:
+                entry_result = worker.process_flat_cycle()
+            finally:
+                worker.disable_new_entries()
+            if entry_result != "ENTRY_OPENED":
+                print(
+                    json.dumps(
+                        {
+                            "event": "NBOT_TESTNET_MECHANICAL_ENTRY_NOT_OPENED",
+                            "phase": "V3.2",
+                            "authority": TESTNET_MECHANICAL_AUTHORITY,
+                            "entry_result": entry_result,
+                            "prepared": prepared.status,
+                        },
+                        sort_keys=True,
+                    )
+                )
+                return 2
+        else:
+            entry_result = "RESUMED_EXISTING_POSITION"
+
+        local = worker.state.open_position
+        if local is None:
+            raise ValueError("NBOT_TESTNET_CANARY_OPEN_STATE_MISSING")
+        print(
+            json.dumps(
+                {
+                    "event": "NBOT_TESTNET_MECHANICAL_POSITION_MANAGEMENT",
+                    "phase": "V3.2",
+                    "authority": TESTNET_MECHANICAL_AUTHORITY,
+                    "evidence_class": "TESTNET_MECHANICAL_ONLY",
+                    "entry_result": entry_result,
+                    "symbol": local.symbol,
+                    "side": local.side,
+                    "proposal_id": local.proposal_id,
+                    "entries_enabled": False,
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
+
+        try:
+            while worker.state.open_position is not None:
+                current = worker.state.open_position
+                assert current is not None
+                quote = exchange.quote(current.symbol)
+                worker.process_open_quote(quote)
+                time.sleep(open_poll_seconds)
+        except KeyboardInterrupt:
+            print("TESTNET_MECHANICAL_CANARY_INTERRUPTED_POSITION_LEFT_PROTECTED", flush=True)
+            return 0
+
+        # The close outcome is already durable locally.  ACK it into the
+        # separate mechanical-only history before allowing a future invocation.
+        worker.process_flat_cycle()
+        if worker.durable.outbox.pending_count():
+            raise ValueError("NBOT_TESTNET_CANARY_OUTCOME_ACK_FAILED")
+        print(
+            json.dumps(
+                {
+                    "event": "NBOT_TESTNET_MECHANICAL_CANARY_CLOSED",
+                    "phase": "V3.2",
+                    "authority": TESTNET_MECHANICAL_AUTHORITY,
+                    "evidence_class": "TESTNET_MECHANICAL_ONLY",
+                    "research_evidence": False,
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
+    finally:
+        try:
+            exchange.disconnect()
+        except Exception:
+            pass
 
 def run_testnet_runtime(
     *,
@@ -274,15 +411,19 @@ def run_testnet_runtime(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="NBOT V3.1 Execution runtime")
+    parser = argparse.ArgumentParser(description="NBOT V3.2 Execution runtime")
     parser.add_argument(
         "--profile",
         choices=("testnet-trade", "live-paper", "live-trade"),
     )
     parser.add_argument("--secrets-file", type=Path)
-    parser.add_argument("--self-check", action="store_true")
-    parser.add_argument("--preflight-only", action="store_true")
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--self-check", action="store_true")
+    action.add_argument("--preflight-only", action="store_true")
+    action.add_argument("--testnet-canary", action="store_true")
     parser.add_argument("--symbol", default="BTCUSDT")
+    parser.add_argument("--side", choices=("LONG", "SHORT"), default="LONG")
+    parser.add_argument("--yes", action="store_true")
     args = parser.parse_args()
 
     profile_name = args.profile or os.environ.get("NBOT_PROFILE", "").strip()
@@ -310,6 +451,15 @@ def main() -> int:
             repo_root=root,
             environment=environment,
             symbol=args.symbol,
+        )
+    if args.testnet_canary:
+        return run_testnet_canary(
+            repo_root=root,
+            environment=environment,
+            symbol=args.symbol,
+            side=args.side,
+            confirmed=args.yes,
+            open_poll_seconds=_positive_float(environment, "NBOT_EXECUTION_OPEN_POLL_SECONDS", 0.5),
         )
 
     idle_poll = _positive_float(environment, "NBOT_EXECUTION_IDLE_POLL_SECONDS", 2.0)
