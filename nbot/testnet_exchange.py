@@ -411,7 +411,11 @@ class BinanceTestnetExchange:
 
     def connect(self) -> None:
         self._public_get("/fapi/v1/ping")
-        self._signed_get("/fapi/v3/balance")
+        # Balance is an entry/margin prerequisite, not a reconciliation
+        # prerequisite. V1 capital-first startup reconciled position truth
+        # independently of available balance. The worker's prepare() performs
+        # an authenticated position read immediately after connect, while
+        # account_snapshot() remains mandatory before any new entry.
         self._load_filters()
         self._start_user_stream()
         if not self._user_stream_ready.wait(self.config.user_stream_ready_timeout_seconds):
@@ -545,6 +549,14 @@ class BinanceTestnetExchange:
         if len(positions) > 1:
             raise TestnetExchangeError("TESTNET_MULTIPLE_POSITIONS_DETECTED")
         return positions[0] if positions else None
+
+    def protective_stop_snapshot(self, symbol: str) -> ProtectiveStopRef | None:
+        active = self._active_stops(symbol)
+        if not active:
+            return None
+        if len(active) > 1:
+            raise TestnetExchangeError(f"TESTNET_MULTIPLE_PROTECTIVE_STOPS_DETECTED:{symbol}:{len(active)}")
+        return self._stop_ref(active[0])
 
     def validate_protective_stop(self, symbol: str, side: str, stop_price: float) -> bool:
         if side not in {"LONG", "SHORT"} or not math.isfinite(stop_price) or stop_price <= 0:

@@ -296,6 +296,33 @@ class TestnetExchangeTests(unittest.TestCase):
         self.assertEqual(posts[0][2]["newClientOrderId"], "NBV28-ONE")
         self.assertEqual(fill.client_order_id, "NBV28-ONE")
 
+    def test_connect_does_not_require_balance_before_reconciliation(self):
+        ex = BinanceTestnetExchange(self.cfg)
+        ex._user_stream_ready.set()
+        ex._user_stream_healthy = True
+        with mock.patch.object(ex, "_public_get", return_value={}) as public_get, \
+             mock.patch.object(ex, "_signed_get", return_value=[{"asset": "USDT", "availableBalance": "123.45"}]) as signed_get, \
+             mock.patch.object(ex, "_load_filters"), \
+             mock.patch.object(ex, "_start_user_stream"):
+            ex.connect()
+            public_get.assert_called_once_with("/fapi/v1/ping")
+            signed_get.assert_not_called()
+            self.assertTrue(ex.is_healthy())
+            balance = ex.account_snapshot()
+            self.assertEqual(balance.available_balance_usd, 123.45)
+            signed_get.assert_called_once_with("/fapi/v3/balance")
+
+    def test_protective_stop_snapshot_requires_one_canonical_active_stop(self):
+        ex = AdapterHarness(self.cfg)
+        ex.position = ExchangePosition("BTCUSDT", "LONG", 10.0, 100.0)
+        self.assertIsNone(ex.protective_stop_snapshot("BTCUSDT"))
+        first = ex._place_stop("BTCUSDT", "LONG", 10.0, 99.0)
+        active = ex.protective_stop_snapshot("BTCUSDT")
+        self.assertEqual(active.algo_id, first.algo_id)
+        ex._place_stop("BTCUSDT", "LONG", 10.0, 98.0)
+        with self.assertRaisesRegex(TestnetExchangeError, "MULTIPLE_PROTECTIVE_STOPS_DETECTED"):
+            ex.protective_stop_snapshot("BTCUSDT")
+
     def test_ambiguous_entry_queries_same_client_id_and_never_blind_resubmits(self):
         self.initialize_disarmed_guard()
         self.arm_trading()

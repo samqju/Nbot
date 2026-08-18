@@ -102,6 +102,11 @@ class FakeExchange:
     def position_snapshot(self):
         return self.position
 
+    def protective_stop_snapshot(self, symbol):
+        if self.position is None or self.stop is None:
+            return None
+        return ProtectiveStopRef(float(self.stop), "STOP-ACTIVE", "STOP-CID-ACTIVE")
+
     def validate_protective_stop(self, symbol, side, stop_price):
         return stop_price > 0
 
@@ -201,6 +206,9 @@ class ExecutionWorkerTests(unittest.TestCase):
             state_path=self.path,
             allowed_entry_authorities=("RESEARCH_CHAMPION_V1",),
             allowed_exit_policies=(INTEGER_R_STEP_CONTROL,),
+            # Existing unit tests should not sleep. Dedicated tests below prove
+            # the bounded V1 settlement behavior with a controlled sleep hook.
+            stop_trigger_grace_seconds=0.0,
         )
         self.exchange = FakeExchange(self.now)
         self.proposals = FakeProposalClient(TradeResponse.proposal_response(make_proposal(self.now)))
@@ -387,6 +395,74 @@ class ExecutionWorkerTests(unittest.TestCase):
         self.assertEqual(self.proposals.calls, calls_after_entry)
         self.assertIsNone(self.worker.state.open_position)
         self.assertEqual(len(self.worker.state.data["pending_outcomes"]), 1)
+
+    def test_missing_protective_stop_is_restored_from_local_risk_contract(self):
+        self.assertEqual(self.worker.process_flat_cycle(), "ENTRY_OPENED")
+        initial_ensure_calls = self.exchange.ensure_stop_calls
+        self.exchange.stop = None
+        self.assertEqual(
+            self.worker.process_open_price("BTCUSDT", 100.20, self.now + 2_000),
+            "POSITION_MANAGED",
+        )
+        self.assertIsNotNone(self.exchange.stop)
+        self.assertGreater(self.exchange.ensure_stop_calls, initial_ensure_calls)
+        health = self.worker.status()["health"]
+        self.assertEqual(health["stop_missing_events"], 1)
+        self.assertEqual(health["stop_recoveries"], 1)
+
+    def test_missing_stop_waits_for_exchange_settlement_before_recovery_action(self):
+        self.assertEqual(self.worker.process_flat_cycle(), "ENTRY_OPENED")
+        self.exchange.stop = None
+        self.exchange.recovery_close = CloseFill(99.0, self.now + 2_500, "PROTECTIVE_STOP_TRIGGERED", -1.0, ("STOP-FILL",), "FAKE_RECOVERY")
+        self.worker.config = replace(
+            self.worker.config,
+            stop_trigger_grace_seconds=1.0,
+            stop_trigger_poll_interval_seconds=0.01,
+        )
+        self.worker._sleep = lambda _seconds: setattr(self.exchange, "position", None)
+        self.assertEqual(
+            self.worker.process_open_price("BTCUSDT", 99.50, self.now + 2_000),
+            "POSITION_CLOSED",
+        )
+        self.assertEqual(self.exchange.close_calls, 0)
+        self.assertEqual(self.exchange.recover_calls, 1)
+        self.assertEqual(self.worker.state.data["pending_outcomes"][-1]["exit_reason"], "PROTECTIVE_STOP_TRIGGERED")
+
+    def test_local_stop_breach_allows_exchange_stop_to_settle_before_emergency(self):
+        self.assertEqual(self.worker.process_flat_cycle(), "ENTRY_OPENED")
+        stop = float(self.worker.state.open_position["stop_price"])
+        self.exchange.recovery_close = CloseFill(stop, self.now + 2_500, "PROTECTIVE_STOP_TRIGGERED", -10.0, ("STOP-FILL",), "FAKE_RECOVERY")
+        self.worker.config = replace(
+            self.worker.config,
+            stop_trigger_grace_seconds=1.0,
+            stop_trigger_poll_interval_seconds=0.01,
+        )
+        self.worker._sleep = lambda _seconds: setattr(self.exchange, "position", None)
+        self.assertEqual(
+            self.worker.process_open_price("BTCUSDT", stop, self.now + 2_000),
+            "POSITION_CLOSED",
+        )
+        self.assertEqual(self.exchange.close_calls, 0)
+        self.assertEqual(self.exchange.recover_calls, 1)
+
+    def test_breached_missing_stop_emergency_flattens_when_settlement_never_completes(self):
+        self.assertEqual(self.worker.process_flat_cycle(), "ENTRY_OPENED")
+        stop = float(self.worker.state.open_position["stop_price"])
+        self.exchange.stop = None
+        self.exchange.quote_value = Quote("BTCUSDT", stop - 0.20, stop - 0.10, self.now + 2_000)
+        self.assertEqual(
+            self.worker.process_open_price("BTCUSDT", stop - 0.05, self.now + 2_000),
+            "POSITION_CLOSED",
+        )
+        self.assertEqual(self.exchange.close_calls, 1)
+        self.assertEqual(self.worker.state.data["pending_outcomes"][-1]["exit_reason"], "RECOVERY_BREACHED_STOP")
+
+    def test_enable_new_entries_reconciles_before_changing_entry_gate(self):
+        self.worker.disable_new_entries()
+        self.exchange.position = ExchangePosition("ETHUSDT", "LONG", 1.0, 100.0)
+        with self.assertRaisesRegex(ExecutionSafetyError, "UNMANAGED_EXCHANGE_POSITION"):
+            self.worker.enable_new_entries()
+        self.assertFalse(self.worker.state.data["trading_enabled"])
 
     def test_restart_recovers_and_reprotects_open_position_without_observer(self):
         self.assertEqual(self.worker.process_flat_cycle(), "ENTRY_OPENED")

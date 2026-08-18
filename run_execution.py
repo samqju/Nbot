@@ -113,6 +113,8 @@ def execution_config_from_env(*, enable_canary: bool) -> ExecutionConfig:
         daily_profit_giveback_r=float(os.getenv("NBOT_EXECUTION_DAILY_PROFIT_GIVEBACK_R", "3.0")),
         emergency_flatten_attempts=int(os.getenv("NBOT_EXECUTION_EMERGENCY_FLATTEN_ATTEMPTS", "2")),
         emergency_verify_delay_seconds=float(os.getenv("NBOT_EXECUTION_EMERGENCY_VERIFY_DELAY_SECONDS", "0.5")),
+        stop_trigger_grace_seconds=float(os.getenv("STOP_TRIGGER_GRACE_SECONDS", "8")),
+        stop_trigger_poll_interval_seconds=float(os.getenv("STOP_TRIGGER_POLL_INTERVAL_SECONDS", "0.5")),
         allowed_entry_authorities=(),
         allowed_exit_policies=(),
     )
@@ -213,6 +215,9 @@ def _execution_operator_command(worker: ExecutionWorker, operator: TelegramOpera
                 f"Flat cycles: {int(health.get('flat_cycles', 0))}\n"
                 f"Open ticks: {int(health.get('open_position_ticks', 0))}\n"
                 f"Stop updates: {int(health.get('stop_updates', 0))}\n"
+                f"Stop missing: {int(health.get('stop_missing_events', 0))}\n"
+                f"Stop settlement waits: {int(health.get('stop_settlement_waits', 0))}\n"
+                f"Stop recoveries: {int(health.get('stop_recoveries', 0))}\n"
                 f"Emergency exits: {int(health.get('emergency_exits', 0))}\n"
                 f"Reconciliations: {int(health.get('reconciliations', 0))}\n"
                 f"Last manage ms: {float(health.get('last_position_manage_ms', 0.0)):.3f}\n"

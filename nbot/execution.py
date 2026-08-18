@@ -105,6 +105,8 @@ class ExecutionConfig:
     daily_profit_giveback_r: float = 3.0
     emergency_flatten_attempts: int = 2
     emergency_verify_delay_seconds: float = 0.5
+    stop_trigger_grace_seconds: float = 8.0
+    stop_trigger_poll_interval_seconds: float = 0.5
 
     allowed_entry_authorities: tuple[str, ...] = ()
     allowed_exit_policies: tuple[str, ...] = ()
@@ -136,6 +138,10 @@ class ExecutionConfig:
             raise ValueError("EXECUTION_EMERGENCY_ATTEMPTS_INVALID")
         if self.emergency_verify_delay_seconds < 0 or self.emergency_verify_delay_seconds > 10:
             raise ValueError("EXECUTION_EMERGENCY_DELAY_INVALID")
+        if self.stop_trigger_grace_seconds < 0 or self.stop_trigger_grace_seconds > 60:
+            raise ValueError("EXECUTION_STOP_TRIGGER_GRACE_INVALID")
+        if self.stop_trigger_poll_interval_seconds <= 0 or self.stop_trigger_poll_interval_seconds > 10:
+            raise ValueError("EXECUTION_STOP_TRIGGER_POLL_INVALID")
         for authority in self.allowed_entry_authorities:
             if not authority.strip():
                 raise ValueError("EXECUTION_ENTRY_AUTHORITY_INVALID")
@@ -228,6 +234,7 @@ class ExchangePort(Protocol):
     def quote(self, symbol: str) -> Quote: ...
     def account_snapshot(self) -> AccountSnapshot: ...
     def position_snapshot(self) -> ExchangePosition | None: ...
+    def protective_stop_snapshot(self, symbol: str) -> ProtectiveStopRef | None: ...
     def validate_protective_stop(self, symbol: str, side: str, stop_price: float) -> bool: ...
     def set_leverage(self, symbol: str, leverage: int) -> None: ...
     def open_market(self, plan: EntryPlan, *, client_order_id: str) -> Fill: ...
@@ -546,6 +553,9 @@ class ExecutionHealth:
             "flat_cycles": 0,
             "open_position_ticks": 0,
             "stop_updates": 0,
+            "stop_missing_events": 0,
+            "stop_settlement_waits": 0,
+            "stop_recoveries": 0,
             "emergency_exits": 0,
             "reconciliations": 0,
             "proposal_rejections": 0,
@@ -719,6 +729,130 @@ class ExecutionWorker:
         suffix = "" if last_error is None else f":{type(last_error).__name__}:{last_error}"
         raise ExecutionSafetyError(f"EMERGENCY_EXIT_FAILED_NOT_FLAT{suffix}")
 
+    def _poll_position_and_stop(self, position: dict[str, Any]) -> tuple[ExchangePosition | None, ProtectiveStopRef | None]:
+        exchange_position = self.exchange.position_snapshot()
+        if exchange_position is None:
+            return None, None
+        self._assert_position_match(position, exchange_position)
+        return exchange_position, self.exchange.protective_stop_snapshot(position["symbol"])
+
+    def _wait_for_missing_stop_settlement(self, position: dict[str, Any]) -> str:
+        """Preserve V1's grace window when a protective stop disappears.
+
+        Binance can remove a triggered conditional stop before the position
+        endpoint becomes flat. Treat that brief window as settlement, not as
+        proof that protection was silently lost.
+        """
+        self.health.inc("stop_settlement_waits")
+        deadline = time.monotonic() + self.config.stop_trigger_grace_seconds
+        while time.monotonic() < deadline:
+            self._sleep(self.config.stop_trigger_poll_interval_seconds)
+            exchange_position, stop_ref = self._poll_position_and_stop(position)
+            if exchange_position is None:
+                self._recover_exchange_flat(position)
+                self._log("info", "STOP_TRIGGER_SETTLED", symbol=position["symbol"])
+                return "POSITION_CLOSED"
+            if stop_ref is not None:
+                self._log(
+                    "info", "PROTECTIVE_STOP_REAPPEARED", symbol=position["symbol"],
+                    stop=stop_ref.trigger_price,
+                )
+                return "PROTECTED"
+        return "STILL_OPEN_UNPROTECTED"
+
+    def _wait_for_breached_stop_settlement(self, position: dict[str, Any]) -> str:
+        """Wait for an already-breached exchange stop to settle before flattening.
+
+        This is the proven V1 stop-trigger race guard. If Binance still reports
+        the position open after the bounded grace period, Execution takes over
+        with its verified emergency close.
+        """
+        self.health.inc("stop_settlement_waits")
+        deadline = time.monotonic() + self.config.stop_trigger_grace_seconds
+        while time.monotonic() < deadline:
+            self._sleep(self.config.stop_trigger_poll_interval_seconds)
+            exchange_position = self.exchange.position_snapshot()
+            if exchange_position is None:
+                self._recover_exchange_flat(position)
+                self._log("info", "STOP_TRIGGER_SETTLED", symbol=position["symbol"])
+                return "POSITION_CLOSED"
+            self._assert_position_match(position, exchange_position)
+        return "POSITION_STILL_OPEN"
+
+    def _restore_missing_protection(self, position: dict[str, Any]) -> str:
+        """Recover V1's missing-stop lifecycle without trusting local state as exchange truth."""
+        self.health.inc("stop_missing_events")
+        self._log(
+            "warning", "PROTECTIVE_STOP_MISSING", symbol=position["symbol"],
+            action="WAIT_FOR_SETTLEMENT",
+        )
+        settled = self._wait_for_missing_stop_settlement(position)
+        if settled == "POSITION_CLOSED":
+            return settled
+        if settled == "PROTECTED":
+            return "POSITION_MANAGED"
+
+        # The position survived the settlement window with no active stop.
+        # Re-check a fresh public quote before deciding whether the intended
+        # stop can safely be restored. This mirrors V1 reconciliation's live
+        # price check and does not depend on Observation.
+        quote = self.exchange.quote(position["symbol"])
+        live_price = quote.mid
+        intended_stop = float(position["stop_price"])
+        breached = live_price <= intended_stop if position["side"] == "LONG" else live_price >= intended_stop
+        if breached:
+            self._log(
+                "warning", "RECOVERY_STOP_ALREADY_BREACHED", symbol=position["symbol"],
+                stop=intended_stop, live_price=live_price, action="WAIT_FOR_SETTLEMENT",
+            )
+            settled = self._wait_for_breached_stop_settlement(position)
+            if settled == "POSITION_CLOSED":
+                return settled
+            close = self._verified_emergency_close(
+                position["symbol"], position["side"], reason="RECOVERY_BREACHED_STOP",
+            )
+            self._finalize_closed_position(close)
+            return "POSITION_CLOSED"
+
+        try:
+            stop_ref = self.exchange.ensure_protective_stop(
+                position["symbol"], position["side"], float(position["quantity"]), intended_stop,
+            )
+        except Exception as exc:
+            self._log(
+                "error", "PROTECTIVE_STOP_RECOVERY_FAILED", symbol=position["symbol"],
+                error=f"{type(exc).__name__}:{exc}",
+            )
+            close = self._verified_emergency_close(
+                position["symbol"], position["side"], reason="PROTECTION_RECOVERY_FAILED",
+            )
+            self._finalize_closed_position(close)
+            return "POSITION_CLOSED"
+        self._store_stop_ref(position, stop_ref)
+        self.state.open_position = position
+        self.state.save()
+        self.health.inc("stop_recoveries")
+        self._log(
+            "info", "PROTECTIVE_STOP_RECOVERED", symbol=position["symbol"],
+            stop=stop_ref.trigger_price,
+        )
+        return "POSITION_MANAGED"
+
+    def _ensure_open_position_protection(self, position: dict[str, Any]) -> str:
+        """Reconcile one locally known open position to canonical exchange protection."""
+        active = self.exchange.protective_stop_snapshot(position["symbol"])
+        if active is None:
+            result = self._restore_missing_protection(position)
+            if result == "POSITION_CLOSED":
+                return result
+        stop_ref = self.exchange.ensure_protective_stop(
+            position["symbol"], position["side"], float(position["quantity"]), float(position["stop_price"]),
+        )
+        self._store_stop_ref(position, stop_ref)
+        self.state.open_position = position
+        self.state.save()
+        return "PROTECTED"
+
     def _post_fill_violation(
         self, proposal: ExecutionProposal, plan: EntryPlan, fill: Fill, stop_ref: ProtectiveStopRef,
     ) -> str | None:
@@ -764,12 +898,11 @@ class ExecutionWorker:
                 self._log("info", "EXECUTION_PREPARED", result="RECOVERED_CLOSED_POSITION")
                 return "RECOVERED_CLOSED_POSITION"
             self._assert_position_match(local, exchange_position)
-            stop_ref = self.exchange.ensure_protective_stop(
-                local["symbol"], local["side"], float(local["quantity"]), float(local["stop_price"])
-            )
-            self._store_stop_ref(local, stop_ref)
-            self.state.open_position = local
-            self.state.save()
+            protection = self._ensure_open_position_protection(local)
+            if protection == "POSITION_CLOSED":
+                self._prepared = True
+                self._log("info", "EXECUTION_PREPARED", result="RECOVERED_CLOSED_POSITION")
+                return "RECOVERED_CLOSED_POSITION"
         self._prepared = True
         result = "POSITION_OPEN" if local is not None else "FLAT"
         self._log("info", "EXECUTION_PREPARED", result=result)
@@ -925,6 +1058,13 @@ class ExecutionWorker:
         return policy
 
     def enable_new_entries(self) -> None:
+        # V1 operator-resume parity: exchange/local truth is reconciled before
+        # changing the entry gate. Enabling never bypasses an unmanaged or
+        # mismatched exchange position.
+        if not self._prepared:
+            self.prepare()
+        else:
+            self.reconcile_open_position()
         self._roll_daily(self._now_ms())
         if bool((self.state.data.get("daily_risk") or {}).get("halted", False)):
             raise ExecutionSafetyError("DAILY_RISK_HALT_ACTIVE")
@@ -1125,6 +1265,9 @@ class ExecutionWorker:
                 self._recover_exchange_flat(position)
                 return "POSITION_CLOSED"
             self._assert_position_match(position, exchange_position)
+            stop_ref = self.exchange.protective_stop_snapshot(position["symbol"])
+            if stop_ref is None:
+                return self._restore_missing_protection(position)
 
             entry = float(position["entry_price"])
             qty = float(position["quantity"])
@@ -1163,8 +1306,15 @@ class ExecutionWorker:
 
             breached = price <= float(position["stop_price"]) if position["side"] == "LONG" else price >= float(position["stop_price"])
             if breached:
+                self._log(
+                    "warning", "LOCAL_STOP_BREACH_OBSERVED", symbol=position["symbol"],
+                    stop=position["stop_price"], price=price, action="WAIT_FOR_EXCHANGE_SETTLEMENT",
+                )
+                settled = self._wait_for_breached_stop_settlement(position)
+                if settled == "POSITION_CLOSED":
+                    return "POSITION_CLOSED"
                 close = self._verified_emergency_close(
-                    position["symbol"], position["side"], reason="LOCAL_STOP_BREACH",
+                    position["symbol"], position["side"], reason="LOCAL_STOP_BREACH_UNSETTLED",
                 )
                 self._finalize_closed_position(close)
                 return "POSITION_CLOSED"
@@ -1207,12 +1357,9 @@ class ExecutionWorker:
             self._recover_exchange_flat(position)
             return "POSITION_CLOSE_RECOVERED"
         self._assert_position_match(position, exchange_position)
-        stop_ref = self.exchange.ensure_protective_stop(
-            position["symbol"], position["side"], float(position["quantity"]), float(position["stop_price"])
-        )
-        self._store_stop_ref(position, stop_ref)
-        self.state.open_position = position
-        self.state.save()
+        protection = self._ensure_open_position_protection(position)
+        if protection == "POSITION_CLOSED":
+            return "POSITION_CLOSE_RECOVERED"
         return "POSITION_RECONCILED"
 
     @staticmethod
