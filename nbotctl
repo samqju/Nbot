@@ -9,8 +9,16 @@ import sys
 
 from nbot.common.atomic_io import atomic_write_text
 from nbot.common.time import utc_iso
+from nbot.config.bootstrap import bootstrap_layout, validate_layout
 from nbot.config.profiles import PROFILES, get_profile
-from nbot.config.validation import arm_path, detect_role, profile_is_armed, validate_role_profile
+from nbot.config.validation import (
+    arm_path,
+    arm_state,
+    detect_role,
+    profile_is_armed,
+    validate_host_foundation,
+    validate_role_profile,
+)
 
 ROOT = Path(__file__).resolve().parent
 
@@ -27,30 +35,72 @@ def _git_identity() -> dict[str, str]:
     }
 
 
+def _merge_results(*results) -> tuple[bool, list[str], list[str]]:
+    ok = True
+    checks: list[str] = []
+    warnings: list[str] = []
+    for result in results:
+        ok = ok and result.ok
+        checks.extend(result.checks)
+        warnings.extend(result.warnings)
+    return ok, checks, warnings
+
+
+def cmd_bootstrap(_: argparse.Namespace) -> int:
+    role = detect_role(ROOT)
+    created = bootstrap_layout(ROOT, role)
+    problems = validate_layout(ROOT, role)
+    payload = {
+        "status": "PASS" if not problems else "FAIL",
+        "phase": "V3.0",
+        "role": role.value,
+        "created_or_verified": list(created),
+        "problems": list(problems),
+    }
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0 if not problems else 2
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     role = detect_role(ROOT)
     profile = get_profile(args.profile)
-    result = validate_role_profile(repo_root=ROOT, role=role, profile=profile)
+    role_profile = validate_role_profile(repo_root=ROOT, role=role, profile=profile)
+    host = validate_host_foundation(repo_root=ROOT, role=role)
+    ok, checks, warnings = _merge_results(role_profile, host)
     payload = {
-        "status": "PASS" if result.ok else "FAIL",
+        "status": "PASS" if ok else "FAIL",
         "phase": "V3.0",
         "role": role.value,
         "profile": profile.name,
         "market_environment": profile.market_environment,
         "execution_mode": profile.execution_mode,
         "evidence_lineage": profile.evidence_lineage,
-        "armed": profile_is_armed(ROOT, profile),
+        "arm_required": bool(role.value == "EXECUTION" and profile.requires_arm_gate),
+        "arm_state": arm_state(ROOT, role, profile),
         "git": _git_identity(),
-        "checks": list(result.checks),
-        "warnings": list(result.warnings),
+        "checks": checks,
+        "warnings": warnings,
     }
     print(json.dumps(payload, indent=2, sort_keys=True))
-    return 0 if result.ok else 2
+    return 0 if ok else 2
 
 
 def cmd_status(_: argparse.Namespace) -> int:
     role = detect_role(ROOT)
-    print(json.dumps({"phase": "V3.0", "role": role.value, "git": _git_identity()}, indent=2, sort_keys=True))
+    problems = validate_layout(ROOT, role)
+    print(
+        json.dumps(
+            {
+                "phase": "V3.0",
+                "role": role.value,
+                "git": _git_identity(),
+                "layout": "READY" if not problems else "NOT_BOOTSTRAPPED",
+                "layout_problems": list(problems),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
     return 0
 
 
@@ -94,6 +144,9 @@ def cmd_not_implemented(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="nbotctl")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    bootstrap = sub.add_parser("bootstrap")
+    bootstrap.set_defaults(func=cmd_bootstrap)
 
     doctor = sub.add_parser("doctor")
     doctor.add_argument("profile", choices=sorted(PROFILES))
