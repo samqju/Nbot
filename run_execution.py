@@ -36,6 +36,7 @@ from nbot.execution.canary import (
 from nbot.execution.emergency import EmergencyFlattener
 from nbot.execution.entry import EntryLifecycle, EntryLifecycleConfig
 from nbot.execution.execution import ExecutionWorker, OutcomeClient, ProposalClient
+from nbot.execution.fault_campaign import fault_campaign_summary
 from nbot.execution.outcomes import ExecutionDurableStore
 from nbot.execution.position import INTEGER_R_STEP_CONTROL, PositionLifecycle
 from nbot.execution.reconciliation import ReconciliationLifecycle
@@ -208,6 +209,7 @@ def self_check(repo_root: Path, profile_name: str) -> int:
                 "v3_2_canary_outcome_transport": "TESTNET_MECHANICAL_LOCAL_ACK_ONLY",
                 "v3_2_operator_actions": ["CANARY", "RECONCILE", "FORCE_CLOSE"],
                 "v3_2_telemetry": "TESTNET_MECHANICAL_ONLY_JSONL",
+                "v3_2_fault_campaign": fault_campaign_summary(),
             },
             indent=2,
             sort_keys=True,

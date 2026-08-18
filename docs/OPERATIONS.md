@@ -123,5 +123,47 @@ mechanical-canary campaign.  This avoids falsely declaring V3.2 accepted before
 the complete physical/fault gate passes.
 
 V3.2.2 does **not** add fault injection.  Ambiguous entry/stop, post-fill breach,
-and emergency-failure campaign controls belong to V3.2.3.  Physical LONG/SHORT,
+and emergency-failure deterministic equivalents belong to V3.2.3.  Physical LONG/SHORT,
 restart/offline, trailing and force-close evidence belongs to V3.2.4.
+
+## V3.2.3 deterministic fault-equivalent campaign
+
+V3.2.3 closes the code-side entry/stop/emergency fault campaign without adding
+an artificial failure switch to the capital runtime.  The canonical V3.2 gate
+allows capital-safety faults to be proven by deterministic equivalents, and the
+existing V3.1 Execution core already contains the real safety mechanisms being
+exercised.
+
+The registry in `nbot/execution/fault_campaign.py` maps all **20 canonical
+entry/stop/emergency fault requirements** to deterministic tests:
+
+- 10 entry faults;
+- 7 stop faults;
+- 3 emergency faults.
+
+The campaign explicitly **does not add runtime fault injection**.  There is no
+`--fault-scenario`, `--inject-fault`, or equivalent switch that can deliberately
+corrupt a real Testnet capital path.  Tests instead drive the actual
+EntryLifecycle, Position/Reconciliation safety boundaries, EmergencyFlattener,
+and Binance Testnet adapter against deterministic fault fixtures.
+
+Two restart-sensitive stop cases retain an additional physical V3.2.4 follow-up
+requirement even though their deterministic equivalents remain permanent
+regressions:
+
+- missing protective stop after restart;
+- orphan protective stop after an exchange-side close.
+
+The targeted code-side campaign is:
+
+```bash
+./.venv/bin/python -m unittest \
+  tests.test_v323_fault_equivalents \
+  tests.test_v323_fault_campaign -v
+```
+
+A green deterministic campaign is **not** permission to declare V3.2 complete.
+V3.2.4 still performs the deliberate physical Binance Testnet LONG/SHORT,
+trailing, force-close, restart/offline, missing-stop/orphan-stop and exchange
+truth campaign.  Only V3.2.5 may close the phase acceptance gate and create the
+`v3.2-execution-testnet-mechanical-proven` tag.
