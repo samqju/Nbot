@@ -61,3 +61,67 @@ most one fresh proposal per invocation.  If restart reconciliation finds an
 existing protected position, the invocation resumes management and creates no
 new proposal.  Ctrl+C leaves an open position protected for deliberate
 restart/reconciliation testing.
+
+## V3.2.2 operator mechanics and telemetry
+
+V3.2.2 keeps the same standalone `TESTNET_MECHANICAL_ONLY` authority and adds
+operator actions needed for the physical canary campaign.  These actions do not
+create Observation communication and do not change risk, sizing, leverage,
+spread, trailing, or stop semantics.
+
+After Testnet credentials are deliberately installed and the profile is armed:
+
+```bash
+./run_execution.py --profile testnet-trade --testnet-reconcile --yes
+./run_execution.py --profile testnet-trade --testnet-force-close --yes
+```
+
+`--testnet-reconcile` performs one capital-first reconciliation.  It may restore
+or clean protective state according to the existing V3.1 reconciliation rules,
+so it requires both the Testnet arm gate and explicit `--yes`.
+
+`--testnet-force-close` first disables new entries, uses the same bounded
+verified-flat close boundary as emergency handling, then runs authoritative
+reconciliation to recover close/PnL evidence.  A close request by itself is
+never reported as success.  Any resulting mechanical outcome is ACKed only into
+the local Testnet mechanical record.
+
+Every V3.2 mechanical action writes a per-run operational telemetry journal
+under:
+
+```text
+data/execution/testnet/mechanical_canary_telemetry/<run_id>.jsonl
+```
+
+The records are always labeled:
+
+```text
+authority=TESTNET_MECHANICAL_ONLY
+evidence_class=TESTNET_MECHANICAL_ONLY
+research_evidence=false
+```
+
+The V3.2 telemetry set covers:
+
+- market-order request/fill latency;
+- initial protective-stop placement/verification latency;
+- stop-replacement latency;
+- reconciliation latency;
+- existing position-management latency from the durable Execution health monitor;
+- emergency requests/results and close attempts;
+- recovery attempts/results, stop recoveries, and orphan-stop cleanup;
+- duplicate-prevention events;
+- process CPU percentage samples and resident-memory high-water mark.
+
+Telemetry failure is intentionally non-capital-bearing: a telemetry write failure
+must not interrupt stop protection, position management, reconciliation, or a
+verified flatten.  The telemetry summary exposes a `write_failures` count.
+
+`./nbotctl status` continues to report the last accepted Execution checkpoint as
+`phase=V3.1`, while also reporting `active_execution_phase=V3.2` during the
+mechanical-canary campaign.  This avoids falsely declaring V3.2 accepted before
+the complete physical/fault gate passes.
+
+V3.2.2 does **not** add fault injection.  Ambiguous entry/stop, post-fill breach,
+and emergency-failure campaign controls belong to V3.2.3.  Physical LONG/SHORT,
+restart/offline, trailing and force-close evidence belongs to V3.2.4.

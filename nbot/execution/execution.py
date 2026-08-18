@@ -143,6 +143,34 @@ class ExecutionWorker:
         self.state.set_entries_enabled(False)
         self._health_event("EXECUTION_NEW_ENTRIES_DISABLED")
 
+    def force_close_open_position(self, *, reason: str) -> ReconciliationResult:
+        """Verified operator close followed by authoritative reconciliation.
+
+        This is deliberately capital-only.  It disables new entries first, uses
+        the same verified-flat emergency boundary as safety handling, and then
+        requires reconciliation to recover authoritative close accounting.
+        Returning never means that a close request alone was trusted.
+        """
+        if not isinstance(reason, str) or not reason or reason != reason.strip():
+            raise ExecutionWorkerError("FORCE_CLOSE_REASON_INVALID")
+        if not self._prepared:
+            self.prepare()
+        self.disable_new_entries()
+        local = self.state.open_position
+        if local is None:
+            return ReconciliationResult(status="FLAT")
+        try:
+            self.position.emergency.flatten_verified(local.symbol, local.side, reason=reason)
+        except Exception as exc:
+            self._health_event("FORCE_CLOSE_FAILED")
+            raise ExecutionWorkerError("FORCE_CLOSE_FAILED") from exc
+        result = self._reconcile_now()
+        if self.state.open_position is not None or self.state.entry_inflight is not None:
+            self._health_event("FORCE_CLOSE_RECONCILIATION_NOT_FLAT")
+            raise ExecutionWorkerError("FORCE_CLOSE_RECONCILIATION_NOT_FLAT")
+        self._health_event("FORCE_CLOSE_CONFIRMED_FLAT")
+        return result
+
     def process_flat_cycle(self) -> str:
         """Perform one flat-side cycle in strict capital-first order.
 

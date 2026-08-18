@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 import json
 import os
 from pathlib import Path
@@ -26,6 +27,7 @@ from nbot.config.validation import (
 
 ROOT = Path(__file__).resolve().parent
 PHASE = "V3.1"
+ACTIVE_EXECUTION_PHASE = "V3.2"
 
 
 def _git_identity() -> dict[str, str]:
@@ -80,6 +82,7 @@ def _doctor_payload(profile_name: str) -> tuple[dict, int]:
     payload = {
         "status": "PASS" if ok else "FAIL",
         "phase": PHASE,
+        "active_execution_phase": ACTIVE_EXECUTION_PHASE if role.value == "EXECUTION" else PHASE,
         "role": role.value,
         "profile": profile.name,
         "market_environment": profile.market_environment,
@@ -203,14 +206,34 @@ def _execution_state_summary(profile_name: str) -> dict:
             market_environment=profile.market_environment,
         )
         snap = store.snapshot
+        open_detail = None
+        if snap.open_position is not None:
+            open_detail = {
+                "symbol": snap.open_position.symbol,
+                "side": snap.open_position.side,
+                "quantity": snap.open_position.quantity,
+                "entry_price": snap.open_position.entry_price,
+                "stop_price": snap.open_position.stop_price,
+                "mfe_r": snap.open_position.mfe_r,
+                "mae_r": snap.open_position.mae_r,
+            }
+        telemetry_dir = ROOT / "data/execution/testnet/mechanical_canary_telemetry"
+        telemetry_files = sorted(telemetry_dir.glob("*.jsonl"), key=lambda item: item.stat().st_mtime) if telemetry_dir.is_dir() else []
         return {
             "state": "VALID",
             "entries_enabled": snap.entries_enabled,
             "open_position": None if snap.open_position is None else snap.open_position.symbol,
+            "open_position_detail": open_detail,
             "entry_inflight": None if snap.entry_inflight is None else snap.entry_inflight.proposal_id,
             "pending_outcomes": pending,
             "recovery_critical": snap.recovery.critical,
+            "recovery": asdict(snap.recovery),
+            "health": asdict(snap.health),
             "last_event": snap.health.last_event,
+            "latest_testnet_mechanical_telemetry": (
+                None if profile.name != "testnet-trade" or not telemetry_files
+                else str(telemetry_files[-1].relative_to(ROOT))
+            ),
         }
     except Exception as exc:
         return {"state": f"INVALID:{type(exc).__name__}:{exc}"}
@@ -242,6 +265,7 @@ def cmd_status(_: argparse.Namespace) -> int:
     problems = validate_layout(ROOT, role)
     payload = {
         "phase": PHASE,
+        "active_execution_phase": ACTIVE_EXECUTION_PHASE if role.value == "EXECUTION" else PHASE,
         "role": role.value,
         "git": _git_identity(),
         "layout": "READY" if not problems else "NOT_BOOTSTRAPPED",

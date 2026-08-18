@@ -22,7 +22,12 @@ from nbot.exchange.binance_testnet import (
     TestnetExchangeConfig,
 )
 from nbot.execution.canary import (
+    MechanicalCanaryEmergencyFlattener,
+    MechanicalCanaryEntryLifecycle,
     MechanicalCanaryOutcomeClient,
+    MechanicalCanaryReconciliationLifecycle,
+    MechanicalCanaryTelemetry,
+    MechanicalCanaryTestnetExchange,
     OneShotMechanicalProposalClient,
     TESTNET_MECHANICAL_AUTHORITY,
     make_mechanical_proposal,
@@ -85,7 +90,12 @@ def runtime_environment(
     return merged_environment(source, environ=os.environ)
 
 
-def build_testnet_exchange(repo_root: Path, environment: Mapping[str, str]) -> BinanceTestnetExchange:
+def build_testnet_exchange(
+    repo_root: Path,
+    environment: Mapping[str, str],
+    *,
+    telemetry: MechanicalCanaryTelemetry | None = None,
+) -> BinanceTestnetExchange:
     cfg = TestnetExchangeConfig(
         api_key=str(environment.get("TESTNET_API_KEY", "")).strip(),
         api_secret=str(environment.get("TESTNET_API_SECRET", "")).strip(),
@@ -102,6 +112,8 @@ def build_testnet_exchange(repo_root: Path, environment: Mapping[str, str]) -> B
         close_settlement_retry_seconds=float(environment.get("TESTNET_CLOSE_SETTLEMENT_RETRY_SECONDS", "0.5")),
     )
     cfg.validate()
+    if telemetry is not None:
+        return MechanicalCanaryTestnetExchange(cfg, telemetry)
     return BinanceTestnetExchange(cfg)
 
 
@@ -112,6 +124,7 @@ def build_execution_worker(
     exchange: BinanceTestnetExchange,
     proposal_client: ProposalClient | None = None,
     outcome_client: OutcomeClient | None = None,
+    telemetry: MechanicalCanaryTelemetry | None = None,
 ) -> ExecutionWorker:
     profile = get_profile(profile_name)
     if profile.name != "testnet-trade":
@@ -119,8 +132,15 @@ def build_execution_worker(
 
     durable = ExecutionDurableStore(repo_root, profile=profile.name)
     risk = RiskManager()
-    emergency = EmergencyFlattener(exchange=exchange)
-    entry = EntryLifecycle(
+    if telemetry is None:
+        emergency = EmergencyFlattener(exchange=exchange)
+        entry_type = EntryLifecycle
+        reconciliation_type = ReconciliationLifecycle
+    else:
+        emergency = MechanicalCanaryEmergencyFlattener(exchange=exchange, telemetry=telemetry)
+        entry_type = MechanicalCanaryEntryLifecycle
+        reconciliation_type = MechanicalCanaryReconciliationLifecycle
+    entry_kwargs = dict(
         exchange=exchange,
         state=durable.state,
         risk=risk,
@@ -132,18 +152,24 @@ def build_execution_worker(
             allowed_exit_policies=frozenset({INTEGER_R_STEP_CONTROL}),
         ),
     )
+    if telemetry is not None:
+        entry_kwargs["telemetry"] = telemetry
+    entry = entry_type(**entry_kwargs)
     position = PositionLifecycle(
         exchange=exchange,
         state=durable.state,
         risk=risk,
         emergency=emergency,
     )
-    reconciliation = ReconciliationLifecycle(
+    reconciliation_kwargs = dict(
         exchange=exchange,
         durable=durable,
         risk=risk,
         emergency=emergency,
     )
+    if telemetry is not None:
+        reconciliation_kwargs["telemetry"] = telemetry
+    reconciliation = reconciliation_type(**reconciliation_kwargs)
     return ExecutionWorker(
         exchange=exchange,
         durable=durable,
@@ -180,6 +206,8 @@ def self_check(repo_root: Path, profile_name: str) -> int:
                 "outcome_transport": "NONE_V3_1_DURABLE_LOCAL_ONLY",
                 "v3_2_canary_proposal_source": "TESTNET_MECHANICAL_ONLY_EXPLICIT_INVOCATION",
                 "v3_2_canary_outcome_transport": "TESTNET_MECHANICAL_LOCAL_ACK_ONLY",
+                "v3_2_operator_actions": ["CANARY", "RECONCILE", "FORCE_CLOSE"],
+                "v3_2_telemetry": "TESTNET_MECHANICAL_ONLY_JSONL",
             },
             indent=2,
             sort_keys=True,
@@ -231,8 +259,9 @@ def run_testnet_canary(
     if side not in {"LONG", "SHORT"}:
         raise ValueError("NBOT_TESTNET_CANARY_SIDE_INVALID")
 
-    exchange = build_testnet_exchange(repo_root, environment)
-    proposal_client = OneShotMechanicalProposalClient()
+    telemetry = MechanicalCanaryTelemetry(repo_root, action="CANARY")
+    exchange = build_testnet_exchange(repo_root, environment, telemetry=telemetry)
+    proposal_client = OneShotMechanicalProposalClient(telemetry)
     outcome_client = MechanicalCanaryOutcomeClient(mechanical_outcome_path(repo_root))
     worker = build_execution_worker(
         repo_root=repo_root,
@@ -240,6 +269,7 @@ def run_testnet_canary(
         exchange=exchange,
         proposal_client=proposal_client,
         outcome_client=outcome_client,
+        telemetry=telemetry,
     )
 
     try:
@@ -275,6 +305,7 @@ def run_testnet_canary(
                         sort_keys=True,
                     )
                 )
+                telemetry.finish("ENTRY_NOT_OPENED")
                 return 2
         else:
             entry_result = "RESUMED_EXISTING_POSITION"
@@ -306,9 +337,19 @@ def run_testnet_canary(
                 assert current is not None
                 quote = exchange.quote(current.symbol)
                 worker.process_open_quote(quote)
+                health = worker.state.health
+                telemetry.observe_latency(
+                    "position_management_ms",
+                    health.last_position_manage_ms,
+                    status="PASS",
+                    durable_max_ms=health.max_position_manage_ms,
+                )
+                telemetry.sample_resources()
                 time.sleep(open_poll_seconds)
         except KeyboardInterrupt:
+            summary = telemetry.finish("INTERRUPTED_POSITION_LEFT_PROTECTED")
             print("TESTNET_MECHANICAL_CANARY_INTERRUPTED_POSITION_LEFT_PROTECTED", flush=True)
+            print(json.dumps({"telemetry": summary}, sort_keys=True), flush=True)
             return 0
 
         # The close outcome is already durable locally.  ACK it into the
@@ -316,6 +357,7 @@ def run_testnet_canary(
         worker.process_flat_cycle()
         if worker.durable.outbox.pending_count():
             raise ValueError("NBOT_TESTNET_CANARY_OUTCOME_ACK_FAILED")
+        summary = telemetry.finish("CLOSED")
         print(
             json.dumps(
                 {
@@ -324,12 +366,125 @@ def run_testnet_canary(
                     "authority": TESTNET_MECHANICAL_AUTHORITY,
                     "evidence_class": "TESTNET_MECHANICAL_ONLY",
                     "research_evidence": False,
+                    "telemetry": summary,
                 },
                 sort_keys=True,
             )
         )
         return 0
     finally:
+        if not telemetry.finished:
+            telemetry.finish("EXITED_BEFORE_NORMAL_FINISH")
+        try:
+            exchange.disconnect()
+        except Exception:
+            pass
+
+
+def run_testnet_reconcile(
+    *,
+    repo_root: Path,
+    environment: Mapping[str, str],
+    confirmed: bool,
+) -> int:
+    """Run one explicit capital-first Testnet reconciliation with telemetry."""
+    profile = get_profile("testnet-trade")
+    if not confirmed:
+        raise ValueError("NBOT_TESTNET_RECONCILE_REQUIRES_EXPLICIT_YES")
+    if not profile_is_armed(repo_root, profile):
+        raise ValueError("NBOT_TESTNET_RECONCILE_REQUIRES_EXPLICIT_ARM")
+    telemetry = MechanicalCanaryTelemetry(repo_root, action="RECONCILE")
+    exchange = build_testnet_exchange(repo_root, environment, telemetry=telemetry)
+    outcome_client = MechanicalCanaryOutcomeClient(mechanical_outcome_path(repo_root))
+    worker = build_execution_worker(
+        repo_root=repo_root,
+        profile_name=profile.name,
+        exchange=exchange,
+        outcome_client=outcome_client,
+        telemetry=telemetry,
+    )
+    try:
+        result = worker.prepare()
+        worker.disable_new_entries()
+        if worker.state.open_position is None and worker.durable.outbox.pending_count():
+            worker.process_flat_cycle()
+        summary = telemetry.finish("PASS")
+        print(
+            json.dumps(
+                {
+                    "event": "NBOT_TESTNET_MECHANICAL_RECONCILE",
+                    "phase": "V3.2",
+                    "authority": TESTNET_MECHANICAL_AUTHORITY,
+                    "result": result.status,
+                    "open_position": None if worker.state.open_position is None else worker.state.open_position.symbol,
+                    "pending_outcomes": worker.durable.outbox.pending_count(),
+                    "telemetry": summary,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
+    finally:
+        if not telemetry.finished:
+            telemetry.finish("FAILED_OR_INTERRUPTED")
+        try:
+            exchange.disconnect()
+        except Exception:
+            pass
+
+
+def run_testnet_force_close(
+    *,
+    repo_root: Path,
+    environment: Mapping[str, str],
+    confirmed: bool,
+) -> int:
+    """Verified operator Testnet flatten; never trusts the close request alone."""
+    profile = get_profile("testnet-trade")
+    if not confirmed:
+        raise ValueError("NBOT_TESTNET_FORCE_CLOSE_REQUIRES_EXPLICIT_YES")
+    if not profile_is_armed(repo_root, profile):
+        raise ValueError("NBOT_TESTNET_FORCE_CLOSE_REQUIRES_EXPLICIT_ARM")
+    telemetry = MechanicalCanaryTelemetry(repo_root, action="FORCE_CLOSE")
+    exchange = build_testnet_exchange(repo_root, environment, telemetry=telemetry)
+    outcome_client = MechanicalCanaryOutcomeClient(mechanical_outcome_path(repo_root))
+    worker = build_execution_worker(
+        repo_root=repo_root,
+        profile_name=profile.name,
+        exchange=exchange,
+        outcome_client=outcome_client,
+        telemetry=telemetry,
+    )
+    try:
+        prepared = worker.prepare()
+        worker.disable_new_entries()
+        result = worker.force_close_open_position(reason="OPERATOR_TESTNET_FORCE_CLOSE")
+        if worker.state.open_position is None and worker.durable.outbox.pending_count():
+            worker.process_flat_cycle()
+        if worker.state.open_position is not None:
+            raise ValueError("NBOT_TESTNET_FORCE_CLOSE_LOCAL_STATE_NOT_FLAT")
+        summary = telemetry.finish("CONFIRMED_FLAT")
+        print(
+            json.dumps(
+                {
+                    "event": "NBOT_TESTNET_MECHANICAL_FORCE_CLOSE",
+                    "phase": "V3.2",
+                    "authority": TESTNET_MECHANICAL_AUTHORITY,
+                    "prepared": prepared.status,
+                    "reconciliation": result.status,
+                    "pending_outcomes": worker.durable.outbox.pending_count(),
+                    "confirmed_flat": True,
+                    "telemetry": summary,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
+    finally:
+        if not telemetry.finished:
+            telemetry.finish("FAILED_OR_INTERRUPTED")
         try:
             exchange.disconnect()
         except Exception:
@@ -421,6 +576,8 @@ def main() -> int:
     action.add_argument("--self-check", action="store_true")
     action.add_argument("--preflight-only", action="store_true")
     action.add_argument("--testnet-canary", action="store_true")
+    action.add_argument("--testnet-reconcile", action="store_true")
+    action.add_argument("--testnet-force-close", action="store_true")
     parser.add_argument("--symbol", default="BTCUSDT")
     parser.add_argument("--side", choices=("LONG", "SHORT"), default="LONG")
     parser.add_argument("--yes", action="store_true")
@@ -451,6 +608,18 @@ def main() -> int:
             repo_root=root,
             environment=environment,
             symbol=args.symbol,
+        )
+    if args.testnet_reconcile:
+        return run_testnet_reconcile(
+            repo_root=root,
+            environment=environment,
+            confirmed=args.yes,
+        )
+    if args.testnet_force_close:
+        return run_testnet_force_close(
+            repo_root=root,
+            environment=environment,
+            confirmed=args.yes,
         )
     if args.testnet_canary:
         return run_testnet_canary(
