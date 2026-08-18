@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+from nbot.common.atomic_io import atomic_write_text
+from nbot.common.time import utc_iso
+from nbot.config.profiles import PROFILES, get_profile
+from nbot.config.validation import arm_path, detect_role, profile_is_armed, validate_role_profile
+
+ROOT = Path(__file__).resolve().parent
+
+
+def _git_identity() -> dict[str, str]:
+    def run(*args: str) -> str:
+        try:
+            return subprocess.check_output(args, cwd=ROOT, text=True, stderr=subprocess.DEVNULL).strip()
+        except Exception:
+            return "UNKNOWN"
+    return {
+        "sha": run("git", "rev-parse", "HEAD"),
+        "tag": run("git", "describe", "--tags", "--exact-match", "HEAD"),
+    }
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    role = detect_role(ROOT)
+    profile = get_profile(args.profile)
+    result = validate_role_profile(repo_root=ROOT, role=role, profile=profile)
+    payload = {
+        "status": "PASS" if result.ok else "FAIL",
+        "phase": "V3.0",
+        "role": role.value,
+        "profile": profile.name,
+        "market_environment": profile.market_environment,
+        "execution_mode": profile.execution_mode,
+        "evidence_lineage": profile.evidence_lineage,
+        "armed": profile_is_armed(ROOT, profile),
+        "git": _git_identity(),
+        "checks": list(result.checks),
+        "warnings": list(result.warnings),
+    }
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0 if result.ok else 2
+
+
+def cmd_status(_: argparse.Namespace) -> int:
+    role = detect_role(ROOT)
+    print(json.dumps({"phase": "V3.0", "role": role.value, "git": _git_identity()}, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_arm(args: argparse.Namespace) -> int:
+    role = detect_role(ROOT)
+    if role.value != "EXECUTION":
+        raise SystemExit("NBOT_ARM_EXECUTION_ROLE_ONLY")
+    profile = get_profile(args.profile)
+    if not profile.requires_arm_gate:
+        raise SystemExit("NBOT_PROFILE_DOES_NOT_REQUIRE_ARMING")
+    if profile.name == "live-trade":
+        raise SystemExit("NBOT_LIVE_TRADE_ARMING_FORBIDDEN_BEFORE_V3_10")
+    path = arm_path(ROOT, profile)
+    identity = _git_identity()
+    atomic_write_text(
+        path,
+        f"profile={profile.name}\nsha={identity['sha']}\narmed_at={utc_iso()}\n",
+        mode=0o600,
+    )
+    print(f"ARMED {profile.name} {path}")
+    return 0
+
+
+def cmd_disarm(args: argparse.Namespace) -> int:
+    role = detect_role(ROOT)
+    if role.value != "EXECUTION":
+        raise SystemExit("NBOT_DISARM_EXECUTION_ROLE_ONLY")
+    profile = get_profile(args.profile)
+    if not profile.requires_arm_gate:
+        raise SystemExit("NBOT_PROFILE_DOES_NOT_REQUIRE_ARMING")
+    path = arm_path(ROOT, profile)
+    path.unlink(missing_ok=True)
+    print(f"DISARMED {profile.name}")
+    return 0
+
+
+def cmd_not_implemented(args: argparse.Namespace) -> int:
+    raise SystemExit(f"NBOT_V3_COMMAND_NOT_IMPLEMENTED_IN_FOUNDATION:{args.command}")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="nbotctl")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    doctor = sub.add_parser("doctor")
+    doctor.add_argument("profile", choices=sorted(PROFILES))
+    doctor.set_defaults(func=cmd_doctor)
+
+    status = sub.add_parser("status")
+    status.set_defaults(func=cmd_status)
+
+    for name in ("arm", "disarm"):
+        p = sub.add_parser(name)
+        p.add_argument("profile", choices=("testnet-trade", "live-trade"))
+        p.set_defaults(func=cmd_arm if name == "arm" else cmd_disarm)
+
+    for name in ("start", "stop", "restart", "logs"):
+        p = sub.add_parser(name)
+        if name in {"start", "restart"}:
+            p.add_argument("profile", choices=sorted(PROFILES))
+        p.set_defaults(func=cmd_not_implemented)
+
+    cluster = sub.add_parser("cluster")
+    cluster.add_argument("action", choices=("doctor", "start", "stop", "status"))
+    cluster.add_argument("profile", nargs="?", choices=sorted(PROFILES))
+    cluster.set_defaults(func=cmd_not_implemented)
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    try:
+        return int(args.func(args))
+    except ValueError as exc:
+        print(f"FAIL {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

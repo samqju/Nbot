@@ -1,3 +1,2 @@
-# V2.8 Testnet execution transport. Keep pinned for reproducibility.
-requests==2.32.5
-websocket-client==1.9.0
+# V3.0 uses only the Python standard library.
+# Dependencies are added and pinned only when the phase introducing them requires them.

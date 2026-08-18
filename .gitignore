@@ -1,15 +1,34 @@
+# Local machine identity and environment
+.nbot-role
 .env
 .env.*
 !.env.example
+
+# Secrets are never committed
+config/secrets/
+
+# Python
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+
+# Mutable runtime artifacts
 data/
 runtime/
 logs/
 models/
+
+# Databases and journals
+*.db
 *.sqlite
 *.sqlite3
 *.db-wal
 *.db-shm
+*.jsonl
+*.lock
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store

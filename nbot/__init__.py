@@ -1,3 +1,3 @@
-"""NBOT V2 research-first market evidence and execution-boundary system."""
+"""NBOT V3 clean two-worker trading system."""
 
-__version__ = "2.8.5-execution-parity-operations"
+__version__ = "3.0.0-foundation"
