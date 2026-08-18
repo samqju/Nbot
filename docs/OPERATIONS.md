@@ -117,6 +117,12 @@ Telemetry failure is intentionally non-capital-bearing: a telemetry write failur
 must not interrupt stop protection, position management, reconciliation, or a
 verified flatten.  The telemetry summary exposes a `write_failures` count.
 
+During V3.2.4 physical recovery, close settlement may itself prune an orphan
+protective stop before the generic orphan-cleanup pass runs.  Mechanical
+telemetry therefore counts the verified stop-count reduction around close
+recovery as `orphan_stops_removed`; the counting probes are best-effort and
+never allowed to interrupt recovery.
+
 `./nbotctl status` continues to report the last accepted Execution checkpoint as
 `phase=V3.1`, while also reporting `active_execution_phase=V3.2` during the
 mechanical-canary campaign.  This avoids falsely declaring V3.2 accepted before

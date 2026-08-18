@@ -241,24 +241,65 @@ class MechanicalCanaryTestnetExchange(BinanceTestnetExchange):
             side=side,
         )
 
+    def _best_effort_active_stop_count(self, symbol: str) -> int | None:
+        try:
+            return len(self._active_stops(symbol))
+        except Exception as exc:
+            self.telemetry.record(
+                "TELEMETRY_PROBE_FAILED",
+                probe="active_stop_count",
+                symbol=symbol,
+                error=str(exc),
+            )
+            return None
+
+    def _record_recovery_stop_prune(
+        self,
+        symbol: str,
+        before: int | None,
+        *,
+        recovery_type: str,
+    ) -> None:
+        if before is None:
+            return
+        after = self._best_effort_active_stop_count(symbol)
+        if after is None or after >= before:
+            return
+        removed = before - after
+        self.telemetry.increment(
+            "orphan_stops_removed",
+            removed,
+            recovery_type=recovery_type,
+            removal_path="CLOSE_RECOVERY",
+        )
+
     def recover_closed_position(self, local_position):
-        self.telemetry.increment("recovery_attempts", recovery_type="CLOSED_POSITION")
+        recovery_type = "CLOSED_POSITION"
+        before_stops = self._best_effort_active_stop_count(local_position.symbol)
+        self.telemetry.increment("recovery_attempts", recovery_type=recovery_type)
         try:
             result = super().recover_closed_position(local_position)
         except Exception:
-            self.telemetry.increment("recovery_failures", recovery_type="CLOSED_POSITION")
+            self.telemetry.increment("recovery_failures", recovery_type=recovery_type)
             raise
-        self.telemetry.increment("recovery_results", recovery_type="CLOSED_POSITION")
+        self.telemetry.increment("recovery_results", recovery_type=recovery_type)
+        self._record_recovery_stop_prune(
+            local_position.symbol, before_stops, recovery_type=recovery_type
+        )
         return result
 
     def recover_closed_inflight_entry(self, inflight):
-        self.telemetry.increment("recovery_attempts", recovery_type="CLOSED_INFLIGHT")
+        recovery_type = "CLOSED_INFLIGHT"
+        symbol = inflight.plan.symbol
+        before_stops = self._best_effort_active_stop_count(symbol)
+        self.telemetry.increment("recovery_attempts", recovery_type=recovery_type)
         try:
             result = super().recover_closed_inflight_entry(inflight)
         except Exception:
-            self.telemetry.increment("recovery_failures", recovery_type="CLOSED_INFLIGHT")
+            self.telemetry.increment("recovery_failures", recovery_type=recovery_type)
             raise
-        self.telemetry.increment("recovery_results", recovery_type="CLOSED_INFLIGHT")
+        self.telemetry.increment("recovery_results", recovery_type=recovery_type)
+        self._record_recovery_stop_prune(symbol, before_stops, recovery_type=recovery_type)
         return result
 
     def cleanup_orphan_protective_stops(self) -> int:

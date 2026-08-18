@@ -94,6 +94,54 @@ class V322OperatorTelemetryTests(unittest.TestCase):
             self.assertEqual(summary["counters"]["emergency_close_attempts"], 1)
 
 
+    def test_closed_position_recovery_counts_stop_pruned_inside_adapter(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            telemetry = MechanicalCanaryTelemetry(tmp, action="RECONCILE", run_id="RUN-ORPHAN")
+            cfg = TestnetExchangeConfig(api_key="x", api_secret="y", repo_root=Path(tmp))
+            exchange = MechanicalCanaryTestnetExchange(cfg, telemetry)
+            local = mock.Mock(symbol="BTCUSDT")
+
+            with mock.patch.object(
+                exchange,
+                "_active_stops",
+                side_effect=([{"clientAlgoId": "OLD-STOP"}], []),
+            ), mock.patch.object(
+                BinanceTestnetExchange,
+                "recover_closed_position",
+                return_value=mock.sentinel.close,
+            ):
+                self.assertIs(exchange.recover_closed_position(local), mock.sentinel.close)
+
+            summary = telemetry.summary()
+            self.assertEqual(summary["counters"]["recovery_attempts"], 1)
+            self.assertEqual(summary["counters"]["recovery_results"], 1)
+            self.assertEqual(summary["counters"]["orphan_stops_removed"], 1)
+
+    def test_close_recovery_telemetry_probe_failure_never_breaks_recovery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            telemetry = MechanicalCanaryTelemetry(tmp, action="RECONCILE", run_id="RUN-PROBE")
+            cfg = TestnetExchangeConfig(api_key="x", api_secret="y", repo_root=Path(tmp))
+            exchange = MechanicalCanaryTestnetExchange(cfg, telemetry)
+            local = mock.Mock(symbol="BTCUSDT")
+
+            with mock.patch.object(
+                exchange,
+                "_active_stops",
+                side_effect=RuntimeError("telemetry probe unavailable"),
+            ), mock.patch.object(
+                BinanceTestnetExchange,
+                "recover_closed_position",
+                return_value=mock.sentinel.close,
+            ):
+                self.assertIs(exchange.recover_closed_position(local), mock.sentinel.close)
+
+            self.assertEqual(telemetry.summary()["counters"]["recovery_results"], 1)
+            rows = [
+                json.loads(line)["payload"]
+                for line in Path(telemetry.path).read_text().splitlines()
+            ]
+            self.assertTrue(any(row["event"] == "TELEMETRY_PROBE_FAILED" for row in rows))
+
     def test_instrumented_entry_counts_durable_duplicate_rejection(self):
         from nbot.exchange.contracts import Quote
 
