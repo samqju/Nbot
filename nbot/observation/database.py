@@ -9,11 +9,12 @@ canonical roadmap phases.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 import sqlite3
 from pathlib import Path
 
 from .config import ObservationConfig
-from .models import Candle, UniverseCapture, UniverseRow
+from .models import Candle, FundingEvent, UniverseCapture, UniverseRow
 
 
 REQUIRED_LIVE_CONTEXT_SOURCES = frozenset(
@@ -171,6 +172,18 @@ CREATE INDEX IF NOT EXISTS idx_attempts_event_time
 CREATE INDEX IF NOT EXISTS idx_funding_symbol_time
     ON funding_events(symbol, funding_time_ms);
 """
+
+
+@dataclass(frozen=True)
+class FundingCoverage:
+    """Auditable coverage of a requested funding-history time range."""
+
+    start_ms: int
+    end_ms: int
+    covered_ms: int
+    total_ms: int
+    coverage_pct: float
+    complete: bool
 
 
 class EvidenceDatabaseError(RuntimeError):
@@ -837,3 +850,187 @@ class EvidenceDatabase:
             ) from exc
 
         return "COMPLETE"
+
+    def funding_sync_bounds(self) -> tuple[int | None, int | None]:
+        """Return the earliest and latest explicitly synced funding-history bounds."""
+
+        self.initialize()
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT MIN(start_ms), MAX(end_ms) FROM funding_sync_ranges"
+            ).fetchone()
+        return (
+            None if row[0] is None else int(row[0]),
+            None if row[1] is None else int(row[1]),
+        )
+
+    def funding_sync_due(self, now_ms: int) -> bool:
+        """Return whether the configured funding-history sync interval has elapsed."""
+
+        now = int(now_ms)
+        if now < 0:
+            raise EvidenceDatabaseError("NBOT_OBSERVATION_FUNDING_SYNC_TIME_INVALID")
+        self.initialize()
+        with self._connect() as conn:
+            last = conn.execute(
+                "SELECT MAX(captured_at_ms) FROM funding_sync_ranges"
+            ).fetchone()[0]
+        if last is None:
+            return True
+        last_ms = int(last)
+        if now < last_ms:
+            raise EvidenceDatabaseError("NBOT_OBSERVATION_FUNDING_SYNC_CLOCK_REVERSED")
+        return now - last_ms >= self.config.funding_sync_interval_seconds * 1000
+
+    def funding_sync_start_ms(self) -> int | None:
+        """Return the first millisecond not yet covered by the forward sync cursor."""
+
+        self.initialize()
+        with self._connect() as conn:
+            synced = conn.execute(
+                "SELECT MAX(end_ms) FROM funding_sync_ranges"
+            ).fetchone()[0]
+            if synced is not None:
+                return int(synced) + 1
+            earliest = conn.execute(
+                "SELECT MIN(event_open_ms) FROM market_events WHERE status='COMPLETE'"
+            ).fetchone()[0]
+        return None if earliest is None else int(earliest)
+
+    @staticmethod
+    def _same_optional_float(left: float | None, right: float | None) -> bool:
+        if left is None or right is None:
+            return left is None and right is None
+        return float(left) == float(right)
+
+    def store_funding_sync(
+        self,
+        *,
+        start_ms: int,
+        end_ms: int,
+        events: Sequence[FundingEvent],
+        captured_at_ms: int,
+    ) -> int:
+        """Atomically persist objective funding events and the proven queried range.
+
+        Empty ranges are persisted too because a successful zero-row query is
+        still evidence that the requested interval was checked. Existing funding
+        events are immutable: an identical re-fetch is accepted, while a changed
+        rate/mark price for the same symbol/timestamp fails closed.
+        """
+
+        start = int(start_ms)
+        end = int(end_ms)
+        captured = int(captured_at_ms)
+        if start < 0 or end < start or captured < 0:
+            raise EvidenceDatabaseError("NBOT_OBSERVATION_FUNDING_SYNC_RANGE_INVALID")
+
+        normalized = tuple(
+            sorted(tuple(events), key=lambda row: (row.funding_time_ms, row.symbol))
+        )
+        keys: set[tuple[str, int]] = set()
+        for event in normalized:
+            if not isinstance(event, FundingEvent):
+                raise EvidenceDatabaseError("NBOT_OBSERVATION_FUNDING_EVENT_INVALID")
+            if not start <= event.funding_time_ms <= end:
+                raise EvidenceDatabaseError("NBOT_OBSERVATION_FUNDING_EVENT_OUTSIDE_SYNC_RANGE")
+            key = (event.symbol, event.funding_time_ms)
+            if key in keys:
+                raise EvidenceDatabaseError("NBOT_OBSERVATION_FUNDING_EVENT_DUPLICATE")
+            keys.add(key)
+
+        self.initialize()
+        try:
+            with self._connect() as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                for event in normalized:
+                    existing = conn.execute(
+                        """
+                        SELECT funding_rate, mark_price
+                        FROM funding_events
+                        WHERE symbol=? AND funding_time_ms=?
+                        """,
+                        (event.symbol, event.funding_time_ms),
+                    ).fetchone()
+                    if existing is None:
+                        conn.execute(
+                            """
+                            INSERT INTO funding_events(
+                                symbol, funding_time_ms, funding_rate, mark_price, ingested_at_ms
+                            ) VALUES (?, ?, ?, ?, ?)
+                            """,
+                            (
+                                event.symbol,
+                                event.funding_time_ms,
+                                event.funding_rate,
+                                event.mark_price,
+                                captured,
+                            ),
+                        )
+                    elif (
+                        float(existing[0]) != event.funding_rate
+                        or not self._same_optional_float(existing[1], event.mark_price)
+                    ):
+                        raise EvidenceDatabaseError(
+                            "NBOT_OBSERVATION_FUNDING_EVENT_CONFLICT:"
+                            f"{event.symbol}:{event.funding_time_ms}"
+                        )
+
+                conn.execute(
+                    """
+                    INSERT INTO funding_sync_ranges(
+                        start_ms, end_ms, captured_at_ms, row_count, collector_version
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (start, end, captured, len(normalized), self.config.collector_version),
+                )
+        except EvidenceDatabaseError:
+            raise
+        except sqlite3.Error as exc:
+            raise EvidenceDatabaseError(
+                "NBOT_OBSERVATION_ATOMIC_FUNDING_SYNC_STORE_FAILED"
+            ) from exc
+        return len(normalized)
+
+    def funding_coverage(self, start_ms: int, end_ms: int) -> FundingCoverage:
+        """Return merged explicit sync-range coverage for an inclusive interval."""
+
+        start = int(start_ms)
+        end = int(end_ms)
+        if start < 0 or end < start:
+            raise EvidenceDatabaseError("NBOT_OBSERVATION_FUNDING_COVERAGE_RANGE_INVALID")
+        self.initialize()
+        with self._connect() as conn:
+            ranges = tuple(
+                conn.execute(
+                    """
+                    SELECT start_ms, end_ms
+                    FROM funding_sync_ranges
+                    WHERE end_ms >= ? AND start_ms <= ?
+                    ORDER BY start_ms, end_ms
+                    """,
+                    (start, end),
+                )
+            )
+
+        merged: list[list[int]] = []
+        for raw_start, raw_end in ranges:
+            left = max(start, int(raw_start))
+            right = min(end, int(raw_end))
+            if right < left:
+                continue
+            if not merged or left > merged[-1][1] + 1:
+                merged.append([left, right])
+            else:
+                merged[-1][1] = max(merged[-1][1], right)
+
+        covered = sum(right - left + 1 for left, right in merged)
+        total = end - start + 1
+        return FundingCoverage(
+            start_ms=start,
+            end_ms=end,
+            covered_ms=covered,
+            total_ms=total,
+            coverage_pct=(covered * 100.0 / total),
+            complete=covered == total,
+        )

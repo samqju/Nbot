@@ -7,11 +7,12 @@ canonical roadmap phases.
 
 from .binance_public import BinancePublicMarketError, BinanceUsdMPublicClient
 from .config import ObservationConfig, observation_config_for_profile
-from .database import EvidenceDatabase, EvidenceDatabaseError
+from .database import EvidenceDatabase, EvidenceDatabaseError, FundingCoverage
 from .models import Candle, FundingEvent, SourceCapture, UniverseCapture, UniverseRow
 from .observer import (
     CanonicalCollectionClock,
     CollectionResult,
+    FundingSyncResult,
     GapRecoveryResult,
     MarketEvidenceCollector,
     ObservationCollectionError,
@@ -28,7 +29,9 @@ __all__ = [
     "CollectionResult",
     "EvidenceDatabase",
     "EvidenceDatabaseError",
+    "FundingCoverage",
     "FundingEvent",
+    "FundingSyncResult",
     "GapRecoveryResult",
     "MarketEvidenceCollector",
     "ObservationCollectionError",

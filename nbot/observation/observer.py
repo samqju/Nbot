@@ -105,6 +105,15 @@ class GapRecoveryResult:
     unrecoverable: int
 
 
+@dataclass(frozen=True)
+class FundingSyncResult:
+    skipped: bool
+    rows: int
+    start_ms: int | None
+    end_ms: int | None
+    reason: str
+
+
 class MarketEvidenceCollector:
     """Capture one canonical point-in-time market event at a time."""
 
@@ -277,6 +286,41 @@ class MarketEvidenceCollector:
             failed=failed,
             unrecoverable=unrecoverable,
         )
+
+    def sync_funding_history(self, *, force: bool = False) -> FundingSyncResult:
+        """Synchronize objective funding history independently of market events."""
+
+        local_before_ms = int(self.client.local_time_ms())
+        if local_before_ms < 0:
+            raise ObservationCollectionError("NBOT_OBSERVATION_FUNDING_LOCAL_TIME_INVALID")
+        if not force and not self.database.funding_sync_due(local_before_ms):
+            return FundingSyncResult(True, 0, None, None, "NOT_DUE")
+
+        start_ms = self.database.funding_sync_start_ms()
+        if start_ms is None:
+            return FundingSyncResult(True, 0, None, None, "NO_MARKET_EVENTS")
+
+        server_time_ms = int(self.client.server_time_ms())
+        local_after_server_ms = int(self.client.local_time_ms())
+        if server_time_ms < 0 or local_after_server_ms < local_before_ms:
+            raise ObservationCollectionError("NBOT_OBSERVATION_FUNDING_TIME_INVALID")
+        local_midpoint_ms = local_before_ms + ((local_after_server_ms - local_before_ms) // 2)
+        if abs(server_time_ms - local_midpoint_ms) > self.config.max_server_clock_skew_ms:
+            raise ObservationCollectionError("NBOT_OBSERVATION_FUNDING_CLOCK_SKEW")
+        if start_ms > server_time_ms:
+            return FundingSyncResult(True, 0, start_ms, server_time_ms, "NO_NEW_RANGE")
+
+        events = tuple(self.client.funding_history(start_ms, server_time_ms))
+        captured_at_ms = int(self.client.local_time_ms())
+        if captured_at_ms < local_after_server_ms:
+            raise ObservationCollectionError("NBOT_OBSERVATION_FUNDING_CAPTURE_TIME_INVALID")
+        rows = self.database.store_funding_sync(
+            start_ms=start_ms,
+            end_ms=server_time_ms,
+            events=events,
+            captured_at_ms=captured_at_ms,
+        )
+        return FundingSyncResult(False, rows, start_ms, server_time_ms, "COMPLETE")
 
     def collect_once(self) -> CollectionResult:
         capture_started_at_ms = int(self.client.local_time_ms())
