@@ -227,7 +227,7 @@ def validate_host_foundation(
     # keeps only checks that genuinely belong to later architecture phases.
     if role is MachineRole.OBSERVATION:
         warnings.append("OBSERVATION_DATABASE_INTEGRITY_CHECK_DEFERRED_UNTIL_V3_3")
-    warnings.append("CROSS_VPS_PROTOCOL_CHECK_DEFERRED_UNTIL_V3_5")
+    warnings.append("CROSS_VPS_PROTOCOL_CHECK_DEFERRED_UNTIL_V3_6")
 
     return DoctorResult(ok=ok, checks=tuple(checks), warnings=tuple(warnings))
 

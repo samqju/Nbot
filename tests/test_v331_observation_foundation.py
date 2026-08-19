@@ -142,12 +142,13 @@ class V331ObservationFoundationTests(unittest.TestCase):
         self.assertIsInstance(CompletePublicClient(), PublicMarketClient)
         self.assertNotIsInstance(IncompletePublicClient(), PublicMarketClient)
 
-    def test_observation_foundation_has_no_capital_or_later_phase_imports(self):
-        forbidden_prefixes = (
-            "nbot.execution",
-            "nbot.exchange",
-            "nbot.communication",
-        )
+    def test_observation_foundation_has_no_capital_imports_and_only_v35_protocol_boundary(self):
+        approved_communication = {
+            "recommendation.py": {
+                "nbot.communication.contracts",
+                "nbot.communication.validation",
+            },
+        }
         for path in sorted((REPO / "nbot/observation").glob("*.py")):
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             imported: list[str] = []
@@ -156,8 +157,24 @@ class V331ObservationFoundationTests(unittest.TestCase):
                     imported.extend(alias.name for alias in node.names)
                 elif isinstance(node, ast.ImportFrom) and node.module:
                     imported.append(node.module)
-            bad = [name for name in imported if name.startswith(forbidden_prefixes)]
-            self.assertEqual(bad, [], f"{path.name}: {bad}")
+
+            capital = [
+                name
+                for name in imported
+                if name.startswith(("nbot.execution", "nbot.exchange"))
+            ]
+            self.assertEqual(capital, [], f"{path.name}: {capital}")
+
+            communication = {
+                name
+                for name in imported
+                if name.startswith("nbot.communication")
+            }
+            self.assertEqual(
+                communication,
+                approved_communication.get(path.name, set()),
+                f"{path.name}: {sorted(communication)}",
+            )
 
 
 if __name__ == "__main__":

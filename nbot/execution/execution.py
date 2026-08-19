@@ -231,6 +231,19 @@ class ExecutionWorker:
                 f"PROPOSAL_REJECTED_{exc.reason}",
                 counter="proposal_rejections",
             )
+            # V3.5 transport adapters may expose a local durable veto-feedback
+            # hook.  It must never turn a rejected proposal into an entry and
+            # is deliberately not part of the OPEN-position hot path.
+            feedback = getattr(self.proposal_client, "record_veto", None)
+            if callable(feedback):
+                try:
+                    feedback(
+                        proposal_id=proposal.proposal_id,
+                        reason=exc.reason,
+                        rejected_at_ms=now,
+                    )
+                except Exception:
+                    self._health_event("PROPOSAL_VETO_FEEDBACK_FAILED")
             return f"PROPOSAL_REJECTED:{exc.reason}"
 
         if self.state.open_position is None or self.state.entry_inflight is not None:

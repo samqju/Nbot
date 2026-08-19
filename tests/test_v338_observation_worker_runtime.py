@@ -249,10 +249,13 @@ class V338ObservationWorkerRuntimeTests(unittest.TestCase):
             with ObservationRuntimeLock(path):
                 pass
 
-    def test_run_observation_has_no_execution_communication_or_order_import(self):
+    def test_run_observation_has_no_execution_or_order_import(self):
         text = (REPO / "run_observation.py").read_text(encoding="utf-8")
-        for token in ("nbot.execution", "nbot.exchange", "nbot.communication"):
+        # V3.5 deliberately adds the authenticated communication service to
+        # Observation, but never execution/order authority.
+        for token in ("nbot.execution", "nbot.exchange"):
             self.assertNotIn(token, text)
+        self.assertIn("nbot.communication.server", text)
         self.assertNotIn("API_KEY", text)
         self.assertNotIn("API_SECRET", text)
 
