@@ -28,6 +28,11 @@ FORBIDDEN_OBSERVATION_SECRET_MARKERS = (
     "LIVE_BINANCE_API_SECRET",
     "TESTNET_BINANCE_API_KEY",
     "TESTNET_BINANCE_API_SECRET",
+    # Current V3.2 Execution Testnet credential names.  Observation must reject
+    # the actual names used by the deployed Execution adapter, not only legacy
+    # aliases.
+    "TESTNET_API_KEY",
+    "TESTNET_API_SECRET",
 )
 
 
