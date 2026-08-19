@@ -72,10 +72,19 @@ class V3111RuntimeAcceptanceTests(unittest.TestCase):
         self.assertTrue((REPO / "nbot/exchange/paper.py").is_file())
         self.assertTrue((REPO / "nbot/exchange/binance_testnet.py").is_file())
 
-    def test_nbotctl_phase_is_v31(self):
+    def test_nbotctl_phase_is_v31_or_later(self):
         text = (REPO / "nbotctl").read_text(encoding="utf-8")
-        self.assertIn('PHASE = "V3.1"', text)
-        self.assertNotIn('"phase": "V3.0"', text)
+
+        phase_line = next(
+            line for line in text.splitlines()
+            if line.startswith('PHASE = "V3.')
+        )
+        minor = int(
+            phase_line.split("V3.", 1)[1].split('"', 1)[0]
+        )
+
+        self.assertGreaterEqual(minor, 1)
+        self.assertNotIn('PHASE = "V3.0"', text)
 
     def test_local_operator_commands_are_implemented(self):
         text = (REPO / "nbotctl").read_text(encoding="utf-8")

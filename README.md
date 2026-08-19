@@ -11,11 +11,18 @@ V3 starts from clean runtime state and clean databases. V1/V2 remain engineering
 
 ## Current phase
 
-`V3.1 EXECUTION CORE — ACCEPTANCE CLOSURE`
+`V3.2 EXECUTION TESTNET MECHANICAL — ACCEPTANCE CLOSURE`
 
-The V3.1 Execution capital components and `ExecutionWorker` are implemented. The local Execution runtime can now perform capital-first startup/reconciliation for the permanent `testnet-trade` laboratory, but V3.1 intentionally contains no integrated recommendation source. New Testnet entries therefore remain disabled until an explicit V3.2 mechanical canary supplies one.
+Previous accepted checkpoint: `V3.1 EXECUTION CORE — ACCEPTANCE CLOSURE`
+(`v3.1-execution-core-parity`).
 
-`live-paper` remains non-runnable until the independent LIVE public market source is built for the later LIVE/PAPER phase. `live-trade` remains forbidden until V3.10. Observation/research/communication are later phases.
+The standalone Execution worker has completed the V3.2 Binance Testnet mechanical-canary and restart/reconciliation acceptance campaign. LONG/SHORT lifecycle, protection, trailing replacement, force close, exchange/local recovery and capital-safety fault behavior are proven by physical Testnet evidence and permanent deterministic equivalents where deliberate physical fault injection would add unnecessary risk.
+
+V3.2 remains `TESTNET_MECHANICAL_ONLY`; it is operational evidence, not research or profitability evidence. There is still no integrated Observation recommendation source.
+
+Next is V3.3: the independent Observation evidence worker and fresh LIVE passive evidence collection.
+
+`live-paper` remains deferred to V3.8. `live-trade` remains forbidden until V3.10.
 
 ## Local role identity
 

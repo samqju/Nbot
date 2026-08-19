@@ -26,7 +26,7 @@ from nbot.config.validation import (
 )
 
 ROOT = Path(__file__).resolve().parent
-PHASE = "V3.1"
+PHASE = "V3.2"
 ACTIVE_EXECUTION_PHASE = "V3.2"
 
 

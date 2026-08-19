@@ -323,7 +323,7 @@ class V322OperatorTelemetryTests(unittest.TestCase):
         self.assertIn("health.last_position_manage_ms", text)
         self.assertIn("health.max_position_manage_ms", text)
 
-    def test_nbotctl_distinguishes_accepted_core_from_active_v32_work(self):
+    def test_nbotctl_reports_v32_as_accepted_after_closure(self):
         repo = Path(__file__).resolve().parents[1]
         result = subprocess.run(
             [str(repo / "nbotctl"), "status"],
@@ -334,7 +334,7 @@ class V322OperatorTelemetryTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
-        self.assertEqual(payload["phase"], "V3.1")
+        self.assertEqual(payload["phase"], "V3.2")
         self.assertEqual(payload["active_execution_phase"], "V3.2")
 
 
