@@ -10,7 +10,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+import hashlib
+import json
 import sqlite3
+import time
 from pathlib import Path
 
 from .config import ObservationConfig
@@ -1034,3 +1037,588 @@ class EvidenceDatabase:
             coverage_pct=(covered * 100.0 / total),
             complete=covered == total,
         )
+
+    @staticmethod
+    def _canonical_row_bytes(table: str, row: Sequence[object]) -> bytes:
+        payload = json.dumps(
+            [table, *row],
+            ensure_ascii=True,
+            separators=(",", ":"),
+            allow_nan=True,
+        )
+        return payload.encode("utf-8") + b"\n"
+
+    @classmethod
+    def _evidence_digest(cls, conn: sqlite3.Connection) -> str:
+        """Hash logical raw evidence in a stable table/key order.
+
+        Audit rows are deliberately excluded so recording an audit cannot change
+        the identity of the evidence being audited.
+        """
+
+        queries = (
+            ("metadata", "SELECT key, value FROM metadata ORDER BY key"),
+            (
+                "market_events",
+                "SELECT * FROM market_events ORDER BY event_open_ms",
+            ),
+            (
+                "candles_5m",
+                "SELECT * FROM candles_5m ORDER BY event_open_ms, symbol",
+            ),
+            (
+                "market_snapshots",
+                "SELECT * FROM market_snapshots ORDER BY event_open_ms, symbol",
+            ),
+            (
+                "event_provenance",
+                "SELECT * FROM event_provenance ORDER BY event_open_ms",
+            ),
+            (
+                "universe_membership",
+                "SELECT * FROM universe_membership "
+                "ORDER BY event_open_ms, universe_rank, symbol",
+            ),
+            (
+                "source_captures",
+                "SELECT * FROM source_captures ORDER BY event_open_ms, source",
+            ),
+            (
+                "collection_attempts",
+                "SELECT * FROM collection_attempts ORDER BY id",
+            ),
+            (
+                "funding_events",
+                "SELECT * FROM funding_events ORDER BY funding_time_ms, symbol",
+            ),
+            (
+                "funding_sync_ranges",
+                "SELECT * FROM funding_sync_ranges ORDER BY id",
+            ),
+        )
+        digest = hashlib.sha256()
+        for table, query in queries:
+            for row in conn.execute(query):
+                digest.update(cls._canonical_row_bytes(table, tuple(row)))
+        return digest.hexdigest()
+
+    @staticmethod
+    def _merged_coverage_ms(
+        conn: sqlite3.Connection, start_ms: int, end_ms: int
+    ) -> int:
+        ranges = tuple(
+            conn.execute(
+                """
+                SELECT start_ms, end_ms
+                FROM funding_sync_ranges
+                WHERE end_ms >= ? AND start_ms <= ?
+                ORDER BY start_ms, end_ms
+                """,
+                (start_ms, end_ms),
+            )
+        )
+        merged: list[list[int]] = []
+        for raw_start, raw_end in ranges:
+            left = max(start_ms, int(raw_start))
+            right = min(end_ms, int(raw_end))
+            if right < left:
+                continue
+            if not merged or left > merged[-1][1] + 1:
+                merged.append([left, right])
+            else:
+                merged[-1][1] = max(merged[-1][1], right)
+        return sum(right - left + 1 for left, right in merged)
+
+    def integrity_check(self) -> dict[str, object]:
+        """Run SQLite integrity and foreign-key checks without mutating evidence."""
+
+        self.initialize()
+        try:
+            with self._connect() as conn:
+                rows = tuple(str(row[0]) for row in conn.execute("PRAGMA integrity_check"))
+                foreign_keys = tuple(tuple(row) for row in conn.execute("PRAGMA foreign_key_check"))
+        except sqlite3.Error as exc:
+            raise EvidenceDatabaseError("NBOT_OBSERVATION_DB_INTEGRITY_CHECK_FAILED") from exc
+        return {
+            "integrity": "ok" if rows == ("ok",) else "; ".join(rows),
+            "foreign_key_violations": len(foreign_keys),
+            "ok": rows == ("ok",) and not foreign_keys,
+        }
+
+    def checkpoint(self) -> tuple[int, int, int]:
+        """Checkpoint and truncate the WAL, returning SQLite's result tuple."""
+
+        self.initialize()
+        try:
+            with self._connect() as conn:
+                row = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        except sqlite3.Error as exc:
+            raise EvidenceDatabaseError("NBOT_OBSERVATION_DB_CHECKPOINT_FAILED") from exc
+        if row is None or len(row) != 3:
+            raise EvidenceDatabaseError("NBOT_OBSERVATION_DB_CHECKPOINT_RESULT_INVALID")
+        return int(row[0]), int(row[1]), int(row[2])
+
+    def backup(self, destination: Path | None = None) -> Path:
+        """Create and verify a consistent SQLite backup of the evidence store."""
+
+        self.initialize()
+        if destination is None:
+            stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+            destination = self.config.backup_directory / f"observer-{stamp}.db"
+        target_path = Path(destination)
+        if target_path.resolve() == self.path.resolve():
+            raise EvidenceDatabaseError("NBOT_OBSERVATION_BACKUP_TARGET_IS_SOURCE")
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with self._connect() as source:
+                target = sqlite3.connect(target_path)
+                try:
+                    source.backup(target)
+                finally:
+                    target.close()
+            with sqlite3.connect(target_path) as verify:
+                rows = tuple(str(row[0]) for row in verify.execute("PRAGMA integrity_check"))
+                foreign_keys = tuple(verify.execute("PRAGMA foreign_key_check"))
+                metadata = {
+                    str(key): str(value)
+                    for key, value in verify.execute("SELECT key, value FROM metadata")
+                }
+            expected = {
+                "schema_version": self.config.schema_version,
+                "role": "OBSERVATION",
+                "market_environment": self.config.market_environment,
+            }
+            if rows != ("ok",) or foreign_keys or any(
+                metadata.get(key) != value for key, value in expected.items()
+            ):
+                raise EvidenceDatabaseError("NBOT_OBSERVATION_BACKUP_VERIFICATION_FAILED")
+        except EvidenceDatabaseError:
+            raise
+        except sqlite3.Error as exc:
+            raise EvidenceDatabaseError("NBOT_OBSERVATION_BACKUP_FAILED") from exc
+        return target_path
+
+    def audit(self, *, now_ms: int | None = None, record: bool = False) -> dict[str, object]:
+        """Audit raw evidence deterministically and optionally persist the report.
+
+        `evidence_digest` hashes logical raw evidence only. `audit_digest` hashes
+        the semantic audit result for the supplied clock. File/WAL byte sizes are
+        reported for operations but intentionally excluded from `audit_digest`.
+        """
+
+        self.initialize()
+        now = int(time.time() * 1000) if now_ms is None else int(now_ms)
+        if now < 0:
+            raise EvidenceDatabaseError("NBOT_OBSERVATION_AUDIT_TIME_INVALID")
+        db_bytes = self.path.stat().st_size if self.path.exists() else 0
+        wal_path = Path(str(self.path) + "-wal")
+        wal_bytes = wal_path.stat().st_size if wal_path.exists() else 0
+        interval = self.config.candle_interval_ms
+        settle_ms = int(self.config.capture_settle_seconds * 1000)
+
+        try:
+            with self._connect() as conn:
+                integrity_rows = tuple(
+                    str(row[0]) for row in conn.execute("PRAGMA integrity_check")
+                )
+                foreign_key_violations = len(
+                    tuple(conn.execute("PRAGMA foreign_key_check"))
+                )
+                event_opens = tuple(
+                    int(row[0])
+                    for row in conn.execute(
+                        "SELECT event_open_ms FROM market_events "
+                        "WHERE status='COMPLETE' ORDER BY event_open_ms"
+                    )
+                )
+                complete_events = len(event_opens)
+                research_ready_events = int(
+                    conn.execute(
+                        """
+                        SELECT COUNT(*) FROM event_provenance
+                        WHERE context_complete=1 AND membership_quality='POINT_IN_TIME'
+                        """
+                    ).fetchone()[0]
+                )
+                context_incomplete_events = int(
+                    conn.execute(
+                        "SELECT COUNT(*) FROM event_provenance WHERE context_complete=0"
+                    ).fetchone()[0]
+                )
+                recovered_events = int(
+                    conn.execute(
+                        "SELECT COUNT(*) FROM event_provenance "
+                        "WHERE evidence_mode='BACKFILL_CANDLE_ONLY'"
+                    ).fetchone()[0]
+                )
+                recovered_context_conflicts = int(
+                    conn.execute(
+                        """
+                        SELECT COUNT(*) FROM event_provenance
+                        WHERE evidence_mode='BACKFILL_CANDLE_ONLY'
+                          AND (context_complete != 0 OR membership_quality != 'INHERITED')
+                        """
+                    ).fetchone()[0]
+                )
+                recovered_fabricated_context_rows = int(
+                    conn.execute(
+                        """
+                        SELECT
+                          (SELECT COUNT(*) FROM market_snapshots s
+                           JOIN event_provenance p USING(event_open_ms)
+                           WHERE p.evidence_mode='BACKFILL_CANDLE_ONLY')
+                          +
+                          (SELECT COUNT(*) FROM source_captures s
+                           JOIN event_provenance p USING(event_open_ms)
+                           WHERE p.evidence_mode='BACKFILL_CANDLE_ONLY')
+                        """
+                    ).fetchone()[0]
+                )
+                candles = int(conn.execute("SELECT COUNT(*) FROM candles_5m").fetchone()[0])
+                snapshots = int(
+                    conn.execute("SELECT COUNT(*) FROM market_snapshots").fetchone()[0]
+                )
+                membership_rows = int(
+                    conn.execute("SELECT COUNT(*) FROM universe_membership").fetchone()[0]
+                )
+                funding_events = int(
+                    conn.execute("SELECT COUNT(*) FROM funding_events").fetchone()[0]
+                )
+                rejected_attempts = int(
+                    conn.execute(
+                        """
+                        SELECT COUNT(*) FROM collection_attempts
+                        WHERE result LIKE '%REJECTED%' OR result LIKE '%FAILED%'
+                           OR result LIKE '%UNRECOVERABLE%'
+                        """
+                    ).fetchone()[0]
+                )
+                missing_membership_candles = int(
+                    conn.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM universe_membership u
+                        LEFT JOIN candles_5m c
+                          ON c.event_open_ms=u.event_open_ms AND c.symbol=u.symbol
+                        WHERE c.symbol IS NULL
+                        """
+                    ).fetchone()[0]
+                )
+                missing_point_in_time_snapshots = int(
+                    conn.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM universe_membership u
+                        LEFT JOIN market_snapshots s
+                          ON s.event_open_ms=u.event_open_ms AND s.symbol=u.symbol
+                        WHERE u.membership_quality='POINT_IN_TIME' AND s.symbol IS NULL
+                        """
+                    ).fetchone()[0]
+                )
+                incomplete_symbol_events = int(
+                    conn.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM market_events e
+                        JOIN event_provenance p USING(event_open_ms)
+                        WHERE e.status='COMPLETE' AND (
+                            e.stored_symbols != e.requested_symbols
+                            OR (SELECT COUNT(*) FROM universe_membership u
+                                WHERE u.event_open_ms=e.event_open_ms) != e.requested_symbols
+                            OR (SELECT COUNT(*) FROM candles_5m c
+                                WHERE c.event_open_ms=e.event_open_ms) != e.requested_symbols
+                            OR (p.context_complete=1 AND
+                                (SELECT COUNT(*) FROM market_snapshots s
+                                 WHERE s.event_open_ms=e.event_open_ms) != e.requested_symbols)
+                        )
+                        """
+                    ).fetchone()[0]
+                )
+                invalid_candles = int(
+                    conn.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM candles_5m c JOIN market_events e USING(event_open_ms)
+                        WHERE c.open_time_ms != c.event_open_ms
+                           OR c.close_time_ms != e.event_close_ms
+                           OR c.open_price <= 0 OR c.high_price <= 0
+                           OR c.low_price <= 0 OR c.close_price <= 0
+                           OR c.high_price < c.open_price OR c.high_price < c.close_price
+                           OR c.high_price < c.low_price OR c.low_price > c.open_price
+                           OR c.low_price > c.close_price OR c.low_price > c.high_price
+                           OR c.base_volume < 0 OR c.quote_volume < 0 OR c.trade_count < 0
+                           OR c.taker_buy_base_volume < 0 OR c.taker_buy_quote_volume < 0
+                        """
+                    ).fetchone()[0]
+                )
+                invalid_spreads = int(
+                    conn.execute(
+                        """
+                        SELECT COUNT(*) FROM market_snapshots
+                        WHERE bid_price <= 0 OR ask_price <= 0 OR ask_price < bid_price
+                           OR spread_pct < 0
+                        """
+                    ).fetchone()[0]
+                )
+
+                source_rows = tuple(
+                    conn.execute(
+                        """
+                        SELECT p.event_open_ms, p.capture_started_at_ms,
+                               p.capture_finished_at_ms, e.event_close_ms,
+                               s.source, s.started_at_ms, s.finished_at_ms
+                        FROM event_provenance p
+                        JOIN market_events e USING(event_open_ms)
+                        LEFT JOIN source_captures s USING(event_open_ms)
+                        WHERE p.context_complete=1
+                        ORDER BY p.event_open_ms, s.source
+                        """
+                    )
+                )
+                sources_by_event: dict[int, set[str]] = {}
+                spans_by_event: dict[int, list[int]] = {}
+                source_capture_outside_event_bounds = 0
+                late_source_captures = 0
+                late_source_events: set[int] = set()
+                for (
+                    event_open,
+                    event_started,
+                    event_finished,
+                    event_close,
+                    source,
+                    source_started,
+                    source_finished,
+                ) in source_rows:
+                    event_key = int(event_open)
+                    sources_by_event.setdefault(event_key, set())
+                    if source is None:
+                        continue
+                    sources_by_event[event_key].add(str(source))
+                    started = int(source_started)
+                    finished = int(source_finished)
+                    spans_by_event.setdefault(event_key, []).extend((started, finished))
+                    if (
+                        finished < started
+                        or started < int(event_started)
+                        or finished > int(event_finished)
+                    ):
+                        source_capture_outside_event_bounds += 1
+                    if finished - int(event_close) > self.config.max_live_context_delay_ms:
+                        late_source_captures += 1
+                        late_source_events.add(event_key)
+
+                source_capture_missing_required_events = sum(
+                    1
+                    for names in sources_by_event.values()
+                    if names != REQUIRED_LIVE_CONTEXT_SOURCES
+                )
+                source_capture_extra_names = sum(
+                    len(names - REQUIRED_LIVE_CONTEXT_SOURCES)
+                    for names in sources_by_event.values()
+                )
+                source_spans = [
+                    max(values) - min(values) for values in spans_by_event.values() if values
+                ]
+                max_source_capture_span_ms = max(source_spans) if source_spans else None
+
+                late_snapshot_rows = tuple(
+                    conn.execute(
+                        """
+                        SELECT s.event_open_ms, s.captured_at_ms - e.event_close_ms
+                        FROM market_snapshots s
+                        JOIN market_events e USING(event_open_ms)
+                        JOIN event_provenance p USING(event_open_ms)
+                        WHERE p.context_complete=1
+                          AND s.captured_at_ms - e.event_close_ms > ?
+                        ORDER BY s.event_open_ms, s.symbol
+                        """,
+                        (self.config.max_live_context_delay_ms,),
+                    )
+                )
+                late_point_in_time_snapshots = len(late_snapshot_rows)
+                late_context_events = len(
+                    late_source_events | {int(row[0]) for row in late_snapshot_rows}
+                )
+                max_context_delay = conn.execute(
+                    """
+                    SELECT MAX(delay_ms) FROM (
+                        SELECT s.captured_at_ms - e.event_close_ms AS delay_ms
+                        FROM market_snapshots s
+                        JOIN market_events e USING(event_open_ms)
+                        JOIN event_provenance p USING(event_open_ms)
+                        WHERE p.context_complete=1
+                        UNION ALL
+                        SELECT s.finished_at_ms - e.event_close_ms AS delay_ms
+                        FROM source_captures s
+                        JOIN market_events e USING(event_open_ms)
+                        JOIN event_provenance p USING(event_open_ms)
+                        WHERE p.context_complete=1
+                    )
+                    """
+                ).fetchone()[0]
+                max_live_context_delay_observed_ms = (
+                    None if max_context_delay is None else int(max_context_delay)
+                )
+                clock_skew = conn.execute(
+                    """
+                    SELECT MAX(
+                        MAX(
+                            ABS(capture_started_at_ms - server_time_before_ms),
+                            ABS(capture_finished_at_ms - server_time_after_ms)
+                        )
+                    )
+                    FROM event_provenance
+                    WHERE server_time_before_ms IS NOT NULL
+                      AND server_time_after_ms IS NOT NULL
+                    """
+                ).fetchone()[0]
+                max_abs_server_clock_skew_ms = (
+                    None if clock_skew is None else int(clock_skew)
+                )
+                server_clock_skew_violations = int(
+                    conn.execute(
+                        """
+                        SELECT COUNT(*) FROM event_provenance
+                        WHERE server_time_before_ms IS NOT NULL
+                          AND server_time_after_ms IS NOT NULL
+                          AND (
+                            ABS(capture_started_at_ms - server_time_before_ms) > ?
+                            OR ABS(capture_finished_at_ms - server_time_after_ms) > ?
+                          )
+                        """,
+                        (
+                            self.config.max_server_clock_skew_ms,
+                            self.config.max_server_clock_skew_ms,
+                        ),
+                    ).fetchone()[0]
+                )
+
+                internal_event_gaps = 0
+                if len(event_opens) >= 2:
+                    for left, right in zip(event_opens, event_opens[1:]):
+                        if right > left + interval:
+                            internal_event_gaps += ((right - left) // interval) - 1
+                adjusted_now = now - settle_ms
+                if adjusted_now < interval:
+                    expected_latest_open_ms = None
+                else:
+                    expected_latest_open_ms = ((adjusted_now // interval) - 1) * interval
+                trailing_event_gaps = 0
+                future_event_rows = 0
+                data_age_ms = None
+                if event_opens:
+                    latest = event_opens[-1]
+                    latest_close = latest + interval - 1
+                    data_age_ms = max(0, now - latest_close)
+                    if expected_latest_open_ms is not None:
+                        if latest < expected_latest_open_ms:
+                            trailing_event_gaps = (
+                                (expected_latest_open_ms - latest) // interval
+                            )
+                        future_event_rows = sum(
+                            1 for value in event_opens if value > expected_latest_open_ms
+                        )
+                event_gap_count = internal_event_gaps + trailing_event_gaps
+
+                funding_coverage_pct = None
+                funding_coverage_complete = None
+                if event_opens:
+                    funding_start = event_opens[0]
+                    funding_end = event_opens[-1] + interval - 1
+                    total_ms = funding_end - funding_start + 1
+                    covered_ms = self._merged_coverage_ms(conn, funding_start, funding_end)
+                    funding_coverage_pct = round(covered_ms * 100.0 / total_ms, 6)
+                    funding_coverage_complete = covered_ms == total_ms
+
+                evidence_digest = self._evidence_digest(conn)
+                integrity = "ok" if integrity_rows == ("ok",) else "; ".join(integrity_rows)
+                anomaly_counts = {
+                    "foreign_key_violations": foreign_key_violations,
+                    "event_gap_count": event_gap_count,
+                    "future_event_rows": future_event_rows,
+                    "missing_membership_candles": missing_membership_candles,
+                    "missing_point_in_time_snapshots": missing_point_in_time_snapshots,
+                    "incomplete_symbol_events": incomplete_symbol_events,
+                    "invalid_candles": invalid_candles,
+                    "invalid_spreads": invalid_spreads,
+                    "late_point_in_time_snapshots": late_point_in_time_snapshots,
+                    "late_source_captures": late_source_captures,
+                    "source_capture_missing_required_events": source_capture_missing_required_events,
+                    "source_capture_extra_names": source_capture_extra_names,
+                    "source_capture_outside_event_bounds": source_capture_outside_event_bounds,
+                    "server_clock_skew_violations": server_clock_skew_violations,
+                    "recovered_context_conflicts": recovered_context_conflicts,
+                    "recovered_fabricated_context_rows": recovered_fabricated_context_rows,
+                }
+                healthy = (
+                    integrity == "ok"
+                    and all(value == 0 for value in anomaly_counts.values())
+                    and (funding_coverage_complete is not False)
+                )
+                semantic: dict[str, object] = {
+                    "now_ms": now,
+                    "integrity": integrity,
+                    **anomaly_counts,
+                    "complete_events": complete_events,
+                    "research_ready_events": research_ready_events,
+                    "context_incomplete_events": context_incomplete_events,
+                    "recovered_events": recovered_events,
+                    "rejected_collection_attempts": rejected_attempts,
+                    "candles": candles,
+                    "snapshots": snapshots,
+                    "universe_membership_rows": membership_rows,
+                    "funding_events": funding_events,
+                    "funding_coverage_pct": funding_coverage_pct,
+                    "funding_coverage_complete": funding_coverage_complete,
+                    "internal_event_gaps": internal_event_gaps,
+                    "trailing_event_gaps": trailing_event_gaps,
+                    "expected_latest_open_ms": expected_latest_open_ms,
+                    "data_age_ms": data_age_ms,
+                    "late_context_events": late_context_events,
+                    "max_live_context_delay_observed_ms": max_live_context_delay_observed_ms,
+                    "max_source_capture_span_ms": max_source_capture_span_ms,
+                    "max_abs_server_clock_skew_ms": max_abs_server_clock_skew_ms,
+                    "evidence_digest": evidence_digest,
+                    "healthy": healthy,
+                }
+                audit_digest = hashlib.sha256(
+                    json.dumps(
+                        semantic,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        ensure_ascii=True,
+                    ).encode("utf-8")
+                ).hexdigest()
+                report = {
+                    **semantic,
+                    "audit_digest": audit_digest,
+                    "database_bytes": db_bytes,
+                    "wal_bytes": wal_bytes,
+                }
+                if record:
+                    conn.execute(
+                        """
+                        INSERT INTO audit_runs(
+                            captured_at_ms, database_bytes, wal_bytes,
+                            complete_events, research_ready_events, report_json
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            now,
+                            db_bytes,
+                            wal_bytes,
+                            complete_events,
+                            research_ready_events,
+                            json.dumps(
+                                report,
+                                sort_keys=True,
+                                separators=(",", ":"),
+                                ensure_ascii=True,
+                            ),
+                        ),
+                    )
+        except EvidenceDatabaseError:
+            raise
+        except sqlite3.Error as exc:
+            raise EvidenceDatabaseError("NBOT_OBSERVATION_DB_AUDIT_FAILED") from exc
+        return report
