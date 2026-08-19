@@ -8,6 +8,7 @@ from pathlib import Path
 import statistics
 import tempfile
 import unittest
+from unittest import mock
 
 from nbot.config.profiles import get_profile
 from nbot.observation.config import observation_config_for_profile
@@ -312,6 +313,108 @@ class V341FeatureCalculationTests(unittest.TestCase):
             first = store.compute_event_rows(target, computed_at_ms=9_999_999)
             second = store.compute_event_rows(target, computed_at_ms=9_999_999)
             self.assertEqual(first, second)
+
+
+class V341FeatureBuildTests(unittest.TestCase):
+    def test_build_persists_one_event_atomically_without_mutating_raw_evidence(self):
+        with isolated_live_db() as db:
+            for index in range(3):
+                store_live(db, index)
+            store = CanonicalFeatureStore(db)
+            before = db.audit(now_ms=4 * INTERVAL, record=False)["evidence_digest"]
+
+            result = store.build(max_events=1)
+
+            after = db.audit(now_ms=4 * INTERVAL, record=False)["evidence_digest"]
+            self.assertEqual(before, after)
+            self.assertEqual(result.feature_version, store.config.feature_version)
+            self.assertEqual(result.research_ready_events, 3)
+            self.assertEqual(result.pending_before, 3)
+            self.assertEqual(result.attempted_events, 1)
+            self.assertEqual(result.built_events, 1)
+            self.assertEqual(result.feature_rows, len(SYMBOLS))
+            with db.connection() as conn:
+                build = conn.execute(
+                    """
+                    SELECT event_open_ms, feature_row_count, source_digest, feature_digest
+                    FROM feature_builds
+                    """
+                ).fetchone()
+                self.assertIsNotNone(build)
+                self.assertEqual(build[0], 0)
+                self.assertEqual(build[1], len(SYMBOLS))
+                self.assertEqual(len(build[2]), 64)
+                self.assertEqual(len(build[3]), 64)
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM canonical_features").fetchone()[0],
+                    len(SYMBOLS),
+                )
+
+    def test_non_rebuild_skips_completed_event_and_rebuild_keeps_digests_stable(self):
+        with isolated_live_db() as db:
+            store_live(db, 0)
+            store = CanonicalFeatureStore(db)
+            first = store.build(max_events=1)
+            self.assertEqual(first.built_events, 1)
+            with db.connection() as conn:
+                digests_before = conn.execute(
+                    "SELECT source_digest, feature_digest FROM feature_builds"
+                ).fetchone()
+                computed_before = conn.execute(
+                    "SELECT computed_at_ms FROM canonical_features ORDER BY symbol LIMIT 1"
+                ).fetchone()[0]
+
+            second = store.build(max_events=1)
+            self.assertEqual(second.attempted_events, 0)
+            self.assertEqual(second.built_events, 0)
+
+            with mock.patch(
+                "nbot.observation.features.time.time",
+                return_value=(computed_before + 10_000) / 1000,
+            ):
+                rebuilt = store.build(max_events=1, rebuild=True)
+            self.assertEqual(rebuilt.built_events, 1)
+            with db.connection() as conn:
+                digests_after = conn.execute(
+                    "SELECT source_digest, feature_digest FROM feature_builds"
+                ).fetchone()
+                computed_after = conn.execute(
+                    "SELECT computed_at_ms FROM canonical_features ORDER BY symbol LIMIT 1"
+                ).fetchone()[0]
+
+            self.assertEqual(digests_before, digests_after)
+            self.assertNotEqual(computed_before, computed_after)
+
+    def test_zero_build_foundation_schema_migrates_source_digest_column(self):
+        with isolated_live_db() as db:
+            db.initialize()
+            with db.connection() as conn:
+                conn.executescript(
+                    """
+                    CREATE TABLE feature_sets (
+                        feature_version TEXT PRIMARY KEY,
+                        definition_hash TEXT NOT NULL,
+                        definition_json TEXT NOT NULL,
+                        registered_at_ms INTEGER NOT NULL
+                    );
+                    CREATE TABLE feature_builds (
+                        event_open_ms INTEGER NOT NULL,
+                        feature_version TEXT NOT NULL,
+                        built_at_ms INTEGER NOT NULL,
+                        feature_row_count INTEGER NOT NULL,
+                        feature_digest TEXT NOT NULL,
+                        PRIMARY KEY (event_open_ms, feature_version)
+                    );
+                    """
+                )
+            store = CanonicalFeatureStore(db)
+            store.initialize()
+            with db.connection() as conn:
+                columns = {
+                    row[1] for row in conn.execute("PRAGMA table_info(feature_builds)")
+                }
+            self.assertIn("source_digest", columns)
+            self.assertEqual(store.definition_hash, CanonicalFeatureStore(db).definition_hash)
 
 
 if __name__ == "__main__":

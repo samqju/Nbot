@@ -1,10 +1,11 @@
 """Immutable canonical-feature research layer for NBOT V3.4.1.
 
-The V3 feature contract is frozen separately from calculation.  This module can
-calculate V2-equivalent rows in memory from complete point-in-time targets and
-objective past candles without persisting a research build yet.  Raw V3.3
-evidence remains immutable; candle-only recovered events may supply past candle
-history but can never become feature targets.
+The V3 feature contract is frozen separately from calculation.  This module
+calculates V2-equivalent rows from complete point-in-time targets and objective
+past candles, then may persist deterministic derived-only builds with immutable
+source/output digests.  Raw V3.3 evidence remains immutable; candle-only
+recovered events may supply past candle history but can never become feature
+targets.
 """
 
 from __future__ import annotations
@@ -131,6 +132,7 @@ CREATE TABLE IF NOT EXISTS feature_builds (
     feature_version TEXT NOT NULL,
     built_at_ms INTEGER NOT NULL,
     feature_row_count INTEGER NOT NULL CHECK (feature_row_count >= 0),
+    source_digest TEXT NOT NULL,
     feature_digest TEXT NOT NULL,
     PRIMARY KEY (event_open_ms, feature_version),
     FOREIGN KEY (event_open_ms) REFERENCES market_events(event_open_ms) ON DELETE CASCADE,
@@ -146,6 +148,16 @@ CREATE INDEX IF NOT EXISTS idx_feature_builds_version_time
 
 class CanonicalFeatureError(RuntimeError):
     """Canonical feature definition/storage state is inconsistent."""
+
+
+@dataclass(frozen=True)
+class FeatureBuildResult:
+    feature_version: str
+    research_ready_events: int
+    pending_before: int
+    attempted_events: int
+    built_events: int
+    feature_rows: int
 
 
 @dataclass(frozen=True)
@@ -178,6 +190,15 @@ def _canonical_json(value: Any) -> str:
 
 def _definition_hash(value: Any) -> str:
     return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
+
+
+def _rows_digest(rows: tuple[dict[str, Any], ...]) -> str:
+    fields = tuple(field for field in CANONICAL_FEATURE_FIELDS if field != "computed_at_ms")
+    payload = [
+        [row[field] for field in fields]
+        for row in sorted(rows, key=lambda item: item["symbol"])
+    ]
+    return _definition_hash(payload)
 
 
 def _percentiles(values: dict[str, float | None]) -> dict[str, float | None]:
@@ -289,6 +310,20 @@ class CanonicalFeatureStore:
         definition_hash = self.definition_hash
         with self.db.connection() as conn:
             conn.executescript(FEATURE_SCHEMA)
+            build_columns = {
+                str(row[1]) for row in conn.execute("PRAGMA table_info(feature_builds)")
+            }
+            if "source_digest" not in build_columns:
+                existing_builds = int(
+                    conn.execute("SELECT COUNT(*) FROM feature_builds").fetchone()[0]
+                )
+                if existing_builds:
+                    raise CanonicalFeatureError(
+                        "NBOT_V341_FEATURE_BUILD_SCHEMA_SOURCE_DIGEST_MISSING_NONEMPTY"
+                    )
+                conn.execute(
+                    "ALTER TABLE feature_builds ADD COLUMN source_digest TEXT"
+                )
             conn.execute(
                 """
                 INSERT OR IGNORE INTO feature_sets(
@@ -589,4 +624,213 @@ class CanonicalFeatureStore:
         for row in rows:
             if tuple(row) != CANONICAL_FEATURE_FIELDS:
                 raise CanonicalFeatureError("NBOT_V341_FEATURE_FIELD_ORDER_MISMATCH")
+
         return tuple(rows)
+
+    def _source_digest(self, event_open_ms: int) -> str:
+        """Digest only raw fields that can affect this event's feature rows."""
+
+        target = int(event_open_ms)
+        interval_ms = self.db.config.candle_interval_ms
+        start_ms = target - self.config.max_history_bars * interval_ms
+        with self.db.connection() as conn:
+            event = conn.execute(
+                """
+                SELECT e.event_open_ms, e.event_close_ms, e.status,
+                       p.evidence_mode, p.context_complete, p.membership_quality
+                FROM market_events e
+                JOIN event_provenance p USING(event_open_ms)
+                WHERE e.event_open_ms=?
+                """,
+                (target,),
+            ).fetchone()
+            snapshots = conn.execute(
+                """
+                SELECT symbol, universe_rank, quote_volume_24h_usd, spread_pct,
+                       funding_rate, next_funding_time_ms, captured_at_ms
+                FROM market_snapshots
+                WHERE event_open_ms=?
+                ORDER BY symbol
+                """,
+                (target,),
+            ).fetchall()
+            symbols = {str(row[0]) for row in snapshots}
+            symbols.add("BTCUSDT")
+            placeholders = ",".join("?" for _ in symbols)
+            candles = conn.execute(
+                f"""
+                SELECT symbol, event_open_ms, high_price, low_price, close_price
+                FROM candles_5m
+                WHERE event_open_ms BETWEEN ? AND ?
+                  AND symbol IN ({placeholders})
+                ORDER BY symbol, event_open_ms
+                """,
+                [start_ms, target, *sorted(symbols)],
+            ).fetchall()
+
+        payload = {
+            "event": None if event is None else list(event),
+            "snapshots": [list(row) for row in snapshots],
+            "candles": [list(row) for row in candles],
+        }
+        return _definition_hash(payload)
+
+    def _persist_event(
+        self,
+        *,
+        event_open_ms: int,
+        rows: tuple[dict[str, Any], ...],
+        source_digest: str,
+        feature_digest: str,
+        rebuild: bool,
+        built_at_ms: int,
+    ) -> int:
+        """Persist one derived event inside one short write transaction."""
+
+        target = int(event_open_ms)
+        placeholders = ",".join("?" for _ in CANONICAL_FEATURE_FIELDS)
+        with self.db.connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            ready = conn.execute(
+                """
+                SELECT 1
+                FROM market_events e
+                JOIN event_provenance p USING(event_open_ms)
+                WHERE e.event_open_ms=?
+                  AND e.status='COMPLETE'
+                  AND p.evidence_mode='LIVE_POINT_IN_TIME'
+                  AND p.context_complete=1
+                  AND p.membership_quality='POINT_IN_TIME'
+                """,
+                (target,),
+            ).fetchone()
+            if ready is None:
+                raise CanonicalFeatureError(
+                    f"NBOT_V341_FEATURE_TARGET_NOT_RESEARCH_READY_AT_WRITE:{target}"
+                )
+            expected = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM market_snapshots WHERE event_open_ms=?",
+                    (target,),
+                ).fetchone()[0]
+            )
+            if expected != len(rows):
+                raise CanonicalFeatureError(
+                    f"NBOT_V341_FEATURE_ROW_COUNT_MISMATCH:{target}:{len(rows)}:{expected}"
+                )
+            if any(int(row["source_max_event_open_ms"]) > target for row in rows):
+                raise CanonicalFeatureError(
+                    f"NBOT_V341_FEATURE_FUTURE_SOURCE_AT_WRITE:{target}"
+                )
+
+            existing = conn.execute(
+                """
+                SELECT 1 FROM feature_builds
+                WHERE event_open_ms=? AND feature_version=?
+                """,
+                (target, self.config.feature_version),
+            ).fetchone()
+            if existing is not None and not rebuild:
+                return 0
+            if rebuild:
+                conn.execute(
+                    """
+                    DELETE FROM feature_builds
+                    WHERE event_open_ms=? AND feature_version=?
+                    """,
+                    (target, self.config.feature_version),
+                )
+                conn.execute(
+                    """
+                    DELETE FROM canonical_features
+                    WHERE event_open_ms=? AND feature_version=?
+                    """,
+                    (target, self.config.feature_version),
+                )
+
+            conn.executemany(
+                f"""
+                INSERT INTO canonical_features({','.join(CANONICAL_FEATURE_FIELDS)})
+                VALUES ({placeholders})
+                """,
+                [
+                    [row[field] for field in CANONICAL_FEATURE_FIELDS]
+                    for row in rows
+                ],
+            )
+            conn.execute(
+                """
+                INSERT INTO feature_builds(
+                    event_open_ms, feature_version, built_at_ms,
+                    feature_row_count, source_digest, feature_digest
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    target,
+                    self.config.feature_version,
+                    int(built_at_ms),
+                    len(rows),
+                    str(source_digest),
+                    str(feature_digest),
+                ),
+            )
+        return len(rows)
+
+    def build(
+        self,
+        *,
+        max_events: int = 1,
+        rebuild: bool = False,
+    ) -> FeatureBuildResult:
+        """Build oldest eligible events; heavy calculation happens outside writes."""
+
+        limit = int(max_events)
+        if limit < 0:
+            raise ValueError("NBOT_V341_FEATURE_MAX_EVENTS_INVALID")
+        self.initialize()
+        ready = self.research_ready_event_opens()
+        with self.db.connection() as conn:
+            built = {
+                int(row[0])
+                for row in conn.execute(
+                    """
+                    SELECT event_open_ms FROM feature_builds
+                    WHERE feature_version=?
+                    """,
+                    (self.config.feature_version,),
+                )
+            }
+        pending = tuple(event for event in ready if event not in built)
+        candidates = ready if rebuild else pending
+        targets = candidates if limit == 0 else candidates[:limit]
+
+        built_events = 0
+        feature_rows = 0
+        for target in targets:
+            computed_at_ms = int(time.time() * 1000)
+            rows = self.compute_event_rows(
+                target,
+                computed_at_ms=computed_at_ms,
+            )
+            source_digest = self._source_digest(target)
+            feature_digest = _rows_digest(rows)
+            inserted = self._persist_event(
+                event_open_ms=target,
+                rows=rows,
+                source_digest=source_digest,
+                feature_digest=feature_digest,
+                rebuild=bool(rebuild),
+                built_at_ms=computed_at_ms,
+            )
+            if inserted:
+                built_events += 1
+                feature_rows += inserted
+
+        return FeatureBuildResult(
+            feature_version=self.config.feature_version,
+            research_ready_events=len(ready),
+            pending_before=len(pending),
+            attempted_events=len(targets),
+            built_events=built_events,
+            feature_rows=feature_rows,
+        )
