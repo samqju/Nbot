@@ -417,5 +417,107 @@ class V341FeatureBuildTests(unittest.TestCase):
             self.assertEqual(store.definition_hash, CanonicalFeatureStore(db).definition_hash)
 
 
+class V341FeatureAuditTests(unittest.TestCase):
+    def test_healthy_feature_build_audit_is_deterministic(self):
+        with isolated_live_db() as db:
+            for index in range(3):
+                store_live(db, index)
+            store = CanonicalFeatureStore(db)
+            result = store.build(max_events=0)
+            self.assertEqual(result.built_events, 3)
+
+            first = store.audit()
+            second = store.audit()
+
+            self.assertEqual(first, second)
+            self.assertTrue(first["healthy"])
+            self.assertEqual(first["research_ready_events"], 3)
+            self.assertEqual(first["built_events"], 3)
+            self.assertEqual(first["unbuilt_events"], 0)
+            self.assertEqual(first["feature_rows"], 3 * len(SYMBOLS))
+            for key in (
+                "feature_definition_mismatch",
+                "non_research_ready_builds",
+                "feature_rows_without_build",
+                "feature_rows_without_snapshot",
+                "future_source_rows",
+                "feature_row_count_mismatches",
+                "source_digest_mismatches",
+                "feature_digest_mismatches",
+            ):
+                self.assertEqual(first[key], 0, key)
+
+    def test_audit_detects_raw_source_mutation(self):
+        with isolated_live_db() as db:
+            target = store_live(db, 0)
+            store = CanonicalFeatureStore(db)
+            store.build(max_events=1)
+
+            with db.connection() as conn:
+                conn.execute(
+                    """
+                    UPDATE candles_5m
+                    SET close_price=close_price + 1.0
+                    WHERE event_open_ms=? AND symbol='AAAUSDT'
+                    """,
+                    (target,),
+                )
+
+            audit = store.audit()
+            self.assertFalse(audit["healthy"])
+            self.assertEqual(audit["source_digest_mismatches"], 1)
+            self.assertEqual(audit["feature_digest_mismatches"], 0)
+
+    def test_audit_detects_derived_row_tampering(self):
+        with isolated_live_db() as db:
+            target = store_live(db, 0)
+            store = CanonicalFeatureStore(db)
+            store.build(max_events=1)
+
+            with db.connection() as conn:
+                conn.execute(
+                    """
+                    UPDATE canonical_features
+                    SET close_price=close_price + 1.0
+                    WHERE event_open_ms=? AND symbol='AAAUSDT'
+                      AND feature_version=?
+                    """,
+                    (target, store.config.feature_version),
+                )
+
+            audit = store.audit()
+            self.assertFalse(audit["healthy"])
+            self.assertEqual(audit["source_digest_mismatches"], 0)
+            self.assertEqual(audit["feature_digest_mismatches"], 1)
+
+    def test_audit_detects_frozen_definition_tampering_without_repair(self):
+        with isolated_live_db() as db:
+            store_live(db, 0)
+            store = CanonicalFeatureStore(db)
+            store.build(max_events=1)
+
+            with db.connection() as conn:
+                conn.execute(
+                    """
+                    UPDATE feature_sets SET definition_hash=?
+                    WHERE feature_version=?
+                    """,
+                    ("0" * 64, store.config.feature_version),
+                )
+
+            audit = store.audit()
+            self.assertFalse(audit["healthy"])
+            self.assertEqual(audit["feature_definition_mismatch"], 1)
+            with db.connection() as conn:
+                stored = conn.execute(
+                    """
+                    SELECT definition_hash FROM feature_sets
+                    WHERE feature_version=?
+                    """,
+                    (store.config.feature_version,),
+                ).fetchone()[0]
+            self.assertEqual(stored, "0" * 64)
+
+
 if __name__ == "__main__":
     unittest.main()

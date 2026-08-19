@@ -776,6 +776,205 @@ class CanonicalFeatureStore:
             )
         return len(rows)
 
+    def _stored_feature_digest(self, conn, event_open_ms: int) -> str:
+        """Digest persisted feature values using the frozen output contract."""
+
+        fields = tuple(
+            field for field in CANONICAL_FEATURE_FIELDS if field != "computed_at_ms"
+        )
+        rows = conn.execute(
+            f"""
+            SELECT {','.join(fields)}
+            FROM canonical_features
+            WHERE event_open_ms=? AND feature_version=?
+            ORDER BY symbol
+            """,
+            (int(event_open_ms), self.config.feature_version),
+        ).fetchall()
+        payload = [list(row) for row in rows]
+        return _definition_hash(payload)
+
+    def audit(self) -> dict[str, Any]:
+        """Read-only lineage audit for persisted V3.4.1 feature builds."""
+
+        expected_definition_json = _canonical_json(self.feature_definition())
+        expected_definition_hash = self.definition_hash
+        with self.db.connection() as conn:
+            tables = {
+                str(row[0])
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            missing_tables = tuple(
+                table for table in RESEARCH_FEATURE_TABLES if table not in tables
+            )
+            if missing_tables:
+                return {
+                    "feature_version": self.config.feature_version,
+                    "definition_hash": expected_definition_hash,
+                    "missing_tables": missing_tables,
+                    "feature_definition_mismatch": 1,
+                    "research_ready_events": 0,
+                    "built_events": 0,
+                    "unbuilt_events": 0,
+                    "feature_rows": 0,
+                    "non_research_ready_builds": 0,
+                    "feature_rows_without_build": 0,
+                    "feature_rows_without_snapshot": 0,
+                    "future_source_rows": 0,
+                    "feature_row_count_mismatches": 0,
+                    "source_digest_mismatches": 0,
+                    "feature_digest_mismatches": 0,
+                    "healthy": False,
+                }
+
+            definition = conn.execute(
+                """
+                SELECT definition_hash, definition_json
+                FROM feature_sets
+                WHERE feature_version=?
+                """,
+                (self.config.feature_version,),
+            ).fetchone()
+            feature_definition_mismatch = int(
+                definition != (expected_definition_hash, expected_definition_json)
+            )
+
+            ready_rows = conn.execute(
+                """
+                SELECT p.event_open_ms
+                FROM event_provenance p
+                JOIN market_events e USING(event_open_ms)
+                WHERE e.status='COMPLETE'
+                  AND p.evidence_mode='LIVE_POINT_IN_TIME'
+                  AND p.context_complete=1
+                  AND p.membership_quality='POINT_IN_TIME'
+                ORDER BY p.event_open_ms
+                """
+            ).fetchall()
+            ready = {int(row[0]) for row in ready_rows}
+            builds = conn.execute(
+                """
+                SELECT event_open_ms, feature_row_count, source_digest, feature_digest
+                FROM feature_builds
+                WHERE feature_version=?
+                ORDER BY event_open_ms
+                """,
+                (self.config.feature_version,),
+            ).fetchall()
+            built = {int(row[0]) for row in builds}
+            feature_rows = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*) FROM canonical_features
+                    WHERE feature_version=?
+                    """,
+                    (self.config.feature_version,),
+                ).fetchone()[0]
+            )
+            non_research_ready_builds = sum(
+                int(int(row[0]) not in ready) for row in builds
+            )
+            feature_rows_without_build = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM canonical_features f
+                    LEFT JOIN feature_builds b
+                      ON b.event_open_ms=f.event_open_ms
+                     AND b.feature_version=f.feature_version
+                    WHERE f.feature_version=? AND b.event_open_ms IS NULL
+                    """,
+                    (self.config.feature_version,),
+                ).fetchone()[0]
+            )
+            feature_rows_without_snapshot = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM canonical_features f
+                    LEFT JOIN market_snapshots s
+                      ON s.event_open_ms=f.event_open_ms AND s.symbol=f.symbol
+                    WHERE f.feature_version=? AND s.symbol IS NULL
+                    """,
+                    (self.config.feature_version,),
+                ).fetchone()[0]
+            )
+            future_source_rows = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*) FROM canonical_features
+                    WHERE feature_version=? AND (
+                        source_max_event_open_ms > event_open_ms OR
+                        source_min_event_open_ms > source_max_event_open_ms
+                    )
+                    """,
+                    (self.config.feature_version,),
+                ).fetchone()[0]
+            )
+
+            feature_row_count_mismatches = 0
+            feature_digest_mismatches = 0
+            for event_open_ms, expected_count, _source_digest, feature_digest in builds:
+                event_open_ms = int(event_open_ms)
+                actual_count = int(
+                    conn.execute(
+                        """
+                        SELECT COUNT(*) FROM canonical_features
+                        WHERE event_open_ms=? AND feature_version=?
+                        """,
+                        (event_open_ms, self.config.feature_version),
+                    ).fetchone()[0]
+                )
+                raw_snapshot_count = int(
+                    conn.execute(
+                        "SELECT COUNT(*) FROM market_snapshots WHERE event_open_ms=?",
+                        (event_open_ms,),
+                    ).fetchone()[0]
+                )
+                feature_row_count_mismatches += int(
+                    actual_count != int(expected_count)
+                    or raw_snapshot_count != int(expected_count)
+                )
+                feature_digest_mismatches += int(
+                    self._stored_feature_digest(conn, event_open_ms)
+                    != str(feature_digest)
+                )
+
+        source_digest_mismatches = sum(
+            int(self._source_digest(int(event_open_ms)) != str(source_digest))
+            for event_open_ms, _count, source_digest, _feature_digest in builds
+        )
+        counters = (
+            feature_definition_mismatch,
+            non_research_ready_builds,
+            feature_rows_without_build,
+            feature_rows_without_snapshot,
+            future_source_rows,
+            feature_row_count_mismatches,
+            source_digest_mismatches,
+            feature_digest_mismatches,
+        )
+        return {
+            "feature_version": self.config.feature_version,
+            "definition_hash": expected_definition_hash,
+            "missing_tables": (),
+            "feature_definition_mismatch": feature_definition_mismatch,
+            "research_ready_events": len(ready),
+            "built_events": len(built),
+            "unbuilt_events": len(ready - built),
+            "feature_rows": feature_rows,
+            "non_research_ready_builds": non_research_ready_builds,
+            "feature_rows_without_build": feature_rows_without_build,
+            "feature_rows_without_snapshot": feature_rows_without_snapshot,
+            "future_source_rows": future_source_rows,
+            "feature_row_count_mismatches": feature_row_count_mismatches,
+            "source_digest_mismatches": source_digest_mismatches,
+            "feature_digest_mismatches": feature_digest_mismatches,
+            "healthy": all(value == 0 for value in counters),
+        }
+
     def build(
         self,
         *,
