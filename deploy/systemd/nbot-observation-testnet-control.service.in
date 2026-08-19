@@ -1,0 +1,19 @@
+[Unit]
+Description=NBOT V3.6 Testnet Observation Operational Canary + Control API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@NBOT_ROOT@
+Environment=NBOT_PROFILE=testnet-trade
+EnvironmentFile=@NBOT_ROOT@/config/secrets/control-link.env
+ExecStart=@NBOT_ROOT@/.venv/bin/python @NBOT_ROOT@/run_observation.py --profile testnet-trade --control-api --control-host 127.0.0.1 --control-port 8766
+Restart=on-failure
+RestartSec=5
+Nice=10
+IOSchedulingClass=idle
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,5 +1,10 @@
-"""NBOT V3.5 versioned, authenticated capital-boundary communication."""
+"""NBOT V3.5/V3.6 versioned, authenticated capital-boundary communication."""
 
+from .config import (
+    ControlLinkConfig,
+    control_link_config_for_profile,
+    control_link_environment,
+)
 from .contracts import (
     ExecutionOutcome,
     ExecutionProposal,
@@ -15,6 +20,7 @@ from .validation import (
 )
 
 __all__ = [
+    "ControlLinkConfig",
     "ExecutionOutcome",
     "ExecutionProposal",
     "OUTCOME_SCHEMA_VERSION",
@@ -24,4 +30,6 @@ __all__ = [
     "ProtocolValidationError",
     "TradeRequest",
     "TradeResponse",
+    "control_link_config_for_profile",
+    "control_link_environment",
 ]

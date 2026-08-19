@@ -240,3 +240,79 @@ Only after those checks pass may the release be tagged:
 `v3.2-execution-testnet-mechanical-proven`
 
 The next implementation phase is V3.3 Observation evidence foundation.
+
+## V3.6 two-VPS dry integration
+
+V3.6 converts the V3.5 protocol into a real two-VPS runtime while the
+integrated Binance order gate remains physically disarmed.
+
+### Observation Testnet operational canary
+
+The protected LIVE collector remains a separate service and continues to own:
+
+```text
+data/observation/live/observer.db
+runtime/observation/live/observation.lock
+```
+
+The V3.6 Testnet canary uses the normal Observation runtime with a different
+profile, database, lock, service identity and control port:
+
+```text
+profile=testnet-trade
+data/observation/testnet/observer.db
+runtime/observation/testnet/observation.lock
+127.0.0.1:8766
+nbot-observation-testnet-control.service
+```
+
+Install the service from:
+
+```text
+deploy/systemd/nbot-observation-testnet-control.service.in
+```
+
+The service sources only `config/secrets/control-link.env`; Observation must
+still contain no Binance private/order credential.
+
+### Encrypted Execution -> Observation transport
+
+The canonical V3.6 deployment uses a loopback-only Observation API behind an
+SSH-encrypted forward.  The tracked template is:
+
+```text
+deploy/systemd/nbot-control-tunnel-testnet.service.in
+```
+
+The Execution-side endpoint is therefore normally:
+
+```text
+NBOT_OBSERVATION_TESTNET_URL=http://127.0.0.1:18766
+```
+
+Direct HTTPS/private-network transport may replace the SSH tunnel later without
+changing the protocol or Execution capital boundary.
+
+### Disarmed integrated dry cycle
+
+With Testnet explicitly DISARMED:
+
+```bash
+./run_execution.py --profile testnet-trade --v36-dry-cycle
+```
+
+This command never constructs an exchange adapter or `EntryLifecycle`.  It may:
+
+1. validate authenticated Observation health and exact release/profile lineage;
+2. deliver already-durable pending outcomes and remove them only after valid ACK;
+3. request one recommendation while FLAT;
+4. record a returned Testnet operational proposal as vetoed with
+   `V3_6_INTEGRATED_ORDER_GATE_DISARMED`;
+5. log what the integrated path would have done.
+
+It cannot place an order.  If Testnet is armed, local capital state is OPEN or
+inflight, recovery is critical, Observation is unavailable, release/profile
+validation fails, or a pending outcome lacks valid ACK, the dry path fails
+closed and does not request/consume new execution permission.
+
+Actual integrated Binance Testnet order writes remain V3.7.

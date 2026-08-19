@@ -12,6 +12,7 @@ from typing import Mapping
 
 from nbot.common.atomic_io import atomic_write_text
 from nbot.common.time import utc_iso
+from nbot.communication.integration import run_v36_disarmed_cycle
 from nbot.config.loader import merged_environment
 from nbot.config.profiles import get_profile
 from nbot.config.validation import MachineRole, detect_role, profile_is_armed
@@ -580,6 +581,7 @@ def main() -> int:
     action.add_argument("--testnet-canary", action="store_true")
     action.add_argument("--testnet-reconcile", action="store_true")
     action.add_argument("--testnet-force-close", action="store_true")
+    action.add_argument("--v36-dry-cycle", action="store_true")
     parser.add_argument("--symbol", default="BTCUSDT")
     parser.add_argument("--side", choices=("LONG", "SHORT"), default="LONG")
     parser.add_argument("--yes", action="store_true")
@@ -632,6 +634,27 @@ def main() -> int:
             confirmed=args.yes,
             open_poll_seconds=_positive_float(environment, "NBOT_EXECUTION_OPEN_POLL_SECONDS", 0.5),
         )
+    if args.v36_dry_cycle:
+        result = run_v36_disarmed_cycle(
+            repo_root=root,
+            profile_name=profile.name,
+            environ=os.environ,
+        )
+        print(
+            json.dumps(
+                {
+                    "event": "NBOT_V36_TWO_VPS_DRY_CYCLE",
+                    "phase": "V3.6",
+                    "profile": profile.name,
+                    "integrated_order_gate": "DISARMED",
+                    "order_write_attempted": False,
+                    **result.to_dict(),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0 if result.status in {"DRY_PROPOSAL", "NO_TRADE"} else 2
 
     idle_poll = _positive_float(environment, "NBOT_EXECUTION_IDLE_POLL_SECONDS", 2.0)
     open_poll = _positive_float(environment, "NBOT_EXECUTION_OPEN_POLL_SECONDS", 0.5)

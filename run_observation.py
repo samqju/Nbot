@@ -168,7 +168,9 @@ def main(argv: list[str] | None = None) -> int:
             _emit(
                 {
                     "event": "CONTROL_API",
-                    "phase": "V3.5",
+                    "phase": (
+                        "V3.6" if profile_name == "testnet-trade" else "V3.5"
+                    ),
                     "profile": profile_name,
                     "address": f"{address[0]}:{address[1]}",
                     "order_authority": "NONE",
@@ -178,7 +180,11 @@ def main(argv: list[str] | None = None) -> int:
         _emit(
             {
                 "event": "RUNTIME",
-                "phase": "V3.5" if args.control_api else "V3.3.8",
+                "phase": (
+                    "V3.6"
+                    if args.control_api and profile_name == "testnet-trade"
+                    else ("V3.5" if args.control_api else "V3.3.8")
+                ),
                 "profile": profile_name,
                 "authority": (
                     "TESTNET_OPERATIONAL_CANARY_OR_NOT_READY_NO_ORDERS"
