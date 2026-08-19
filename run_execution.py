@@ -12,7 +12,11 @@ from typing import Mapping
 
 from nbot.common.atomic_io import atomic_write_text
 from nbot.common.time import utc_iso
-from nbot.communication.integration import run_v36_disarmed_cycle
+from nbot.communication.integration import (
+    TESTNET_OPERATIONAL_CANARY_AUTHORITY,
+    build_v37_testnet_client,
+    run_v36_disarmed_cycle,
+)
 from nbot.config.loader import merged_environment
 from nbot.config.profiles import get_profile
 from nbot.config.validation import MachineRole, detect_role, profile_is_armed
@@ -36,7 +40,12 @@ from nbot.execution.canary import (
 )
 from nbot.execution.emergency import EmergencyFlattener
 from nbot.execution.entry import EntryLifecycle, EntryLifecycleConfig
-from nbot.execution.execution import ExecutionWorker, OutcomeClient, ProposalClient
+from nbot.execution.execution import (
+    ExecutionWorker,
+    ExecutionWorkerError,
+    OutcomeClient,
+    ProposalClient,
+)
 from nbot.execution.fault_campaign import fault_campaign_summary
 from nbot.execution.outcomes import ExecutionDurableStore
 from nbot.execution.position import INTEGER_R_STEP_CONTROL, PositionLifecycle
@@ -127,6 +136,7 @@ def build_execution_worker(
     proposal_client: ProposalClient | None = None,
     outcome_client: OutcomeClient | None = None,
     telemetry: MechanicalCanaryTelemetry | None = None,
+    allowed_entry_authorities: frozenset[str] | None = None,
 ) -> ExecutionWorker:
     profile = get_profile(profile_name)
     if profile.name != "testnet-trade":
@@ -150,7 +160,11 @@ def build_execution_worker(
         config=EntryLifecycleConfig(
             profile=profile.name,
             market_environment=profile.market_environment,
-            allowed_entry_authorities=frozenset({TESTNET_MECHANICAL_AUTHORITY}),
+            allowed_entry_authorities=(
+                frozenset({TESTNET_MECHANICAL_AUTHORITY})
+                if allowed_entry_authorities is None
+                else allowed_entry_authorities
+            ),
             allowed_exit_policies=frozenset({INTEGER_R_STEP_CONTROL}),
         ),
     )
@@ -505,10 +519,18 @@ def run_testnet_runtime(
         raise ValueError("NBOT_TESTNET_RUNTIME_REQUIRES_EXPLICIT_ARM")
 
     exchange = build_testnet_exchange(repo_root, environment)
+    remote_client = build_v37_testnet_client(
+        repo_root=repo_root,
+        profile_name=profile.name,
+        environ=os.environ,
+    )
     worker = build_execution_worker(
         repo_root=repo_root,
         profile_name=profile.name,
         exchange=exchange,
+        proposal_client=remote_client,
+        outcome_client=remote_client,
+        allowed_entry_authorities=frozenset({TESTNET_OPERATIONAL_CANARY_AUTHORITY}),
     )
     stop_requested = False
 
@@ -523,24 +545,32 @@ def run_testnet_runtime(
     ready.unlink(missing_ok=True)
     try:
         prepared = worker.prepare()
-        # V3.1 runtime has no integrated recommendation authority.  A later V3.2
-        # mechanical-canary invocation must explicitly enable entries around one
-        # synthetic/manual proposal.  Restart recovery remains fully active.
+        # Start from a closed local entry gate even when the persisted state was
+        # previously enabled.  The flat loop below re-opens it only while the
+        # explicit Testnet arm file is present.  OPEN management never depends
+        # on this gate or on remote-service availability.
         worker.disable_new_entries()
         atomic_write_text(
             ready,
-            f"profile={profile.name}\npid={os.getpid()}\nready_at={utc_iso()}\nprepared={prepared.status}\n",
+            (
+                f"profile={profile.name}\npid={os.getpid()}\nready_at={utc_iso()}\n"
+                f"prepared={prepared.status}\nphase=V3.7\n"
+                f"recommendation_authority={TESTNET_OPERATIONAL_CANARY_AUTHORITY}\n"
+            ),
             mode=0o600,
         )
         print(
             json.dumps(
                 {
                     "event": "NBOT_EXECUTION_READY",
-                    "phase": "V3.1",
+                    "phase": "V3.7",
                     "profile": profile.name,
                     "prepared": prepared.status,
                     "pid": os.getpid(),
                     "entries_enabled": False,
+                    "proposal_source": "REMOTE_CONTROL_LINK",
+                    "outcome_transport": "REMOTE_CONTROL_ACK",
+                    "recommendation_authority": TESTNET_OPERATIONAL_CANARY_AUTHORITY,
                 },
                 sort_keys=True,
             ),
@@ -550,6 +580,23 @@ def run_testnet_runtime(
         while not stop_requested:
             local = worker.state.open_position
             if local is None:
+                armed = profile_is_armed(repo_root, profile)
+                if not armed:
+                    if worker.state.snapshot.entries_enabled:
+                        worker.disable_new_entries()
+                elif not worker.state.snapshot.entries_enabled:
+                    # Reconcile again immediately before re-opening the entry
+                    # gate.  A re-arm can therefore never skip current exchange
+                    # truth or the persisted daily-risk gate.
+                    try:
+                        worker.enable_new_entries()
+                    except ExecutionWorkerError:
+                        # A daily-risk gate is a normal flat fail-closed state,
+                        # not a reason to kill the process.  Reconciliation
+                        # failures still propagate because they are not wrapped
+                        # as ExecutionWorkerError by enable_new_entries().
+                        time.sleep(idle_poll_seconds)
+                        continue
                 result = worker.process_flat_cycle()
                 if result == "POSITION_OPEN":
                     continue

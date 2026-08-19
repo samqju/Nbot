@@ -1,8 +1,9 @@
-"""V3.6 disarmed two-VPS integration boundary.
+"""V3.6/V3.7 two-VPS integration boundary.
 
-This module deliberately contains no exchange adapter and no EntryLifecycle.
-It may deliver already-durable completed outcomes and ask Observation what it
-would recommend while the integrated order gate is physically disarmed.
+The V3.6 dry helper deliberately contains no exchange adapter and no
+EntryLifecycle.  V3.7 reuses the same authenticated remote client behind a
+small health-gated adapter that still contains no capital mechanics; the
+Execution Worker remains the only owner of exchange/risk/entry/position state.
 """
 
 from __future__ import annotations
@@ -26,6 +27,63 @@ from .validation import PROTOCOL_VERSION
 
 TESTNET_OPERATIONAL_CANARY_AUTHORITY = "TESTNET_OPERATIONAL_CANARY_V1"
 V36_DISARMED_VETO_REASON = "V3_6_INTEGRATED_ORDER_GATE_DISARMED"
+
+
+class V37IntegratedObservationClient:
+    """Health-gated remote client for the V3.7 flat capital boundary.
+
+    The wrapper deliberately performs its remote health validation only when
+    Execution is already using ProposalClient/OutcomeClient work.  The
+    ExecutionWorker never calls either interface from the OPEN-position hot
+    path, so Observation/network loss cannot become a position-management
+    dependency.
+    """
+
+    def __init__(
+        self,
+        *,
+        remote: RemoteObservationClient,
+        profile_name: str,
+        release_sha: str,
+    ) -> None:
+        self.remote = remote
+        self.profile_name = get_profile(profile_name).name
+        self.release_sha = release_sha
+
+    def _validate_remote(self) -> None:
+        health = self.remote.health()
+        _validate_health(
+            health=health,
+            profile_name=self.profile_name,
+            release_sha=self.release_sha,
+        )
+
+    def request_proposal(
+        self,
+        *,
+        profile: str,
+        market_environment: str,
+        execution_instance_id: str,
+        requested_at_ms: int,
+    ):
+        self._validate_remote()
+        return self.remote.request_proposal(
+            profile=profile,
+            market_environment=market_environment,
+            execution_instance_id=execution_instance_id,
+            requested_at_ms=requested_at_ms,
+        )
+
+    def send_outcome(self, *, outcome_id: str, payload: Mapping[str, Any]) -> str:
+        self._validate_remote()
+        return self.remote.send_outcome(outcome_id=outcome_id, payload=payload)
+
+    def record_veto(self, *, proposal_id: str, reason: str, rejected_at_ms: int) -> None:
+        self.remote.record_veto(
+            proposal_id=proposal_id,
+            reason=reason,
+            rejected_at_ms=rejected_at_ms,
+        )
 
 
 @dataclass(frozen=True)
@@ -92,6 +150,45 @@ def _validate_health(
     if profile.name == "testnet-trade":
         if authority not in {None, TESTNET_OPERATIONAL_CANARY_AUTHORITY}:
             raise ObservationClientError("OBSERVATION_HEALTH_RECOMMENDATION_AUTHORITY_INVALID")
+
+
+def build_v37_testnet_client(
+    *,
+    repo_root: str | Path,
+    profile_name: str,
+    environ: Mapping[str, str] | None = None,
+) -> V37IntegratedObservationClient:
+    """Build the authenticated V3.7 Testnet proposal/outcome client.
+
+    Construction performs no network request.  That is important for restart
+    safety: Execution can reconcile and manage an already-open position even
+    while Observation or the control link is unavailable.
+    """
+
+    root = Path(repo_root)
+    role = detect_role(root)
+    if role is not MachineRole.EXECUTION:
+        raise ValueError("NBOT_V37_EXECUTION_ROLE_REQUIRED")
+    profile = get_profile(profile_name)
+    if profile.name != "testnet-trade":
+        raise ValueError("NBOT_V37_TESTNET_PROFILE_ONLY")
+
+    release_sha = _git_sha(root)
+    link = control_link_config_for_profile(root, profile, environ=environ)
+    remote = RemoteObservationClient(
+        base_url=link.base_url,
+        profile=profile.name,
+        auth_token=link.auth_token,
+        receipt_directory=root / "runtime/execution/testnet/observation_receipts",
+        execution_release_sha=release_sha,
+        timeout_seconds=link.timeout_seconds,
+        ca_file=link.ca_file,
+    )
+    return V37IntegratedObservationClient(
+        remote=remote,
+        profile_name=profile.name,
+        release_sha=release_sha,
+    )
 
 
 def run_v36_disarmed_cycle(
