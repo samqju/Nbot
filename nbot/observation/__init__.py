@@ -9,19 +9,33 @@ from .binance_public import BinancePublicMarketError, BinanceUsdMPublicClient
 from .config import ObservationConfig, observation_config_for_profile
 from .database import EvidenceDatabase, EvidenceDatabaseError
 from .models import Candle, FundingEvent, SourceCapture, UniverseCapture, UniverseRow
+from .observer import (
+    CanonicalCollectionClock,
+    CollectionResult,
+    MarketEvidenceCollector,
+    ObservationCollectionError,
+    ObservationCollectionNotReady,
+    latest_completed_open_time_ms,
+)
 from .public_market import PublicMarketClient
 
 __all__ = [
     "BinancePublicMarketError",
     "BinanceUsdMPublicClient",
     "Candle",
+    "CanonicalCollectionClock",
+    "CollectionResult",
     "EvidenceDatabase",
     "EvidenceDatabaseError",
     "FundingEvent",
+    "MarketEvidenceCollector",
+    "ObservationCollectionError",
+    "ObservationCollectionNotReady",
     "ObservationConfig",
     "PublicMarketClient",
     "SourceCapture",
     "UniverseCapture",
     "UniverseRow",
+    "latest_completed_open_time_ms",
     "observation_config_for_profile",
 ]
