@@ -8,7 +8,7 @@ canonical roadmap phases.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 import sqlite3
 from pathlib import Path
 
@@ -561,5 +561,279 @@ class EvidenceDatabase:
                 detail=f"{type(exc).__name__}: {exc}",
             )
             raise EvidenceDatabaseError("NBOT_OBSERVATION_ATOMIC_EVENT_STORE_FAILED") from exc
+
+        return "COMPLETE"
+
+    def point_in_time_universe_before(
+        self, event_open_ms: int
+    ) -> tuple[int, tuple[tuple[str, int], ...]] | None:
+        """Return the latest genuinely point-in-time universe before an event."""
+
+        self.initialize()
+        target = int(event_open_ms)
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT MAX(event_open_ms)
+                FROM event_provenance
+                WHERE event_open_ms < ?
+                  AND context_complete=1
+                  AND membership_quality='POINT_IN_TIME'
+                """,
+                (target,),
+            ).fetchone()
+            source = None if row is None else row[0]
+            if source is None:
+                return None
+            membership = tuple(
+                (str(symbol), int(rank))
+                for symbol, rank in conn.execute(
+                    """
+                    SELECT symbol, universe_rank
+                    FROM universe_membership
+                    WHERE event_open_ms=? AND membership_quality='POINT_IN_TIME'
+                    ORDER BY universe_rank, symbol
+                    """,
+                    (int(source),),
+                )
+            )
+        if not membership:
+            return None
+        return int(source), membership
+
+    def missing_event_opens(self, latest_open_ms: int) -> list[int]:
+        """Return deterministic candle-clock gaps from first stored event onward."""
+
+        self.initialize()
+        latest = int(latest_open_ms)
+        interval = self.config.candle_interval_ms
+        if latest < 0 or latest % interval:
+            raise EvidenceDatabaseError("NBOT_OBSERVATION_GAP_BOUNDARY_INVALID")
+        with self._connect() as conn:
+            earliest = conn.execute(
+                "SELECT MIN(event_open_ms) FROM market_events WHERE status='COMPLETE'"
+            ).fetchone()[0]
+            if earliest is None or latest < int(earliest):
+                return []
+            present = {
+                int(row[0])
+                for row in conn.execute(
+                    """
+                    SELECT event_open_ms
+                    FROM market_events
+                    WHERE status='COMPLETE' AND event_open_ms BETWEEN ? AND ?
+                    """,
+                    (int(earliest), latest),
+                )
+            }
+        return [
+            value
+            for value in range(int(earliest), latest + 1, interval)
+            if value not in present
+        ]
+
+    def store_recovered_event(
+        self,
+        *,
+        event_open_ms: int,
+        source_universe_event_open_ms: int,
+        membership: Sequence[tuple[str, int]],
+        candles: Mapping[str, Candle],
+        candle_errors: Mapping[str, str],
+        captured_at_ms: int,
+        capture_duration_ms: int,
+        recovery_reason: str,
+    ) -> str:
+        """Persist candle-only recovery without fabricating historical context.
+
+        Recovered rows inherit only a previously observed point-in-time universe.
+        They intentionally contain no market snapshots or source captures and are
+        permanently marked context-incomplete, so later research cannot silently
+        treat them as point-in-time complete evidence.
+        """
+
+        self.initialize()
+        event_open = int(event_open_ms)
+        source_open = int(source_universe_event_open_ms)
+        captured = int(captured_at_ms)
+        duration = int(capture_duration_ms)
+        members = tuple((str(symbol), int(rank)) for symbol, rank in membership)
+        requested = len(members)
+        stored = len(candles)
+        errors = {str(key): str(value) for key, value in candle_errors.items()}
+
+        if self.has_complete_event(event_open):
+            self.record_collection_attempt(
+                event_open_ms=max(0, event_open),
+                attempted_at_ms=max(0, captured),
+                requested_symbols=requested,
+                stored_symbols=stored,
+                error_count=len(errors),
+                result="ALREADY_COMPLETE",
+                capture_duration_ms=max(0, duration),
+                detail="canonical event already exists; recovery did not rewrite evidence",
+            )
+            return "ALREADY_COMPLETE"
+
+        validation_error: str | None = None
+        interval = self.config.candle_interval_ms
+        symbols = tuple(symbol for symbol, _rank in members)
+        ranks = tuple(rank for _symbol, rank in members)
+        event_close = event_open + interval - 1
+        if event_open < 0 or event_open % interval:
+            validation_error = "recovery event open is not aligned"
+        elif source_open < 0 or source_open >= event_open:
+            validation_error = "recovery source universe must precede event"
+        elif captured < 0 or duration < 0:
+            validation_error = "recovery capture timing is invalid"
+        elif requested == 0:
+            validation_error = "recovery inherited universe is empty"
+        elif len(set(symbols)) != requested:
+            validation_error = "recovery inherited universe has duplicate symbols"
+        elif ranks != tuple(range(1, requested + 1)):
+            validation_error = "recovery inherited universe ranks are non-deterministic"
+        elif errors:
+            validation_error = "historical candle errors present: " + "; ".join(
+                f"{symbol}={errors[symbol]}" for symbol in sorted(errors)
+            )
+        elif set(candles) != set(symbols):
+            validation_error = "recovered candle set differs from inherited universe"
+        else:
+            for symbol in symbols:
+                candle = candles[symbol]
+                if candle.symbol != symbol or candle.open_time_ms != event_open:
+                    validation_error = f"recovered candle identity mismatch: {symbol}"
+                    break
+                if candle.close_time_ms != event_close:
+                    validation_error = f"recovered candle close mismatch: {symbol}"
+                    break
+
+        if validation_error is not None:
+            self.record_collection_attempt(
+                event_open_ms=max(0, event_open),
+                attempted_at_ms=max(0, captured),
+                requested_symbols=requested,
+                stored_symbols=stored,
+                error_count=max(1, len(errors), requested - stored),
+                result="RECOVERY_PARTIAL_REJECTED",
+                capture_duration_ms=max(0, duration),
+                detail=validation_error,
+            )
+            return "PARTIAL_REJECTED"
+
+        reason = self._bounded_detail(recovery_reason)
+        if reason is None:
+            raise EvidenceDatabaseError("NBOT_OBSERVATION_RECOVERY_REASON_REQUIRED")
+
+        try:
+            with self._connect() as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                source_row = conn.execute(
+                    """
+                    SELECT context_complete, membership_quality
+                    FROM event_provenance
+                    WHERE event_open_ms=?
+                    """,
+                    (source_open,),
+                ).fetchone()
+                if source_row != (1, "POINT_IN_TIME"):
+                    raise EvidenceDatabaseError(
+                        "NBOT_OBSERVATION_RECOVERY_SOURCE_NOT_POINT_IN_TIME"
+                    )
+                source_membership = tuple(
+                    (str(symbol), int(rank))
+                    for symbol, rank in conn.execute(
+                        """
+                        SELECT symbol, universe_rank
+                        FROM universe_membership
+                        WHERE event_open_ms=? AND membership_quality='POINT_IN_TIME'
+                        ORDER BY universe_rank, symbol
+                        """,
+                        (source_open,),
+                    )
+                )
+                if source_membership != members:
+                    raise EvidenceDatabaseError(
+                        "NBOT_OBSERVATION_RECOVERY_MEMBERSHIP_SOURCE_MISMATCH"
+                    )
+                if conn.execute(
+                    "SELECT 1 FROM market_events WHERE event_open_ms=?",
+                    (event_open,),
+                ).fetchone() is not None:
+                    raise EvidenceDatabaseError(
+                        "NBOT_OBSERVATION_RECOVERY_EVENT_RACE_ALREADY_STORED"
+                    )
+
+                conn.execute(
+                    """
+                    INSERT INTO market_events(
+                        event_open_ms, event_close_ms, captured_at_ms,
+                        requested_symbols, stored_symbols, error_count,
+                        status, collector_version, capture_duration_ms
+                    ) VALUES (?, ?, ?, ?, ?, 0, 'COMPLETE', ?, ?)
+                    """,
+                    (
+                        event_open,
+                        event_close,
+                        captured,
+                        requested,
+                        requested,
+                        self.config.collector_version,
+                        duration,
+                    ),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO event_provenance(
+                        event_open_ms, evidence_mode, context_complete,
+                        membership_quality, source_universe_event_open_ms,
+                        server_time_before_ms, server_time_after_ms,
+                        capture_started_at_ms, capture_finished_at_ms, recovery_reason
+                    ) VALUES (?, 'BACKFILL_CANDLE_ONLY', 0, 'INHERITED', ?, NULL, NULL, ?, ?, ?)
+                    """,
+                    (
+                        event_open,
+                        source_open,
+                        max(0, captured - duration),
+                        captured,
+                        reason,
+                    ),
+                )
+                for symbol, rank in members:
+                    self._insert_candle(conn, event_open, candles[symbol])
+                    conn.execute(
+                        """
+                        INSERT INTO universe_membership(
+                            event_open_ms, symbol, universe_rank,
+                            membership_quality, source_universe_event_open_ms
+                        ) VALUES (?, ?, ?, 'INHERITED', ?)
+                        """,
+                        (event_open, symbol, rank, source_open),
+                    )
+                conn.execute(
+                    """
+                    INSERT INTO collection_attempts(
+                        event_open_ms, attempted_at_ms, requested_symbols, stored_symbols,
+                        error_count, result, capture_duration_ms, detail
+                    ) VALUES (?, ?, ?, ?, 0, 'RECOVERED_CANDLES_ONLY', ?, ?)
+                    """,
+                    (event_open, captured, requested, requested, duration, reason),
+                )
+        except EvidenceDatabaseError:
+            raise
+        except sqlite3.Error as exc:
+            self.record_collection_attempt(
+                event_open_ms=event_open,
+                attempted_at_ms=captured,
+                requested_symbols=requested,
+                stored_symbols=stored,
+                error_count=max(1, len(errors)),
+                result="RECOVERY_STORE_FAILED",
+                capture_duration_ms=duration,
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+            raise EvidenceDatabaseError(
+                "NBOT_OBSERVATION_ATOMIC_RECOVERY_STORE_FAILED"
+            ) from exc
 
         return "COMPLETE"

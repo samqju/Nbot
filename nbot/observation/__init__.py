@@ -12,6 +12,7 @@ from .models import Candle, FundingEvent, SourceCapture, UniverseCapture, Univer
 from .observer import (
     CanonicalCollectionClock,
     CollectionResult,
+    GapRecoveryResult,
     MarketEvidenceCollector,
     ObservationCollectionError,
     ObservationCollectionNotReady,
@@ -28,6 +29,7 @@ __all__ = [
     "EvidenceDatabase",
     "EvidenceDatabaseError",
     "FundingEvent",
+    "GapRecoveryResult",
     "MarketEvidenceCollector",
     "ObservationCollectionError",
     "ObservationCollectionNotReady",

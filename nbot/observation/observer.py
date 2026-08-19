@@ -1,13 +1,13 @@
 """Canonical completed-5m Observation collection for NBOT V3.3.
 
 This module coordinates only point-in-time public market capture.  It does not
-run research, recommendations, communication, or order logic.  Gap recovery,
-funding-history synchronization, database audits, and the long-running worker
+run research, recommendations, communication, or order logic.  Funding-history synchronization, database audits, and the long-running worker
 are added by later V3.3 patches.
 """
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 
 from .config import ObservationConfig
@@ -95,6 +95,16 @@ class CollectionResult:
     clock_skew_after_ms: int | None
 
 
+@dataclass(frozen=True)
+class GapRecoveryResult:
+    missing: int
+    selected: int
+    attempted: int
+    recovered: int
+    failed: int
+    unrecoverable: int
+
+
 class MarketEvidenceCollector:
     """Capture one canonical point-in-time market event at a time."""
 
@@ -136,6 +146,136 @@ class MarketEvidenceCollector:
             result="CAPTURE_FAILED",
             capture_duration_ms=max(0, finished - capture_started_at_ms),
             detail=f"{type(exc).__name__}: {exc}",
+        )
+
+    def latest_recovery_open_ms(self, server_time_ms: int) -> int | None:
+        """Return the latest event old enough for honest historical recovery."""
+
+        adjusted = int(server_time_ms) - self.clock.settle_delay_ms
+        if adjusted < self.config.candle_interval_ms:
+            return None
+        return latest_completed_open_time_ms(adjusted, self.config.candle_interval_ms)
+
+    def recover_gaps(self, max_events: int | None = None) -> GapRecoveryResult:
+        """Recover candle-only gaps using prior observed universe membership.
+
+        Historical point-in-time spread, liquidity, premium-index, or ranking
+        context is never requested or fabricated here. Recovered events remain
+        context-incomplete in the database by construction.
+        """
+
+        if not self.config.gap_recovery_enabled:
+            return GapRecoveryResult(0, 0, 0, 0, 0, 0)
+
+        server_time_ms = int(self.client.server_time_ms())
+        latest_open_ms = self.latest_recovery_open_ms(server_time_ms)
+        if latest_open_ms is None:
+            return GapRecoveryResult(0, 0, 0, 0, 0, 0)
+
+        missing = self.database.missing_event_opens(latest_open_ms)
+        limit = (
+            self.config.gap_recovery_max_events_per_cycle
+            if max_events is None
+            else max(0, int(max_events))
+        )
+        selected = missing[:limit]
+        if not selected:
+            return GapRecoveryResult(len(missing), 0, 0, 0, 0, 0)
+
+        groups: dict[tuple[int, tuple[tuple[str, int], ...]], list[int]] = defaultdict(list)
+        unrecoverable = 0
+        for event_open_ms in selected:
+            source = self.database.point_in_time_universe_before(event_open_ms)
+            if source is None:
+                unrecoverable += 1
+                attempted_at_ms = max(0, int(self.client.local_time_ms()))
+                self.database.record_collection_attempt(
+                    event_open_ms=event_open_ms,
+                    attempted_at_ms=attempted_at_ms,
+                    requested_symbols=0,
+                    stored_symbols=0,
+                    error_count=1,
+                    result="RECOVERY_UNRECOVERABLE",
+                    capture_duration_ms=0,
+                    detail=(
+                        "no prior context-complete point-in-time universe exists; "
+                        "historical membership/context not fabricated"
+                    ),
+                )
+                continue
+            source_event_open_ms, membership = source
+            groups[(source_event_open_ms, membership)].append(event_open_ms)
+
+        attempted = 0
+        recovered = 0
+        failed = 0
+        recovery_reason = (
+            "Observer gap: canonical candles recovered using inherited prior "
+            "point-in-time universe membership; historical spread, 24h liquidity, "
+            "ranking and premium-index context intentionally not fabricated"
+        )
+
+        for (source_event_open_ms, membership), event_opens in groups.items():
+            symbols = tuple(symbol for symbol, _rank in membership)
+            group_started_at_ms = max(0, int(self.client.local_time_ms()))
+            try:
+                history, errors = self.client.historical_candles_for_symbols(
+                    symbols, tuple(event_opens)
+                )
+            except Exception as exc:
+                group_finished_at_ms = max(
+                    group_started_at_ms, int(self.client.local_time_ms())
+                )
+                duration_ms = group_finished_at_ms - group_started_at_ms
+                for event_open_ms in event_opens:
+                    attempted += 1
+                    failed += 1
+                    self.database.record_collection_attempt(
+                        event_open_ms=event_open_ms,
+                        attempted_at_ms=group_finished_at_ms,
+                        requested_symbols=len(symbols),
+                        stored_symbols=0,
+                        error_count=max(1, len(symbols)),
+                        result="RECOVERY_FETCH_FAILED",
+                        capture_duration_ms=duration_ms,
+                        detail=f"{type(exc).__name__}: {exc}",
+                    )
+                continue
+
+            group_finished_at_ms = max(
+                group_started_at_ms, int(self.client.local_time_ms())
+            )
+            duration_ms = group_finished_at_ms - group_started_at_ms
+            error_map = {str(key): str(value) for key, value in errors.items()}
+            for event_open_ms in event_opens:
+                attempted += 1
+                event_candles = {
+                    symbol: rows[event_open_ms]
+                    for symbol, rows in history.items()
+                    if event_open_ms in rows
+                }
+                status = self.database.store_recovered_event(
+                    event_open_ms=event_open_ms,
+                    source_universe_event_open_ms=source_event_open_ms,
+                    membership=membership,
+                    candles=event_candles,
+                    candle_errors=error_map,
+                    captured_at_ms=group_finished_at_ms,
+                    capture_duration_ms=duration_ms,
+                    recovery_reason=recovery_reason,
+                )
+                if status == "COMPLETE":
+                    recovered += 1
+                elif status != "ALREADY_COMPLETE":
+                    failed += 1
+
+        return GapRecoveryResult(
+            missing=len(missing),
+            selected=len(selected),
+            attempted=attempted,
+            recovered=recovered,
+            failed=failed,
+            unrecoverable=unrecoverable,
         )
 
     def collect_once(self) -> CollectionResult:
