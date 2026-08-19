@@ -1,1 +1,21 @@
-"""NBOT V3 observation package — implementation begins in later roadmap phases."""
+"""NBOT V3 Observation evidence foundation.
+
+V3.3 owns credential-free market evidence only. Recommendation, research,
+learning, communication, and order authority are introduced only by later
+canonical roadmap phases.
+"""
+
+from .config import ObservationConfig, observation_config_for_profile
+from .models import Candle, FundingEvent, SourceCapture, UniverseCapture, UniverseRow
+from .public_market import PublicMarketClient
+
+__all__ = [
+    "Candle",
+    "FundingEvent",
+    "ObservationConfig",
+    "PublicMarketClient",
+    "SourceCapture",
+    "UniverseCapture",
+    "UniverseRow",
+    "observation_config_for_profile",
+]
