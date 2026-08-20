@@ -7,6 +7,7 @@ from pathlib import Path
 from nbot.exchange.contracts import (
     AccountSnapshot,
     CloseFill,
+    EntryNotSubmitted,
     ExchangePosition,
     Fill,
     ProtectiveStopRef,
@@ -384,6 +385,18 @@ class DurableEntryOrderingTests(EntryLifecycleTestCase):
         self.assertGreater(position.initial_stop_price, position.entry_price)
         actual = abs(position.entry_price - position.initial_stop_price) * position.quantity
         self.assertAlmostEqual(actual, 10.0, places=9)
+
+
+class DeterministicPreSubmitRejectionTests(EntryLifecycleTestCase):
+    def test_proven_not_submitted_clears_inflight_without_recovery(self):
+        self.exchange.open_error = EntryNotSubmitted("TESTNET_SESSION_ENTRY_LIMIT_REACHED")
+        with self.assertRaisesRegex(EntryRejected, "TESTNET_SESSION_ENTRY_LIMIT_REACHED"):
+            self.execute()
+        self.assertEqual(len(self.exchange.open_calls), 1)
+        self.assertEqual(self.exchange.recover_calls, [])
+        self.assertIsNone(self.state.entry_inflight)
+        self.assertTrue(self.state.has_processed_proposal("PROP-V314-001"))
+        self.assertIsNone(self.state.open_position)
 
 
 class AmbiguousEntryTests(EntryLifecycleTestCase):

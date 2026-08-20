@@ -17,6 +17,20 @@ if TYPE_CHECKING:
 
 Side = Literal["LONG", "SHORT"]
 
+
+class EntryNotSubmitted(RuntimeError):
+    """Deterministic entry refusal proven before any capital-bearing write.
+
+    Concrete adapters may raise this only when they know the market-order POST
+    was not attempted. EntryLifecycle can then clear its durable inflight
+    journal and treat the proposal as a normal execution veto.
+    """
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = str(reason)
+
+
 _SYMBOL_RE = re.compile(r"^[A-Z0-9]{3,40}$")
 
 

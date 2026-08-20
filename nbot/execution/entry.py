@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass
 from typing import Protocol
 
-from nbot.exchange.contracts import ExchangePort, Fill, Side
+from nbot.exchange.contracts import EntryNotSubmitted, ExchangePort, Fill, Side
 from nbot.execution.models import EntryInflight, OpenPosition
 from nbot.execution.risk import RiskManager, RiskRejected
 from nbot.execution.state import ExecutionStateError, ExecutionStateStore
@@ -326,6 +326,16 @@ class EntryLifecycle:
     def _submit_or_recover(self, plan, *, client_order_id: str) -> Fill:
         try:
             fill = self.exchange.open_market(plan, client_order_id=client_order_id)
+        except EntryNotSubmitted as open_error:
+            # The adapter has proven that no capital-bearing market-order write
+            # was attempted. The durable journal can therefore be cleared
+            # without ambiguous-order recovery. The proposal reservation stays
+            # durable so the same proposal can never be retried as a new entry.
+            try:
+                self.state.clear_entry_inflight()
+            except ExecutionStateError as exc:
+                raise EntrySafetyError("ENTRY_NOT_SUBMITTED_CLEAR_FAILED") from exc
+            raise EntryRejected(open_error.reason) from open_error
         except Exception as open_error:
             # Never issue a second market order. Query the exact durable client
             # identity through the adapter's recovery boundary.

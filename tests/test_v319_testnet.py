@@ -19,7 +19,7 @@ from nbot.exchange.binance_testnet import (
     TestnetTradingGuard,
     initialize_testnet_guard_for_arm,
 )
-from nbot.exchange.contracts import EntryPlan, ExchangePort, ProtectiveStopRef
+from nbot.exchange.contracts import EntryNotSubmitted, EntryPlan, ExchangePort, ProtectiveStopRef
 from nbot.execution.models import EntryInflight, OpenPosition
 from nbot.execution.entry import EntryLifecycle, EntryLifecycleConfig, EntryProposal
 from nbot.execution.emergency import EmergencyFlattener
@@ -677,6 +677,28 @@ class V319CloseRecoveryTests(unittest.TestCase):
             ex.close_position("BTCUSDT", "LONG", reason="EMERGENCY")
             close = ex.recover_closed_inflight_entry(inflight)
             self.assertIsNotNone(close.realized_pnl_usd)
+
+
+class V319PreSubmitRejectionTests(unittest.TestCase):
+    def test_disarmed_entry_is_proven_not_submitted_before_post(self):
+        with tempfile.TemporaryDirectory() as td:
+            ex = loaded_exchange(Path(td))
+            with self.assertRaisesRegex(EntryNotSubmitted, "NOT_ARMED"):
+                ex.open_market(plan(), client_order_id="NOPOST-DISARMED")
+            posts = [c for c in ex.calls if c[0] == "POST" and c[1] == "/fapi/v1/order"]
+            self.assertEqual(posts, [])
+
+    def test_session_limit_entry_is_proven_not_submitted_before_post(self):
+        with tempfile.TemporaryDirectory() as td:
+            ex = loaded_exchange(Path(td), max_session_entries=1)
+            arm(ex.config)
+            ex.open_market(plan(), client_order_id="FIRST")
+            before = len([c for c in ex.calls if c[0] == "POST" and c[1] == "/fapi/v1/order"])
+            ex.positions = []
+            with self.assertRaisesRegex(EntryNotSubmitted, "SESSION_ENTRY_LIMIT"):
+                ex.open_market(plan(), client_order_id="NOPOST-LIMIT")
+            after = len([c for c in ex.calls if c[0] == "POST" and c[1] == "/fapi/v1/order"])
+            self.assertEqual(after, before)
 
 
 class V319BoundaryTests(unittest.TestCase):

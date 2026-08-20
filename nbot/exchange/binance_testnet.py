@@ -46,6 +46,7 @@ from nbot.common.atomic_io import atomic_write_json
 from nbot.exchange.contracts import (
     AccountSnapshot,
     CloseFill,
+    EntryNotSubmitted,
     EntryPlan,
     ExchangePosition,
     Fill,
@@ -66,6 +67,10 @@ USER_TRADES_MAX_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 
 class TestnetExchangeError(RuntimeError):
     """A Testnet exchange truth or safety invariant failed."""
+
+
+class TestnetEntryNotSubmitted(TestnetExchangeError, EntryNotSubmitted):
+    """Testnet refusal proven before the capital-bearing entry POST."""
 
 
 class AmbiguousExecutionError(TestnetExchangeError):
@@ -723,13 +728,22 @@ class BinanceTestnetExchange:
         return Fill(avg, executed, order_id, client_id, timestamp_ms)
 
     def open_market(self, plan: EntryPlan, *, client_order_id: str) -> Fill:
-        quantity = self._quantity(plan.symbol, plan.quantity)
-        self.guard.authorize_entry(
-            symbol=plan.symbol,
-            quantity=quantity,
-            price=plan.expected_entry_price,
-            position=self.position_snapshot(),
-        )
+        # Everything in this block occurs before the capital-bearing POST.
+        # Convert only known Testnet adapter/guard failures into the generic
+        # EntryNotSubmitted contract so EntryLifecycle can safely clear its
+        # journal instead of treating a deterministic local refusal as an
+        # ambiguous order write.
+        try:
+            quantity = self._quantity(plan.symbol, plan.quantity)
+            position = self.position_snapshot()
+            self.guard.authorize_entry(
+                symbol=plan.symbol,
+                quantity=quantity,
+                price=plan.expected_entry_price,
+                position=position,
+            )
+        except TestnetExchangeError as exc:
+            raise TestnetEntryNotSubmitted(str(exc)) from exc
         params = {
             "symbol": plan.symbol,
             "side": "BUY" if plan.side == "LONG" else "SELL",
