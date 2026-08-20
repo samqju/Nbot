@@ -356,6 +356,19 @@ class PositionLifecycleTests(unittest.TestCase):
         with self.assertRaisesRegex(PositionReconciliationRequired, "POSITION_QUANTITY_MISMATCH"):
             self._lifecycle(state, exchange).manage_tick("BTCUSDT", 100.2, NOW)
 
+    def test_exchange_entry_price_precision_drift_is_not_identity_mismatch(self):
+        state = self._store()
+        exchange = FakeExchange()
+        exchange.position = ExchangePosition(
+            "BTCUSDT",
+            "LONG",
+            10.0,
+            100.00000014918365,
+        )
+        result = self._lifecycle(state, exchange).manage_tick("BTCUSDT", 100.2, NOW)
+        self.assertEqual(result.status, "POSITION_MANAGED")
+        self.assertIsNotNone(state.open_position)
+
     def test_exchange_entry_price_mismatch_requires_reconciliation(self):
         state = self._store()
         exchange = FakeExchange()

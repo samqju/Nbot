@@ -35,7 +35,12 @@ from nbot.exchange.contracts import (
     ProtectiveStopRef,
     Side,
 )
-from nbot.execution.models import DailyRisk, EntryInflight, OpenPosition
+from nbot.execution.models import (
+    DailyRisk,
+    EntryInflight,
+    OpenPosition,
+    exchange_entry_price_matches_fill,
+)
 from nbot.execution.outcomes import ExecutionDurableStore
 from nbot.execution.risk import RiskManager, RiskRejected
 from nbot.execution.state import ExecutionStateError, RecoveryMetadata
@@ -804,11 +809,9 @@ class ReconciliationLifecycle:
             abs_tol=1e-12,
         ):
             raise ReconciliationCritical("ENTRY_INFLIGHT_POSITION_QUANTITY_MISMATCH")
-        if not math.isclose(
-            float(exchange_position.entry_price),
-            float(inflight.fill.price),
-            rel_tol=1e-9,
-            abs_tol=1e-12,
+        if not exchange_entry_price_matches_fill(
+            exchange_position.entry_price,
+            inflight.fill.price,
         ):
             raise ReconciliationCritical("ENTRY_INFLIGHT_POSITION_ENTRY_PRICE_MISMATCH")
 
@@ -825,11 +828,9 @@ class ReconciliationLifecycle:
             abs_tol=1e-12,
         ):
             raise ReconciliationCritical("POSITION_QUANTITY_MISMATCH")
-        if not math.isclose(
-            float(exchange_position.entry_price),
-            float(local.entry_price),
-            rel_tol=1e-9,
-            abs_tol=1e-12,
+        if not exchange_entry_price_matches_fill(
+            exchange_position.entry_price,
+            local.entry_price,
         ):
             raise ReconciliationCritical("POSITION_ENTRY_PRICE_MISMATCH")
 

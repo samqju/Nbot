@@ -414,6 +414,18 @@ class OpenPositionIdentityTests(ReconciliationTestCase):
         with self.assertRaisesRegex(ReconciliationCritical, "POSITION_QUANTITY_MISMATCH"):
             self.lifecycle().reconcile()
 
+    def test_entry_price_precision_drift_reconciles(self):
+        self.make_open()
+        self.exchange.position = ExchangePosition(
+            "BTCUSDT",
+            "LONG",
+            10.0,
+            100.00000014918365,
+        )
+        result = self.lifecycle().reconcile()
+        self.assertEqual(result.status, "POSITION_RECONCILED")
+        self.assertIsNotNone(self.state.open_position)
+
     def test_entry_price_mismatch_fails_closed(self):
         self.make_open()
         self.exchange.position = ExchangePosition("BTCUSDT", "LONG", 10.0, 101.0)
@@ -716,6 +728,25 @@ class InflightRecoveryTests(ReconciliationTestCase):
         self.exchange.position = ExchangePosition("BTCUSDT", "LONG", 9.0, 100.0)
         with self.assertRaisesRegex(ReconciliationCritical, "ENTRY_INFLIGHT_POSITION_QUANTITY_MISMATCH"):
             self.lifecycle().reconcile()
+
+    def test_inflight_open_entry_price_precision_drift_recovers(self):
+        plan, fill = self.make_inflight(with_fill=True)
+        self.exchange.position = ExchangePosition(
+            "BTCUSDT",
+            "LONG",
+            10.0,
+            100.00000014918365,
+        )
+        self.exchange.stop = ProtectiveStopRef(
+            "BTCUSDT",
+            "LONG",
+            10.0,
+            99.0,
+            stop_id="S1",
+        )
+        result = self.lifecycle().reconcile()
+        self.assertEqual(result.status, "ENTRY_INFLIGHT_RECOVERED_OPEN")
+        self.assertIsNotNone(self.state.open_position)
 
     def test_inflight_open_entry_price_mismatch_fails_closed(self):
         plan, fill = self.make_inflight(with_fill=True)

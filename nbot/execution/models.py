@@ -13,6 +13,29 @@ from datetime import date
 from nbot.exchange.contracts import EntryPlan, Fill, ProtectiveStopRef, Side
 
 
+POSITION_ENTRY_PRICE_REL_TOL = 1e-8
+POSITION_ENTRY_PRICE_ABS_TOL = 1e-12
+
+
+def exchange_entry_price_matches_fill(exchange_price: float, fill_price: float) -> bool:
+    """Allow microscopic Binance aggregate-price normalization only.
+
+    Binance may expose the same filled position through endpoints with slightly
+    different decimal precision (for example order ``avgPrice`` versus position
+    ``entryPrice``).  Symbol/side/quantity remain the exposure identity.  This
+    narrow tolerance prevents representation-only drift from killing OPEN
+    management while still failing closed on economically material price
+    contradictions.
+    """
+
+    return math.isclose(
+        float(exchange_price),
+        float(fill_price),
+        rel_tol=POSITION_ENTRY_PRICE_REL_TOL,
+        abs_tol=POSITION_ENTRY_PRICE_ABS_TOL,
+    )
+
+
 def _require_text(name: str, value: object, *, max_length: int = 160) -> str:
     if not isinstance(value, str):
         raise ValueError(f"{name}_INVALID")

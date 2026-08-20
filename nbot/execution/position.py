@@ -19,7 +19,12 @@ from dataclasses import dataclass, replace
 from typing import Callable, Protocol
 
 from nbot.exchange.contracts import ExchangePort, ExchangePosition, ProtectiveStopRef, Side
-from nbot.execution.models import DailyRisk, ExecutionHealth, OpenPosition
+from nbot.execution.models import (
+    DailyRisk,
+    ExecutionHealth,
+    OpenPosition,
+    exchange_entry_price_matches_fill,
+)
 from nbot.execution.risk import RiskManager, RiskRejected
 from nbot.execution.state import ExecutionStateError, ExecutionStateStore
 
@@ -258,11 +263,9 @@ class PositionLifecycle:
             abs_tol=1e-12,
         ):
             raise PositionReconciliationRequired("POSITION_QUANTITY_MISMATCH")
-        if not math.isclose(
-            float(exchange_position.entry_price),
-            float(local.entry_price),
-            rel_tol=1e-9,
-            abs_tol=1e-12,
+        if not exchange_entry_price_matches_fill(
+            exchange_position.entry_price,
+            local.entry_price,
         ):
             raise PositionReconciliationRequired("POSITION_ENTRY_PRICE_MISMATCH")
         return exchange_position
