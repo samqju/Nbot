@@ -31,10 +31,13 @@ V3.5 permits only the explicitly non-economic Testnet recommendation authority:
 `TESTNET_OPERATIONAL_CANARY_V1`
 
 It is labelled `TESTNET_OPERATIONAL_ONLY` and cannot become LIVE economic
-research evidence.  Because V3.4.6 Research Champion evaluation is deferred,
-`live-paper` control readiness fails closed as `NOT_READY`; V3.5 does not invent
-or infer a LIVE Research Champion.  `live-trade` remote control remains
-forbidden before V3.10.
+research evidence.  V3.4.6 Research Champion evaluation and the V3.4.7
+Continuous Learning Foundation are implemented and remain
+`RESEARCH_ONLY_NO_EXECUTION`.  A valid evaluator result may still be no Research
+Champion; the control path must never invent or infer one.  Until V3.8 supplies
+a valid research-facing authority, or deliberately runs the roadmap-approved
+non-promotional dry mode, `live-paper` readiness remains fail closed as
+`NOT_READY`.  `live-trade` remote control remains forbidden before V3.10.
 
 ## Transport
 

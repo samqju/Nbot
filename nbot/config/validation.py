@@ -223,11 +223,15 @@ def validate_host_foundation(
         warnings.append("GIT_STATUS_UNAVAILABLE")
         ok = False
 
-    # Phase-specific readiness is layered by nbotctl.  Foundation validation
-    # keeps only checks that genuinely belong to later architecture phases.
+    # Mature doctor capabilities that are not yet integrated here remain explicit
+    # operator-tooling debt; do not mislabel already-completed phases as deferred.
     if role is MachineRole.OBSERVATION:
-        warnings.append("OBSERVATION_DATABASE_INTEGRITY_CHECK_DEFERRED_UNTIL_V3_3")
-    warnings.append("CROSS_VPS_PROTOCOL_CHECK_DEFERRED_UNTIL_V3_6")
+        warnings.append(
+            "OPERATOR_TOOLING_DEBT:OBSERVATION_DATABASE_INTEGRITY_NOT_IN_FOUNDATION_DOCTOR"
+        )
+    warnings.append(
+        "OPERATOR_TOOLING_DEBT:CROSS_VPS_PROTOCOL_COMPATIBILITY_NOT_IN_FOUNDATION_DOCTOR"
+    )
 
     return DoctorResult(ok=ok, checks=tuple(checks), warnings=tuple(warnings))
 

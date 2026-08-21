@@ -2512,6 +2512,17 @@ Suggested tag:
 
 `v3.7-testnet-e2e-operational-proven`
 
+## Implementation sequencing exception — 2026-08-21
+
+This records current implementation status without rewriting the V3.7 acceptance gate above.
+
+- V3.7-A Normal LONG: **PASS** through the integrated Observation request/proposal, Binance Testnet entry/protection/OPEN management, Execution-managed protective-stop close, authoritative accounting, durable outcome delivery and exactly-once Observation recording/ACK.
+- V3.7-B Normal SHORT: **DEFERRED** by explicit operator sequencing decision.
+- V3.7 C–V mandatory operational/fault campaign: **PASS** from the preserved physical and deterministic-equivalent evidence.
+- At transition, Testnet Execution is required FLAT, with no entry inflight or pending outcome, DISARMED and stopped.
+
+Because V3.7-B is deferred, the canonical V3.7 gate is **not fully passed** and `v3.7-testnet-e2e-operational-proven` must not be created. The operator explicitly authorizes V3.8 implementation to begin as a sequencing exception. This exception grants no economic authority and no order authority. A later LIVE_PAPER SHORT is different evidence and does not retroactively convert V3.7-B into a Testnet PASS. The deferred Testnet SHORT remains visible regression debt.
+
 \---
 
 # 24\. PHASE V3.8 — LIVE\_PAPER OPERATIONAL AND ECONOMIC CANARY
@@ -2538,6 +2549,8 @@ This phase asks:
 * research pipeline auditable;
 * a valid research-facing authority exists or phase runs in explicitly non-promotional dry mode until it does;
 * PaperExchange order writes are structurally impossible.
+
+Implementation note (2026-08-21): the first precondition remains the canonical rule, but the explicit V3.7 sequencing exception above permits V3.8 implementation to start with V3.7-B still recorded as deferred. This does not mark V3.7 complete or authorize its canonical acceptance tag.
 
 ## Runtime
 

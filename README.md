@@ -11,18 +11,23 @@ V3 starts from clean runtime state and clean databases. V1/V2 remain engineering
 
 ## Current phase
 
-`V3.2 EXECUTION TESTNET MECHANICAL — ACCEPTANCE CLOSURE`
+`V3.7 -> V3.8 TRANSITION — V3.7-A PASS / V3.7-B DEFERRED`
 
-Previous accepted checkpoint: `V3.1 EXECUTION CORE — ACCEPTANCE CLOSURE`
-(`v3.1-execution-core-parity`).
+NBOT is now operating with the intended capital-first two-VPS boundary: Observation owns market evidence, research, learning and recommendations; Execution independently owns account truth, risk, orders, protection, position management, reconciliation and emergency action. Observation has no Binance order authority.
 
-The standalone Execution worker has completed the V3.2 Binance Testnet mechanical-canary and restart/reconciliation acceptance campaign. LONG/SHORT lifecycle, protection, trailing replacement, force close, exchange/local recovery and capital-safety fault behavior are proven by physical Testnet evidence and permanent deterministic equivalents where deliberate physical fault injection would add unnecessary risk.
+Accepted implementation includes the earlier `V3.1 EXECUTION CORE`, the V3.2 standalone Testnet mechanical canary, V3.3 Observation evidence foundation, the V3.4 research/learning stack including V3.4.6 Research Champion evaluation and V3.4.7 Continuous Learning Foundation, V3.5 communication, and V3.6 two-VPS dry integration.
 
-V3.2 remains `TESTNET_MECHANICAL_ONLY`; it is operational evidence, not research or profitability evidence. There is still no integrated Observation recommendation source.
+Current V3.7 operational status:
 
-Next is V3.3: the independent Observation evidence worker and fresh LIVE passive evidence collection.
+- **A — Normal LONG: PASS.** The integrated Testnet LONG completed through Execution-managed protective-stop closure, authoritative accounting, durable outcome delivery, and exactly-once Observation recording/ACK.
+- **B — Normal SHORT: DEFERRED.** This remains explicit Testnet operational evidence debt.
+- **C–V fault/operational campaign: PASS.**
 
-`live-paper` remains deferred to V3.8. `live-trade` remains forbidden until V3.10.
+The original canonical V3.7 acceptance gate is not being rewritten. Because B is deferred, `v3.7-testnet-e2e-operational-proven` must not be claimed or tagged as passed. An explicit sequencing exception in `docs/NBOT_V3_ROADMAP.md` permits V3.8 implementation to begin while keeping V3.7-B visibly deferred. A later LIVE_PAPER SHORT does not retroactively convert V3.7-B into a Testnet PASS.
+
+At this transition boundary Testnet Execution is FLAT, has no entry inflight or pending outcome, is DISARMED, and is stopped. The LIVE Observation collector remains protected and active.
+
+Next implementation phase: **V3.8 LIVE_PAPER**. `live-trade` remains forbidden until V3.10 and its evidence/arming gates.
 
 ## Local role identity
 

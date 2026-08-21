@@ -8,7 +8,7 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 class V325AcceptanceClosureTests(unittest.TestCase):
-    def test_nbotctl_reports_v32_accepted(self):
+    def test_nbotctl_reports_current_v37_transition_status(self):
         result = subprocess.run(
             [str(REPO / "nbotctl"), "status"],
             cwd=REPO,
@@ -18,8 +18,12 @@ class V325AcceptanceClosureTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
-        self.assertEqual(payload["phase"], "V3.2")
-        self.assertEqual(payload["active_execution_phase"], "V3.2")
+        self.assertEqual(payload["phase"], "V3.7")
+        self.assertEqual(payload["active_execution_phase"], "V3.7")
+        self.assertEqual(payload["phase_status"], "V3.7_A_PASS_B_DEFERRED")
+        self.assertEqual(payload["phase_gate_status"], "NOT_FULLY_PASSED")
+        self.assertEqual(payload["next_phase"], "V3.8")
+        self.assertEqual(payload["deferred_acceptance"], ["V3.7-B_NORMAL_SHORT"])
 
     def test_operations_records_offline_stop_deterministic_equivalent(self):
         text = (REPO / "docs/OPERATIONS.md").read_text()
@@ -37,16 +41,12 @@ class V325AcceptanceClosureTests(unittest.TestCase):
             text,
         )
 
-    def test_readme_advances_only_to_v32(self):
+    def test_readme_reports_current_v37_to_v38_transition(self):
         text = (REPO / "README.md").read_text()
-        self.assertIn(
-            "V3.2 EXECUTION TESTNET MECHANICAL — ACCEPTANCE CLOSURE",
-            text,
-        )
-        self.assertIn(
-            "Next is V3.3: the independent Observation evidence worker",
-            text,
-        )
+        self.assertIn("V3.7 -> V3.8 TRANSITION", text)
+        self.assertIn("A — Normal LONG: PASS", text)
+        self.assertIn("B — Normal SHORT: DEFERRED", text)
+        self.assertIn("Next implementation phase: **V3.8 LIVE_PAPER**", text)
         self.assertIn("`live-trade` remains forbidden until V3.10", text)
 
 

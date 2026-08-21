@@ -324,7 +324,10 @@ class V3111RuntimeAcceptanceTests(unittest.TestCase):
                  mock.patch("nbot.config.validation._git_worktree_clean", return_value=True):
                 result = validate_host_foundation(repo_root=root, role=MachineRole.EXECUTION)
             self.assertFalse(any("DEFERRED_UNTIL_V3_1" in item for item in result.warnings))
-            self.assertIn("CROSS_VPS_PROTOCOL_CHECK_DEFERRED_UNTIL_V3_6", result.warnings)
+            self.assertIn(
+                "OPERATOR_TOOLING_DEBT:CROSS_VPS_PROTOCOL_COMPATIBILITY_NOT_IN_FOUNDATION_DOCTOR",
+                result.warnings,
+            )
 
     def test_role_profile_no_longer_uses_exchange_phase_credential_deferral(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -353,10 +356,11 @@ class V3111RuntimeAcceptanceTests(unittest.TestCase):
         self.assertIn("Permanent capital invariants", text)
         self.assertNotIn("Status: V3.0 placeholder", text)
 
-    def test_operations_document_testnet_v32_boundary(self):
+    def test_operations_document_preserves_v32_history_and_current_transition(self):
         text = (REPO / "docs/OPERATIONS.md").read_text(encoding="utf-8")
-        self.assertIn("Actual Binance Testnet mechanical validation is V3.2", text)
-        self.assertIn("Do not arm it before the V3.2", text)
+        self.assertIn("## V3.2 standalone Testnet mechanical canary", text)
+        self.assertIn("V3.7-A Normal LONG is physically proven", text)
+        self.assertIn("V3.7-B Normal SHORT is explicitly deferred", text)
 
 
 if __name__ == "__main__":

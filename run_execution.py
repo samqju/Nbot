@@ -616,7 +616,7 @@ def run_testnet_runtime(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="NBOT V3.2 Execution runtime")
+    parser = argparse.ArgumentParser(description="NBOT V3 Execution runtime")
     parser.add_argument(
         "--profile",
         choices=("testnet-trade", "live-paper", "live-trade"),

@@ -2,7 +2,26 @@
 
 ## Current operating boundary
 
-V3.1 closes the Execution core in code. Actual Binance Testnet mechanical validation is V3.2; Observation deployment begins later.
+Current checkpoint: `V3.7 -> V3.8 TRANSITION — V3.7-A PASS / V3.7-B DEFERRED`.
+
+The deployed architecture is the real two-VPS split:
+
+- **Observation VPS** — LIVE/Testnet evidence, research, learning, recommendation/control service; no Binance order authority.
+- **Execution VPS** — independent market/account truth, proposal validation, risk, orders, stops, OPEN management, reconciliation, emergency action and durable outcomes.
+
+V3.7-A Normal LONG is physically proven end-to-end. V3.7-B Normal SHORT is explicitly deferred. V3.7 C–V operational/fault evidence remains accepted. Therefore the canonical `v3.7-testnet-e2e-operational-proven` tag is not claimed.
+
+### Transition safety state
+
+Before V3.8 work, Testnet Execution must remain:
+
+- exchange/local FLAT;
+- no `entry_inflight`;
+- no pending execution outcome;
+- DISARMED;
+- stopped unless a deliberate Testnet regression is being run.
+
+The Observation LIVE collector remains active. `data/observation/live/observer.db` must never be reset, replaced or destructively migrated as part of transition/V3.8 work.
 
 ### Read-only / safe checks
 
@@ -13,30 +32,21 @@ V3.1 closes the Execution core in code. Actual Binance Testnet mechanical valida
 ./run_execution.py --profile testnet-trade --self-check
 ```
 
-`testnet-trade` doctor is expected to fail while DISARMED. Do not arm it before the V3.2 canary procedure. Missing Testnet credentials are reported as V3.2 runtime readiness, not hidden as V3.1 readiness.
+Do not arm `testnet-trade` merely to make a doctor/preflight command pass.
 
-### Testnet runtime controls
+### Profile boundary
 
-After the V3.2 procedure deliberately installs credentials and arms Testnet:
+- `testnet-trade`: permanent operational regression laboratory; keep DISARMED unless a deliberate Testnet regression is authorized.
+- `live-paper`: V3.8 target; LIVE Binance public truth with local PaperExchange and zero Binance private order writes.
+- `live-trade`: forbidden until V3.10.
 
-```bash
-./nbotctl start testnet-trade
-./nbotctl status
-./nbotctl logs testnet-trade
-./nbotctl stop
-```
+### Outstanding operator-tooling debt
 
-`start` performs an authenticated Testnet preflight before spawning the Execution process. The process must create its READY marker only after capital-first reconciliation succeeds. It starts with new entries disabled and no proposal source.
+`nbotctl cluster doctor/start/stop/status` remains unimplemented. The local role commands and the already-proven secured two-VPS control path remain the accepted operating method until cluster orchestration is implemented and separately validated.
 
-`stop` sends SIGTERM and waits for graceful shutdown; it does not automatically SIGKILL the capital process if shutdown times out.
+Foundation `nbotctl doctor` also does not yet own the mature-roadmap Observation database-integrity and cross-VPS protocol-compatibility checks. These are tracked operator-tooling debt and must not be described as future V3.3/V3.6 work.
 
-### Deferred profiles
-
-- `live-paper`: runtime start deferred until the independent LIVE public market path required for LIVE/PAPER exists.
-- `live-trade`: runtime and arming forbidden until V3.10.
-- cluster commands: deferred until the V3.5/V3.6 communication and two-VPS integration phases.
-
-Runtime state, locks, PID/READY markers and logs remain under the role/profile-specific ignored `data/`, `runtime/`, and `logs/` directories.
+The historical V3.2 mechanical-canary procedures below are retained as regression/operational history; they are not the current phase.
 
 ## V3.2 standalone Testnet mechanical canary
 

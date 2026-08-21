@@ -323,7 +323,7 @@ class V322OperatorTelemetryTests(unittest.TestCase):
         self.assertIn("health.last_position_manage_ms", text)
         self.assertIn("health.max_position_manage_ms", text)
 
-    def test_nbotctl_reports_v32_as_accepted_after_closure(self):
+    def test_nbotctl_reports_current_v37_transition_status(self):
         repo = Path(__file__).resolve().parents[1]
         result = subprocess.run(
             [str(repo / "nbotctl"), "status"],
@@ -334,8 +334,12 @@ class V322OperatorTelemetryTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
-        self.assertEqual(payload["phase"], "V3.2")
-        self.assertEqual(payload["active_execution_phase"], "V3.2")
+        self.assertEqual(payload["phase"], "V3.7")
+        self.assertEqual(payload["active_execution_phase"], "V3.7")
+        self.assertEqual(payload["phase_status"], "V3.7_A_PASS_B_DEFERRED")
+        self.assertEqual(payload["phase_gate_status"], "NOT_FULLY_PASSED")
+        self.assertEqual(payload["next_phase"], "V3.8")
+        self.assertEqual(payload["deferred_acceptance"], ["V3.7-B_NORMAL_SHORT"])
 
 
 if __name__ == "__main__":

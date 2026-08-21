@@ -26,8 +26,12 @@ from nbot.config.validation import (
 )
 
 ROOT = Path(__file__).resolve().parent
-PHASE = "V3.2"
-ACTIVE_EXECUTION_PHASE = "V3.2"
+PHASE = "V3.7"
+ACTIVE_EXECUTION_PHASE = "V3.7"
+PHASE_STATUS = "V3.7_A_PASS_B_DEFERRED"
+PHASE_GATE_STATUS = "NOT_FULLY_PASSED"
+NEXT_PHASE = "V3.8"
+DEFERRED_ACCEPTANCE = ("V3.7-B_NORMAL_SHORT",)
 
 
 def _git_identity() -> dict[str, str]:
@@ -83,6 +87,10 @@ def _doctor_payload(profile_name: str) -> tuple[dict, int]:
         "status": "PASS" if ok else "FAIL",
         "phase": PHASE,
         "active_execution_phase": ACTIVE_EXECUTION_PHASE if role.value == "EXECUTION" else PHASE,
+        "phase_status": PHASE_STATUS,
+        "phase_gate_status": PHASE_GATE_STATUS,
+        "next_phase": NEXT_PHASE,
+        "deferred_acceptance": list(DEFERRED_ACCEPTANCE),
         "role": role.value,
         "profile": profile.name,
         "market_environment": profile.market_environment,
@@ -266,6 +274,10 @@ def cmd_status(_: argparse.Namespace) -> int:
     payload = {
         "phase": PHASE,
         "active_execution_phase": ACTIVE_EXECUTION_PHASE if role.value == "EXECUTION" else PHASE,
+        "phase_status": PHASE_STATUS,
+        "phase_gate_status": PHASE_GATE_STATUS,
+        "next_phase": NEXT_PHASE,
+        "deferred_acceptance": list(DEFERRED_ACCEPTANCE),
         "role": role.value,
         "git": _git_identity(),
         "layout": "READY" if not problems else "NOT_BOOTSTRAPPED",
