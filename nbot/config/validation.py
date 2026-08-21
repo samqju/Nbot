@@ -298,14 +298,18 @@ def validate_execution_v31(
             else:
                 warnings.append("EXECUTION_TESTNET_CREDENTIALS_REQUIRED_FOR_V3_2_RUNTIME")
         elif profile.name == "live-paper":
+            from nbot.exchange.binance_public import BinanceLivePublicMarketConfig
             from nbot.exchange.paper import PaperExchangeConfig
 
+            BinanceLivePublicMarketConfig().validate()
             PaperExchangeConfig()
             if profile.binance_order_writes or profile.real_capital:
                 raise ValueError("LIVE_PAPER_ORDER_AUTHORITY_INVALID")
+            checks.append("EXECUTION_LIVE_PUBLIC_MARKET_ADAPTER_AVAILABLE")
+            checks.append("EXECUTION_LIVE_PUBLIC_BINANCE_HOST_PINNED")
             checks.append("EXECUTION_PAPER_EXCHANGE_AVAILABLE")
             checks.append("LIVE_PAPER_BINANCE_WRITES_DISABLED_BY_PROFILE")
-            warnings.append("LIVE_PAPER_PUBLIC_MARKET_RUNTIME_DEFERRED_UNTIL_V3_8")
+            warnings.append("LIVE_PAPER_NON_PROMOTIONAL_DRY_UNTIL_VALID_RESEARCH_AUTHORITY")
         elif profile.name == "live-trade":
             warnings.append("LIVE_TRADE_ADAPTER_FORBIDDEN_BEFORE_V3_10")
             ok = False

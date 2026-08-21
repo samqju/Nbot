@@ -2,30 +2,39 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
+import fcntl
 import json
 import os
 from pathlib import Path
 import signal
 import sys
 import time
-from typing import Mapping
+from typing import Iterator, Mapping
 
 from nbot.common.atomic_io import atomic_write_text
 from nbot.common.time import utc_iso
 from nbot.communication.integration import (
     TESTNET_OPERATIONAL_CANARY_AUTHORITY,
+    build_integrated_control_client,
     build_v37_testnet_client,
     run_v36_disarmed_cycle,
 )
 from nbot.config.loader import merged_environment
 from nbot.config.profiles import get_profile
 from nbot.config.validation import MachineRole, detect_role, profile_is_armed
+from nbot.exchange.binance_public import (
+    BinanceLivePublicMarketConfig,
+    BinanceLivePublicMarketData,
+)
 from nbot.exchange.binance_testnet import (
     TESTNET_REST_BASE_URL,
     TESTNET_WS_BASE_URL,
     BinanceTestnetExchange,
     TestnetExchangeConfig,
 )
+from nbot.exchange.contracts import ExchangePort
+from nbot.exchange.paper import PaperExchange, PaperExchangeConfig
 from nbot.execution.canary import (
     MechanicalCanaryEmergencyFlattener,
     MechanicalCanaryEntryLifecycle,
@@ -67,6 +76,30 @@ def _positive_int(environment: Mapping[str, str], key: str, default: int) -> int
     if value <= 0:
         raise ValueError(f"{key}_INVALID")
     return value
+
+
+LIVE_PAPER_DRY_SENTINEL_AUTHORITY = "NON_PROMOTIONAL_DRY_NO_ENTRY"
+
+
+@contextmanager
+def _live_paper_runtime_lock(repo_root: Path) -> Iterator[None]:
+    """Kernel-backed single-instance lock for the local PAPER execution runtime."""
+    path = repo_root / "runtime/execution/paper/execution.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.chmod(0o700)
+    handle = path.open("a+", encoding="utf-8")
+    os.chmod(path, 0o600)
+    try:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            raise ValueError("NBOT_LIVE_PAPER_EXECUTION_LOCK_HELD") from exc
+        yield
+    finally:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
 
 
 def runtime_leaf(profile_name: str) -> str:
@@ -128,19 +161,43 @@ def build_testnet_exchange(
     return BinanceTestnetExchange(cfg)
 
 
+def build_live_paper_exchange(
+    repo_root: Path,
+    environment: Mapping[str, str],
+) -> tuple[PaperExchange, BinanceLivePublicMarketData]:
+    profile = get_profile("live-paper")
+    market = BinanceLivePublicMarketData(
+        BinanceLivePublicMarketConfig(
+            request_timeout_seconds=_positive_float(
+                environment, "LIVE_PUBLIC_REST_TIMEOUT_SECONDS", 3.0
+            ),
+            max_clock_skew_ms=_positive_int(
+                environment, "LIVE_PUBLIC_MAX_CLOCK_SKEW_MS", 5_000
+            ),
+        )
+    )
+    exchange = PaperExchange(
+        repo_root=repo_root,
+        profile=profile,
+        market_data=market,
+        config=PaperExchangeConfig(),
+    )
+    return exchange, market
+
+
 def build_execution_worker(
     *,
     repo_root: Path,
     profile_name: str,
-    exchange: BinanceTestnetExchange,
+    exchange: ExchangePort,
     proposal_client: ProposalClient | None = None,
     outcome_client: OutcomeClient | None = None,
     telemetry: MechanicalCanaryTelemetry | None = None,
     allowed_entry_authorities: frozenset[str] | None = None,
 ) -> ExecutionWorker:
     profile = get_profile(profile_name)
-    if profile.name != "testnet-trade":
-        raise ValueError("NBOT_V3_1_RUNTIME_TESTNET_ONLY")
+    if profile.name not in {"testnet-trade", "live-paper"}:
+        raise ValueError("NBOT_EXECUTION_RUNTIME_PROFILE_UNSUPPORTED")
 
     durable = ExecutionDurableStore(repo_root, profile=profile.name)
     risk = RiskManager()
@@ -161,7 +218,11 @@ def build_execution_worker(
             profile=profile.name,
             market_environment=profile.market_environment,
             allowed_entry_authorities=(
-                frozenset({TESTNET_MECHANICAL_AUTHORITY})
+                (
+                    frozenset({TESTNET_MECHANICAL_AUTHORITY})
+                    if profile.name == "testnet-trade"
+                    else frozenset({LIVE_PAPER_DRY_SENTINEL_AUTHORITY})
+                )
                 if allowed_entry_authorities is None
                 else allowed_entry_authorities
             ),
@@ -203,7 +264,9 @@ def self_check(repo_root: Path, profile_name: str) -> int:
     if profile.name == "live-trade":
         status = "FORBIDDEN_BEFORE_V3_10"
     elif profile.name == "live-paper":
-        status = "PUBLIC_MARKET_RUNTIME_DEFERRED_UNTIL_V3_8"
+        BinanceLivePublicMarketConfig().validate()
+        PaperExchangeConfig()
+        status = "V3_8_NON_PROMOTIONAL_DRY_RUNTIME_READY"
     else:
         # Construction is intentionally not attempted because it would create
         # durable state.  This action is a code/config boundary check only.
@@ -251,6 +314,55 @@ def preflight_testnet(
     finally:
         exchange.disconnect()
 
+
+
+def preflight_live_paper(
+    *,
+    repo_root: Path,
+    environment: Mapping[str, str],
+    symbol: str,
+) -> int:
+    profile = get_profile("live-paper")
+    config = BinanceLivePublicMarketConfig(
+        request_timeout_seconds=_positive_float(
+            environment, "LIVE_PUBLIC_REST_TIMEOUT_SECONDS", 3.0
+        ),
+        max_clock_skew_ms=_positive_int(
+            environment, "LIVE_PUBLIC_MAX_CLOCK_SKEW_MS", 5_000
+        ),
+    )
+    market = BinanceLivePublicMarketData(config)
+    # Construction validates the ignored authenticated control-link config but
+    # performs no remote control request.
+    build_integrated_control_client(
+        repo_root=repo_root,
+        profile_name=profile.name,
+        environ=os.environ,
+    )
+    market.connect()
+    try:
+        quote = market.quote(symbol.upper())
+        report = {
+            "phase": "V3.8",
+            "profile": profile.name,
+            "mode": "NON_PROMOTIONAL_DRY",
+            "market_environment": profile.market_environment,
+            "paper_capital": True,
+            "binance_private_order_writes": False,
+            "public_base_url": config.base_url,
+            "symbol": quote.symbol,
+            "bid": quote.bid,
+            "ask": quote.ask,
+            "mid": quote.mid,
+            "spread_pct": quote.spread_pct,
+            "quote_timestamp_ms": quote.timestamp_ms,
+            "recommendation_entry_enabled": False,
+            "status": "PASS",
+        }
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0
+    finally:
+        market.disconnect()
 
 
 def run_testnet_canary(
@@ -615,6 +727,104 @@ def run_testnet_runtime(
             pass
 
 
+def run_live_paper_runtime(
+    *,
+    repo_root: Path,
+    environment: Mapping[str, str],
+    idle_poll_seconds: float,
+    open_poll_seconds: float,
+) -> int:
+    """Run V3.8 LIVE_PAPER in explicit non-promotional dry mode.
+
+    The process owns LIVE public market truth and durable local PAPER state,
+    manages any already-open paper position independently, and delivers pending
+    outcomes while flat.  New entries remain disabled by construction until a
+    later reviewed patch explicitly translates a valid Research Champion into
+    a paper-canary execution authority.
+    """
+    profile = get_profile("live-paper")
+    exchange, market = build_live_paper_exchange(repo_root, environment)
+    remote_client = build_integrated_control_client(
+        repo_root=repo_root,
+        profile_name=profile.name,
+        environ=os.environ,
+    )
+    worker = build_execution_worker(
+        repo_root=repo_root,
+        profile_name=profile.name,
+        exchange=exchange,
+        proposal_client=remote_client,
+        outcome_client=remote_client,
+        allowed_entry_authorities=frozenset({LIVE_PAPER_DRY_SENTINEL_AUTHORITY}),
+    )
+    stop_requested = False
+
+    def request_stop(_signum, _frame) -> None:
+        nonlocal stop_requested
+        stop_requested = True
+
+    signal.signal(signal.SIGTERM, request_stop)
+    signal.signal(signal.SIGINT, request_stop)
+
+    ready = ready_path(repo_root, profile.name)
+    ready.unlink(missing_ok=True)
+    with _live_paper_runtime_lock(repo_root):
+        try:
+            prepared = worker.prepare()
+            # This is the defining V3.8 foundation gate.  Do not auto-enable
+            # entries merely because a Research Champion later appears.
+            worker.disable_new_entries()
+            atomic_write_text(
+                ready,
+                (
+                    f"profile={profile.name}\npid={os.getpid()}\nready_at={utc_iso()}\n"
+                    f"prepared={prepared.status}\nphase=V3.8\n"
+                    "mode=NON_PROMOTIONAL_DRY\n"
+                    "recommendation_entry_enabled=false\n"
+                    "binance_private_order_writes=false\n"
+                ),
+                mode=0o600,
+            )
+            print(
+                json.dumps(
+                    {
+                        "event": "NBOT_EXECUTION_READY",
+                        "phase": "V3.8",
+                        "profile": profile.name,
+                        "mode": "NON_PROMOTIONAL_DRY",
+                        "prepared": prepared.status,
+                        "pid": os.getpid(),
+                        "entries_enabled": False,
+                        "proposal_source": "REMOTE_CONTROL_LINK_NOT_CONSUMED_WHILE_DRY",
+                        "outcome_transport": "REMOTE_CONTROL_ACK_WHILE_FLAT",
+                        "market_truth": "EXECUTION_OWN_BINANCE_LIVE_PUBLIC",
+                        "capital": "LOCAL_PAPER",
+                        "binance_private_order_writes": False,
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+
+            while not stop_requested:
+                local = worker.state.open_position
+                if local is None:
+                    # Reconcile and deliver any durable outcome first. Since the
+                    # entry gate remains disabled, this can never request or
+                    # execute a recommendation in the dry foundation.
+                    worker.process_flat_cycle()
+                    time.sleep(idle_poll_seconds)
+                    continue
+
+                quote = exchange.quote(local.symbol)
+                worker.process_open_quote(quote)
+                time.sleep(open_poll_seconds)
+            return 0
+        finally:
+            ready.unlink(missing_ok=True)
+            market.disconnect()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="NBOT V3 Execution runtime")
     parser.add_argument(
@@ -650,16 +860,24 @@ def main() -> int:
     profile = get_profile(args.profile)
     if profile.name == "live-trade":
         raise SystemExit("NBOT_LIVE_TRADE_RUNTIME_FORBIDDEN_BEFORE_V3_10")
-    if profile.name == "live-paper":
-        raise SystemExit("NBOT_LIVE_PAPER_RUNTIME_DEFERRED_UNTIL_V3_8")
-
     environment = runtime_environment(root, profile.name, secret_file=args.secrets_file)
     if args.preflight_only:
+        if profile.name == "live-paper":
+            return preflight_live_paper(
+                repo_root=root,
+                environment=environment,
+                symbol=args.symbol,
+            )
         return preflight_testnet(
             repo_root=root,
             environment=environment,
             symbol=args.symbol,
         )
+    if profile.name == "live-paper" and (
+        args.testnet_reconcile or args.testnet_force_close or args.testnet_canary or args.v36_dry_cycle
+    ):
+        raise ValueError("NBOT_TESTNET_ACTION_REQUIRES_TESTNET_PROFILE")
+
     if args.testnet_reconcile:
         return run_testnet_reconcile(
             repo_root=root,
@@ -705,6 +923,13 @@ def main() -> int:
 
     idle_poll = _positive_float(environment, "NBOT_EXECUTION_IDLE_POLL_SECONDS", 2.0)
     open_poll = _positive_float(environment, "NBOT_EXECUTION_OPEN_POLL_SECONDS", 0.5)
+    if profile.name == "live-paper":
+        return run_live_paper_runtime(
+            repo_root=root,
+            environment=environment,
+            idle_poll_seconds=idle_poll,
+            open_poll_seconds=open_poll,
+        )
     return run_testnet_runtime(
         repo_root=root,
         environment=environment,

@@ -173,7 +173,7 @@ class V35ControlTargetTests(unittest.TestCase):
             )
             snapshot = target.refresh_recommendation()
             self.assertEqual(snapshot.status, "NOT_READY")
-            self.assertEqual(snapshot.reason, "RESEARCH_CHAMPION_DEFERRED_V3_4_6")
+            self.assertEqual(snapshot.reason, "WAIT_FOR_VALID_RESEARCH_CHAMPION")
             health = target.health_snapshot()
             self.assertEqual(health["order_authority"], "NONE")
             self.assertIsNone(health["recommendation_authority"])

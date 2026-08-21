@@ -182,12 +182,7 @@ class RecommendationStore:
         if now <= 0:
             raise ValueError("NBOT_RECOMMENDATION_NOW_INVALID")
         if self.profile.name == "live-paper":
-            snapshot = RecommendationSnapshot(
-                status="NOT_READY",
-                reason="RESEARCH_CHAMPION_DEFERRED_V3_4_6",
-                proposal=None,
-                refreshed_at_ms=now,
-            )
+            snapshot = self._refresh_live_paper_dry(now)
             self._save_snapshot(snapshot)
             return snapshot
         if self.profile.name != "testnet-trade":
@@ -195,6 +190,42 @@ class RecommendationStore:
         snapshot = self._refresh_testnet_canary(now)
         self._save_snapshot(snapshot)
         return snapshot
+
+    def _refresh_live_paper_dry(self, now_ms: int) -> RecommendationSnapshot:
+        """Fail closed until a valid Research Champion is explicitly wired.
+
+        V3.8 is allowed to run operationally in non-promotional dry mode while
+        research evidence is still maturing.  A Research Champion remains
+        RESEARCH_ONLY_NO_EXECUTION and is never silently translated into paper
+        execution authority by this foundation patch.
+        """
+        with self.database.connection() as conn:
+            table = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='research_champions'"
+            ).fetchone()
+            if table is None:
+                reason = "WAIT_FOR_VALID_RESEARCH_CHAMPION"
+            else:
+                row = conn.execute(
+                    """
+                    SELECT champion_version,selector_version,exit_policy_version,authority
+                    FROM research_champions
+                    ORDER BY promoted_at_ms DESC,champion_version DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
+                if row is None:
+                    reason = "WAIT_FOR_VALID_RESEARCH_CHAMPION"
+                elif str(row[3]) != "RESEARCH_ONLY_NO_EXECUTION":
+                    reason = "RESEARCH_CHAMPION_AUTHORITY_INVALID"
+                else:
+                    reason = "RESEARCH_CHAMPION_PRESENT_PROMOTIONAL_WIRING_NOT_ENABLED"
+        return RecommendationSnapshot(
+            status="NOT_READY",
+            reason=reason,
+            proposal=None,
+            refreshed_at_ms=now_ms,
+        )
 
     def _refresh_testnet_canary(self, now_ms: int) -> RecommendationSnapshot:
         with self.database.connection() as conn:

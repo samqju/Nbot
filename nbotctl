@@ -333,7 +333,7 @@ def cmd_disarm(args: argparse.Namespace) -> int:
     return 0
 
 
-def _start_testnet(profile_name: str) -> int:
+def _start_execution(profile_name: str) -> int:
     active = _active_runtimes(clean_stale=True)
     if active:
         if len(active) == 1 and active[0]["profile"] == profile_name:
@@ -415,9 +415,7 @@ def cmd_start(args: argparse.Namespace) -> int:
     profile = get_profile(args.profile)
     if profile.name == "live-trade":
         raise ValueError("NBOT_LIVE_TRADE_RUNTIME_FORBIDDEN_BEFORE_V3_10")
-    if profile.name == "live-paper":
-        raise ValueError("NBOT_LIVE_PAPER_RUNTIME_DEFERRED_UNTIL_V3_8")
-    return _start_testnet(profile.name)
+    return _start_execution(profile.name)
 
 
 def cmd_stop(_: argparse.Namespace) -> int:

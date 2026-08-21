@@ -90,7 +90,7 @@ class V3111RuntimeAcceptanceTests(unittest.TestCase):
         text = (REPO / "nbotctl").read_text(encoding="utf-8")
         for function in ("cmd_start", "cmd_stop", "cmd_restart", "cmd_logs"):
             self.assertIn(f"def {function}", text)
-        self.assertIn("_start_testnet", text)
+        self.assertIn("_start_execution", text)
 
     def test_nbotctl_help_exposes_runtime_commands(self):
         result = subprocess.run(
@@ -124,9 +124,11 @@ class V3111RuntimeAcceptanceTests(unittest.TestCase):
         self.assertIn("Environment=NBOT_PROFILE=@NBOT_PROFILE@", text)
         self.assertIn("--profile @NBOT_PROFILE@", text)
 
-    def test_live_paper_runtime_is_deliberately_deferred(self):
+    def test_live_paper_runtime_is_v38_non_promotional_dry(self):
         text = (REPO / "run_execution.py").read_text(encoding="utf-8")
-        self.assertIn("NBOT_LIVE_PAPER_RUNTIME_DEFERRED_UNTIL_V3_8", text)
+        self.assertIn("run_live_paper_runtime", text)
+        self.assertIn("NON_PROMOTIONAL_DRY", text)
+        self.assertNotIn("NBOT_LIVE_PAPER_RUNTIME_DEFERRED_UNTIL_V3_8", text)
 
     def test_live_trade_runtime_is_forbidden(self):
         text = (REPO / "run_execution.py").read_text(encoding="utf-8")
@@ -206,12 +208,17 @@ class V3111RuntimeAcceptanceTests(unittest.TestCase):
             self.assertIn("EXECUTION_PENDING_OUTCOMES:0", result.checks)
             self.assertIn("EXECUTION_SINGLE_INSTANCE_LOCK_AVAILABLE", result.checks)
 
-    def test_live_paper_doctor_reports_public_market_defer(self):
+    def test_live_paper_doctor_reports_non_promotional_dry_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
             result = validate_execution_v31(
                 repo_root=tmp, profile=get_profile("live-paper"), environment={}
             )
-            self.assertIn("LIVE_PAPER_PUBLIC_MARKET_RUNTIME_DEFERRED_UNTIL_V3_8", result.warnings)
+            self.assertIn("EXECUTION_LIVE_PUBLIC_MARKET_ADAPTER_AVAILABLE", result.checks)
+            self.assertIn("EXECUTION_LIVE_PUBLIC_BINANCE_HOST_PINNED", result.checks)
+            self.assertIn(
+                "LIVE_PAPER_NON_PROMOTIONAL_DRY_UNTIL_VALID_RESEARCH_AUTHORITY",
+                result.warnings,
+            )
 
     def test_testnet_doctor_contract_checks_pinned_endpoints(self):
         with tempfile.TemporaryDirectory() as tmp:

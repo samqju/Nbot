@@ -152,34 +152,35 @@ def _validate_health(
             raise ObservationClientError("OBSERVATION_HEALTH_RECOMMENDATION_AUTHORITY_INVALID")
 
 
-def build_v37_testnet_client(
+def build_integrated_observation_client(
     *,
     repo_root: str | Path,
     profile_name: str,
     environ: Mapping[str, str] | None = None,
 ) -> V37IntegratedObservationClient:
-    """Build the authenticated V3.7 Testnet proposal/outcome client.
+    """Build the authenticated flat-boundary client for Testnet or LIVE_PAPER.
 
-    Construction performs no network request.  That is important for restart
-    safety: Execution can reconcile and manage an already-open position even
-    while Observation or the control link is unavailable.
+    Construction performs no network request.  This preserves restart safety:
+    Execution can reconcile and manage an already-open position even while
+    Observation or the control link is unavailable.
     """
 
     root = Path(repo_root)
     role = detect_role(root)
     if role is not MachineRole.EXECUTION:
-        raise ValueError("NBOT_V37_EXECUTION_ROLE_REQUIRED")
+        raise ValueError("NBOT_INTEGRATED_CLIENT_EXECUTION_ROLE_REQUIRED")
     profile = get_profile(profile_name)
-    if profile.name != "testnet-trade":
-        raise ValueError("NBOT_V37_TESTNET_PROFILE_ONLY")
+    if profile.name not in {"testnet-trade", "live-paper"}:
+        raise ValueError("NBOT_INTEGRATED_CLIENT_PROFILE_UNSUPPORTED")
 
     release_sha = _git_sha(root)
     link = control_link_config_for_profile(root, profile, environ=environ)
+    leaf = "testnet" if profile.name == "testnet-trade" else "paper"
     remote = RemoteObservationClient(
         base_url=link.base_url,
         profile=profile.name,
         auth_token=link.auth_token,
-        receipt_directory=root / "runtime/execution/testnet/observation_receipts",
+        receipt_directory=root / f"runtime/execution/{leaf}/observation_receipts",
         execution_release_sha=release_sha,
         timeout_seconds=link.timeout_seconds,
         ca_file=link.ca_file,
@@ -188,6 +189,36 @@ def build_v37_testnet_client(
         remote=remote,
         profile_name=profile.name,
         release_sha=release_sha,
+    )
+
+
+def build_integrated_control_client(
+    *,
+    repo_root: str | Path,
+    profile_name: str,
+    environ: Mapping[str, str] | None = None,
+) -> V37IntegratedObservationClient:
+    """Neutral Execution-side factory for the authenticated control boundary."""
+    return build_integrated_observation_client(
+        repo_root=repo_root,
+        profile_name=profile_name,
+        environ=environ,
+    )
+
+
+def build_v37_testnet_client(
+    *,
+    repo_root: str | Path,
+    profile_name: str,
+    environ: Mapping[str, str] | None = None,
+) -> V37IntegratedObservationClient:
+    """Compatibility builder retaining the proven V3.7 Testnet contract."""
+    if get_profile(profile_name).name != "testnet-trade":
+        raise ValueError("NBOT_V37_TESTNET_PROFILE_ONLY")
+    return build_integrated_observation_client(
+        repo_root=repo_root,
+        profile_name=profile_name,
+        environ=environ,
     )
 
 
