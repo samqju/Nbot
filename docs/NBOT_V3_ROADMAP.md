@@ -2591,6 +2591,31 @@ The storage contract is:
 
 Normal catch-up therefore becomes: build a bounded batch -> seal completed selection events -> verify compact archive -> compact eligible historical detail -> audit -> continue.
 
+### V3.8.3 bounded research catch-up controller
+
+After V3.8.2 physically proves the lifecycle on LIVE evidence, V3.8.3 may automate only that already-proven sequence.  It is an operational scalability controller, not a model/policy change.
+
+The controller contract is:
+
+* `BOUNDED_RESEARCH_CATCHUP_V1` runs on the Observation VPS only and has `RESEARCH_ONLY_NO_EXECUTION` authority;
+* one catch-up batch may create at most 8 new selection events because 8 is the physically accepted V3.8.2 steady-state batch;
+* each invocation has an explicit bounded cycle count and may never become an unbounded background `catch up everything` loop;
+* the separate LIVE raw collector must still own its runtime lock and have a fresh recent capture before catch-up may start or continue;
+* a second catch-up controller is blocked by its own process lock;
+* before the first build, and after every sealed/compacted batch, SQLite integrity, retention integrity, full research integrity, cumulative Ridge state and the frozen Champion/evaluation fingerprint must remain healthy;
+* the operating live-page ceiling is 900 MiB, deliberately below the V3.8.2 1 GiB emergency hard ceiling;
+* a new 8-event build may start only with at least 64 MiB of live-page headroom below that 900 MiB operating ceiling; this reserve is based on the physically observed V3.8.2 batch growth and prevents retention from being used as an excuse to build through the ceiling;
+* the controller builds only the existing frozen feature/signal/outcome/policy/selection definitions;
+* the actual new-selection delta is measured from pending unsealed detailed events, never inferred from total ledger rows because compacted ledger events intentionally have no detailed selection-build row;
+* after a successful build the controller seals exactly the new selection events and requests compaction of no more than that same count;
+* after the 60+64 protected windows are populated, detailed selection history must stay at or below 124 events while the permanent compact ledger may continue growing;
+* if a prior controller/process stops after building but before sealing, a later invocation may recover only a pending unsealed set no larger than the proven batch, then must re-run all safety gates before new work;
+* zero newly mature selection events is a normal `WAIT_FOR_MATURE_EVIDENCE` stop, not a reason to widen the batch or weaken maturity rules;
+* build failure, collector failure/staleness, SQLite/FK failure, retention failure, research-audit failure, Ridge-state mismatch, Champion/evaluation mutation, unbounded detailed working set or storage-ceiling breach fails closed immediately;
+* the controller never calls Champion evaluation, never changes a Research Champion decision, never creates recommendation authority, and never starts Paper/Testnet/real execution.
+
+This controller is complete only after automated regression plus a physical LIVE run demonstrates that multiple bounded cycles advance permanent ledger history while the detailed working set remains bounded and the LIVE raw collector continues independently.
+
 ## Runtime
 
 ```text

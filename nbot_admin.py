@@ -18,6 +18,10 @@ from nbot.config.profiles import get_profile
 from nbot.config.validation import MachineRole, detect_role
 from nbot.observation.binance_public import BinanceUsdMPublicClient
 from nbot.observation.champion import WalkForwardChampionEvaluator
+from nbot.observation.catchup import (
+    BoundedResearchCatchupController,
+    ResearchCatchupError,
+)
 from nbot.observation.config import observation_config_for_profile
 from nbot.observation.database import EvidenceDatabase
 from nbot.observation.features import CanonicalFeatureStore
@@ -180,6 +184,37 @@ def cmd_scalability_reset_derived(args: argparse.Namespace) -> int:
     return _emit(report)
 
 
+
+
+def cmd_research_catchup(args: argparse.Namespace) -> int:
+    controller = BoundedResearchCatchupController(_db(), ROOT)
+    try:
+        report = controller.run(
+            batch_events=args.batch_events,
+            max_cycles=args.max_cycles,
+        )
+    except ResearchCatchupError as exc:
+        payload = dict(exc.report)
+        if not payload:
+            payload = {
+                "controller_version": "BOUNDED_RESEARCH_CATCHUP_V1",
+                "authority": "RESEARCH_ONLY_NO_EXECUTION",
+                "healthy": False,
+                "error": exc.code,
+            }
+        _emit(payload)
+        return 2
+    except KeyboardInterrupt:
+        _emit({
+            "controller_version": "BOUNDED_RESEARCH_CATCHUP_V1",
+            "authority": "RESEARCH_ONLY_NO_EXECUTION",
+            "healthy": False,
+            "status": "OPERATOR_STOPPED",
+            "recovery": "NEXT_INVOCATION_SEALS_AT_MOST_ONE_PENDING_PROVEN_BATCH_BEFORE_NEW_WORK",
+        })
+        return 130
+    return _emit(report)
+
 def cmd_research_audit(_args: argparse.Namespace) -> int:
     reports = {
         component: _audit_result(component)
@@ -254,6 +289,14 @@ def build_parser() -> argparse.ArgumentParser:
     research_audit = sub.add_parser("research-audit")
     research_audit.set_defaults(func=cmd_research_audit)
 
+    research_catchup = sub.add_parser(
+        "research-catchup",
+        help="run bounded V3.8.3 LIVE research catch-up with retention gates",
+    )
+    research_catchup.add_argument("--batch-events", type=int, default=8)
+    research_catchup.add_argument("--max-cycles", type=int, default=1)
+    research_catchup.set_defaults(func=cmd_research_catchup)
+
     retention_init = sub.add_parser("retention-init")
     retention_init.set_defaults(func=cmd_retention_init)
 
@@ -296,6 +339,10 @@ def main() -> int:
     for field in ("seal_max_events", "compact_max_events"):
         if hasattr(args, field) and getattr(args, field) < 0:
             raise SystemExit("NBOT_ADMIN_RETENTION_LIMIT_INVALID")
+    if hasattr(args, "batch_events") and not (1 <= args.batch_events <= 8):
+        raise SystemExit("NBOT_ADMIN_CATCHUP_BATCH_EVENTS_INVALID")
+    if hasattr(args, "max_cycles") and not (1 <= args.max_cycles <= 32):
+        raise SystemExit("NBOT_ADMIN_CATCHUP_MAX_CYCLES_INVALID")
     try:
         return int(args.func(args))
     except (ValueError, RuntimeError) as exc:
