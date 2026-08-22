@@ -2616,6 +2616,34 @@ The controller contract is:
 
 This controller is complete only after automated regression plus a physical LIVE run demonstrates that multiple bounded cycles advance permanent ledger history while the detailed working set remains bounded and the LIVE raw collector continues independently.
 
+### V3.8.4 epoch research / disposable derived-workspace correction
+
+Physical V3.8.3 acceptance on 2026-08-22 proved the compact lifecycle but also proved that its steady-state operating model is unsuitable for continuous autonomous learning: processing only 24 mature events consumed sustained near-full CPU for tens of minutes because detailed research was materialized in the long-lived collector database and full historical research integrity was repeatedly rescanned around tiny batches.  The defect is architectural, not an economic-gate result.
+
+V3.8.4 therefore deliberately supersedes the V3.8.1R/V3.8.2 assumption that all canonical raw evidence and reproducible derived research must remain together in one indefinitely growing SQLite file.  The new storage/processing contract is:
+
+* realtime Observation continues to collect honest broad LIVE point-in-time evidence every five minutes; collection remains the highest-priority Observation workload;
+* heavy research is decoupled from the collector and runs in **96-event epochs** (approximately eight hours of research-ready 5-minute events);
+* an epoch is eligible only after the full 48-bar / four-hour future-label horizon for its final target event is available;
+* each epoch receives a 48-bar historical context window and 48-bar future context window, so the raw dependency supplied to research is bounded and explicit;
+* research runs in a **disposable SQLite workspace** containing only the epoch and its bounded raw context; expanded feature/signal/future-path/policy/selection rows are never permanent collector state;
+* after successful selection, each target event is sealed once into permanent compact research memory using the already-proven compressed training vector/after-cost target and immutable lineage digests;
+* permanent research memory also retains cumulative Ridge sufficient statistics and durable model/challenger/evaluation/drift/promotion/rollback artifacts as those later phases populate them;
+* successful epoch workspaces are deleted after compact memory is durably committed; failed workspaces may be retained temporarily for forensic diagnosis but have no training authority;
+* normal research never replays already-qualified raw events under the same immutable research definition; an explicit new feature/research generation starts prospectively unless a separately approved offline historical backfill is justified;
+* normal selection scoring processes only newly built epoch events.  Historical transparent-baseline predictions are immutable and must not be rescored merely because new evidence arrived;
+* the cumulative Ridge learner begins each epoch from its persisted sufficient statistics/history summary and advances only through the new chronological epoch; it must not reread historical raw candles or rebuild historical baseline predictions;
+* full-history research audits are removed from the per-epoch hot path.  Promotion-time, release-time or deliberate maintenance audits may still perform expensive deep verification;
+* raw collector retention becomes **dependency-watermark based**, not indefinite: old raw events may be deleted only after compact research memory proves qualification and after they are older than the 48-bar history dependency needed by the next unresolved epoch; if research falls behind, raw storage grows rather than deleting unprocessed evidence;
+* collector raw pages may be reused by SQLite without realtime `VACUUM`; physical truncation remains an explicit maintenance operation;
+* V3.8.4 starts a deliberately clean research generation: the accepted pre-V3.8.4 mixed raw+derived database is discarded after the collector is stopped and its final event boundary is recorded; no old raw, derived, Ridge, Champion or compact-ledger row is migrated into the new generation;
+* the old `BOUNDED_RESEARCH_CATCHUP_V1` controller becomes a legacy recovery/diagnostic implementation and is not the continuous-learning runtime after V3.8.4 cutover;
+* V3.8.4 changes storage scheduling and computational reuse only.  Feature definitions, outcome horizons, exit policies, `RIDGE_EXPECTED_NET_R_V1`, frozen Champion thresholds, research authority and Execution authority remain unchanged.
+
+Performance is now a first-class operational gate.  A 96-event epoch must complete in at most two hours on the Observation VPS before automatic scheduling is enabled; the target is at most one hour.  The stage report must expose workspace-copy, feature, signal, outcome, policy, selection, seal and memory-import timings so further optimization is evidence-driven.  The LIVE collector must stay fresh independently throughout.
+
+V3.8.4 is complete only after: (1) the legacy mixed database is deliberately discarded at a controlled generation boundary and empty compact memory is initialized; (2) a fresh raw-only generation accumulates its own 48-event historical context before the first target epoch; (3) at least one physical 96-event epoch is processed exactly once; (4) its disposable derived workspace is removed after commit; (5) permanent memory increases by exactly the epoch event count and cumulative Ridge state advances consistently; (6) rerunning the epoch is idempotent/skip-only; (7) raw pruning advances only behind the qualified dependency watermark; and (8) the epoch runtime satisfies the two-hour hard gate while the collector remains healthy.
+
 ## Runtime
 
 ```text

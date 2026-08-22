@@ -297,6 +297,14 @@ CREATE TABLE IF NOT EXISTS entry_selection_ridge_state (
     FOREIGN KEY (lab_version) REFERENCES entry_selection_labs(lab_version),
     FOREIGN KEY (selector_version) REFERENCES entry_selector_sets(selector_version)
 );
+CREATE TABLE IF NOT EXISTS entry_selection_history_base (
+    lab_version TEXT PRIMARY KEY,
+    through_event_ms INTEGER,
+    training_event_count INTEGER NOT NULL CHECK (training_event_count >= 0),
+    training_row_count INTEGER NOT NULL CHECK (training_row_count >= 0),
+    source_digest TEXT NOT NULL,
+    FOREIGN KEY (lab_version) REFERENCES entry_selection_labs(lab_version)
+);
 """
 
 RESEARCH_SELECTION_TABLES = (
@@ -307,6 +315,7 @@ RESEARCH_SELECTION_TABLES = (
     "entry_selection_predictions",
     "entry_selection_prediction_builds",
     "entry_selection_ridge_state",
+    "entry_selection_history_base",
 )
 
 
@@ -1019,6 +1028,16 @@ class EntrySelectionLab:
 
 
     def _compacted_history_exists(self, conn) -> bool:
+        base_present = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='entry_selection_history_base'"
+        ).fetchone()
+        if base_present is not None:
+            row = conn.execute(
+                "SELECT training_event_count FROM entry_selection_history_base WHERE lab_version=?",
+                (self.config.lab_version,),
+            ).fetchone()
+            if row is not None and int(row[0]) > 0:
+                return True
         present = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='research_event_ledger'"
         ).fetchone()
@@ -1032,6 +1051,23 @@ class EntrySelectionLab:
         self, conn, *, before_event_ms: int | None = None, through_event_ms: int | None = None
     ) -> tuple[int, int, int | None]:
         counts: dict[int, int] = {}
+        base = conn.execute(
+            "SELECT through_event_ms,training_event_count,training_row_count "
+            "FROM entry_selection_history_base WHERE lab_version=?",
+            (self.config.lab_version,),
+        ).fetchone()
+        base_through = None if base is None or base[0] is None else int(base[0])
+        base_events = 0 if base is None else int(base[1])
+        base_rows = 0 if base is None else int(base[2])
+        if base_through is not None:
+            if before_event_ms is not None and int(before_event_ms) <= base_through:
+                raise EntrySelectionError(
+                    "NBOT_V384_HISTORY_QUERY_BEFORE_COMPACT_BASE_UNSUPPORTED"
+                )
+            if through_event_ms is not None and int(through_event_ms) < base_through:
+                raise EntrySelectionError(
+                    "NBOT_V384_HISTORY_QUERY_BEFORE_COMPACT_BASE_UNSUPPORTED"
+                )
         present = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='research_event_ledger'"
         ).fetchone()
@@ -1053,20 +1089,73 @@ class EntrySelectionLab:
             counts[event] = count
         events = sorted(
             event for event in counts
-            if (before_event_ms is None or event < before_event_ms)
+            if (base_through is None or event > base_through)
+            and (before_event_ms is None or event < before_event_ms)
             and (through_event_ms is None or event <= through_event_ms)
         )
-        return (
-            len(events),
-            sum(counts[event] for event in events),
-            events[-1] if events else None,
-        )
+        event_count = base_events + len(events)
+        row_count = base_rows + sum(counts[event] for event in events)
+        last = events[-1] if events else base_through
+        return event_count, row_count, last
 
     def _selection_history_event_count(self, conn, through_event_ms: int) -> int:
         return self._selection_history_meta(
             conn, through_event_ms=through_event_ms
         )[0]
 
+
+    def seed_history_base(
+        self,
+        *,
+        through_event_ms: int | None,
+        training_event_count: int,
+        training_row_count: int,
+        source_digest: str,
+        ridge_state_row: tuple[Any, ...] | None = None,
+    ) -> None:
+        """Seed a disposable V3.8.4 workspace from compact permanent memory.
+
+        The base summarizes history that is intentionally absent from the
+        workspace.  New epoch rows are then processed chronologically on top
+        of the persisted Ridge sufficient statistics without replaying raw
+        history or old baseline predictions.
+        """
+        self.initialize()
+        events = int(training_event_count)
+        rows = int(training_row_count)
+        through = None if through_event_ms is None else int(through_event_ms)
+        digest = str(source_digest).strip()
+        if events < 0 or rows < 0 or not digest:
+            raise EntrySelectionError("NBOT_V384_HISTORY_BASE_INVALID")
+        if events == 0 and (rows != 0 or through is not None):
+            raise EntrySelectionError("NBOT_V384_HISTORY_BASE_EMPTY_INVALID")
+        if events > 0 and (rows <= 0 or through is None):
+            raise EntrySelectionError("NBOT_V384_HISTORY_BASE_NONEMPTY_INVALID")
+        with self.db.connection() as conn:
+            existing = conn.execute(
+                "SELECT through_event_ms,training_event_count,training_row_count,source_digest "
+                "FROM entry_selection_history_base WHERE lab_version=?",
+                (self.config.lab_version,),
+            ).fetchone()
+            expected = (through, events, rows, digest)
+            if existing is not None and tuple(existing) != expected:
+                raise EntrySelectionError("NBOT_V384_HISTORY_BASE_MISMATCH")
+            conn.execute(
+                "INSERT OR IGNORE INTO entry_selection_history_base("
+                "lab_version,through_event_ms,training_event_count,training_row_count,source_digest"
+                ") VALUES(?,?,?,?,?)",
+                (self.config.lab_version, through, events, rows, digest),
+            )
+            if ridge_state_row is not None:
+                if len(ridge_state_row) != 8:
+                    raise EntrySelectionError("NBOT_V384_RIDGE_STATE_ROW_INVALID")
+                conn.execute(
+                    "INSERT OR REPLACE INTO entry_selection_ridge_state("
+                    "lab_version,selector_version,through_event_ms,training_event_count,"
+                    "training_row_count,state_json,state_digest,updated_at_ms"
+                    ") VALUES(?,?,?,?,?,?,?,?)",
+                    tuple(ridge_state_row),
+                )
 
     def _load_ridge_state(self, conn) -> RidgeSufficientStatistics:
         row = conn.execute(
@@ -1296,15 +1385,24 @@ class EntrySelectionLab:
                 )
                 conn.commit()
 
-            all_events = [int(row[0]) for row in conn.execute(
-                "SELECT event_open_ms FROM entry_selection_builds WHERE lab_version=? ORDER BY event_open_ms",
-                (self.config.lab_version,),
-            ).fetchall()]
+            # Normal V3.8.4 builds score only events created by this invocation.
+            # Historical baseline predictions are immutable and provide no new
+            # learning value; replaying them was the dominant O(history) hot
+            # path discovered during V3.8.3 physical acceptance.  Explicit
+            # rebuild retains the old all-event behavior for offline research.
+            events_to_score = (
+                [int(row[0]) for row in conn.execute(
+                    "SELECT event_open_ms FROM entry_selection_builds "
+                    "WHERE lab_version=? ORDER BY event_open_ms",
+                    (self.config.lab_version,),
+                ).fetchall()]
+                if rebuild else sorted(int(event) for event in targets)
+            )
             baseline_rows = 0
             learned_rows = 0
             learned_ready_events = 0
             ridge_state = self._load_ridge_state(conn)
-            for event_open_ms in all_events:
+            for event_open_ms in events_to_score:
                 for spec in BASELINE_SELECTORS:
                     baseline_rows += self._score_event(conn, event_open_ms, spec, rebuild)
 

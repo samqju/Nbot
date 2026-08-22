@@ -206,10 +206,19 @@ class ClosingConnection(sqlite3.Connection):
 class EvidenceDatabase:
     """Observation-owned SQLite store for atomic raw market evidence."""
 
-    def __init__(self, config: ObservationConfig) -> None:
+    def __init__(
+        self,
+        config: ObservationConfig,
+        *,
+        path_override: Path | None = None,
+    ) -> None:
         config.validate()
         self.config = config
-        self.path = Path(config.database_path)
+        # V3.8.4 research workspaces use the same LIVE evidence schema and
+        # endpoint contract but live outside the canonical collector path.
+        # Only an explicit constructor override may change the physical file;
+        # normal Observation construction remains hard-pinned by config.
+        self.path = Path(config.database_path if path_override is None else path_override)
 
     def _connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)

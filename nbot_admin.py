@@ -26,6 +26,12 @@ from nbot.observation.config import observation_config_for_profile
 from nbot.observation.database import EvidenceDatabase
 from nbot.observation.features import CanonicalFeatureStore
 from nbot.observation.learning import ContinuousLearningFoundation
+from nbot.observation.epoch import (
+    CUTOVER_CONFIRMATION,
+    ResearchEpochProcessor,
+    cutover_to_fresh_raw_generation,
+)
+from nbot.observation.research_memory import ResearchMemoryStore
 from nbot.observation.outcomes import FuturePathStore
 from nbot.observation.retention import ResearchRetentionManager
 from nbot.observation.policies import ExitPolicyLab
@@ -40,6 +46,8 @@ from nbot.observation.scalability import (
 
 ROOT = Path(__file__).resolve().parent
 RESEARCH_PROFILE = "live-paper"
+V384_GENERATION = "V3_8_4_EPOCH_GENERATION_V1"
+V384_MEMORY_PATH = Path("data/observation/live/research_memory.db")
 
 
 def _jsonable(value: Any) -> Any:
@@ -68,7 +76,32 @@ def _future_store() -> FuturePathStore:
     return FuturePathStore(db, BinanceUsdMPublicClient(db.config))
 
 
+def _memory() -> ResearchMemoryStore:
+    return ResearchMemoryStore(V384_MEMORY_PATH)
+
+
+def _v384_active() -> bool:
+    if not V384_MEMORY_PATH.exists():
+        return False
+    try:
+        return _memory().metadata().get("memory_version") == "RESEARCH_MEMORY_V1"
+    except Exception:
+        return False
+
+
+def _legacy_mixed_research_guard() -> None:
+    if _v384_active():
+        raise RuntimeError(
+            "NBOT_V384_LEGACY_MIXED_RESEARCH_DISABLED_USE_RESEARCH_EPOCH"
+        )
+
+
+def _epoch_processor() -> ResearchEpochProcessor:
+    return ResearchEpochProcessor(_db(), _memory(), ROOT)
+
+
 def _build_result(component: str, max_events: int, rebuild: bool) -> Any:
+    _legacy_mixed_research_guard()
     db = _db()
     if component == "features":
         return CanonicalFeatureStore(db).build(max_events=max_events, rebuild=rebuild)
@@ -84,6 +117,7 @@ def _build_result(component: str, max_events: int, rebuild: bool) -> Any:
 
 
 def _audit_result(component: str) -> dict[str, Any]:
+    _legacy_mixed_research_guard()
     db = _db()
     if component == "features":
         return CanonicalFeatureStore(db).audit()
@@ -126,35 +160,57 @@ def cmd_report(args: argparse.Namespace) -> int:
 
 
 def cmd_champion_evaluate(args: argparse.Namespace) -> int:
+    _legacy_mixed_research_guard()
     return _emit(WalkForwardChampionEvaluator(_db()).evaluate(rebuild=args.rebuild))
 
 
 def cmd_champion_status(_args: argparse.Namespace) -> int:
+    if _v384_active():
+        return _emit({
+            "authority": "RESEARCH_ONLY_NO_EXECUTION",
+            "source": "V3_8_4_PERMANENT_RESEARCH_MEMORY",
+            "memory": _memory().status(),
+            "research_champion_evaluations": _memory().artifact("research_champion_evaluations"),
+            "research_champions": _memory().artifact("research_champions"),
+        })
     return _emit(WalkForwardChampionEvaluator(_db()).status())
 
 
 def cmd_learning_init(_args: argparse.Namespace) -> int:
+    _legacy_mixed_research_guard()
     foundation = ContinuousLearningFoundation(_db())
     foundation.initialize()
     return _emit(foundation.status())
 
 
 def cmd_learning_status(_args: argparse.Namespace) -> int:
+    if _v384_active():
+        return _emit({
+            "authority": "RESEARCH_ONLY_NO_EXECUTION",
+            "status": "V3_8_4_COMPACT_MEMORY_READY_V3_9_TRAINING_NOT_YET_ENABLED",
+            "memory": _memory().status(),
+            "legacy_learning_foundation": _memory().artifact("learning_foundations"),
+            "legacy_model_registry": _memory().artifact("model_registry"),
+            "legacy_challenger_registry": _memory().artifact("challenger_registry"),
+        })
     return _emit(ContinuousLearningFoundation(_db()).status())
 
 
 
 
 def cmd_retention_init(_args: argparse.Namespace) -> int:
+    _legacy_mixed_research_guard()
     manager = ResearchRetentionManager(_db())
     manager.initialize()
     return _emit(manager.status())
 
 def cmd_retention_status(_args: argparse.Namespace) -> int:
+    _legacy_mixed_research_guard()
     return _emit(ResearchRetentionManager(_db()).status())
 
 
 def cmd_retention_maintain(args: argparse.Namespace) -> int:
+    _legacy_mixed_research_guard()
     report = ResearchRetentionManager(_db()).maintain(
         seal_max_events=args.seal_max_events,
         compact_max_events=args.compact_max_events,
@@ -162,6 +218,7 @@ def cmd_retention_maintain(args: argparse.Namespace) -> int:
     return _emit(report)
 
 def cmd_scalability_status(_args: argparse.Namespace) -> int:
+    _legacy_mixed_research_guard()
     return _emit(ResearchScalabilityRecovery(_db()).status())
 
 
@@ -176,6 +233,7 @@ def cmd_scalability_verify_reference(args: argparse.Namespace) -> int:
 
 
 def cmd_scalability_reset_derived(args: argparse.Namespace) -> int:
+    _legacy_mixed_research_guard()
     report = ResearchScalabilityRecovery(_db()).reset_derived(
         reference_db=Path(args.reference_db),
         reference_sha256=args.reference_sha256,
@@ -186,7 +244,57 @@ def cmd_scalability_reset_derived(args: argparse.Namespace) -> int:
 
 
 
+def cmd_research_memory_migrate(args: argparse.Namespace) -> int:
+    memory = _memory()
+    memory.initialize(
+        generation=V384_GENERATION,
+        generation_floor_ms=int(args.generation_floor_ms),
+    )
+    return _emit(memory.migrate_legacy(
+        Path(args.legacy_db), source_generation="V3_8_3_LEGACY_LEDGER",
+    ))
+
+
+def cmd_research_memory_status(_args: argparse.Namespace) -> int:
+    return _emit(_memory().status())
+
+
+def cmd_research_epoch_status(_args: argparse.Namespace) -> int:
+    processor = _epoch_processor()
+    return _emit({
+        "epoch_version": "RESEARCH_EPOCH_V1",
+        "authority": "RESEARCH_ONLY_NO_EXECUTION",
+        "plan": asdict(processor.plan()),
+        "memory": _memory().status(),
+    })
+
+
+def cmd_research_epoch_run(args: argparse.Namespace) -> int:
+    report = _epoch_processor().run_once()
+    if report.get("status") == "PASS" and args.prune_raw:
+        report["raw_prune"] = _epoch_processor().prune_raw()
+    _emit(report)
+    return 0 if bool(report.get("healthy")) else 2
+
+
+def cmd_research_raw_prune(_args: argparse.Namespace) -> int:
+    return _emit(_epoch_processor().prune_raw())
+
+
+def cmd_research_generation_cutover(args: argparse.Namespace) -> int:
+    report = cutover_to_fresh_raw_generation(
+        _db(),
+        _memory(),
+        ROOT,
+        Path(args.artifact_dir),
+        generation=V384_GENERATION,
+        confirmation=args.confirm,
+    )
+    return _emit(report)
+
+
 def cmd_research_catchup(args: argparse.Namespace) -> int:
+    _legacy_mixed_research_guard()
     controller = BoundedResearchCatchupController(_db(), ROOT)
     try:
         report = controller.run(
@@ -288,6 +396,38 @@ def build_parser() -> argparse.ArgumentParser:
 
     research_audit = sub.add_parser("research-audit")
     research_audit.set_defaults(func=cmd_research_audit)
+
+    memory_migrate = sub.add_parser(
+        "research-memory-migrate",
+        help="initialize V3.8.4 compact research memory from the accepted legacy ledger",
+    )
+    memory_migrate.add_argument("--legacy-db", required=True)
+    memory_migrate.add_argument("--generation-floor-ms", type=int, required=True)
+    memory_migrate.set_defaults(func=cmd_research_memory_migrate)
+
+    memory_status = sub.add_parser("research-memory-status")
+    memory_status.set_defaults(func=cmd_research_memory_status)
+
+    epoch_status = sub.add_parser("research-epoch-status")
+    epoch_status.set_defaults(func=cmd_research_epoch_status)
+
+    epoch_run = sub.add_parser(
+        "research-epoch-run",
+        help="process one mature 96-event epoch in a disposable research workspace",
+    )
+    epoch_run.add_argument("--prune-raw", action="store_true")
+    epoch_run.set_defaults(func=cmd_research_epoch_run)
+
+    raw_prune = sub.add_parser("research-raw-prune")
+    raw_prune.set_defaults(func=cmd_research_raw_prune)
+
+    generation_cutover = sub.add_parser(
+        "research-generation-cutover",
+        help="one-time V3.8.4 clean reset to empty raw collector DB plus empty compact memory",
+    )
+    generation_cutover.add_argument("--artifact-dir", required=True)
+    generation_cutover.add_argument("--confirm", required=True)
+    generation_cutover.set_defaults(func=cmd_research_generation_cutover)
 
     research_catchup = sub.add_parser(
         "research-catchup",
