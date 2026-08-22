@@ -1018,6 +1018,56 @@ class EntrySelectionLab:
         return result, len(events), (events[-1] if events else None)
 
 
+    def _compacted_history_exists(self, conn) -> bool:
+        present = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='research_event_ledger'"
+        ).fetchone()
+        if present is None:
+            return False
+        return conn.execute(
+            "SELECT 1 FROM research_event_ledger WHERE state='COMPACTED' LIMIT 1"
+        ).fetchone() is not None
+
+    def _selection_history_meta(
+        self, conn, *, before_event_ms: int | None = None, through_event_ms: int | None = None
+    ) -> tuple[int, int, int | None]:
+        counts: dict[int, int] = {}
+        present = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='research_event_ledger'"
+        ).fetchone()
+        if present is not None:
+            for event_open_ms, row_count in conn.execute(
+                "SELECT event_open_ms,example_row_count FROM research_event_ledger"
+            ):
+                counts[int(event_open_ms)] = int(row_count)
+        for event_open_ms, row_count in conn.execute(
+            "SELECT event_open_ms,example_row_count FROM entry_selection_builds WHERE lab_version=?",
+            (self.config.lab_version,),
+        ):
+            event = int(event_open_ms)
+            count = int(row_count)
+            if event in counts and counts[event] != count:
+                raise EntrySelectionError(
+                    f"NBOT_V382_ARCHIVE_SELECTION_ROW_COUNT_MISMATCH:{event}"
+                )
+            counts[event] = count
+        events = sorted(
+            event for event in counts
+            if (before_event_ms is None or event < before_event_ms)
+            and (through_event_ms is None or event <= through_event_ms)
+        )
+        return (
+            len(events),
+            sum(counts[event] for event in events),
+            events[-1] if events else None,
+        )
+
+    def _selection_history_event_count(self, conn, through_event_ms: int) -> int:
+        return self._selection_history_meta(
+            conn, through_event_ms=through_event_ms
+        )[0]
+
+
     def _load_ridge_state(self, conn) -> RidgeSufficientStatistics:
         row = conn.execute(
             "SELECT through_event_ms, training_event_count, training_row_count, state_json, state_digest "
@@ -1025,6 +1075,10 @@ class EntrySelectionLab:
             (self.config.lab_version, self.config.learned_selector_version),
         ).fetchone()
         if row is None:
+            if self._compacted_history_exists(conn):
+                raise EntrySelectionError(
+                    "NBOT_V382_RIDGE_STATE_MISSING_WITH_COMPACTED_HISTORY"
+                )
             existing_learned = int(conn.execute(
                 "SELECT COUNT(*) FROM entry_selection_prediction_builds WHERE lab_version=? AND selector_version=?",
                 (self.config.lab_version, self.config.learned_selector_version),
@@ -1045,10 +1099,9 @@ class EntrySelectionLab:
         ):
             raise EntrySelectionError("NBOT_V381R_RIDGE_STATE_METADATA_MISMATCH")
         if state.through_event_ms is not None:
-            actual_events = int(conn.execute(
-                "SELECT COUNT(*) FROM entry_selection_builds WHERE lab_version=? AND event_open_ms<=?",
-                (self.config.lab_version, state.through_event_ms),
-            ).fetchone()[0])
+            actual_events = self._selection_history_event_count(
+                conn, int(state.through_event_ms)
+            )
             if actual_events != state.event_count:
                 raise EntrySelectionError(
                     "NBOT_V381R_RIDGE_STATE_CHRONOLOGY_CHANGED_REBUILD_REQUIRED"
@@ -1225,6 +1278,10 @@ class EntrySelectionLab:
                 built_example_events += 1
 
             if rebuild:
+                if self._compacted_history_exists(conn):
+                    raise EntrySelectionError(
+                        "NBOT_V382_SELECTION_REBUILD_BLOCKED_BY_COMPACTED_HISTORY"
+                    )
                 conn.execute(
                     "DELETE FROM entry_selection_prediction_builds WHERE lab_version=?",
                     (self.config.lab_version,),
@@ -1779,18 +1836,11 @@ class EntrySelectionLab:
             # audits replay only the small frozen evaluation prefix.
             try:
                 persisted_ridge_state = self._load_ridge_state(conn)
-                expected_state_events = int(conn.execute(
-                    "SELECT COUNT(*) FROM entry_selection_builds WHERE lab_version=?",
-                    (self.config.lab_version,),
-                ).fetchone()[0])
-                expected_state_rows = int(conn.execute(
-                    "SELECT COALESCE(SUM(example_row_count),0) FROM entry_selection_builds WHERE lab_version=?",
-                    (self.config.lab_version,),
-                ).fetchone()[0])
-                expected_state_through = conn.execute(
-                    "SELECT MAX(event_open_ms) FROM entry_selection_builds WHERE lab_version=?",
-                    (self.config.lab_version,),
-                ).fetchone()[0]
+                (
+                    expected_state_events,
+                    expected_state_rows,
+                    expected_state_through,
+                ) = self._selection_history_meta(conn)
                 if (
                     persisted_ridge_state.event_count != expected_state_events
                     or persisted_ridge_state.row_count != expected_state_rows
@@ -1885,14 +1935,13 @@ class EntrySelectionLab:
                 expected_model: dict[str, Any] | None = None
                 expected_model_digest: str | None = None
                 if spec.is_learned:
-                    meta = conn.execute(
-                        "SELECT COUNT(*),COALESCE(SUM(example_row_count),0),MAX(event_open_ms) "
-                        "FROM entry_selection_builds WHERE lab_version=? AND event_open_ms<?",
-                        (self.config.lab_version, event_open_ms),
-                    ).fetchone()
-                    expected_training_events = int(meta[0])
-                    expected_training_rows = int(meta[1])
-                    expected_trained_through = meta[2]
+                    (
+                        expected_training_events,
+                        expected_training_rows,
+                        expected_trained_through,
+                    ) = self._selection_history_meta(
+                        conn, before_event_ms=event_open_ms
+                    )
                     if expected_training_events < self.config.min_train_events:
                         report["learned_before_min_train_events"] += 1
                     if audit_events is not None:
@@ -1996,11 +2045,9 @@ class EntrySelectionLab:
                     if count != example_count:
                         report["baseline_prediction_count_mismatches"] += 1
 
-                prior_events = int(conn.execute(
-                    "SELECT COUNT(DISTINCT event_open_ms) FROM entry_selection_examples "
-                    "WHERE lab_version=? AND event_open_ms<?",
-                    (self.config.lab_version, event_open_ms),
-                ).fetchone()[0])
+                prior_events = self._selection_history_meta(
+                    conn, before_event_ms=event_open_ms
+                )[0]
                 learned_count = int(conn.execute(
                     "SELECT COUNT(*) FROM entry_selection_predictions "
                     "WHERE event_open_ms=? AND lab_version=? AND selector_version=?",

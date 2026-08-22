@@ -864,6 +864,15 @@ class CanonicalFeatureStore:
                 (self.config.feature_version,),
             ).fetchall()
             built = {int(row[0]) for row in builds}
+            retention_present = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='research_event_ledger'"
+            ).fetchone() is not None
+            compacted = (
+                {int(row[0]) for row in conn.execute(
+                    "SELECT event_open_ms FROM research_event_ledger WHERE state='COMPACTED'"
+                )}
+                if retention_present else set()
+            )
             feature_rows = int(
                 conn.execute(
                     """
@@ -963,7 +972,8 @@ class CanonicalFeatureStore:
             "feature_definition_mismatch": feature_definition_mismatch,
             "research_ready_events": len(ready),
             "built_events": len(built),
-            "unbuilt_events": len(ready - built),
+            "compacted_events": len(ready & compacted),
+            "unbuilt_events": len(ready - built - compacted),
             "feature_rows": feature_rows,
             "non_research_ready_builds": non_research_ready_builds,
             "feature_rows_without_build": feature_rows_without_build,
@@ -999,8 +1009,18 @@ class CanonicalFeatureStore:
                     (self.config.feature_version,),
                 )
             }
-        pending = tuple(event for event in ready if event not in built)
-        candidates = ready if rebuild else pending
+        with self.db.connection() as conn:
+            retention_present = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='research_event_ledger'"
+            ).fetchone() is not None
+            compacted = (
+                {int(row[0]) for row in conn.execute(
+                    "SELECT event_open_ms FROM research_event_ledger WHERE state='COMPACTED'"
+                )}
+                if retention_present else set()
+            )
+        pending = tuple(event for event in ready if event not in built and event not in compacted)
+        candidates = tuple(event for event in ready if event not in compacted) if rebuild else pending
         targets = candidates if limit == 0 else candidates[:limit]
 
         built_events = 0

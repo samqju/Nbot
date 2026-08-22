@@ -23,6 +23,7 @@ from nbot.observation.database import EvidenceDatabase
 from nbot.observation.features import CanonicalFeatureStore
 from nbot.observation.learning import ContinuousLearningFoundation
 from nbot.observation.outcomes import FuturePathStore
+from nbot.observation.retention import ResearchRetentionManager
 from nbot.observation.policies import ExitPolicyLab
 from nbot.observation.selection import EntrySelectionLab
 from nbot.observation.signals import ResearchSignalStore
@@ -94,6 +95,8 @@ def _audit_result(component: str) -> dict[str, Any]:
         return WalkForwardChampionEvaluator(db).audit()
     if component == "learning":
         return ContinuousLearningFoundation(db).audit()
+    if component == "retention":
+        return ResearchRetentionManager(db).audit()
     raise ValueError("NBOT_ADMIN_AUDIT_COMPONENT_INVALID")
 
 
@@ -136,6 +139,24 @@ def cmd_learning_status(_args: argparse.Namespace) -> int:
     return _emit(ContinuousLearningFoundation(_db()).status())
 
 
+
+
+def cmd_retention_init(_args: argparse.Namespace) -> int:
+    manager = ResearchRetentionManager(_db())
+    manager.initialize()
+    return _emit(manager.status())
+
+def cmd_retention_status(_args: argparse.Namespace) -> int:
+    return _emit(ResearchRetentionManager(_db()).status())
+
+
+def cmd_retention_maintain(args: argparse.Namespace) -> int:
+    report = ResearchRetentionManager(_db()).maintain(
+        seal_max_events=args.seal_max_events,
+        compact_max_events=args.compact_max_events,
+    )
+    return _emit(report)
+
 def cmd_scalability_status(_args: argparse.Namespace) -> int:
     return _emit(ResearchScalabilityRecovery(_db()).status())
 
@@ -170,6 +191,7 @@ def cmd_research_audit(_args: argparse.Namespace) -> int:
             "selection",
             "champion",
             "learning",
+            "retention",
         )
     }
     healthy = all(bool(report.get("healthy")) for report in reports.values())
@@ -207,6 +229,7 @@ def build_parser() -> argparse.ArgumentParser:
             "selection",
             "champion",
             "learning",
+            "retention",
         ),
     )
     audit.set_defaults(func=cmd_audit)
@@ -230,6 +253,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     research_audit = sub.add_parser("research-audit")
     research_audit.set_defaults(func=cmd_research_audit)
+
+    retention_init = sub.add_parser("retention-init")
+    retention_init.set_defaults(func=cmd_retention_init)
+
+    retention_status = sub.add_parser("retention-status")
+    retention_status.set_defaults(func=cmd_retention_status)
+
+    retention_maintain = sub.add_parser("retention-maintain")
+    retention_maintain.add_argument("--seal-max-events", type=int, default=32)
+    retention_maintain.add_argument("--compact-max-events", type=int, default=8)
+    retention_maintain.set_defaults(func=cmd_retention_maintain)
 
     scalability_status = sub.add_parser("scalability-status")
     scalability_status.set_defaults(func=cmd_scalability_status)
@@ -259,6 +293,9 @@ def main() -> int:
     args = build_parser().parse_args()
     if hasattr(args, "max_events") and args.max_events < 0:
         raise SystemExit("NBOT_ADMIN_MAX_EVENTS_INVALID")
+    for field in ("seal_max_events", "compact_max_events"):
+        if hasattr(args, field) and getattr(args, field) < 0:
+            raise SystemExit("NBOT_ADMIN_RETENTION_LIMIT_INVALID")
     try:
         return int(args.func(args))
     except (ValueError, RuntimeError) as exc:

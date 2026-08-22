@@ -2569,6 +2569,28 @@ The recovery boundary therefore permits implementation/storage optimization whil
 
 This recovery is complete only when the optimized implementation passes automated regression, reference-equivalence verification, raw-evidence preservation proof, and a bounded clean rebuild sufficient for the original frozen Champion gate.
 
+### V3.8.2 compact research ledger and derived-data lifecycle
+
+V3.8.1R proved that canonical raw LIVE truth is small while reproducible relational research detail can be hundreds of megabytes for only dozens of events.  V3.8.2 therefore makes derived storage lifecycle-bounded instead of allowing historical intermediates to accumulate forever.
+
+The storage contract is:
+
+* canonical raw LIVE evidence remains durable;
+* every completed selection event is sealed first into `COMPACT_RESEARCH_LEDGER_V1`;
+* the compact archive permanently retains the decision-time training vector/after-cost target plus immutable source/build/model/policy/selector digests and event summaries needed for future audit or challenger training;
+* sealing is digest-verified before any detailed row can be removed;
+* the earliest 60 selection events remain detailed as the original 20-event Ridge training foundation plus 20 validation + 20 untouched final-test evidence;
+* the newest 64 selection events remain detailed as the active debugging/research window;
+* only sealed events outside both protected windows may be compacted;
+* compaction removes reproducible event-level features/signals/future paths/policy results/selection examples/predictions in dependency-safe order while retaining definition tables, cumulative Ridge state, compact archives, Champion evaluation records and all canonical raw evidence;
+* compacted raw events must not be silently rebuilt merely because their detailed feature rows were intentionally removed;
+* freed SQLite pages are reusable working capacity; file truncation/VACUUM is a separate explicit maintenance action and is never required in the realtime collector hot path;
+* retention/audit failure blocks further compaction;
+* a 1 GiB live-page hard ceiling applies to the V3.8 research database until later evidence deliberately changes it;
+* this lifecycle grants no Research Champion, paper-canary, Testnet or real-order authority.
+
+Normal catch-up therefore becomes: build a bounded batch -> seal completed selection events -> verify compact archive -> compact eligible historical detail -> audit -> continue.
+
 ## Runtime
 
 ```text

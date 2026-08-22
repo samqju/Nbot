@@ -28,6 +28,9 @@ REFERENCE_RESET_CONFIRMATION = "V381R_RESET_DERIVED_ONLY"
 # Drop children before parents.  Observation control-plane tables are
 # intentionally absent: this reset is research-derived state only.
 DERIVED_RESEARCH_DROP_ORDER: tuple[str, ...] = (
+    "research_compaction_runs",
+    "research_event_ledger",
+    "research_retention_sets",
     "rollback_records",
     "drift_reports",
     "evaluation_ledger",
