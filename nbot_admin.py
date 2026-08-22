@@ -26,6 +26,11 @@ from nbot.observation.outcomes import FuturePathStore
 from nbot.observation.policies import ExitPolicyLab
 from nbot.observation.selection import EntrySelectionLab
 from nbot.observation.signals import ResearchSignalStore
+from nbot.observation.scalability import (
+    REFERENCE_RESET_CONFIRMATION,
+    ResearchScalabilityRecovery,
+    verify_ridge_reference_equivalence,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -131,6 +136,29 @@ def cmd_learning_status(_args: argparse.Namespace) -> int:
     return _emit(ContinuousLearningFoundation(_db()).status())
 
 
+def cmd_scalability_status(_args: argparse.Namespace) -> int:
+    return _emit(ResearchScalabilityRecovery(_db()).status())
+
+
+def cmd_scalability_verify_reference(args: argparse.Namespace) -> int:
+    report = verify_ridge_reference_equivalence(
+        Path(args.reference_db),
+        args.reference_sha256,
+        score_tolerance=args.score_tolerance,
+    )
+    _emit(report)
+    return 0 if bool(report.get("healthy")) else 2
+
+
+def cmd_scalability_reset_derived(args: argparse.Namespace) -> int:
+    report = ResearchScalabilityRecovery(_db()).reset_derived(
+        reference_db=Path(args.reference_db),
+        reference_sha256=args.reference_sha256,
+        confirmation=args.confirm,
+    )
+    return _emit(report)
+
+
 def cmd_research_audit(_args: argparse.Namespace) -> int:
     reports = {
         component: _audit_result(component)
@@ -202,6 +230,25 @@ def build_parser() -> argparse.ArgumentParser:
 
     research_audit = sub.add_parser("research-audit")
     research_audit.set_defaults(func=cmd_research_audit)
+
+    scalability_status = sub.add_parser("scalability-status")
+    scalability_status.set_defaults(func=cmd_scalability_status)
+
+    scalability_verify = sub.add_parser("scalability-verify-reference")
+    scalability_verify.add_argument("--reference-db", required=True)
+    scalability_verify.add_argument("--reference-sha256", required=True)
+    scalability_verify.add_argument("--score-tolerance", type=float, default=1e-8)
+    scalability_verify.set_defaults(func=cmd_scalability_verify_reference)
+
+    scalability_reset = sub.add_parser("scalability-reset-derived")
+    scalability_reset.add_argument("--reference-db", required=True)
+    scalability_reset.add_argument("--reference-sha256", required=True)
+    scalability_reset.add_argument(
+        "--confirm",
+        required=True,
+        help=f"must equal {REFERENCE_RESET_CONFIRMATION}",
+    )
+    scalability_reset.set_defaults(func=cmd_scalability_reset_derived)
     return parser
 
 
@@ -214,7 +261,7 @@ def main() -> int:
         raise SystemExit("NBOT_ADMIN_MAX_EVENTS_INVALID")
     try:
         return int(args.func(args))
-    except ValueError as exc:
+    except (ValueError, RuntimeError) as exc:
         print(f"FAIL {exc}")
         return 2
 

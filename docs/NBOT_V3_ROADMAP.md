@@ -2552,6 +2552,23 @@ This phase asks:
 
 Implementation note (2026-08-21): the first precondition remains the canonical rule, but the explicit V3.7 sequencing exception above permits V3.8 implementation to start with V3.7-B still recorded as deferred. This does not mark V3.7 complete or authorize its canonical acceptance tag.
 
+### V3.8.1R research scalability recovery
+
+Physical V3.8.1 catch-up on 2026-08-22 exposed an implementation-scale defect rather than an economic-gate defect: reproducible derived research rows consumed the overwhelming majority of the LIVE SQLite database, expanding-window Ridge repeatedly reread/refit historical rows, and Champion integrity evaluation could rescan unrelated historical research for hours.
+
+The recovery boundary therefore permits implementation/storage optimization while preserving every frozen V3.4 research meaning:
+
+* canonical raw LIVE evidence remains durable and must not be deleted or relabeled;
+* `RIDGE_EXPECTED_NET_R_V1` keeps the same features, alpha, forward-only chronology and ranking objective;
+* the first 20 genuinely forward-scored events remain validation and the next 20 remain untouched final test;
+* Research Champion thresholds/authority are unchanged;
+* cumulative sufficient statistics may replace repeated full-history Ridge materialization only after the frozen first 20 validation + next 20 final-test events preserve exact scores/ranks, all later events preserve exact rank/symbol/side ordering and chronology metadata, and post-test within-event score differences remain equivalent; a common post-test additive intercept offset caused solely by floating-point centering is diagnostic and cannot alter the original frozen Champion decision;
+* routine Champion integrity checks should be scoped to the frozen evaluation window instead of rescanning unrelated later history;
+* an explicit maintenance operation may discard reproducible derived research state only after a reference snapshot is verified and a deterministic raw-evidence manifest proves the canonical raw tables are unchanged before and after reset/VACUUM;
+* the recovery grants no recommendation, paper, Testnet, or real-order authority by itself.
+
+This recovery is complete only when the optimized implementation passes automated regression, reference-equivalence verification, raw-evidence preservation proof, and a bounded clean rebuild sufficient for the original frozen Champion gate.
+
 ## Runtime
 
 ```text

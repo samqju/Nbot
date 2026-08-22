@@ -756,7 +756,9 @@ class WalkForwardChampionEvaluator:
             row["trained_through_event_ms"] is None or int(row["trained_through_event_ms"]) >= int(row["event_open_ms"])
             for row in validation_candidate + test_candidate
         )
-        selection_audit = EntrySelectionLab(self.db, self.selection_config).audit()
+        selection_audit = EntrySelectionLab(self.db, self.selection_config).audit(
+            event_open_ms=validation_events + test_events
+        )
         selection_audit_failures = 0 if bool(selection_audit.get("healthy")) else 1
 
         selected_mean = candidate_metrics["mean_net_r"]
@@ -937,9 +939,16 @@ class WalkForwardChampionEvaluator:
         """Read-only V3.4.6 evaluator/lineage audit."""
 
         definition_hash = _digest(self.definition())
-        selection_audit = EntrySelectionLab(self.db, self.selection_config).audit()
+        with self.db.connection() as scope_conn:
+            candidate_events = self._candidate_events(scope_conn)
+        scoped_events = candidate_events[: (
+            self.config.min_validation_events + self.config.min_test_events
+        )]
+        selection_audit = EntrySelectionLab(self.db, self.selection_config).audit(
+            event_open_ms=scoped_events
+        )
         selection_failures = 0 if bool(selection_audit.get("healthy")) else 1
-        policy_audit = ExitPolicyLab(self.db).audit()
+        policy_audit = ExitPolicyLab(self.db).audit(event_open_ms=scoped_events)
         policy_failures = 0 if bool(policy_audit.get("healthy")) else 1
         counter_keys = (
             "selection_integrity_failures",

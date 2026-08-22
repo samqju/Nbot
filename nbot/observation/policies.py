@@ -673,7 +673,8 @@ class ExitPolicyLab:
                     "positive_event_lift_rate":sum(statistics.fmean(v)>0 for v in lift_event.values())/len(lift_event)}
         return report
 
-    def audit(self) -> dict[str, Any]:
+    def audit(self, *, event_open_ms: Iterable[int] | None = None) -> dict[str, Any]:
+        audit_events = None if event_open_ms is None else tuple(sorted({int(v) for v in event_open_ms}))
         expected_policy_hashes = self.policy_definition_hashes
         required_tables = {
             "exit_policy_labs", "exit_policy_sets",
@@ -696,8 +697,24 @@ class ExitPolicyLab:
             lab_definition_mismatch=int(lab is None or lab!=(self.definition_hash,_canonical_json(self.definition())))
             actual={str(v):(str(h),str(j)) for v,h,j in conn.execute("SELECT policy_version,definition_hash,definition_json FROM exit_policy_sets WHERE lab_version=?",(self.config.lab_version,))}
             policy_definition_mismatches=sum(1 for p in POLICIES if actual.get(p.policy_version)!=(expected_policy_hashes[p.policy_version],_canonical_json(p.definition()))) + sum(1 for v in actual if v not in expected_policy_hashes)
-            result_rows=[dict(zip(RESULT_COLUMNS,row)) for row in conn.execute(f"SELECT {','.join(RESULT_COLUMNS)} FROM exit_policy_results WHERE lab_version=? ORDER BY event_open_ms,symbol,side,policy_version",(self.config.lab_version,))]
-            builds=conn.execute("SELECT event_open_ms,eligible_path_count,result_row_count,source_digest,result_digest FROM exit_policy_builds WHERE lab_version=? ORDER BY event_open_ms",(self.config.lab_version,)).fetchall()
+            result_sql=f"SELECT {','.join(RESULT_COLUMNS)} FROM exit_policy_results WHERE lab_version=?"
+            build_sql="SELECT event_open_ms,eligible_path_count,result_row_count,source_digest,result_digest FROM exit_policy_builds WHERE lab_version=?"
+            result_params: list[Any] = [self.config.lab_version]
+            build_params: list[Any] = [self.config.lab_version]
+            if audit_events is not None:
+                if audit_events:
+                    placeholders = ",".join("?" for _ in audit_events)
+                    result_sql += f" AND event_open_ms IN ({placeholders})"
+                    build_sql += f" AND event_open_ms IN ({placeholders})"
+                    result_params.extend(audit_events)
+                    build_params.extend(audit_events)
+                else:
+                    result_sql += " AND 1=0"
+                    build_sql += " AND 1=0"
+            result_sql += " ORDER BY event_open_ms,symbol,side,policy_version"
+            build_sql += " ORDER BY event_open_ms"
+            result_rows=[dict(zip(RESULT_COLUMNS,row)) for row in conn.execute(result_sql, tuple(result_params))]
+            builds=conn.execute(build_sql, tuple(build_params)).fetchall()
             result_events={int(r["event_open_ms"]) for r in result_rows}
             build_events={int(r[0]) for r in builds}
             results_without_build=sum(1 for r in result_rows if int(r["event_open_ms"]) not in build_events)
@@ -765,6 +782,8 @@ class ExitPolicyLab:
                   "policy_set_mismatches":policy_set_mismatches}
         return {
             "healthy": all(v == 0 for v in counters.values()),
+            "audit_scope": "FULL_HISTORY" if audit_events is None else "SCOPED_EVENTS",
+            "audit_event_count": 0 if audit_events is None else len(audit_events),
             "lab_version": self.config.lab_version,
             "definition_hash": self.definition_hash,
             "policy_count": len(POLICIES),

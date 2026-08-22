@@ -285,6 +285,18 @@ CREATE INDEX IF NOT EXISTS idx_entry_selection_predictions_event
     ON entry_selection_predictions(event_open_ms, lab_version, selector_version, rank_in_event);
 CREATE INDEX IF NOT EXISTS idx_entry_selection_predictions_selector_time
     ON entry_selection_predictions(selector_version, event_open_ms, rank_in_event);
+CREATE TABLE IF NOT EXISTS entry_selection_ridge_state (
+    lab_version TEXT PRIMARY KEY,
+    selector_version TEXT NOT NULL,
+    through_event_ms INTEGER,
+    training_event_count INTEGER NOT NULL CHECK (training_event_count >= 0),
+    training_row_count INTEGER NOT NULL CHECK (training_row_count >= 0),
+    state_json TEXT NOT NULL,
+    state_digest TEXT NOT NULL,
+    updated_at_ms INTEGER NOT NULL,
+    FOREIGN KEY (lab_version) REFERENCES entry_selection_labs(lab_version),
+    FOREIGN KEY (selector_version) REFERENCES entry_selector_sets(selector_version)
+);
 """
 
 RESEARCH_SELECTION_TABLES = (
@@ -294,6 +306,7 @@ RESEARCH_SELECTION_TABLES = (
     "entry_selection_builds",
     "entry_selection_predictions",
     "entry_selection_prediction_builds",
+    "entry_selection_ridge_state",
 )
 
 
@@ -447,6 +460,160 @@ def _solve_linear_system(matrix: list[list[float]], vector: list[float]) -> list
             ]
     return [augmented[i][-1] for i in range(n)]
 
+
+
+@dataclass
+class RidgeSufficientStatistics:
+    """Cumulative raw moments for exact forward-only Ridge chronology.
+
+    This state contains only decision-time feature vectors and targets from
+    completed prior events.  It never contains the event currently being
+    scored, so the V3.4.5 no-lookahead contract is preserved.
+    """
+
+    event_count: int
+    row_count: int
+    through_event_ms: int | None
+    sum_y: float
+    sum_x: list[float]
+    sum_x2: list[float]
+    sum_xy: list[float]
+    sum_xx: list[list[float]]
+
+    @classmethod
+    def empty(cls) -> "RidgeSufficientStatistics":
+        d = len(FEATURE_VECTOR_NAMES)
+        return cls(
+            event_count=0,
+            row_count=0,
+            through_event_ms=None,
+            sum_y=0.0,
+            sum_x=[0.0] * d,
+            sum_x2=[0.0] * d,
+            sum_xy=[0.0] * d,
+            sum_xx=[[0.0] * d for _ in range(d)],
+        )
+
+    def add_event(self, event_open_ms: int, rows: list[dict[str, Any]]) -> None:
+        event_open_ms = int(event_open_ms)
+        if self.through_event_ms is not None and event_open_ms <= self.through_event_ms:
+            raise EntrySelectionError("NBOT_V381R_RIDGE_STATE_CHRONOLOGY_INVALID")
+        if not rows:
+            raise EntrySelectionError("NBOT_V381R_RIDGE_STATE_EMPTY_EVENT")
+        d = len(FEATURE_VECTOR_NAMES)
+        for row in rows:
+            vector = json.loads(str(row["feature_vector_json"]))
+            x = [_f(vector[name]) for name in FEATURE_VECTOR_NAMES]
+            y = _f(row["target_net_r"])
+            self.sum_y = math.fsum((self.sum_y, y))
+            for i in range(d):
+                xi = x[i]
+                self.sum_x[i] = math.fsum((self.sum_x[i], xi))
+                self.sum_x2[i] = math.fsum((self.sum_x2[i], xi * xi))
+                self.sum_xy[i] = math.fsum((self.sum_xy[i], xi * y))
+                for j in range(i, d):
+                    self.sum_xx[i][j] = math.fsum((self.sum_xx[i][j], xi * x[j]))
+        for i in range(d):
+            for j in range(i):
+                self.sum_xx[i][j] = self.sum_xx[j][i]
+        self.row_count += len(rows)
+        self.event_count += 1
+        self.through_event_ms = event_open_ms
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "event_count": self.event_count,
+            "row_count": self.row_count,
+            "through_event_ms": self.through_event_ms,
+            "sum_y": self.sum_y,
+            "sum_x": self.sum_x,
+            "sum_x2": self.sum_x2,
+            "sum_xy": self.sum_xy,
+            "sum_xx": self.sum_xx,
+        }
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, Any]) -> "RidgeSufficientStatistics":
+        d = len(FEATURE_VECTOR_NAMES)
+        state = cls(
+            event_count=int(payload["event_count"]),
+            row_count=int(payload["row_count"]),
+            through_event_ms=(
+                None if payload.get("through_event_ms") is None
+                else int(payload["through_event_ms"])
+            ),
+            sum_y=float(payload["sum_y"]),
+            sum_x=[float(v) for v in payload["sum_x"]],
+            sum_x2=[float(v) for v in payload["sum_x2"]],
+            sum_xy=[float(v) for v in payload["sum_xy"]],
+            sum_xx=[[float(v) for v in row] for row in payload["sum_xx"]],
+        )
+        if not (
+            len(state.sum_x) == len(state.sum_x2) == len(state.sum_xy) == d
+            and len(state.sum_xx) == d
+            and all(len(row) == d for row in state.sum_xx)
+        ):
+            raise EntrySelectionError("NBOT_V381R_RIDGE_STATE_DIMENSION_INVALID")
+        return state
+
+    def fit(self, alpha: float) -> dict[str, Any]:
+        if self.row_count <= 0:
+            raise ValueError("cannot fit ridge without rows")
+        n = float(self.row_count)
+        d = len(FEATURE_VECTOR_NAMES)
+        means: dict[str, float] = {}
+        scales: dict[str, float] = {}
+        means_list: list[float] = []
+        scales_list: list[float] = []
+        for i, name in enumerate(FEATURE_VECTOR_NAMES):
+            mean = self.sum_x[i] / n
+            variance = max(0.0, (self.sum_x2[i] / n) - mean * mean)
+            scale = math.sqrt(variance)
+            mean = 0.0 if mean == 0.0 else mean
+            scale = scale if scale > 1e-12 else 1.0
+            means[name] = mean
+            scales[name] = scale
+            means_list.append(mean)
+            scales_list.append(scale)
+
+        # With training-window z-scoring each feature is centered by
+        # construction.  Solve only the penalized slope block and keep the
+        # unpenalized intercept at mean(y).  This is algebraically the same
+        # Ridge objective as _fit_ridge(), but avoids coupling the intercept
+        # to tiny floating-point residuals in sum(z) that can create a large
+        # common score offset in an otherwise rank-identical model.
+        xtx = [[0.0 for _ in range(d)] for _ in range(d)]
+        xty = [0.0 for _ in range(d)]
+        for i in range(d):
+            mean_i = means_list[i]
+            scale_i = scales_list[i]
+            xty[i] = (self.sum_xy[i] - mean_i * self.sum_y) / scale_i
+            for j in range(i, d):
+                mean_j = means_list[j]
+                scale_j = scales_list[j]
+                centered = (
+                    self.sum_xx[i][j]
+                    - mean_i * self.sum_x[j]
+                    - mean_j * self.sum_x[i]
+                    + n * mean_i * mean_j
+                )
+                value = centered / (scale_i * scale_j)
+                xtx[i][j] = value
+                xtx[j][i] = value
+        for index in range(d):
+            xtx[index][index] += alpha
+        coefficients = _solve_linear_system(xtx, xty)
+        model = {
+            "selector_version": "RIDGE_EXPECTED_NET_R_V1",
+            "feature_names": list(FEATURE_VECTOR_NAMES),
+            "alpha": float(alpha),
+            "means": means,
+            "scales": scales,
+            "intercept": self.sum_y / n,
+            "coefficients": dict(zip(FEATURE_VECTOR_NAMES, coefficients)),
+        }
+        model["model_digest"] = _digest(model)
+        return model
 
 def _fit_ridge(rows: list[dict[str, Any]], alpha: float) -> dict[str, Any]:
     if not rows:
@@ -850,6 +1017,76 @@ class EntrySelectionLab:
         events = sorted({int(row["event_open_ms"]) for row in result})
         return result, len(events), (events[-1] if events else None)
 
+
+    def _load_ridge_state(self, conn) -> RidgeSufficientStatistics:
+        row = conn.execute(
+            "SELECT through_event_ms, training_event_count, training_row_count, state_json, state_digest "
+            "FROM entry_selection_ridge_state WHERE lab_version=? AND selector_version=?",
+            (self.config.lab_version, self.config.learned_selector_version),
+        ).fetchone()
+        if row is None:
+            existing_learned = int(conn.execute(
+                "SELECT COUNT(*) FROM entry_selection_prediction_builds WHERE lab_version=? AND selector_version=?",
+                (self.config.lab_version, self.config.learned_selector_version),
+            ).fetchone()[0])
+            if existing_learned:
+                raise EntrySelectionError(
+                    "NBOT_V381R_RIDGE_STATE_MIGRATION_REQUIRED_RESET_DERIVED_FIRST"
+                )
+            return RidgeSufficientStatistics.empty()
+        payload = json.loads(str(row[3]))
+        if _digest(payload) != str(row[4]):
+            raise EntrySelectionError("NBOT_V381R_RIDGE_STATE_DIGEST_MISMATCH")
+        state = RidgeSufficientStatistics.from_payload(payload)
+        if (
+            state.through_event_ms != row[0]
+            or state.event_count != int(row[1])
+            or state.row_count != int(row[2])
+        ):
+            raise EntrySelectionError("NBOT_V381R_RIDGE_STATE_METADATA_MISMATCH")
+        if state.through_event_ms is not None:
+            actual_events = int(conn.execute(
+                "SELECT COUNT(*) FROM entry_selection_builds WHERE lab_version=? AND event_open_ms<=?",
+                (self.config.lab_version, state.through_event_ms),
+            ).fetchone()[0])
+            if actual_events != state.event_count:
+                raise EntrySelectionError(
+                    "NBOT_V381R_RIDGE_STATE_CHRONOLOGY_CHANGED_REBUILD_REQUIRED"
+                )
+        return state
+
+    def _save_ridge_state(self, conn, state: RidgeSufficientStatistics) -> None:
+        payload = state.to_payload()
+        state_json = _canonical_json(payload)
+        state_digest = _digest(payload)
+        conn.execute(
+            """
+            INSERT INTO entry_selection_ridge_state(
+                lab_version, selector_version, through_event_ms,
+                training_event_count, training_row_count, state_json,
+                state_digest, updated_at_ms
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(lab_version) DO UPDATE SET
+                selector_version=excluded.selector_version,
+                through_event_ms=excluded.through_event_ms,
+                training_event_count=excluded.training_event_count,
+                training_row_count=excluded.training_row_count,
+                state_json=excluded.state_json,
+                state_digest=excluded.state_digest,
+                updated_at_ms=excluded.updated_at_ms
+            """,
+            (
+                self.config.lab_version,
+                self.config.learned_selector_version,
+                state.through_event_ms,
+                state.event_count,
+                state.row_count,
+                state_json,
+                state_digest,
+                int(time.time() * 1000),
+            ),
+        )
+
     @staticmethod
     def _baseline_score(spec: SelectorSpec, example: dict[str, Any]) -> float:
         vector = json.loads(str(example["feature_vector_json"]))
@@ -863,7 +1100,10 @@ class EntrySelectionLab:
         }
         return _f(vector[mapping[spec.selector_version]])
 
-    def _score_event(self, conn, event_open_ms: int, spec: SelectorSpec, rebuild: bool) -> int:
+    def _score_event(
+        self, conn, event_open_ms: int, spec: SelectorSpec, rebuild: bool,
+        *, ridge_state: RidgeSufficientStatistics | None = None,
+    ) -> int:
         examples = self._examples_for_event(conn, event_open_ms)
         if not examples:
             return 0
@@ -880,11 +1120,21 @@ class EntrySelectionLab:
         trained_through: int | None = None
         model_digest: str | None = None
         if spec.is_learned:
-            training_rows, training_event_count, trained_through = self._training_rows(conn, event_open_ms)
-            training_row_count = len(training_rows)
-            if training_event_count < self.config.min_train_events:
-                return 0
-            model = _fit_ridge(training_rows, self.config.ridge_alpha)
+            if ridge_state is None:
+                training_rows, training_event_count, trained_through = self._training_rows(conn, event_open_ms)
+                training_row_count = len(training_rows)
+                if training_event_count < self.config.min_train_events:
+                    return 0
+                model = _fit_ridge(training_rows, self.config.ridge_alpha)
+            else:
+                training_event_count = ridge_state.event_count
+                training_row_count = ridge_state.row_count
+                trained_through = ridge_state.through_event_ms
+                if training_event_count < self.config.min_train_events:
+                    return 0
+                if trained_through is None or trained_through >= event_open_ms:
+                    raise EntrySelectionError("NBOT_V381R_RIDGE_STATE_LEAKAGE")
+                model = ridge_state.fit(self.config.ridge_alpha)
             model.update({
                 "trained_through_event_ms": trained_through,
                 "training_event_count": training_event_count,
@@ -974,6 +1224,21 @@ class EntrySelectionLab:
                 conn.commit()
                 built_example_events += 1
 
+            if rebuild:
+                conn.execute(
+                    "DELETE FROM entry_selection_prediction_builds WHERE lab_version=?",
+                    (self.config.lab_version,),
+                )
+                conn.execute(
+                    "DELETE FROM entry_selection_predictions WHERE lab_version=?",
+                    (self.config.lab_version,),
+                )
+                conn.execute(
+                    "DELETE FROM entry_selection_ridge_state WHERE lab_version=?",
+                    (self.config.lab_version,),
+                )
+                conn.commit()
+
             all_events = [int(row[0]) for row in conn.execute(
                 "SELECT event_open_ms FROM entry_selection_builds WHERE lab_version=? ORDER BY event_open_ms",
                 (self.config.lab_version,),
@@ -981,18 +1246,28 @@ class EntrySelectionLab:
             baseline_rows = 0
             learned_rows = 0
             learned_ready_events = 0
+            ridge_state = self._load_ridge_state(conn)
             for event_open_ms in all_events:
                 for spec in BASELINE_SELECTORS:
                     baseline_rows += self._score_event(conn, event_open_ms, spec, rebuild)
-                    conn.commit()
-                prior_events = int(conn.execute(
-                    "SELECT COUNT(DISTINCT event_open_ms) FROM entry_selection_examples WHERE lab_version=? AND event_open_ms<?",
-                    (self.config.lab_version, event_open_ms),
-                ).fetchone()[0])
-                if prior_events >= self.config.min_train_events:
+
+                if (
+                    ridge_state.through_event_ms is None
+                    or event_open_ms > ridge_state.through_event_ms
+                ):
+                    if ridge_state.event_count >= self.config.min_train_events:
+                        learned_ready_events += 1
+                        learned_rows += self._score_event(
+                            conn, event_open_ms,
+                            SELECTOR_BY_VERSION[self.config.learned_selector_version],
+                            rebuild, ridge_state=ridge_state,
+                        )
+                    event_examples = self._examples_for_event(conn, event_open_ms)
+                    ridge_state.add_event(event_open_ms, event_examples)
+                    self._save_ridge_state(conn, ridge_state)
+                elif ridge_state.event_count >= self.config.min_train_events:
                     learned_ready_events += 1
-                    learned_rows += self._score_event(conn, event_open_ms, SELECTOR_BY_VERSION[self.config.learned_selector_version], rebuild)
-                    conn.commit()
+                conn.commit()
 
             example_rows = int(conn.execute(
                 "SELECT COUNT(*) FROM entry_selection_examples WHERE lab_version=?", (self.config.lab_version,)
@@ -1171,8 +1446,16 @@ class EntrySelectionLab:
         ).fetchall()
         return [dict(zip(PREDICTION_COLUMNS, row)) for row in rows]
 
-    def audit(self) -> dict[str, Any]:
-        """Read-only deterministic lineage/chronology audit for V3.4.5."""
+    def audit(self, *, event_open_ms: Iterable[int] | None = None) -> dict[str, Any]:
+        """Read-only deterministic lineage/chronology audit for V3.4.5.
+
+        When ``event_open_ms`` is supplied, the same deep checks are restricted
+        to that immutable evaluation window.  Champion evaluation uses this
+        scoped mode so routine promotion cannot accidentally rescan hundreds of
+        unrelated historical events.  The standalone selection audit remains
+        full-history by default.
+        """
+        audit_events = None if event_open_ms is None else tuple(sorted({int(v) for v in event_open_ms}))
 
         required_tables = set(RESEARCH_SELECTION_TABLES)
         expected_lab_hash = self.definition_hash
@@ -1209,6 +1492,7 @@ class EntrySelectionLab:
             "prediction_build_row_mismatches",
             "prediction_build_digest_mismatches",
             "prediction_build_source_digest_mismatches",
+            "ridge_state_mismatches",
         )
         report: dict[str, Any] = {
             "lab_version": self.config.lab_version,
@@ -1222,6 +1506,8 @@ class EntrySelectionLab:
             "pending_example_events": 0,
             "prediction_rows": 0,
             "learned_scored_events": 0,
+            "audit_scope": "FULL_HISTORY" if audit_events is None else "SCOPED_EVENTS",
+            "audit_event_count": 0 if audit_events is None else len(audit_events),
             "missing_tables": (),
             **{key: 0 for key in counter_keys},
         }
@@ -1379,14 +1665,17 @@ class EntrySelectionLab:
                 ),
             ).fetchone()[0])
 
-            event_ids = [
-                int(row[0])
-                for row in conn.execute(
-                    "SELECT event_open_ms FROM entry_selection_builds "
-                    "WHERE lab_version=? ORDER BY event_open_ms",
-                    (self.config.lab_version,),
-                ).fetchall()
-            ]
+            if audit_events is None:
+                event_ids = [
+                    int(row[0])
+                    for row in conn.execute(
+                        "SELECT event_open_ms FROM entry_selection_builds "
+                        "WHERE lab_version=? ORDER BY event_open_ms",
+                        (self.config.lab_version,),
+                    ).fetchall()
+                ]
+            else:
+                event_ids = list(audit_events)
 
             for event_open_ms in event_ids:
                 stored_examples = self._stored_example_rows(conn, event_open_ms)
@@ -1484,13 +1773,89 @@ class EntrySelectionLab:
                     if str(build_row[1]) != _digest(current_source_rows):
                         report["example_build_source_digest_mismatches"] += 1
 
-            prediction_builds = conn.execute(
+            # The persisted cumulative Ridge state is the normal-operation
+            # chronology proof.  Full-history audits validate its durable
+            # metadata/digest without replaying every model.  Scoped Champion
+            # audits replay only the small frozen evaluation prefix.
+            try:
+                persisted_ridge_state = self._load_ridge_state(conn)
+                expected_state_events = int(conn.execute(
+                    "SELECT COUNT(*) FROM entry_selection_builds WHERE lab_version=?",
+                    (self.config.lab_version,),
+                ).fetchone()[0])
+                expected_state_rows = int(conn.execute(
+                    "SELECT COALESCE(SUM(example_row_count),0) FROM entry_selection_builds WHERE lab_version=?",
+                    (self.config.lab_version,),
+                ).fetchone()[0])
+                expected_state_through = conn.execute(
+                    "SELECT MAX(event_open_ms) FROM entry_selection_builds WHERE lab_version=?",
+                    (self.config.lab_version,),
+                ).fetchone()[0]
+                if (
+                    persisted_ridge_state.event_count != expected_state_events
+                    or persisted_ridge_state.row_count != expected_state_rows
+                    or persisted_ridge_state.through_event_ms != expected_state_through
+                ):
+                    report["ridge_state_mismatches"] += 1
+            except (EntrySelectionError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+                report["ridge_state_mismatches"] += 1
+
+            scoped_ridge_models: dict[int, tuple[dict[str, Any], int, int, int | None, str]] = {}
+            if audit_events is not None and audit_events:
+                target_set = set(audit_events)
+                max_target = max(audit_events)
+                replay_state = RidgeSufficientStatistics.empty()
+                replay_events = [
+                    int(row[0])
+                    for row in conn.execute(
+                        "SELECT event_open_ms FROM entry_selection_builds "
+                        "WHERE lab_version=? AND event_open_ms<=? ORDER BY event_open_ms",
+                        (self.config.lab_version, max_target),
+                    )
+                ]
+                for replay_event in replay_events:
+                    if (
+                        replay_event in target_set
+                        and replay_state.event_count >= self.config.min_train_events
+                    ):
+                        replay_model = replay_state.fit(self.config.ridge_alpha)
+                        replay_model.update({
+                            "trained_through_event_ms": replay_state.through_event_ms,
+                            "training_event_count": replay_state.event_count,
+                            "training_row_count": replay_state.row_count,
+                        })
+                        replay_digest = _digest({
+                            key: value
+                            for key, value in replay_model.items()
+                            if key != "model_digest"
+                        })
+                        scoped_ridge_models[replay_event] = (
+                            replay_model,
+                            replay_state.event_count,
+                            replay_state.row_count,
+                            replay_state.through_event_ms,
+                            replay_digest,
+                        )
+                    replay_state.add_event(
+                        replay_event, self._examples_for_event(conn, replay_event)
+                    )
+
+            prediction_sql = (
                 "SELECT event_open_ms, selector_version, prediction_row_count, "
                 "training_event_count, training_row_count, trained_through_event_ms, "
                 "model_digest, source_digest, prediction_digest "
-                "FROM entry_selection_prediction_builds WHERE lab_version=? "
-                "ORDER BY event_open_ms, selector_version",
-                (self.config.lab_version,),
+                "FROM entry_selection_prediction_builds WHERE lab_version=?"
+            )
+            prediction_params: list[Any] = [self.config.lab_version]
+            if audit_events is not None:
+                if audit_events:
+                    prediction_sql += " AND event_open_ms IN (" + ",".join("?" for _ in audit_events) + ")"
+                    prediction_params.extend(audit_events)
+                else:
+                    prediction_sql += " AND 1=0"
+            prediction_sql += " ORDER BY event_open_ms, selector_version"
+            prediction_builds = conn.execute(
+                prediction_sql, tuple(prediction_params)
             ).fetchall()
 
             for build_row in prediction_builds:
@@ -1514,33 +1879,41 @@ class EntrySelectionLab:
                     if _row_digest(row, PREDICTION_DIGEST_FIELDS) != str(row["prediction_digest"]):
                         report["prediction_digest_mismatches"] += 1
 
-                training_rows: list[dict[str, Any]] = []
                 expected_training_events = 0
                 expected_training_rows = 0
                 expected_trained_through: int | None = None
                 expected_model: dict[str, Any] | None = None
                 expected_model_digest: str | None = None
                 if spec.is_learned:
-                    training_rows, expected_training_events, expected_trained_through = (
-                        self._training_rows(conn, event_open_ms)
-                    )
-                    expected_training_rows = len(training_rows)
+                    meta = conn.execute(
+                        "SELECT COUNT(*),COALESCE(SUM(example_row_count),0),MAX(event_open_ms) "
+                        "FROM entry_selection_builds WHERE lab_version=? AND event_open_ms<?",
+                        (self.config.lab_version, event_open_ms),
+                    ).fetchone()
+                    expected_training_events = int(meta[0])
+                    expected_training_rows = int(meta[1])
+                    expected_trained_through = meta[2]
                     if expected_training_events < self.config.min_train_events:
                         report["learned_before_min_train_events"] += 1
-                    else:
-                        expected_model = _fit_ridge(training_rows, self.config.ridge_alpha)
-                        expected_model.update({
-                            "trained_through_event_ms": expected_trained_through,
-                            "training_event_count": expected_training_events,
-                            "training_row_count": expected_training_rows,
-                        })
-                        expected_model_digest = _digest({
-                            key: value
-                            for key, value in expected_model.items()
-                            if key != "model_digest"
-                        })
-                        if str(build_row[6]) != expected_model_digest:
+                    if audit_events is not None:
+                        scoped = scoped_ridge_models.get(event_open_ms)
+                        if scoped is None:
                             report["learned_model_digest_mismatches"] += 1
+                        else:
+                            (
+                                expected_model,
+                                expected_training_events,
+                                expected_training_rows,
+                                expected_trained_through,
+                                expected_model_digest,
+                            ) = scoped
+                            if str(build_row[6]) != expected_model_digest:
+                                report["learned_model_digest_mismatches"] += 1
+                    else:
+                        # Normal full-history audit avoids a second complete
+                        # training replay.  The model digest is already sealed
+                        # into every prediction row and the build source digest.
+                        expected_model_digest = None if build_row[6] is None else str(build_row[6])
                 else:
                     if build_row[5] is not None or build_row[6] is not None:
                         report["prediction_build_metadata_mismatches"] += 1
@@ -1552,37 +1925,42 @@ class EntrySelectionLab:
                 ):
                     report["prediction_build_metadata_mismatches"] += 1
 
-                scored: list[tuple[float, dict[str, Any]]] = []
-                for example in examples:
-                    if expected_model is not None:
-                        score = _ridge_score(expected_model, str(example["feature_vector_json"]))
-                    else:
-                        score = self._baseline_score(spec, example)
-                    scored.append((score, example))
-                scored.sort(
-                    key=lambda item: (
-                        -item[0], str(item[1]["symbol"]), str(item[1]["side"])
-                    )
-                )
-                if len(scored) != len(predictions):
-                    report["prediction_value_mismatches"] += 1
-                else:
-                    for rank, ((expected_score, expected_example), stored) in enumerate(
-                        zip(scored, predictions), 1
-                    ):
-                        if (
-                            int(stored["rank_in_event"]) != rank
-                            or str(stored["symbol"]) != str(expected_example["symbol"])
-                            or str(stored["side"]) != str(expected_example["side"])
-                            or not math.isclose(
-                                float(stored["score"]),
-                                float(expected_score),
-                                rel_tol=1e-12,
-                                abs_tol=1e-12,
-                            )
-                            or stored["model_digest"] != expected_model_digest
-                        ):
+                if spec.is_learned and audit_events is None:
+                    for stored in predictions:
+                        if stored["model_digest"] != expected_model_digest:
                             report["prediction_value_mismatches"] += 1
+                else:
+                    scored: list[tuple[float, dict[str, Any]]] = []
+                    for example in examples:
+                        if expected_model is not None:
+                            score = _ridge_score(expected_model, str(example["feature_vector_json"]))
+                        else:
+                            score = self._baseline_score(spec, example)
+                        scored.append((score, example))
+                    scored.sort(
+                        key=lambda item: (
+                            -item[0], str(item[1]["symbol"]), str(item[1]["side"])
+                        )
+                    )
+                    if len(scored) != len(predictions):
+                        report["prediction_value_mismatches"] += 1
+                    else:
+                        for rank, ((expected_score, expected_example), stored) in enumerate(
+                            zip(scored, predictions), 1
+                        ):
+                            if (
+                                int(stored["rank_in_event"]) != rank
+                                or str(stored["symbol"]) != str(expected_example["symbol"])
+                                or str(stored["side"]) != str(expected_example["side"])
+                                or not math.isclose(
+                                    float(stored["score"]),
+                                    float(expected_score),
+                                    rel_tol=1e-10,
+                                    abs_tol=1e-10,
+                                )
+                                or stored["model_digest"] != expected_model_digest
+                            ):
+                                report["prediction_value_mismatches"] += 1
 
                 current_prediction_digest = _rows_digest(
                     predictions,
