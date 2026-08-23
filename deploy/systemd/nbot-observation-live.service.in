@@ -1,0 +1,22 @@
+[Unit]
+Description=NBOT V3 LIVE Observation Evidence Collector
+After=network-online.target
+Wants=network-online.target
+PartOf=nbot-observer.target
+
+[Service]
+Type=simple
+User=@NBOT_USER@
+WorkingDirectory=@NBOT_ROOT@
+Environment=PYTHONUNBUFFERED=1
+Environment=NBOT_PROFILE=live-paper
+ExecStart=@NBOT_PYTHON@ @NBOT_ROOT@/run_observation.py --profile live-paper
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=45
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=nbot-observer.target

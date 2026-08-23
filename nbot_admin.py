@@ -9,6 +9,8 @@ order authority.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
+import fcntl
 from dataclasses import asdict, is_dataclass
 import json
 from pathlib import Path
@@ -48,6 +50,7 @@ ROOT = Path(__file__).resolve().parent
 RESEARCH_PROFILE = "live-paper"
 V384_GENERATION = "V3_8_4_EPOCH_GENERATION_V1"
 V384_MEMORY_PATH = Path("data/observation/live/research_memory.db")
+V384_EPOCH_LOCK_PATH = Path("runtime/observation/live/research_epoch.lock")
 
 
 def _jsonable(value: Any) -> Any:
@@ -98,6 +101,24 @@ def _legacy_mixed_research_guard() -> None:
 
 def _epoch_processor() -> ResearchEpochProcessor:
     return ResearchEpochProcessor(_db(), _memory(), ROOT)
+
+
+@contextmanager
+def _research_epoch_command_lock():
+    path = ROOT / V384_EPOCH_LOCK_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = path.open("a+", encoding="utf-8")
+    try:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError("NBOT_V384_EPOCH_COMMAND_LOCK_HELD") from exc
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    finally:
+        handle.close()
 
 
 def _build_result(component: str, max_events: int, rebuild: bool) -> Any:
@@ -270,15 +291,19 @@ def cmd_research_epoch_status(_args: argparse.Namespace) -> int:
 
 
 def cmd_research_epoch_run(args: argparse.Namespace) -> int:
-    report = _epoch_processor().run_once()
-    if report.get("status") == "PASS" and args.prune_raw:
-        report["raw_prune"] = _epoch_processor().prune_raw()
+    with _research_epoch_command_lock():
+        processor = _epoch_processor()
+        report = processor.run_once()
+        if report.get("status") == "PASS" and args.prune_raw:
+            report["raw_prune"] = processor.prune_raw()
     _emit(report)
     return 0 if bool(report.get("healthy")) else 2
 
 
 def cmd_research_raw_prune(_args: argparse.Namespace) -> int:
-    return _emit(_epoch_processor().prune_raw())
+    with _research_epoch_command_lock():
+        report = _epoch_processor().prune_raw()
+    return _emit(report)
 
 
 def cmd_research_generation_cutover(args: argparse.Namespace) -> int:

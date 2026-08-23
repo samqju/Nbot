@@ -1,0 +1,13 @@
+[Unit]
+Description=NBOT V3.8 LIVE Research Epoch Scheduler
+PartOf=nbot-observer.target
+
+[Timer]
+OnBootSec=10min
+OnUnitInactiveSec=15min
+AccuracySec=30s
+Persistent=true
+Unit=nbot-research-epoch.service
+
+[Install]
+WantedBy=nbot-observer.target

@@ -1,0 +1,7 @@
+[Unit]
+Description=NBOT V3 Observation Base Role
+After=network-online.target
+Wants=network-online.target nbot-observation-live.service nbot-research-epoch.timer
+
+[Install]
+WantedBy=multi-user.target

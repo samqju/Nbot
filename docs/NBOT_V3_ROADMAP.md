@@ -2667,6 +2667,25 @@ Performance is now a first-class operational gate.  A 96-event epoch must comple
 
 V3.8.4 is complete only after: (1) the legacy mixed database is deliberately discarded at a controlled generation boundary and empty compact memory is initialized; (2) a fresh raw-only generation accumulates its own 48-event historical context before the first target epoch; (3) at least one physical 96-event epoch is processed exactly once; (4) its disposable derived workspace is removed after commit; (5) permanent memory increases by exactly the epoch event count and cumulative Ridge state advances consistently; (6) rerunning the epoch is idempotent/skip-only; (7) raw pruning advances only behind the qualified dependency watermark; and (8) the epoch runtime satisfies the two-hour hard gate while the collector remains healthy.
 
+#### V3.8.4 physical acceptance — 2026-08-23
+
+The first production-sized epoch `EPOCH-1787436600000-1787465700000` passed all physical gates on the Observation VPS: 96/96 targets, 399.398 seconds elapsed, 187916 KiB peak RSS, zero swap, exactly 96 compact memory imports, Ridge advanced to 96 events / 37770 rows, scratch workspace deleted, exact-once re-invocation skipped, dependency-watermark raw pruning deleted only the bounded 96-event eligible prefix, SQLite quick/FK checks remained clean, and the LIVE collector remained healthy. Authority remained `RESEARCH_ONLY_NO_EXECUTION`.
+
+### V3.8.5 Observation operations hardening
+
+After V3.8.4 physical acceptance, make the proven research lifecycle self-operating without creating idle heavyweight daemons:
+
+* `nbot-observation-live.service` continuously owns the canonical LIVE collector and explicitly runs `run_observation.py --profile live-paper`;
+* `nbot-research-epoch.timer` is persistent across reboot and periodically invokes a low-priority `nbot-research-epoch.service` oneshot;
+* the oneshot runs one bounded `research-epoch-run --prune-raw`; immature windows exit cheaply, while a mature 96-event epoch processes exactly once;
+* epoch execution and manual raw pruning share a process lock so scheduler/manual overlap cannot race the same research workspace or retention boundary;
+* `nbot-observer.target` is the boot-enabled base Observation role and starts only the LIVE collector plus epoch timer;
+* LIVE_PAPER control is a separate optional continuous service enabled only when integrated paper execution is deliberately active;
+* Testnet Observation control remains disabled except during deliberate regression;
+* SQLite itself has no daemon service: raw-to-disposable-workspace-to-compact-memory atomicity remains an application transaction/workflow responsibility.
+
+Collection retains priority over research through normal collector scheduling and low research CPU/I/O priority. Research service failure must not stop or bind the LIVE collector.
+
 ## Runtime
 
 ```text

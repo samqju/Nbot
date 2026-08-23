@@ -326,3 +326,46 @@ validation fails, or a pending outcome lacks valid ACK, the dry path fails
 closed and does not request/consume new execution permission.
 
 Actual integrated Binance Testnet order writes remain V3.7.
+
+## V3.8 Observation base-role services
+
+After V3.8.4 physical epoch acceptance, Observation is boot-managed as a small
+base role rather than a collection of manual Python processes.
+
+Always enabled on the Observation VPS:
+
+```text
+nbot-observer.target
+  |- nbot-observation-live.service    # continuous raw LIVE collector
+  `- nbot-research-epoch.timer        # persistent scheduler
+       `- nbot-research-epoch.service # low-priority oneshot only when invoked
+```
+
+The epoch service runs `research-epoch-run --prune-raw`. If 96 mature events do
+not yet exist it exits normally with a wait status; it is not a permanent Python
+daemon. Collector and research commands use separate responsibilities and
+research is scheduled with lower CPU/I/O priority.
+
+There is no SQLite or "DB atomic split" service. SQLite is embedded. The epoch
+application copies one bounded raw dependency window to disposable workspace,
+imports only sealed compact memory, then deletes scratch after success and
+prunes raw data only behind the qualified dependency watermark.
+
+`nbot-observation-live-paper-control.service` is optional and should be enabled
+for reboot persistence only while the integrated LIVE_PAPER Execution boundary
+is deliberately active. `nbot-observation-testnet-control.service` remains
+regression-only and disabled outside explicit Testnet campaigns.
+
+Render/install the base units with:
+
+```bash
+/root/Nbot/.venv/bin/python deploy/observation/install_services.py \
+  --repo /root/Nbot \
+  --python /root/Nbot/.venv/bin/python \
+  --user root \
+  --enable
+```
+
+Do not pass `--start` while a manually launched LIVE collector still owns
+`runtime/observation/live/observation.lock`. Perform a controlled handover so
+there is never a duplicate writer.
