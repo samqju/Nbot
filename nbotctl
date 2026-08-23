@@ -28,10 +28,10 @@ from nbot.config.validation import (
 ROOT = Path(__file__).resolve().parent
 PHASE = "V3.7"
 ACTIVE_EXECUTION_PHASE = "V3.7"
-PHASE_STATUS = "V3.7_A_PASS_B_DEFERRED"
-PHASE_GATE_STATUS = "NOT_FULLY_PASSED"
+PHASE_STATUS = "V3.7_OPERATIONALLY_PROVEN"
+PHASE_GATE_STATUS = "PASSED"
 NEXT_PHASE = "V3.8"
-DEFERRED_ACCEPTANCE = ("V3.7-B_NORMAL_SHORT",)
+DEFERRED_ACCEPTANCE = ()
 
 
 def _git_identity() -> dict[str, str]:

@@ -20,10 +20,10 @@ class V325AcceptanceClosureTests(unittest.TestCase):
         payload = json.loads(result.stdout)
         self.assertEqual(payload["phase"], "V3.7")
         self.assertEqual(payload["active_execution_phase"], "V3.7")
-        self.assertEqual(payload["phase_status"], "V3.7_A_PASS_B_DEFERRED")
-        self.assertEqual(payload["phase_gate_status"], "NOT_FULLY_PASSED")
+        self.assertEqual(payload["phase_status"], "V3.7_OPERATIONALLY_PROVEN")
+        self.assertEqual(payload["phase_gate_status"], "PASSED")
         self.assertEqual(payload["next_phase"], "V3.8")
-        self.assertEqual(payload["deferred_acceptance"], ["V3.7-B_NORMAL_SHORT"])
+        self.assertEqual(payload["deferred_acceptance"], [])
 
     def test_operations_records_offline_stop_deterministic_equivalent(self):
         text = (REPO / "docs/OPERATIONS.md").read_text()
@@ -43,9 +43,9 @@ class V325AcceptanceClosureTests(unittest.TestCase):
 
     def test_readme_reports_current_v37_to_v38_transition(self):
         text = (REPO / "README.md").read_text()
-        self.assertIn("V3.7 -> V3.8 TRANSITION", text)
+        self.assertIn("V3.7 OPERATIONALLY PROVEN", text)
         self.assertIn("A — Normal LONG: PASS", text)
-        self.assertIn("B — Normal SHORT: DEFERRED", text)
+        self.assertIn("B — Normal SHORT: PASS", text)
         self.assertIn("Next implementation phase: **V3.8 LIVE_PAPER**", text)
         self.assertIn("`live-trade` remains forbidden until V3.10", text)
 

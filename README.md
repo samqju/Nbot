@@ -11,7 +11,7 @@ V3 starts from clean runtime state and clean databases. V1/V2 remain engineering
 
 ## Current phase
 
-`V3.7 -> V3.8 TRANSITION — V3.7-A PASS / V3.7-B DEFERRED`
+`V3.7 OPERATIONALLY PROVEN -> V3.8`
 
 NBOT is now operating with the intended capital-first two-VPS boundary: Observation owns market evidence, research, learning and recommendations; Execution independently owns account truth, risk, orders, protection, position management, reconciliation and emergency action. Observation has no Binance order authority.
 
@@ -20,12 +20,12 @@ Accepted implementation includes the earlier `V3.1 EXECUTION CORE`, the V3.2 sta
 Current V3.7 operational status:
 
 - **A — Normal LONG: PASS.** The integrated Testnet LONG completed through Execution-managed protective-stop closure, authoritative accounting, durable outcome delivery, and exactly-once Observation recording/ACK.
-- **B — Normal SHORT: DEFERRED.** This remains explicit Testnet operational evidence debt.
+- **B — Normal SHORT: PASS.** The integrated Testnet SHORT completed through protected entry, independent OPEN management, autonomous protective-stop closure, authoritative Binance accounting, durable outcome delivery, and exactly-once Observation recording/ACK.
 - **C–V fault/operational campaign: PASS.**
 
-The original canonical V3.7 acceptance gate is not being rewritten. Because B is deferred, `v3.7-testnet-e2e-operational-proven` must not be claimed or tagged as passed. An explicit sequencing exception in `docs/NBOT_V3_ROADMAP.md` permits V3.8 implementation to begin while keeping V3.7-B visibly deferred. A later LIVE_PAPER SHORT does not retroactively convert V3.7-B into a Testnet PASS.
+The original canonical V3.7 acceptance gate was not weakened. The previously deferred Testnet SHORT debt was physically closed on 2026-08-23 by proposal `PROP-33b8005daa79db45b237a3c449ec677c3d2d4db6`, autonomous `PROTECTIVE_STOP_TRIGGERED` closure, deterministic outcome `OUT-9b671e52f3e35e5ca9138358a96df3ae`, and exactly-once Observation recording/ACK. Together with the already accepted Normal LONG and C–V campaign, V3.7 is operationally proven. Its canonical tag becomes eligible only after this closure release passes validation and the same SHA is deployed on both VPSs.
 
-At this transition boundary Testnet Execution is FLAT, has no entry inflight or pending outcome, is DISARMED, and is stopped. The LIVE Observation collector remains protected and active.
+At this V3.7 closure boundary Testnet Execution is FLAT, has no entry inflight or pending outcome, is DISARMED, and has new entries disabled. The LIVE Observation collector remains protected and active.
 
 Next implementation phase: **V3.8 LIVE_PAPER**. `live-trade` remains forbidden until V3.10 and its evidence/arming gates.
 

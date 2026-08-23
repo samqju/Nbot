@@ -336,10 +336,10 @@ class V322OperatorTelemetryTests(unittest.TestCase):
         payload = json.loads(result.stdout)
         self.assertEqual(payload["phase"], "V3.7")
         self.assertEqual(payload["active_execution_phase"], "V3.7")
-        self.assertEqual(payload["phase_status"], "V3.7_A_PASS_B_DEFERRED")
-        self.assertEqual(payload["phase_gate_status"], "NOT_FULLY_PASSED")
+        self.assertEqual(payload["phase_status"], "V3.7_OPERATIONALLY_PROVEN")
+        self.assertEqual(payload["phase_gate_status"], "PASSED")
         self.assertEqual(payload["next_phase"], "V3.8")
-        self.assertEqual(payload["deferred_acceptance"], ["V3.7-B_NORMAL_SHORT"])
+        self.assertEqual(payload["deferred_acceptance"], [])
 
 
 if __name__ == "__main__":

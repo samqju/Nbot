@@ -2523,6 +2523,27 @@ This records current implementation status without rewriting the V3.7 acceptance
 
 Because V3.7-B is deferred, the canonical V3.7 gate is **not fully passed** and `v3.7-testnet-e2e-operational-proven` must not be created. The operator explicitly authorizes V3.8 implementation to begin as a sequencing exception. This exception grants no economic authority and no order authority. A later LIVE_PAPER SHORT is different evidence and does not retroactively convert V3.7-B into a Testnet PASS. The deferred Testnet SHORT remains visible regression debt.
 
+## V3.7-B closure — 2026-08-23
+
+The sequencing exception above is retained as historical change-control evidence. It is no longer an active acceptance deferral. V3.7-B was closed by an actual integrated Binance Testnet Normal SHORT, not by LIVE/PAPER substitution or by weakening the acceptance gate.
+
+Physical closure evidence:
+
+- integrated `DOGEUSDT` SHORT proposal `PROP-33b8005daa79db45b237a3c449ec677c3d2d4db6` was reconstructed from point-in-time Observation evidence and served through the TradeRequest/TradeResponse boundary;
+- both VPSs ran release `e6b7c75eb8289edb7823a8f771d8443207c2f8f2` for the accepted lifecycle;
+- Binance entry `2325102242` filled `11074` DOGE at `0.09031` and the full position was protected by stop `1000000178342683` / `NBV3SL-b44cf9af41f9374817d5d7ce`;
+- OPEN management remained active and recovery stayed non-critical;
+- the protective `STOP_MARKET` triggered autonomously and child order `2325127093` closed the complete SHORT at `0.09121`;
+- authoritative Binance realized PnL was `-9.9666` USD (`-0.99666R`) with `exit_reason=PROTECTIVE_STOP_TRIGGERED`;
+- Execution produced deterministic outcome `OUT-9b671e52f3e35e5ca9138358a96df3ae`;
+- Observation stored exactly one matching outcome, linked it to the served proposal, and Execution removed its pending copy after the matching ACK;
+- final state was exchange/local FLAT, `entry_inflight=null`, pending outcomes zero, recovery non-critical, Testnet DISARMED, and new entries disabled;
+- the troubleshooting DOGE SHORT, intervening DOGE LONG, and accepted DOGE SHORT had distinct proposal IDs and distinct entry client identities with no residual state contamination.
+
+Together with the already accepted V3.7-A Normal LONG and V3.7 C–V operational/fault campaign, the canonical V3.7 operational acceptance gate is now **PASSED**.
+
+The tag `v3.7-testnet-e2e-operational-proven` may be created only after this closure release passes automated validation, is committed/pushed to `main`, and the same release SHA is physically deployed and verified on both VPSs.
+
 \---
 
 # 24\. PHASE V3.8 — LIVE\_PAPER OPERATIONAL AND ECONOMIC CANARY

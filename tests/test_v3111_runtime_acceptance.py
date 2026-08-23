@@ -367,7 +367,7 @@ class V3111RuntimeAcceptanceTests(unittest.TestCase):
         text = (REPO / "docs/OPERATIONS.md").read_text(encoding="utf-8")
         self.assertIn("## V3.2 standalone Testnet mechanical canary", text)
         self.assertIn("V3.7-A Normal LONG is physically proven", text)
-        self.assertIn("V3.7-B Normal SHORT is explicitly deferred", text)
+        self.assertIn("V3.7-B Normal SHORT is physically proven end-to-end", text)
 
 
 if __name__ == "__main__":

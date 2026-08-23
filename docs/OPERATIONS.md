@@ -2,14 +2,14 @@
 
 ## Current operating boundary
 
-Current checkpoint: `V3.7 -> V3.8 TRANSITION — V3.7-A PASS / V3.7-B DEFERRED`.
+Current checkpoint: `V3.7 OPERATIONALLY PROVEN -> V3.8`.
 
 The deployed architecture is the real two-VPS split:
 
 - **Observation VPS** — LIVE/Testnet evidence, research, learning, recommendation/control service; no Binance order authority.
 - **Execution VPS** — independent market/account truth, proposal validation, risk, orders, stops, OPEN management, reconciliation, emergency action and durable outcomes.
 
-V3.7-A Normal LONG is physically proven end-to-end. V3.7-B Normal SHORT is explicitly deferred. V3.7 C–V operational/fault evidence remains accepted. Therefore the canonical `v3.7-testnet-e2e-operational-proven` tag is not claimed.
+V3.7-A Normal LONG is physically proven end-to-end. V3.7-B Normal SHORT is physically proven end-to-end. V3.7 C–V operational/fault evidence remains accepted. The canonical V3.7 operational gate is therefore passed; `v3.7-testnet-e2e-operational-proven` becomes eligible after the closure release passes same-SHA deployment validation.
 
 ### Transition safety state
 
