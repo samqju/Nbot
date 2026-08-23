@@ -2627,6 +2627,8 @@ V3.8.4 therefore deliberately supersedes the V3.8.1R/V3.8.2 assumption that all 
 * an epoch is eligible only after the full 48-bar / four-hour future-label horizon for its final target event is available;
 * each epoch receives a 48-bar historical context window and 48-bar future context window, so the raw dependency supplied to research is bounded and explicit;
 * research runs in a **disposable SQLite workspace** containing only the epoch and its bounded raw context; expanded feature/signal/future-path/policy/selection rows are never permanent collector state;
+* because the epoch workspace is disposable and has no authority until compact memory import succeeds, it uses ephemeral SQLite durability (`journal_mode=MEMORY`, `synchronous=OFF`, memory temp storage/cache) rather than paying durable WAL/FULL fsync costs for scratch rows; canonical raw evidence and permanent research memory remain durable;
+* event research must bulk-load future candles/funding across the event symbol set instead of issuing per-symbol SQLite path queries; canonical raw candles retain precedence over any historical fallback cache and the economic/research definitions are unchanged;
 * after successful selection, each target event is sealed once into permanent compact research memory using the already-proven compressed training vector/after-cost target and immutable lineage digests;
 * permanent research memory also retains cumulative Ridge sufficient statistics and durable model/challenger/evaluation/drift/promotion/rollback artifacts as those later phases populate them;
 * successful epoch workspaces are deleted after compact memory is durably committed; failed workspaces may be retained temporarily for forensic diagnosis but have no training authority;

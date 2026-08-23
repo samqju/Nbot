@@ -20,7 +20,9 @@ from nbot.observation.outcomes import FuturePathStore
 from nbot.observation.policies import ExitPolicyLab
 from nbot.observation.retention import ResearchRetentionManager
 from nbot.observation.selection import EntrySelectionLab
-from tests.test_v343_future_paths import FakePublicClient, INTERVAL, store_live
+from tests.test_v343_future_paths import (
+    FakePublicClient, INTERVAL, TARGET_OPEN, seed_target_and_future, store_live,
+)
 
 
 class V384EpochResearchTests(unittest.TestCase):
@@ -139,6 +141,70 @@ class V384EpochResearchTests(unittest.TestCase):
                     ).fetchone()[0], 0)
                 self.assertNotIn("canonical_features", tables)
                 self.assertTrue(Path(report["reset_manifest"]).exists())
+            finally:
+                os.chdir(prior)
+
+    def test_04_disposable_workspace_uses_ephemeral_sqlite_durability(self):
+        with tempfile.TemporaryDirectory() as td:
+            prior = Path.cwd()
+            os.chdir(td)
+            try:
+                cfg = observation_config_for_profile(get_profile("live-paper"))
+                scratch = EvidenceDatabase(
+                    cfg,
+                    path_override=Path("runtime/research/scratch.db"),
+                    ephemeral_research=True,
+                )
+                scratch.initialize()
+                with scratch.connection() as conn:
+                    self.assertEqual(str(conn.execute(
+                        "PRAGMA journal_mode"
+                    ).fetchone()[0]).lower(), "memory")
+                    self.assertEqual(int(conn.execute(
+                        "PRAGMA synchronous"
+                    ).fetchone()[0]), 0)
+                    self.assertEqual(int(conn.execute(
+                        "PRAGMA temp_store"
+                    ).fetchone()[0]), 2)
+                    self.assertEqual(int(conn.execute(
+                        "PRAGMA foreign_keys"
+                    ).fetchone()[0]), 1)
+                with self.assertRaisesRegex(
+                    ValueError, "EPHEMERAL_RESEARCH_REQUIRES_PATH_OVERRIDE"
+                ):
+                    EvidenceDatabase(cfg, ephemeral_research=True)
+            finally:
+                os.chdir(prior)
+
+    def test_05_bulk_future_and_policy_path_loads_preserve_single_symbol_semantics(self):
+        with tempfile.TemporaryDirectory() as td:
+            prior = Path.cwd()
+            os.chdir(td)
+            try:
+                cfg = observation_config_for_profile(get_profile("live-paper"))
+                db = EvidenceDatabase(cfg)
+                seed_target_and_future(db)
+                outcomes = FuturePathStore(db, FakePublicClient())
+                outcomes.initialize()
+                with db.connection() as conn:
+                    single_map, single_fallback = outcomes._load_path_candles(
+                        conn, "AAAUSDT", TARGET_OPEN
+                    )
+                    bulk_map, bulk_fallback = outcomes._load_path_candles_bulk(
+                        conn, ["AAAUSDT"], TARGET_OPEN
+                    )["AAAUSDT"]
+                self.assertEqual(single_map, bulk_map)
+                self.assertEqual(single_fallback, bulk_fallback)
+
+                built = outcomes.build(max_events=0)
+                self.assertGreater(built.built_events, 0)
+                policies = ExitPolicyLab(db)
+                with db.connection() as conn:
+                    single_path = policies._load_path(conn, "AAAUSDT", TARGET_OPEN)
+                    bulk_path = policies._load_paths_bulk(
+                        conn, ["AAAUSDT"], TARGET_OPEN
+                    )["AAAUSDT"]
+                self.assertEqual(single_path, bulk_path)
             finally:
                 os.chdir(prior)
 

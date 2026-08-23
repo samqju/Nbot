@@ -512,25 +512,72 @@ class ExitPolicyLab:
                             (event_open_ms, *params)).fetchall()
         return [dict(zip(columns, row)) for row in rows]
 
-    def _load_path(self, conn, symbol: str, event_open_ms: int) -> list[Candle]:
+    def _load_paths_bulk(
+        self, conn, symbols: list[str], event_open_ms: int
+    ) -> dict[str, list[Candle]]:
+        """Load all policy paths for one event using two SQLite queries."""
+        ordered = tuple(sorted({str(symbol) for symbol in symbols}))
+        if not ordered:
+            return {}
         start_open = event_open_ms + self.interval_ms
         end_open = event_open_ms + self.config.max_horizon_bars * self.interval_ms
-        cols = ("event_open_ms", "open_time_ms", "close_time_ms", "open_price", "high_price", "low_price",
-                "close_price", "base_volume", "quote_volume", "trade_count", "taker_buy_base_volume", "taker_buy_quote_volume")
-        cached = conn.execute(f"SELECT {','.join(cols)} FROM future_candle_cache WHERE symbol=? AND event_open_ms BETWEEN ? AND ?",
-                              (symbol, start_open, end_open)).fetchall()
-        canonical = conn.execute(f"SELECT {','.join(cols)} FROM candles_5m WHERE symbol=? AND event_open_ms BETWEEN ? AND ?",
-                                 (symbol, start_open, end_open)).fetchall()
-        by_open: dict[int, tuple[Any, ...]] = {int(r[0]): r for r in cached}
-        by_open.update({int(r[0]): r for r in canonical})
-        required = [event_open_ms + i*self.interval_ms for i in range(1, self.config.max_horizon_bars+1)]
-        if any(o not in by_open for o in required):
-            return []
-        return [Candle(symbol=symbol, open_time_ms=int(by_open[o][1]), close_time_ms=int(by_open[o][2]),
-                       open_price=float(by_open[o][3]), high_price=float(by_open[o][4]), low_price=float(by_open[o][5]),
-                       close_price=float(by_open[o][6]), base_volume=float(by_open[o][7]), quote_volume=float(by_open[o][8]),
-                       trade_count=int(by_open[o][9]), taker_buy_base_volume=float(by_open[o][10]),
-                       taker_buy_quote_volume=float(by_open[o][11])) for o in required]
+        cols = (
+            "symbol,event_open_ms,open_time_ms,close_time_ms,open_price,"
+            "high_price,low_price,close_price,base_volume,quote_volume,"
+            "trade_count,taker_buy_base_volume,taker_buy_quote_volume"
+        )
+        placeholders = ",".join("?" for _ in ordered)
+        params = (*ordered, start_open, end_open)
+        cached = conn.execute(
+            f"SELECT {cols} FROM future_candle_cache "
+            f"WHERE symbol IN ({placeholders}) AND event_open_ms BETWEEN ? AND ? "
+            "ORDER BY symbol,event_open_ms",
+            params,
+        ).fetchall()
+        canonical = conn.execute(
+            f"SELECT {cols} FROM candles_5m "
+            f"WHERE symbol IN ({placeholders}) AND event_open_ms BETWEEN ? AND ? "
+            "ORDER BY symbol,event_open_ms",
+            params,
+        ).fetchall()
+        by_symbol: dict[str, dict[int, tuple[Any, ...]]] = {
+            symbol: {} for symbol in ordered
+        }
+        for row in cached:
+            by_symbol[str(row[0])][int(row[1])] = tuple(row[1:])
+        for row in canonical:
+            by_symbol[str(row[0])][int(row[1])] = tuple(row[1:])
+        required = [
+            event_open_ms + i * self.interval_ms
+            for i in range(1, self.config.max_horizon_bars + 1)
+        ]
+        result: dict[str, list[Candle]] = {}
+        for symbol in ordered:
+            by_open = by_symbol[symbol]
+            if any(open_ms not in by_open for open_ms in required):
+                result[symbol] = []
+                continue
+            result[symbol] = [
+                Candle(
+                    symbol=symbol,
+                    open_time_ms=int(by_open[open_ms][1]),
+                    close_time_ms=int(by_open[open_ms][2]),
+                    open_price=float(by_open[open_ms][3]),
+                    high_price=float(by_open[open_ms][4]),
+                    low_price=float(by_open[open_ms][5]),
+                    close_price=float(by_open[open_ms][6]),
+                    base_volume=float(by_open[open_ms][7]),
+                    quote_volume=float(by_open[open_ms][8]),
+                    trade_count=int(by_open[open_ms][9]),
+                    taker_buy_base_volume=float(by_open[open_ms][10]),
+                    taker_buy_quote_volume=float(by_open[open_ms][11]),
+                )
+                for open_ms in required
+            ]
+        return result
+
+    def _load_path(self, conn, symbol: str, event_open_ms: int) -> list[Candle]:
+        return self._load_paths_bulk(conn, [symbol], event_open_ms).get(symbol, [])
 
     @staticmethod
     def _candle_digest(path: list[Candle]) -> str:
@@ -580,7 +627,9 @@ class ExitPolicyLab:
             with self.db.connection() as conn:
                 sources = self._load_sources(conn, event_open_ms)
                 source_digest = self._event_source_digest_from_sources(sources)
-                paths = {str(s["symbol"]): self._load_path(conn, str(s["symbol"]), event_open_ms) for s in sources}
+                paths = self._load_paths_bulk(
+                    conn, [str(source["symbol"]) for source in sources], event_open_ms
+                )
             rows: list[dict[str, Any]] = []
             built_at_ms = int(time.time() * 1000)
             for source in sources:

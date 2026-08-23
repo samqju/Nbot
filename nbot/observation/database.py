@@ -211,20 +211,34 @@ class EvidenceDatabase:
         config: ObservationConfig,
         *,
         path_override: Path | None = None,
+        ephemeral_research: bool = False,
     ) -> None:
         config.validate()
+        if ephemeral_research and path_override is None:
+            raise ValueError("NBOT_EPHEMERAL_RESEARCH_REQUIRES_PATH_OVERRIDE")
         self.config = config
         # V3.8.4 research workspaces use the same LIVE evidence schema and
         # endpoint contract but live outside the canonical collector path.
         # Only an explicit constructor override may change the physical file;
         # normal Observation construction remains hard-pinned by config.
         self.path = Path(config.database_path if path_override is None else path_override)
+        self.ephemeral_research = bool(ephemeral_research)
 
     def _connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(self.path, timeout=30.0, factory=ClosingConnection)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=FULL")
+        if self.ephemeral_research:
+            # A V3.8.4 research workspace is disposable computation, never
+            # durable evidence.  A crash simply rebuilds the epoch from raw
+            # truth; only the separately committed research-memory import has
+            # authority.  Avoid paying WAL/FULL fsync cost for scratch rows.
+            conn.execute("PRAGMA journal_mode=MEMORY")
+            conn.execute("PRAGMA synchronous=OFF")
+            conn.execute("PRAGMA temp_store=MEMORY")
+            conn.execute("PRAGMA cache_size=-131072")
+        else:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=FULL")
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=30000")
         return conn

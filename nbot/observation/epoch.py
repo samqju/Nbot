@@ -252,7 +252,9 @@ class ResearchEpochProcessor:
             candidate = Path(str(scratch_path) + suffix)
             if candidate.exists():
                 candidate.unlink()
-        workspace = EvidenceDatabase(self.raw.config, path_override=scratch_path)
+        workspace = EvidenceDatabase(
+            self.raw.config, path_override=scratch_path, ephemeral_research=True,
+        )
         timings: dict[str, float] = {}
         started_total = self._now()
         success = False

@@ -13,6 +13,7 @@ import sqlite3
 import time
 from typing import Any, Iterable
 
+from .database import ClosingConnection
 from .retention import ARCHIVE_VERSION, AUTHORITY, _decode_training_blob
 from .selection import SELECTION_CONFIG
 
@@ -98,7 +99,9 @@ class ResearchMemoryStore:
 
     def _connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self.path, timeout=30.0)
+        conn = sqlite3.connect(
+            self.path, timeout=30.0, factory=ClosingConnection
+        )
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=FULL")
         conn.execute("PRAGMA busy_timeout=30000")

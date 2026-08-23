@@ -622,6 +622,84 @@ class FuturePathStore:
             fallback_opens.discard(key)
         return result, fallback_opens
 
+    def _load_path_candles_bulk(
+        self,
+        conn,
+        symbols: list[str],
+        event_open_ms: int,
+    ) -> dict[str, tuple[dict[int, Candle], set[int]]]:
+        """Load one event's future candles for all symbols in two queries.
+
+        Canonical raw candles retain precedence over fallback cache exactly as
+        the single-symbol loader does.  V3.8.4 uses this on the hot path to
+        avoid O(events * symbols) SQLite round trips.
+        """
+        ordered = tuple(sorted({str(symbol) for symbol in symbols}))
+        if not ordered:
+            return {}
+        start_open = event_open_ms + self.interval_ms
+        end_open = event_open_ms + self.config.max_horizon_bars * self.interval_ms
+        placeholders = ",".join("?" for _ in ordered)
+        cols = (
+            "symbol,event_open_ms,open_time_ms,close_time_ms,open_price,"
+            "high_price,low_price,close_price,base_volume,quote_volume,"
+            "trade_count,taker_buy_base_volume,taker_buy_quote_volume"
+        )
+        params = (*ordered, start_open, end_open)
+        canonical_rows = conn.execute(
+            f"SELECT {cols} FROM candles_5m WHERE symbol IN ({placeholders}) "
+            "AND event_open_ms BETWEEN ? AND ? ORDER BY symbol,event_open_ms",
+            params,
+        ).fetchall()
+        cached_rows = conn.execute(
+            f"SELECT {cols} FROM future_candle_cache WHERE symbol IN ({placeholders}) "
+            "AND event_open_ms BETWEEN ? AND ? ORDER BY symbol,event_open_ms",
+            params,
+        ).fetchall()
+        result: dict[str, tuple[dict[int, Candle], set[int]]] = {
+            symbol: ({}, set()) for symbol in ordered
+        }
+        for row in cached_rows:
+            symbol = str(row[0])
+            path_map, fallback = result[symbol]
+            key = int(row[1])
+            path_map[key] = self._parse_candle(symbol, tuple(row[1:]))
+            fallback.add(key)
+        for row in canonical_rows:
+            symbol = str(row[0])
+            path_map, fallback = result[symbol]
+            key = int(row[1])
+            path_map[key] = self._parse_candle(symbol, tuple(row[1:]))
+            fallback.discard(key)
+        return result
+
+    def _load_funding_bulk(
+        self,
+        conn,
+        symbols: list[str],
+        start_exclusive_ms: int,
+        end_inclusive_ms: int,
+    ) -> dict[str, list[tuple[int, float, float | None]]]:
+        ordered = tuple(sorted({str(symbol) for symbol in symbols}))
+        if not ordered:
+            return {}
+        placeholders = ",".join("?" for _ in ordered)
+        rows = conn.execute(
+            "SELECT symbol,funding_time_ms,funding_rate,mark_price "
+            f"FROM funding_events WHERE symbol IN ({placeholders}) "
+            "AND funding_time_ms>? AND funding_time_ms<=? "
+            "ORDER BY symbol,funding_time_ms",
+            (*ordered, int(start_exclusive_ms), int(end_inclusive_ms)),
+        ).fetchall()
+        grouped: dict[str, list[tuple[int, float, float | None]]] = {
+            symbol: [] for symbol in ordered
+        }
+        for symbol, ts, rate, mark in rows:
+            grouped[str(symbol)].append((
+                int(ts), float(rate), None if mark is None else float(mark),
+            ))
+        return grouped
+
     @staticmethod
     def _same_candle(left: Candle, right: Candle) -> bool:
         return _candle_payload(left) == _candle_payload(right)
@@ -1285,17 +1363,16 @@ class FuturePathStore:
 
             symbols = [str(row[0]) for row in features]
             missing_by_symbol: dict[str, list[int]] = {}
+            required = [
+                event_open_ms + offset * self.interval_ms
+                for offset in required_offsets
+            ]
             with self.db.connection() as conn:
+                bulk_paths = self._load_path_candles_bulk(
+                    conn, symbols, event_open_ms
+                )
                 for symbol in symbols:
-                    existing, _fallback = self._load_path_candles(
-                        conn,
-                        symbol,
-                        event_open_ms,
-                    )
-                    required = [
-                        event_open_ms + offset * self.interval_ms
-                        for offset in required_offsets
-                    ]
+                    existing, _fallback = bulk_paths.get(symbol, ({}, set()))
                     missing = [value for value in required if value not in existing]
                     if missing:
                         missing_by_symbol[symbol] = missing
@@ -1325,30 +1402,23 @@ class FuturePathStore:
             event_rows: list[dict[str, Any]] = []
             unresolved = 0
             with self.db.connection() as conn:
+                bulk_paths = self._load_path_candles_bulk(
+                    conn, symbols, event_open_ms
+                )
+                funding_by_symbol = self._load_funding_bulk(
+                    conn, symbols, event_close_ms, max_horizon_close_ms
+                )
                 for symbol, close_price, atr14_frac, spread_pct in features:
                     symbol_text = str(symbol)
-                    path_map, fallback_opens = self._load_path_candles(
-                        conn,
-                        symbol_text,
-                        event_open_ms,
+                    path_map, fallback_opens = bulk_paths.get(
+                        symbol_text, ({}, set())
                     )
-                    opens = [
-                        event_open_ms + offset * self.interval_ms
-                        for offset in required_offsets
-                    ]
-                    if any(open_ms not in path_map for open_ms in opens):
-                        unresolved += sum(open_ms not in path_map for open_ms in opens)
+                    if any(open_ms not in path_map for open_ms in required):
+                        unresolved += sum(
+                            open_ms not in path_map for open_ms in required
+                        )
                         continue
-                    path = [path_map[open_ms] for open_ms in opens]
-                    funding_rows = conn.execute(
-                        """
-                        SELECT funding_time_ms, funding_rate, mark_price
-                        FROM funding_events
-                        WHERE symbol=? AND funding_time_ms>? AND funding_time_ms<=?
-                        ORDER BY funding_time_ms
-                        """,
-                        (symbol_text, event_close_ms, max_horizon_close_ms),
-                    ).fetchall()
+                    path = [path_map[open_ms] for open_ms in required]
                     event_rows.append(
                         self._build_row(
                             event_open_ms=event_open_ms,
@@ -1360,14 +1430,7 @@ class FuturePathStore:
                             spread_pct=float(spread_pct),
                             path=path,
                             fallback_opens=fallback_opens,
-                            funding_events=[
-                                (
-                                    int(ts),
-                                    float(rate),
-                                    None if mark is None else float(mark),
-                                )
-                                for ts, rate, mark in funding_rows
-                            ],
+                            funding_events=funding_by_symbol.get(symbol_text, []),
                             built_at_ms=built_at_ms,
                         )
                     )
