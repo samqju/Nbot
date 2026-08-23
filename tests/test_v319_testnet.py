@@ -437,6 +437,49 @@ class V319TruthAndLockTests(unittest.TestCase):
 
 
 class V319EntryTests(unittest.TestCase):
+    def test_fill_prefers_cum_quote_over_rounded_avg_price(self):
+        order = {
+            "orderId": 2325000976,
+            "clientOrderId": "NBV3E-1176a0e2375e0e173fc7450c",
+            "status": "FILLED",
+            "executedQty": "11138",
+            "avgPrice": "0.089771",
+            "cumQuote": "999.864420",
+            "time": 1787461562391,
+            "updateTime": 1787461562395,
+        }
+        fill = BinanceTestnetExchange._fill_from_order(order)
+        self.assertIsNotNone(fill)
+        self.assertEqual(fill.price, 999.864420 / 11138.0)
+        self.assertNotEqual(fill.price, float(order["avgPrice"]))
+
+    def test_fill_falls_back_to_avg_price_when_cum_quote_missing(self):
+        order = {
+            "orderId": 1,
+            "clientOrderId": "NBV3E-FALLBACK",
+            "status": "FILLED",
+            "executedQty": "2",
+            "avgPrice": "101.25",
+            "cumQuote": "0",
+            "updateTime": 1800000000000,
+        }
+        fill = BinanceTestnetExchange._fill_from_order(order)
+        self.assertIsNotNone(fill)
+        self.assertEqual(fill.price, 101.25)
+
+    def test_fill_without_any_price_evidence_fails_closed(self):
+        order = {
+            "orderId": 1,
+            "clientOrderId": "NBV3E-NOPRICE",
+            "status": "FILLED",
+            "executedQty": "2",
+            "avgPrice": "0",
+            "cumQuote": "0",
+            "updateTime": 1800000000000,
+        }
+        with self.assertRaisesRegex(TestnetExchangeError, "TESTNET_FILL_PRICE_MISSING"):
+            BinanceTestnetExchange._fill_from_order(order)
+
     def test_open_long_preserves_caller_deterministic_id(self):
         with tempfile.TemporaryDirectory() as td:
             ex = loaded_exchange(Path(td)); arm(ex.config)

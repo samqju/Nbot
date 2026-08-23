@@ -714,12 +714,19 @@ class BinanceTestnetExchange:
         executed = float(order.get("executedQty", 0) or 0)
         if executed <= 0:
             return None
-        avg = float(order.get("avgPrice", 0) or 0)
-        if avg <= 0:
-            cum_quote = float(order.get("cumQuote", 0) or 0)
-            if cum_quote <= 0:
-                raise TestnetExchangeError("TESTNET_FILL_PRICE_MISSING")
+
+        # Binance order avgPrice may be rounded more coarsely than the
+        # aggregate position entryPrice. When available, cumQuote /
+        # executedQty is the higher-precision aggregate fill basis and keeps
+        # durable entry identity aligned with later position reconciliation.
+        cum_quote = float(order.get("cumQuote", 0) or 0)
+        if cum_quote > 0:
             avg = cum_quote / executed
+        else:
+            avg = float(order.get("avgPrice", 0) or 0)
+            if avg <= 0:
+                raise TestnetExchangeError("TESTNET_FILL_PRICE_MISSING")
+
         order_id = str(order.get("orderId") or "").strip()
         client_id = str(order.get("clientOrderId") or "").strip()
         timestamp_ms = int(order.get("updateTime") or order.get("time") or 0)
