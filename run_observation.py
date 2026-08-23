@@ -8,12 +8,15 @@ import os
 from pathlib import Path
 import signal
 import subprocess
+import time
 from typing import Mapping
 
+from nbot.common.logging import configure_logging, observation_log_paths
 from nbot.config.profiles import get_profile
 from nbot.config.validation import MachineRole, detect_role, validate_role_profile
 from nbot.communication.server import ObservationControlServer
 from nbot.observation.recommendation import ObservationControlTarget, RecommendationSupervisor
+from nbot.operator.telegram import TelegramClient, TelegramConfig, TelegramDispatcher
 from nbot.observation import (
     BinanceUsdMPublicClient,
     EvidenceDatabase,
@@ -67,6 +70,7 @@ def build_observation_worker(
     repo_root: Path,
     profile_name: str,
     environment: Mapping[str, str] | None = None,
+    event_sink=None,
 ) -> tuple[ObservationWorker, ObservationRuntimeLock]:
     role = detect_role(repo_root)
     if role is not MachineRole.OBSERVATION:
@@ -87,7 +91,7 @@ def build_observation_worker(
     config = observation_config_for_profile(profile)
     database = EvidenceDatabase(config)
     client = BinanceUsdMPublicClient(config)
-    worker = ObservationWorker(config, client, database, event_sink=_emit)
+    worker = ObservationWorker(config, client, database, event_sink=_emit if event_sink is None else event_sink)
     lock = ObservationRuntimeLock(
         observation_runtime_lock_path(repo_root, config.market_environment)
     )
@@ -126,10 +130,46 @@ def main(argv: list[str] | None = None) -> int:
 
     root = Path(__file__).resolve().parent
     os.chdir(root)
+    log_path = observation_log_paths(root)["collector"]
+    collector_log = configure_logging(
+        role="OBSERVATION", profile=profile_name, log_path=log_path, component="collector"
+    )
+    telegram = TelegramClient(
+        TelegramConfig.from_environment(os.environ, prefix="OBSERVATION"), logger=collector_log
+    )
+    telegram_dispatch = TelegramDispatcher(telegram, logger=collector_log)
+    telegram_dispatch.start()
+    last_alert: dict[str, float] = {}
+
+    def event_sink(payload: Mapping[str, object]) -> None:
+        _emit(payload)
+        encoded = json.dumps(dict(payload), sort_keys=True, default=_json_default)
+        collector_log.info("OBSERVATION_EVENT %s", encoded)
+        event = str(payload.get("event") or "")
+        if event == "STARTED":
+            telegram_dispatch.send_info(
+                "OBSERVATION COLLECTOR STARTED",
+                f"Profile: {profile_name}\nMarket: {payload.get('market_environment')}\nOrder authority: NONE",
+            )
+        elif event == "STOPPED":
+            telegram_dispatch.send_info(
+                "OBSERVATION COLLECTOR STOPPED",
+                f"Completed cycles: {payload.get('completed_cycles')}\nOrder authority: NONE",
+            )
+        elif event == "TRANSIENT_ERROR":
+            now = time.monotonic()
+            if now - last_alert.get(event, float("-inf")) >= 300.0:
+                last_alert[event] = now
+                telegram_dispatch.send_warning(
+                    "OBSERVATION TRANSIENT ERROR",
+                    f"{payload.get('error_type')}: {payload.get('detail')}\nCollection will retry automatically.",
+                )
+
     worker, lock = build_observation_worker(
         repo_root=root,
         profile_name=profile_name,
         environment=os.environ,
+        event_sink=event_sink,
     )
 
     def request_stop(_signum, _frame) -> None:
@@ -200,6 +240,7 @@ def main(argv: list[str] | None = None) -> int:
                 control_server.stop()
             if recommendation_supervisor is not None:
                 recommendation_supervisor.stop()
+            telegram_dispatch.stop()
     return 0
 
 

@@ -8,6 +8,7 @@ Type=simple
 User=@NBOT_USER@
 WorkingDirectory=@NBOT_ROOT@
 Environment=NBOT_PROFILE=live-paper
+EnvironmentFile=-@NBOT_ROOT@/config/secrets/observation-live.env
 EnvironmentFile=@NBOT_ROOT@/config/secrets/control-link.env
 ExecStart=@NBOT_ROOT@/.venv/bin/python @NBOT_ROOT@/run_observation_control.py --profile live-paper --control-host 127.0.0.1 --control-port 8765 --control-refresh-seconds 5
 Restart=always

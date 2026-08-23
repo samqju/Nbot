@@ -10,6 +10,7 @@ User=@NBOT_USER@
 WorkingDirectory=@NBOT_ROOT@
 Environment=PYTHONUNBUFFERED=1
 Environment=NBOT_PROFILE=live-paper
+EnvironmentFile=-@NBOT_ROOT@/config/secrets/observation-live.env
 ExecStart=@NBOT_PYTHON@ @NBOT_ROOT@/run_observation.py --profile live-paper
 Restart=always
 RestartSec=5

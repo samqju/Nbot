@@ -13,9 +13,11 @@ from contextlib import contextmanager
 import fcntl
 from dataclasses import asdict, is_dataclass
 import json
+import os
 from pathlib import Path
 from typing import Any
 
+from nbot.common.logging import configure_logging, observation_log_paths
 from nbot.config.profiles import get_profile
 from nbot.config.validation import MachineRole, detect_role
 from nbot.observation.binance_public import BinanceUsdMPublicClient
@@ -39,6 +41,7 @@ from nbot.observation.retention import ResearchRetentionManager
 from nbot.observation.policies import ExitPolicyLab
 from nbot.observation.selection import EntrySelectionLab
 from nbot.observation.signals import ResearchSignalStore
+from nbot.operator.telegram import TelegramClient, TelegramConfig
 from nbot.observation.scalability import (
     REFERENCE_RESET_CONFIRMATION,
     ResearchScalabilityRecovery,
@@ -291,11 +294,40 @@ def cmd_research_epoch_status(_args: argparse.Namespace) -> int:
 
 
 def cmd_research_epoch_run(args: argparse.Namespace) -> int:
-    with _research_epoch_command_lock():
-        processor = _epoch_processor()
-        report = processor.run_once()
-        if report.get("status") == "PASS" and args.prune_raw:
-            report["raw_prune"] = processor.prune_raw()
+    research_log = configure_logging(
+        role="OBSERVATION", profile=RESEARCH_PROFILE,
+        log_path=observation_log_paths(ROOT)["research"], component="research",
+    )
+    telegram = TelegramClient(
+        TelegramConfig.from_environment(os.environ, prefix="OBSERVATION"), logger=research_log
+    )
+    try:
+        with _research_epoch_command_lock():
+            processor = _epoch_processor()
+            report = processor.run_once()
+            if report.get("status") == "PASS" and args.prune_raw:
+                report["raw_prune"] = processor.prune_raw()
+    except Exception as exc:
+        research_log.exception("RESEARCH_EPOCH_FAILED")
+        telegram.send_critical(
+            "RESEARCH EPOCH FAILED", f"{type(exc).__name__}: {exc}\nOrder authority: NONE"
+        )
+        raise
+    research_log.info("RESEARCH_EPOCH_RESULT %s", json.dumps(report, sort_keys=True, default=_jsonable))
+    if report.get("status") == "PASS":
+        memory = report.get("memory") if isinstance(report.get("memory"), dict) else {}
+        telegram.send_info(
+            "RESEARCH EPOCH COMPLETE",
+            f"Status: PASS\nEpoch: {report.get('epoch_id', 'N/A')}\n"
+            f"Memory events: {memory.get('events', 'N/A')}\nAuthority: RESEARCH_ONLY_NO_EXECUTION",
+        )
+    elif not bool(report.get("healthy")):
+        telegram.send_critical(
+            "RESEARCH EPOCH UNHEALTHY",
+            f"Status: {report.get('status')}\nAuthority: RESEARCH_ONLY_NO_EXECUTION",
+        )
+    # WAIT_FOR_MATURE_EPOCH is intentionally not a Telegram event; the 15-minute
+    # timer may emit it frequently and operator alerting must remain low-noise.
     _emit(report)
     return 0 if bool(report.get("healthy")) else 2
 

@@ -9,6 +9,7 @@ User=@NBOT_USER@
 WorkingDirectory=@NBOT_ROOT@
 Environment=PYTHONUNBUFFERED=1
 Environment=NBOT_PROFILE=live-paper
+EnvironmentFile=-@NBOT_ROOT@/config/secrets/observation-live.env
 ExecStart=@NBOT_PYTHON@ @NBOT_ROOT@/nbot_admin.py research-epoch-run --prune-raw
 Nice=15
 CPUWeight=20

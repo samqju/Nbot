@@ -15,9 +15,11 @@ def configure_logging(
     log_path: Path,
     level: int = logging.INFO,
     stderr: bool = True,
+    component: str = "runtime",
 ) -> logging.Logger:
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    logger = logging.getLogger(f"nbot.v3.{role.lower()}.{profile}")
+    component = str(component or "runtime").strip().lower().replace(" ", "-")
+    logger = logging.getLogger(f"nbot.v3.{role.lower()}.{profile}.{component}")
     logger.setLevel(level)
     logger.propagate = False
 
@@ -41,3 +43,22 @@ def configure_logging(
         logger.addHandler(stream_handler)
 
     return logger
+
+
+def execution_log_paths(repo_root: Path, profile: str) -> dict[str, Path]:
+    leaf = {"testnet-trade": "testnet", "live-paper": "paper", "live-trade": "real"}[profile]
+    base = Path(repo_root) / "logs" / "execution" / leaf
+    return {
+        "execution": base / "execution.log",
+        "trades": base / "trades.log",
+        "runtime": base / "runtime.stdout.log",
+    }
+
+
+def observation_log_paths(repo_root: Path) -> dict[str, Path]:
+    base = Path(repo_root) / "logs" / "observation" / "live"
+    return {
+        "collector": base / "collector.log",
+        "control": base / "control.log",
+        "research": base / "research.log",
+    }

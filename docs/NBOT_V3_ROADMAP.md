@@ -2686,6 +2686,25 @@ After V3.8.4 physical acceptance, make the proven research lifecycle self-operat
 
 Collection retains priority over research through normal collector scheduling and low research CPU/I/O priority. Research service failure must not stop or bind the LIVE collector.
 
+### V3.8.6 Operator and observability parity
+
+Before the persistent LIVE_PAPER Execution canary starts, restore the useful V1/V2.8.5 operator visibility without restoring legacy runtime coupling:
+
+* Execution writes rotating profile-scoped operations and trade-audit logs while systemd journal remains the service/startup forensic source;
+* Observation writes separate rotating collector, control and research logs;
+* Telegram is optional, best-effort and may never raise into capital management, collection, research, reconciliation or stop handling;
+* Execution and Observation use separate Telegram credential namespaces and should use separate bots when both command listeners are enabled;
+* Telegram commands queued while a worker was offline are discarded before the listener starts, so stale `/enable` cannot affect a restarted worker;
+* Execution owns one editable trade panel.  It is created only after durable OPEN+verified protection exists, updated only for meaningful durable transitions (for example a verified stop improvement), edited closed from authoritative completed-execution history, and may show pending/recorded outcome ACK state;
+* trade-panel metadata is durable but kept outside safety-critical execution state.  Missing/corrupt panel metadata may recreate a panel but can never block or alter capital truth;
+* Execution Telegram commands are `/status`, `/position`, `/health`, `/recent`, `/pnl`, `/disable`, `/enable`, `/help`; `/disable` only adds an entry block and never affects OPEN management; `/enable` remains subordinate to every profile/arm/reconciliation/risk/research-authority gate and is explicitly rejected by V3.8 NON_PROMOTIONAL_DRY;
+* Observation Telegram commands are read-only: `/status`, `/memory`, `/epoch`, `/champion`, `/learning`, `/db`, `/recommendation`, `/help`; Observation order authority remains `NONE`;
+* the 15-minute immature research-epoch wait state is not a Telegram alert.  Completed or unhealthy epochs may notify, avoiding heartbeat/WAIT spam;
+* `nbotctl` exposes local position, health, recent-trade, PnL, entry-block and component-log inspection without adding a remote call to the OPEN-position hot path;
+* emergency flatten remains a local capital command, not a Telegram command.
+
+The V1 implementation is an operations reference only.  V3 keeps the useful operator semantics but does not restore V1 Strategy/learning coupling or shared mutable state.
+
 ## Runtime
 
 ```text

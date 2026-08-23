@@ -8,11 +8,13 @@ import json
 import os
 from pathlib import Path
 import signal
+import subprocess
 import sys
 import time
 from typing import Iterator, Mapping
 
 from nbot.common.atomic_io import atomic_write_text
+from nbot.common.logging import configure_logging, execution_log_paths
 from nbot.common.time import utc_iso
 from nbot.communication.integration import (
     TESTNET_OPERATIONAL_CANARY_AUTHORITY,
@@ -60,6 +62,11 @@ from nbot.execution.outcomes import ExecutionDurableStore
 from nbot.execution.position import INTEGER_R_STEP_CONTROL, PositionLifecycle
 from nbot.execution.reconciliation import ReconciliationLifecycle
 from nbot.execution.risk import RiskManager
+from nbot.operator.execution import (
+    ExecutionOperatorSurface,
+    operator_entries_blocked,
+)
+from nbot.operator.telegram import TelegramClient, TelegramConfig
 
 
 def _positive_float(environment: Mapping[str, str], key: str, default: float) -> float:
@@ -117,6 +124,8 @@ def ready_path(repo_root: Path, profile_name: str) -> Path:
 def default_secret_file(repo_root: Path, profile_name: str) -> Path | None:
     if profile_name == "testnet-trade":
         return repo_root / "config" / "secrets" / "execution-testnet.env"
+    if profile_name == "live-paper":
+        return repo_root / "config" / "secrets" / "execution-live-paper.env"
     if profile_name == "live-trade":
         return repo_root / "config" / "secrets" / "execution-live.env"
     return None
@@ -132,6 +141,61 @@ def runtime_environment(
     if source is None:
         return merged_environment(environ=os.environ)
     return merged_environment(source, environ=os.environ)
+
+
+
+
+def _runtime_pid_path(repo_root: Path, profile_name: str) -> Path:
+    return repo_root / "runtime" / "execution" / runtime_leaf(profile_name) / "execution.pid"
+
+
+def _write_runtime_identity(repo_root: Path, profile_name: str) -> None:
+    try:
+        sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=repo_root, text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except Exception:
+        sha = "UNKNOWN"
+    atomic_write_text(
+        _runtime_pid_path(repo_root, profile_name),
+        f"profile={profile_name}\npid={os.getpid()}\nsha={sha}\nstarted_at={utc_iso()}\n",
+        mode=0o600,
+    )
+
+
+def _operator_surface(
+    *,
+    repo_root: Path,
+    profile_name: str,
+    worker: ExecutionWorker,
+    environment: Mapping[str, str],
+    enable_policy,
+) -> ExecutionOperatorSurface:
+    paths = execution_log_paths(repo_root, profile_name)
+    system_log = configure_logging(
+        role="EXECUTION", profile=profile_name, log_path=paths["execution"], component="execution"
+    )
+    trade_log = configure_logging(
+        role="EXECUTION", profile=profile_name, log_path=paths["trades"], component="trades", stderr=False
+    )
+    telegram = TelegramClient(
+        TelegramConfig.from_environment(environment, prefix="EXECUTION"),
+        logger=system_log,
+    )
+    try:
+        warn_ms = float(environment.get("NBOT_EXECUTION_POSITION_MANAGE_WARN_MS", "1000"))
+    except (TypeError, ValueError):
+        warn_ms = 1000.0
+    return ExecutionOperatorSurface(
+        repo_root=repo_root,
+        profile=profile_name,
+        worker=worker,
+        telegram=telegram,
+        system_log=system_log,
+        trade_log=trade_log,
+        enable_policy=enable_policy,
+        position_manage_warn_ms=warn_ms,
+    )
 
 
 def build_testnet_exchange(
@@ -644,6 +708,16 @@ def run_testnet_runtime(
         outcome_client=remote_client,
         allowed_entry_authorities=frozenset({TESTNET_OPERATIONAL_CANARY_AUTHORITY}),
     )
+
+    def enable_policy() -> tuple[bool, str]:
+        if not profile_is_armed(repo_root, profile):
+            return False, "TESTNET is disarmed; use nbotctl arm testnet-trade first."
+        return True, "TESTNET_ARMED"
+
+    operator = _operator_surface(
+        repo_root=repo_root, profile_name=profile.name, worker=worker,
+        environment=environment, enable_policy=enable_policy,
+    )
     stop_requested = False
 
     def request_stop(_signum, _frame) -> None:
@@ -656,12 +730,14 @@ def run_testnet_runtime(
     ready = ready_path(repo_root, profile.name)
     ready.unlink(missing_ok=True)
     try:
+        _write_runtime_identity(repo_root, profile.name)
         prepared = worker.prepare()
         # Start from a closed local entry gate even when the persisted state was
         # previously enabled.  The flat loop below re-opens it only while the
         # explicit Testnet arm file is present.  OPEN management never depends
         # on this gate or on remote-service availability.
         worker.disable_new_entries()
+        operator.start(prepared_status=prepared.status)
         atomic_write_text(
             ready,
             (
@@ -693,7 +769,8 @@ def run_testnet_runtime(
             local = worker.state.open_position
             if local is None:
                 armed = profile_is_armed(repo_root, profile)
-                if not armed:
+                operator_blocked = operator_entries_blocked(repo_root, profile.name)
+                if not armed or operator_blocked:
                     if worker.state.snapshot.entries_enabled:
                         worker.disable_new_entries()
                 elif not worker.state.snapshot.entries_enabled:
@@ -710,6 +787,7 @@ def run_testnet_runtime(
                         time.sleep(idle_poll_seconds)
                         continue
                 result = worker.process_flat_cycle()
+                operator.after_flat_result(result)
                 if result == "POSITION_OPEN":
                     continue
                 time.sleep(idle_poll_seconds)
@@ -717,10 +795,16 @@ def run_testnet_runtime(
 
             quote = exchange.quote(local.symbol)
             worker.process_open_quote(quote)
+            operator.sync()
             time.sleep(open_poll_seconds)
         return 0
+    except Exception as exc:
+        operator.runtime_error(exc)
+        raise
     finally:
+        operator.stop()
         ready.unlink(missing_ok=True)
+        _runtime_pid_path(repo_root, profile.name).unlink(missing_ok=True)
         try:
             exchange.disconnect()
         except Exception:
@@ -757,6 +841,14 @@ def run_live_paper_runtime(
         outcome_client=remote_client,
         allowed_entry_authorities=frozenset({LIVE_PAPER_DRY_SENTINEL_AUTHORITY}),
     )
+
+    def enable_policy() -> tuple[bool, str]:
+        return False, "LIVE_PAPER remains NON_PROMOTIONAL_DRY until a reviewed paper-canary authority patch."
+
+    operator = _operator_surface(
+        repo_root=repo_root, profile_name=profile.name, worker=worker,
+        environment=environment, enable_policy=enable_policy,
+    )
     stop_requested = False
 
     def request_stop(_signum, _frame) -> None:
@@ -770,10 +862,12 @@ def run_live_paper_runtime(
     ready.unlink(missing_ok=True)
     with _live_paper_runtime_lock(repo_root):
         try:
+            _write_runtime_identity(repo_root, profile.name)
             prepared = worker.prepare()
             # This is the defining V3.8 foundation gate.  Do not auto-enable
             # entries merely because a Research Champion later appears.
             worker.disable_new_entries()
+            operator.start(prepared_status=prepared.status)
             atomic_write_text(
                 ready,
                 (
@@ -812,16 +906,23 @@ def run_live_paper_runtime(
                     # Reconcile and deliver any durable outcome first. Since the
                     # entry gate remains disabled, this can never request or
                     # execute a recommendation in the dry foundation.
-                    worker.process_flat_cycle()
+                    result = worker.process_flat_cycle()
+                    operator.after_flat_result(result)
                     time.sleep(idle_poll_seconds)
                     continue
 
                 quote = exchange.quote(local.symbol)
                 worker.process_open_quote(quote)
+                operator.sync()
                 time.sleep(open_poll_seconds)
             return 0
+        except Exception as exc:
+            operator.runtime_error(exc)
+            raise
         finally:
+            operator.stop()
             ready.unlink(missing_ok=True)
+            _runtime_pid_path(repo_root, profile.name).unlink(missing_ok=True)
             market.disconnect()
 
 

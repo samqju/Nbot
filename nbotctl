@@ -12,6 +12,7 @@ import sys
 import time
 
 from nbot.common.atomic_io import atomic_write_text
+from nbot.common.logging import execution_log_paths, observation_log_paths
 from nbot.common.time import utc_iso
 from nbot.config.bootstrap import bootstrap_layout, validate_layout
 from nbot.config.loader import merged_environment
@@ -20,6 +21,7 @@ from nbot.config.validation import (
     arm_path,
     arm_state,
     detect_role,
+    profile_is_armed,
     validate_execution_v31,
     validate_host_foundation,
     validate_role_profile,
@@ -60,6 +62,9 @@ def _merge_results(*results) -> tuple[bool, list[str], list[str]]:
 def _secret_environment(profile_name: str) -> dict[str, str]:
     if profile_name == "testnet-trade":
         source = ROOT / "config/secrets/execution-testnet.env"
+        return merged_environment(source, environ=os.environ)
+    if profile_name == "live-paper":
+        source = ROOT / "config/secrets/execution-live-paper.env"
         return merged_environment(source, environ=os.environ)
     if profile_name == "live-trade":
         source = ROOT / "config/secrets/execution-live.env"
@@ -116,7 +121,7 @@ def _runtime_leaf(profile_name: str) -> str:
 def _runtime_paths(profile_name: str) -> tuple[Path, Path, Path]:
     leaf = _runtime_leaf(profile_name)
     runtime = ROOT / "runtime" / "execution" / leaf
-    log = ROOT / "logs" / "execution" / leaf / "execution.log"
+    log = execution_log_paths(ROOT, profile_name)["execution"]
     return runtime / "execution.pid", runtime / "execution.ready", log
 
 
@@ -363,10 +368,12 @@ def _start_execution(profile_name: str) -> int:
         return 2
 
     pid_path, ready_path, log_path = _runtime_paths(profile_name)
+    runtime_stdout = execution_log_paths(ROOT, profile_name)["runtime"]
     pid_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_stdout.parent.mkdir(parents=True, exist_ok=True)
     ready_path.unlink(missing_ok=True)
-    log_handle = log_path.open("a", encoding="utf-8")
+    log_handle = runtime_stdout.open("a", encoding="utf-8")
     try:
         process = subprocess.Popen(
             [str(python), str(ROOT / "run_execution.py"), "--profile", profile_name],
@@ -408,6 +415,49 @@ def _start_execution(profile_name: str) -> int:
     return 2
 
 
+def _systemd_execution_unit(profile_name: str) -> str | None:
+    return {
+        "live-paper": "nbot-execution-live-paper.service",
+    }.get(profile_name)
+
+
+def _systemd_unit_installed(unit: str | None) -> bool:
+    if not unit:
+        return False
+    result = subprocess.run(
+        ["systemctl", "show", "-p", "LoadState", "--value", unit],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0 and result.stdout.strip() == "loaded"
+
+
+def _systemd_unit_active(unit: str | None) -> bool:
+    if not unit:
+        return False
+    return subprocess.run(
+        ["systemctl", "is-active", "--quiet", unit],
+        cwd=ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    ).returncode == 0
+
+
+def _guard_manual_execution_lifecycle(profile_name: str, *, action: str) -> None:
+    unit = _systemd_execution_unit(profile_name)
+    if not _systemd_unit_installed(unit):
+        return
+    state = "ACTIVE" if _systemd_unit_active(unit) else "INSTALLED"
+    raise ValueError(
+        f"NBOT_EXECUTION_SYSTEMD_MANAGED:{profile_name}:{state}:"
+        f"USE_SYSTEMCTL_{action.upper()}:{unit}"
+    )
+
+
 def cmd_start(args: argparse.Namespace) -> int:
     role = detect_role(ROOT)
     if role.value != "EXECUTION":
@@ -415,6 +465,7 @@ def cmd_start(args: argparse.Namespace) -> int:
     profile = get_profile(args.profile)
     if profile.name == "live-trade":
         raise ValueError("NBOT_LIVE_TRADE_RUNTIME_FORBIDDEN_BEFORE_V3_10")
+    _guard_manual_execution_lifecycle(profile.name, action="start")
     return _start_execution(profile.name)
 
 
@@ -429,6 +480,7 @@ def cmd_stop(_: argparse.Namespace) -> int:
     if len(active) != 1:
         raise ValueError("NBOT_MULTIPLE_EXECUTION_RUNTIMES_DETECTED")
     row = active[0]
+    _guard_manual_execution_lifecycle(str(row["profile"]), action="stop")
     pid = int(row["pid"])
     pid_path, ready_path, _ = _runtime_paths(row["profile"])
     try:
@@ -458,21 +510,103 @@ def cmd_restart(args: argparse.Namespace) -> int:
 
 
 def cmd_logs(args: argparse.Namespace) -> int:
-    profile_name = args.profile
-    if profile_name is None:
-        active = _active_runtimes(clean_stale=False)
-        if len(active) == 1:
-            profile_name = active[0]["profile"]
-        else:
-            raise ValueError("NBOT_LOG_PROFILE_REQUIRED_WITHOUT_SINGLE_ACTIVE_RUNTIME")
-    _, _, log_path = _runtime_paths(profile_name)
+    role = detect_role(ROOT)
+    component = args.component
+    if role.value == "OBSERVATION":
+        paths = observation_log_paths(ROOT)
+        component = component or "collector"
+        if component not in paths:
+            raise ValueError("NBOT_OBSERVATION_LOG_COMPONENT_INVALID")
+        log_path = paths[component]
+    else:
+        profile_name = args.profile
+        if profile_name is None:
+            active = _active_runtimes(clean_stale=False)
+            if len(active) == 1:
+                profile_name = active[0]["profile"]
+            else:
+                raise ValueError("NBOT_LOG_PROFILE_REQUIRED_WITHOUT_SINGLE_ACTIVE_RUNTIME")
+        paths = execution_log_paths(ROOT, profile_name)
+        component = component or "execution"
+        if component not in paths:
+            raise ValueError("NBOT_EXECUTION_LOG_COMPONENT_INVALID")
+        log_path = paths[component]
     if not log_path.is_file():
-        raise ValueError(f"NBOT_EXECUTION_LOG_MISSING:{profile_name}")
+        raise ValueError(f"NBOT_LOG_MISSING:{log_path.relative_to(ROOT)}")
     if args.follow:
         return subprocess.call(["tail", "-n", str(args.lines), "-f", str(log_path)])
     rows = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
     for line in rows[-args.lines:]:
         print(line)
+    return 0
+
+
+def _operator_profile(args: argparse.Namespace) -> str:
+    profile = str(getattr(args, "profile", "") or "").strip()
+    if profile:
+        return profile
+    active = _active_runtimes(clean_stale=False)
+    if len(active) == 1:
+        return str(active[0]["profile"])
+    raise ValueError("NBOT_OPERATOR_PROFILE_REQUIRED")
+
+
+def cmd_position(args: argparse.Namespace) -> int:
+    profile = _operator_profile(args)
+    payload = _execution_state_summary(profile)
+    print(json.dumps({"profile": profile, "position": payload.get("open_position_detail")}, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_health(args: argparse.Namespace) -> int:
+    profile = _operator_profile(args)
+    payload = _execution_state_summary(profile)
+    print(json.dumps({"profile": profile, "health": payload.get("health"), "recovery": payload.get("recovery")}, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_recent(args: argparse.Namespace) -> int:
+    from nbot.execution.outcomes import ExecutionHistoryStore
+    from nbot.execution.state import ExecutionStatePaths
+    profile = _operator_profile(args)
+    path = ExecutionStatePaths.for_profile(ROOT, profile).history_file
+    rows = [] if not path.is_file() else ExecutionHistoryStore(path).records()
+    print(json.dumps({"profile": profile, "recent": None if not rows else rows[-1]["payload"]}, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_pnl(args: argparse.Namespace) -> int:
+    profile = _operator_profile(args)
+    payload = _execution_state_summary(profile)
+    state = payload.get("state")
+    if state != "VALID":
+        print(json.dumps({"profile": profile, "state": state, "daily_risk": None}, indent=2, sort_keys=True))
+        return 0
+    from nbot.execution.state import ExecutionStatePaths, ExecutionStateStore
+    prof = get_profile(profile)
+    paths = ExecutionStatePaths.for_profile(ROOT, profile)
+    store = ExecutionStateStore(paths.state_file, profile=profile, market_environment=prof.market_environment)
+    print(json.dumps({"profile": profile, "daily_risk": asdict(store.daily_risk)}, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_entries(args: argparse.Namespace) -> int:
+    if detect_role(ROOT).value != "EXECUTION":
+        raise ValueError("NBOT_ENTRIES_EXECUTION_ROLE_ONLY")
+    profile = get_profile(args.profile)
+    from nbot.operator.execution import set_operator_entry_block
+    if args.action == "disable":
+        set_operator_entry_block(ROOT, profile.name, blocked=True)
+        print(f"OPERATOR_ENTRIES_DISABLED {profile.name}")
+        return 0
+    if profile.name == "live-paper":
+        raise ValueError("NBOT_LIVE_PAPER_ENABLE_FORBIDDEN_NON_PROMOTIONAL_DRY")
+    if profile.name == "testnet-trade" and not profile_is_armed(ROOT, profile):
+        raise ValueError("NBOT_TESTNET_ENABLE_REQUIRES_ARM")
+    if profile.name == "live-trade":
+        raise ValueError("NBOT_LIVE_TRADE_RUNTIME_FORBIDDEN_BEFORE_V3_10")
+    set_operator_entry_block(ROOT, profile.name, blocked=False)
+    print(f"OPERATOR_ENTRIES_ENABLED_REQUEST {profile.name}")
     return 0
 
 
@@ -512,9 +646,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     logs = sub.add_parser("logs")
     logs.add_argument("profile", nargs="?", choices=sorted(PROFILES))
+    logs.add_argument("--component", choices=("execution", "trades", "runtime", "collector", "control", "research"))
     logs.add_argument("--lines", type=int, default=100)
     logs.add_argument("--follow", action="store_true")
     logs.set_defaults(func=cmd_logs)
+
+    for name, func in (("position", cmd_position), ("health", cmd_health), ("recent", cmd_recent), ("pnl", cmd_pnl)):
+        item = sub.add_parser(name)
+        item.add_argument("profile", nargs="?", choices=sorted(PROFILES))
+        item.set_defaults(func=func)
+
+    entries = sub.add_parser("entries")
+    entries.add_argument("action", choices=("enable", "disable"))
+    entries.add_argument("profile", choices=sorted(PROFILES))
+    entries.set_defaults(func=cmd_entries)
 
     cluster = sub.add_parser("cluster")
     cluster.add_argument("action", choices=("doctor", "start", "stop", "status"))

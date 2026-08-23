@@ -1,0 +1,23 @@
+[Unit]
+Description=NBOT V3.8 LIVE_PAPER Execution Worker
+After=network-online.target nbot-control-tunnel-live-paper.service
+Wants=network-online.target nbot-control-tunnel-live-paper.service
+
+[Service]
+Type=simple
+User=@NBOT_USER@
+WorkingDirectory=@NBOT_ROOT@
+Environment=PYTHONUNBUFFERED=1
+Environment=NBOT_PROFILE=live-paper
+EnvironmentFile=-@NBOT_ROOT@/config/secrets/execution-live-paper.env
+EnvironmentFile=@NBOT_ROOT@/config/secrets/control-link.env
+ExecStart=@NBOT_PYTHON@ @NBOT_ROOT@/run_execution.py --profile live-paper
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=45
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

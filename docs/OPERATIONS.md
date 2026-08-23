@@ -369,3 +369,180 @@ Render/install the base units with:
 Do not pass `--start` while a manually launched LIVE collector still owns
 `runtime/observation/live/observation.lock`. Perform a controlled handover so
 there is never a duplicate writer.
+
+## V3.8 operator visibility, Telegram and trade panel
+
+V3.8 restores the useful V1/V2.8.5 operator surface before persistent
+LIVE_PAPER execution begins.  Operator tooling is observational/control-plane
+only; it never becomes research or capital authority.
+
+### Rotating logs
+
+Execution LIVE_PAPER:
+
+```text
+logs/execution/paper/execution.log       # capital/runtime/operator operations
+logs/execution/paper/trades.log          # concise trade lifecycle/audit
+logs/execution/paper/runtime.stdout.log  # nbotctl-launched stdout/stderr only
+```
+
+Observation LIVE:
+
+```text
+logs/observation/live/collector.log
+logs/observation/live/control.log
+logs/observation/live/research.log
+```
+
+All rotating files use the V3 common logger default: 5 MiB, three backups.
+Systemd journal remains available independently for boot/restart/process
+forensics.
+
+Examples:
+
+```bash
+# Execution
+./nbotctl logs live-paper --component execution --lines 200
+./nbotctl logs live-paper --component trades --follow
+./nbotctl position live-paper
+./nbotctl health live-paper
+./nbotctl recent live-paper
+./nbotctl pnl live-paper
+
+# Observation
+./nbotctl logs --component collector --lines 200
+./nbotctl logs --component control --follow
+./nbotctl logs --component research --lines 200
+```
+
+### Telegram secret files
+
+Execution LIVE_PAPER optionally reads:
+
+```text
+config/secrets/execution-live-paper.env
+```
+
+Example keys:
+
+```text
+EXECUTION_TELEGRAM_BOT_TOKEN=
+EXECUTION_TELEGRAM_CHAT_ID=
+EXECUTION_TELEGRAM_OPERATOR_USER_ID=
+NBOT_TELEGRAM_TIMEOUT_SECONDS=5
+```
+
+Observation optionally reads:
+
+```text
+config/secrets/observation-live.env
+```
+
+with:
+
+```text
+OBSERVATION_TELEGRAM_BOT_TOKEN=
+OBSERVATION_TELEGRAM_CHAT_ID=
+OBSERVATION_TELEGRAM_OPERATOR_USER_ID=
+NBOT_TELEGRAM_TIMEOUT_SECONDS=5
+```
+
+Both files are ignored by Git and should be mode `0600`.  Use separate bots if
+both command listeners are enabled; only one process should consume a given
+bot's `getUpdates` stream.  Sending notifications from the collector/research
+processes does not consume updates.
+
+### Execution trade panel
+
+Execution owns one best-effort editable Telegram panel for the capital-bearing
+position.  The panel is created only after the position is durably OPEN and the
+protective stop is verified.  The same message is edited after meaningful
+verified protection changes and finally edited from authoritative close history.
+
+The panel includes profile, symbol/side, entry, initial/current/final stop,
+quantity, initial risk, MFE/MAE, authority, exit policy, proposal ID, realized
+PnL/R, exit reason, outcome ID and Observation ACK state where available.
+
+Panel metadata lives at:
+
+```text
+data/execution/<profile-leaf>/operator_state.json
+```
+
+It is deliberately outside `execution_state.json`.  Corrupt/missing Telegram
+metadata must never fail closed capital management; the panel may be recreated
+from durable position/history truth after restart.
+
+### Telegram commands
+
+Execution bot:
+
+```text
+/status
+/position
+/health
+/recent
+/pnl
+/disable
+/enable
+/help
+```
+
+`/disable` creates an additional durable local entry block and leaves OPEN
+position management fully active.  `/enable` can remove only that operator
+block and then must pass current reconciliation/profile/arm/risk/authority
+gates.  During V3.8 `NON_PROMOTIONAL_DRY`, `/enable` is rejected by design.
+Emergency flatten is intentionally not exposed through Telegram.
+
+Observation bot (read-only):
+
+```text
+/status
+/memory
+/epoch
+/champion
+/learning
+/db
+/recommendation
+/help
+```
+
+Observation commands never place orders and never change research authority.
+
+Queued Telegram commands are discarded when a listener starts.  This prevents
+an old `/enable` retained by Telegram while a worker was offline from changing
+a restarted worker.
+
+### LIVE_PAPER Execution systemd unit
+
+Render/install without starting:
+
+```bash
+/home/ubuntu/Nbot/.venv/bin/python deploy/execution/install_services.py \
+  --repo /home/ubuntu/Nbot \
+  --python /home/ubuntu/Nbot/.venv/bin/python \
+  --user ubuntu \
+  --enable
+```
+
+The unit uses both ignored local files:
+
+```text
+config/secrets/execution-live-paper.env  # Telegram/runtime operator settings
+config/secrets/control-link.env          # authenticated Observation endpoint
+```
+
+and runs `run_execution.py --profile live-paper` with `Restart=always`.
+Installing/enabling the unit does not create paper-entry authority; V3.8 still
+starts with `NON_PROMOTIONAL_DRY` and entries disabled.
+
+### V1 operator capability inventory retained in V3
+
+Useful V1 concepts retained or reintroduced in V3 are: separate system/trade
+logs, startup/reconciliation visibility, open/close trade receipts, editable
+trade panel, restart panel recovery, status/position/health/PnL/recent-trade
+queries, safe enable/disable semantics, stale Telegram-command flushing,
+read-only learning/research visibility, and fire-and-forget notification
+failure handling.  V3 deliberately does not restore V1 Strategy/Universe or
+learning writes inside Execution, shared state files, or Telegram emergency
+flatten authority.
