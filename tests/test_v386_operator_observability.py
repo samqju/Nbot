@@ -280,6 +280,14 @@ class OperatorObservabilityTests(unittest.TestCase):
             self.assertEqual(calls[-1][0], "editMessageText")
             self.assertIn("Observation ACK: PENDING", calls[-1][1]["text"])
 
+            # Repeated flat cycles while the same outcome is still pending are
+            # not an operator event and must not re-edit the Telegram panel.
+            before = len(calls)
+            surface.sync()
+            surface.sync()
+            time.sleep(0.05)
+            self.assertEqual(len(calls), before)
+
             worker.durable.outbox.rows = []
             before = len(calls)
             surface.sync()

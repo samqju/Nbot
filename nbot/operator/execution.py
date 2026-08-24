@@ -111,6 +111,7 @@ class ExecutionOperatorSurface:
             "panel_proposal_id": None,
             "last_stop_price": None,
             "closed_outcome_id": None,
+            "closed_panel_acked": None,
             "last_emergency_exits": 0,
             "last_stop_missing_events": 0,
             "latency_alert_active": False,
@@ -322,6 +323,7 @@ class ExecutionOperatorSurface:
                         panel_proposal_id=position.proposal_id,
                         last_stop_price=float(position.stop_price),
                         closed_outcome_id=None,
+                        closed_panel_acked=None,
                         panel_send_pending=False,
                     )
                     self.trade_log.info(
@@ -372,17 +374,23 @@ class ExecutionOperatorSurface:
                     outcome_id = str(payload.get("outcome_id") or "")
                     acked = bool(outcome_id and not self._outcome_pending(outcome_id))
                     text = self._close_panel(payload, acked=acked)
-                    if panel_id:
-                        self.dispatcher.edit_message(int(panel_id), text)
-                    elif self._state.get("closed_outcome_id") != outcome_id:
-                        self.dispatcher.send_message(text)
-                    if self._state.get("closed_outcome_id") != outcome_id:
+                    previous_outcome_id = self._state.get("closed_outcome_id")
+                    previous_acked = self._state.get("closed_panel_acked")
+                    close_changed = previous_outcome_id != outcome_id
+                    ack_changed = previous_acked is None or bool(previous_acked) != acked
+                    if close_changed or ack_changed:
+                        if panel_id:
+                            self.dispatcher.edit_message(int(panel_id), text)
+                        elif close_changed:
+                            self.dispatcher.send_message(text)
+                    if close_changed:
                         self.trade_log.info(
                             "TRADE_CLOSE outcome_id=%s proposal_id=%s symbol=%s side=%s pnl_usd=%s r=%s reason=%s acked=%s",
                             outcome_id, payload.get("proposal_id"), payload.get("symbol"), payload.get("side"),
                             payload.get("realized_pnl_usd"), payload.get("r_multiple"), payload.get("exit_reason"), acked,
                         )
                     self._state["closed_outcome_id"] = outcome_id
+                    self._state["closed_panel_acked"] = acked
                     if acked:
                         self.trade_log.info("TRADE_OUTCOME_ACK outcome_id=%s", outcome_id)
                         self._state = self._default_state()
