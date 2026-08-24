@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import math
 import os
 from pathlib import Path
 import ssl
@@ -23,6 +24,7 @@ from nbot.common.atomic_io import atomic_write_json
 from nbot.execution.entry import EntryProposal
 
 from .auth import bearer_header, validate_control_token
+from .authorities import LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY
 from .contracts import (
     ExecutionOutcome,
     ExecutionProposal,
@@ -64,6 +66,8 @@ class ProposalReceiptStore:
         # Fail closed immediately if existing receipt/feedback data is corrupt.
         for file_path in sorted(self.path.glob("proposal-*.json")):
             self._read_receipt_file(file_path)
+        for file_path in sorted(self.path.glob("entry-context-*.json")):
+            self._read_entry_context_file(file_path)
         if self._feedback_path.exists():
             self.pending_feedback()
 
@@ -76,6 +80,13 @@ class ProposalReceiptStore:
 
     def _receipt_path(self, proposal_id: str) -> Path:
         return self.path / self._receipt_name(proposal_id)
+
+    def _entry_context_path(self, proposal_id: str) -> Path:
+        import hashlib
+
+        proposal_id = text(proposal_id, "proposal_id")
+        digest_value = hashlib.sha256(proposal_id.encode("utf-8")).hexdigest()
+        return self.path / f"entry-context-{digest_value}.json"
 
     def _read_receipt_file(self, path: Path) -> dict[str, Any]:
         try:
@@ -143,6 +154,115 @@ class ProposalReceiptStore:
         if not path.exists():
             raise ObservationClientError("PROPOSAL_RECEIPT_MISSING")
         return self._read_receipt_file(path)
+
+    def _read_entry_context_file(self, path: Path) -> dict[str, Any]:
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise ObservationClientError("PROPOSAL_ENTRY_CONTEXT_CORRUPT") from exc
+        expected_keys = {
+            "proposal_id", "observed_at_ms", "quote_timestamp_ms",
+            "bid", "ask", "mid", "spread_pct", "expected_entry_price",
+            "context_digest",
+        }
+        if not isinstance(raw, dict) or set(raw) != expected_keys:
+            raise ObservationClientError("PROPOSAL_ENTRY_CONTEXT_SCHEMA_INVALID")
+        proposal_id = text(raw["proposal_id"], "proposal_id")
+        if path != self._entry_context_path(proposal_id):
+            raise ObservationClientError("PROPOSAL_ENTRY_CONTEXT_FILENAME_MISMATCH")
+        self.get(proposal_id)
+        observed = timestamp_ms(raw["observed_at_ms"], "observed_at_ms")
+        quote_timestamp = timestamp_ms(raw["quote_timestamp_ms"], "quote_timestamp_ms")
+        numbers: dict[str, float] = {}
+        for key in ("bid", "ask", "mid", "spread_pct", "expected_entry_price"):
+            value = raw[key]
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ObservationClientError("PROPOSAL_ENTRY_CONTEXT_NUMBER_INVALID")
+            value = float(value)
+            if not math.isfinite(value):
+                raise ObservationClientError("PROPOSAL_ENTRY_CONTEXT_NUMBER_INVALID")
+            if key == "spread_pct":
+                if value < 0:
+                    raise ObservationClientError("PROPOSAL_ENTRY_CONTEXT_NUMBER_INVALID")
+            elif value <= 0:
+                raise ObservationClientError("PROPOSAL_ENTRY_CONTEXT_NUMBER_INVALID")
+            numbers[key] = value
+        if numbers["ask"] < numbers["bid"]:
+            raise ObservationClientError("PROPOSAL_ENTRY_CONTEXT_QUOTE_INVERTED")
+        expected_mid = (numbers["bid"] + numbers["ask"]) / 2.0
+        if not math.isclose(numbers["mid"], expected_mid, rel_tol=1e-12, abs_tol=1e-12):
+            raise ObservationClientError("PROPOSAL_ENTRY_CONTEXT_MID_MISMATCH")
+        base = {
+            "proposal_id": proposal_id,
+            "observed_at_ms": observed,
+            "quote_timestamp_ms": quote_timestamp,
+            **numbers,
+        }
+        expected_digest = payload_digest(base)
+        if raw["context_digest"] != expected_digest:
+            raise ObservationClientError("PROPOSAL_ENTRY_CONTEXT_DIGEST_MISMATCH")
+        return {**base, "context_digest": expected_digest}
+
+    def record_entry_context(
+        self,
+        *,
+        proposal_id: str,
+        observed_at_ms: int,
+        quote_timestamp_ms: int,
+        bid: float,
+        ask: float,
+        mid: float,
+        spread_pct: float,
+        expected_entry_price: float,
+    ) -> None:
+        proposal_id = text(proposal_id, "proposal_id")
+        self.get(proposal_id)
+        numbers = {}
+        for key, raw in {
+            "bid": bid,
+            "ask": ask,
+            "mid": mid,
+            "spread_pct": spread_pct,
+            "expected_entry_price": expected_entry_price,
+        }.items():
+            if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+                raise ObservationClientError("PROPOSAL_ENTRY_CONTEXT_NUMBER_INVALID")
+            value = float(raw)
+            if not math.isfinite(value):
+                raise ObservationClientError("PROPOSAL_ENTRY_CONTEXT_NUMBER_INVALID")
+            if key == "spread_pct":
+                if value < 0:
+                    raise ObservationClientError("PROPOSAL_ENTRY_CONTEXT_NUMBER_INVALID")
+            elif value <= 0:
+                raise ObservationClientError("PROPOSAL_ENTRY_CONTEXT_NUMBER_INVALID")
+            numbers[key] = value
+        if numbers["ask"] < numbers["bid"]:
+            raise ObservationClientError("PROPOSAL_ENTRY_CONTEXT_QUOTE_INVERTED")
+        expected_mid = (numbers["bid"] + numbers["ask"]) / 2.0
+        if not math.isclose(numbers["mid"], expected_mid, rel_tol=1e-12, abs_tol=1e-12):
+            raise ObservationClientError("PROPOSAL_ENTRY_CONTEXT_MID_MISMATCH")
+        base = {
+            "proposal_id": proposal_id,
+            "observed_at_ms": timestamp_ms(observed_at_ms, "observed_at_ms"),
+            "quote_timestamp_ms": timestamp_ms(quote_timestamp_ms, "quote_timestamp_ms"),
+            **numbers,
+        }
+        row = dict(base)
+        row["context_digest"] = payload_digest(base)
+        path = self._entry_context_path(proposal_id)
+        if path.exists():
+            existing = self._read_entry_context_file(path)
+            if canonical_json(existing) != canonical_json(row):
+                raise ObservationClientError("PROPOSAL_ENTRY_CONTEXT_ID_COLLISION")
+            return
+        atomic_write_json(path, row, mode=0o600)
+        self._read_entry_context_file(path)
+
+    def entry_context(self, proposal_id: str) -> dict[str, Any] | None:
+        path = self._entry_context_path(proposal_id)
+        if not path.exists():
+            return None
+        return self._read_entry_context_file(path)
 
     def record_veto(self, *, proposal_id: str, reason: str, rejected_at_ms: int) -> None:
         # A veto can only reference a proposal that this Execution instance
@@ -409,6 +529,55 @@ class RemoteObservationClient:
         mfe_usd = None if mfe_r is None else float(mfe_r) * risk
         entered = int(body["entry_timestamp_ms"])
         closed = int(body["closed_timestamp_ms"])
+        operational = self.receipts.entry_context(proposal_id)
+        context = dict(proposal.experiment_context or {})
+        if proposal.entry_authority == LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY:
+            if operational is None:
+                raise ObservationClientError("LIVE_PAPER_OPERATIONAL_ENTRY_CONTEXT_MISSING")
+            reference = float(proposal.reference_price)
+            receive_mid = float(operational["mid"])
+            fill_price = float(body["entry_price"])
+            expected_quote_entry = float(
+                operational["ask"] if proposal.side == "LONG" else operational["bid"]
+            )
+            if not math.isclose(
+                float(operational["expected_entry_price"]), expected_quote_entry,
+                rel_tol=1e-12, abs_tol=1e-12,
+            ):
+                raise ObservationClientError("LIVE_PAPER_OPERATIONAL_EXPECTED_ENTRY_MISMATCH")
+            if proposal.side == "LONG":
+                receive_deterioration = (receive_mid - reference) / reference * 100.0
+                fill_deterioration = (fill_price - reference) / reference * 100.0
+                fill_vs_quote = (fill_price - float(operational["expected_entry_price"])) / float(operational["expected_entry_price"]) * 100.0
+            else:
+                receive_deterioration = (reference - receive_mid) / reference * 100.0
+                fill_deterioration = (reference - fill_price) / reference * 100.0
+                fill_vs_quote = (float(operational["expected_entry_price"]) - fill_price) / float(operational["expected_entry_price"]) * 100.0
+            delivered_at_ms = int(time.time() * 1000)
+            context["execution_operational"] = {
+                "proposal_received_at_ms": int(receipt["recorded_at_ms"]),
+                "proposal_receive_latency_ms": max(0, int(receipt["recorded_at_ms"]) - int(proposal.generated_at_ms)),
+                "execution_quote_observed_at_ms": int(operational["observed_at_ms"]),
+                "execution_quote_timestamp_ms": int(operational["quote_timestamp_ms"]),
+                "execution_bid": float(operational["bid"]),
+                "execution_ask": float(operational["ask"]),
+                "execution_mid": receive_mid,
+                "execution_spread_pct": float(operational["spread_pct"]),
+                "execution_expected_entry_price": float(operational["expected_entry_price"]),
+                "reference_to_execution_mid_deterioration_pct": receive_deterioration,
+                "reference_to_actual_fill_deterioration_pct": fill_deterioration,
+                "execution_quote_to_actual_fill_deterioration_pct": fill_vs_quote,
+                "outcome_delivery_started_at_ms": delivered_at_ms,
+                "outcome_delivery_latency_ms": max(0, delivered_at_ms - int(body["closed_timestamp_ms"])),
+                "expected_after_cost_net_r": proposal.expected_after_cost_net_r,
+                "actual_paper_r": float(body["r_multiple"]),
+                "economic_delta_r": (
+                    None
+                    if proposal.expected_after_cost_net_r is None
+                    else float(body["r_multiple"]) - float(proposal.expected_after_cost_net_r)
+                ),
+            }
+
         return ExecutionOutcome.create(
             outcome_id=outcome_id,
             proposal_id=proposal_id,
@@ -450,7 +619,7 @@ class RemoteObservationClient:
             entry_client_order_id=body.get("entry_client_order_id"),
             final_stop_price=body.get("final_stop_price"),
             final_stop_id=body.get("final_stop_id"),
-            experiment_context=proposal.experiment_context,
+            experiment_context=context,
         )
 
     def send_outcome(self, *, outcome_id: str, payload: Mapping[str, Any]) -> str:

@@ -145,6 +145,7 @@ class V331ObservationFoundationTests(unittest.TestCase):
     def test_observation_foundation_has_no_capital_imports_and_only_v35_protocol_boundary(self):
         approved_communication = {
             "recommendation.py": {
+                "nbot.communication.authorities",
                 "nbot.communication.contracts",
                 "nbot.communication.validation",
             },

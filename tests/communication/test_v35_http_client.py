@@ -259,34 +259,35 @@ class V35HTTPClientTests(unittest.TestCase):
             finally:
                 server.stop()
 
-    def test_live_paper_service_stays_not_ready_without_research_champion(self):
+    def test_live_paper_service_exposes_only_fresh_operational_canary(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             db = database(root, "live-paper")
+            now = int(time.time() * 1000)
+            seed_event(db, captured_at_ms=now)
             target = ObservationControlTarget(
-                db,
-                get_profile("live-paper"),
-                release_sha=SHA,
+                db, get_profile("live-paper"), release_sha=SHA
             )
             target.refresh_recommendation()
             server = ObservationControlServer(target=target, auth_token=TOKEN, port=0)
             host, port = server.start()
             try:
                 client = RemoteObservationClient(
-                    base_url=f"http://{host}:{port}",
-                    profile="live-paper",
-                    auth_token=TOKEN,
-                    receipt_directory=root / "receipts",
+                    base_url=f"http://{host}:{port}", profile="live-paper",
+                    auth_token=TOKEN, receipt_directory=root / "receipts",
                     execution_release_sha=SHA,
                 )
-                self.assertIsNone(
-                    client.request_proposal(
-                        profile="live-paper",
-                        market_environment="LIVE",
-                        execution_instance_id="EXEC-1",
-                        requested_at_ms=int(time.time() * 1000),
-                    )
+                health = client.health()
+                self.assertEqual(health["recommendation_authority"], "LIVE_PAPER_OPERATIONAL_CANARY_V1")
+                entry = client.request_proposal(
+                    profile="live-paper", market_environment="LIVE",
+                    execution_instance_id="EXEC-1", requested_at_ms=now,
                 )
-                self.assertEqual(target.audit()["served_proposals"], 0)
+                self.assertIsNotNone(entry)
+                assert entry is not None
+                self.assertEqual(entry.entry_authority, "LIVE_PAPER_OPERATIONAL_CANARY_V1")
+                receipt = client.receipts.get(entry.proposal_id)
+                self.assertFalse(receipt["proposal"]["experiment_context"]["economic_claim"])
+                self.assertEqual(target.audit()["served_proposals"], 1)
             finally:
                 server.stop()

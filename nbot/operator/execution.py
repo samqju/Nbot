@@ -82,6 +82,7 @@ class ExecutionOperatorSurface:
         system_log: logging.Logger,
         trade_log: logging.Logger,
         enable_policy: Callable[[], tuple[bool, str]],
+        runtime_mode: str | None = None,
         position_manage_warn_ms: float = 1000.0,
     ) -> None:
         self.repo_root = Path(repo_root)
@@ -92,6 +93,7 @@ class ExecutionOperatorSurface:
         self.system_log = system_log
         self.trade_log = trade_log
         self.enable_policy = enable_policy
+        self.runtime_mode = None if runtime_mode is None else str(runtime_mode).strip() or None
         self.position_manage_warn_ms = max(1.0, float(position_manage_warn_ms))
         paths = ExecutionStatePaths.for_profile(self.repo_root, profile)
         self.operator_state_path = paths.base_dir / OPERATOR_STATE_FILE
@@ -160,7 +162,8 @@ class ExecutionOperatorSurface:
             f"Position: {'FLAT' if position is None else html.escape(position.symbol + ' ' + position.side)}"
         )
         if self.profile == "live-paper":
-            body += "\nMode: NON_PROMOTIONAL_DRY\nBinance private writes: false"
+            mode = self.runtime_mode or "LIVE_PAPER"
+            body += f"\nMode: {html.escape(mode)}\nBinance private writes: false"
         self.dispatcher.send_info("EXECUTION WORKER STARTED", body)
         self._listener.start()
         self.system_log.info(

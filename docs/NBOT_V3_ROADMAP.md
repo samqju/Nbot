@@ -2697,13 +2697,37 @@ Before the persistent LIVE_PAPER Execution canary starts, restore the useful V1/
 * Telegram commands queued while a worker was offline are discarded before the listener starts, so stale `/enable` cannot affect a restarted worker;
 * Execution owns one editable trade panel.  It is created only after durable OPEN+verified protection exists, updated only for meaningful durable transitions (for example a verified stop improvement), edited closed from authoritative completed-execution history, and may show pending/recorded outcome ACK state;
 * trade-panel metadata is durable but kept outside safety-critical execution state.  Missing/corrupt panel metadata may recreate a panel but can never block or alter capital truth;
-* Execution Telegram commands are `/status`, `/position`, `/health`, `/recent`, `/pnl`, `/disable`, `/enable`, `/help`; `/disable` only adds an entry block and never affects OPEN management; `/enable` remains subordinate to every profile/arm/reconciliation/risk/research-authority gate and is explicitly rejected by V3.8 NON_PROMOTIONAL_DRY;
+* Execution Telegram commands are `/status`, `/position`, `/health`, `/recent`, `/pnl`, `/disable`, `/enable`, `/help`; `/disable` only adds an entry block and never affects OPEN management; `/enable` remains subordinate to every profile/arm/reconciliation/risk/research-authority gate. At the V3.8.6 checkpoint it is explicitly rejected by `NON_PROMOTIONAL_DRY`; later reviewed V3.8 subphases may replace only that authority gate without weakening capital checks;
 * Observation Telegram commands are read-only: `/status`, `/memory`, `/epoch`, `/champion`, `/learning`, `/db`, `/recommendation`, `/help`; Observation order authority remains `NONE`;
 * the 15-minute immature research-epoch wait state is not a Telegram alert.  Completed or unhealthy epochs may notify, avoiding heartbeat/WAIT spam;
 * `nbotctl` exposes local position, health, recent-trade, PnL, entry-block and component-log inspection without adding a remote call to the OPEN-position hot path;
 * emergency flatten remains a local capital command, not a Telegram command.
 
 The V1 implementation is an operations reference only.  V3 keeps the useful operator semantics but does not restore V1 Strategy/learning coupling or shared mutable state.
+
+### V3.8.7 LIVE/PAPER operational canary authority
+
+Before a Research Champion exists, V3 may run a deliberately narrow **operational-only** LIVE/PAPER canary to prove the real-time proposal, independent Execution quote, local PaperExchange, trade-panel, restart/outage and outcome-delivery mechanics. This authority is:
+
+`LIVE_PAPER_OPERATIONAL_CANARY_V1`
+
+It is **not** a Research Champion, Paper Champion, economic authority, or LIVE order authority. Every proposal carries `research_evidence=false`, `economic_claim=false`, `research_champion=null`, and `expected_after_cost_net_r=null`. Therefore this subphase can close operational defects but can never satisfy the V3.8 economic acceptance gate.
+
+The canary contract is intentionally narrow:
+
+* proposal source is the freshest complete canonical LIVE point-in-time event only; stale/incomplete/reconstructed context remains NOT_READY;
+* the top point-in-time universe-ranked symbol is used only as a deterministic operational target and direction is a deterministic hash, not a profitability claim;
+* proposal TTL remains 30 seconds;
+* Observation health must be authenticated, same-release, `READY`, order authority `NONE`, and expose exactly `LIVE_PAPER_OPERATIONAL_CANARY_V1`;
+* Execution startup/restart always disables new entries; a human must send a fresh `/enable`;
+* the first eligible FLAT proposal attempt consumes that `/enable` permission whether it opens, is vetoed, expires, or returns no trade; therefore approval cannot linger into a later market event;
+* Execution still owns all current LIVE quote, spread, price-drift, risk, one-position, daily-risk, reconciliation and protection vetoes;
+* PaperExchange remains the only capital adapter and Binance private writes remain structurally unavailable;
+* Execution durably receipts the wire proposal before returning it and captures its own bid/ask/mid/spread immediately before entry evaluation; missing/corrupt operational context fails the proposal/outcome audit path closed;
+* the eventual outcome carries proposal receive latency, Execution quote/spread, reference-to-Execution and reference-to-fill deterioration, paper R, and outcome-delivery timing in `experiment_context.execution_operational`;
+* `nbot_admin.py live-paper-canary-report` is read-only and clearly reports `economic_claim=false` plus the reason economic comparison remains deferred.
+
+A successful operational canary proves mechanics only. A later validated research authority must supply expected after-cost economics before V3.8 can be called ECONOMICALLY PROVEN or before V3.9 Paper Champion work begins.
 
 ## Runtime
 

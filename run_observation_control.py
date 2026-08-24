@@ -18,6 +18,7 @@ import subprocess
 import threading
 
 from nbot.common.logging import configure_logging, observation_log_paths
+from nbot.communication.authorities import LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY
 from nbot.communication.server import ObservationControlServer
 from nbot.config.profiles import get_profile
 from nbot.config.validation import MachineRole, detect_role, validate_role_profile
@@ -130,7 +131,9 @@ def main(argv: list[str] | None = None) -> int:
                     "event": "NBOT_OBSERVATION_CONTROL_READY",
                     "phase": "V3.8",
                     "profile": profile.name,
-                    "mode": "NON_PROMOTIONAL_DRY",
+                    "mode": "LIVE_PAPER_OPERATIONAL_CANARY",
+                    "recommendation_authority": LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
+                    "economic_claim": False,
                     "address": f"{address[0]}:{address[1]}",
                     "order_authority": "NONE",
                     "collector_process_owned": False,
@@ -141,8 +144,8 @@ def main(argv: list[str] | None = None) -> int:
             flush=True,
         )
         control_log.info(
-            "NBOT_OBSERVATION_CONTROL_READY profile=%s address=%s:%s mode=NON_PROMOTIONAL_DRY order_authority=NONE",
-            profile.name, address[0], address[1],
+            "NBOT_OBSERVATION_CONTROL_READY profile=%s address=%s:%s mode=LIVE_PAPER_OPERATIONAL_CANARY authority=%s economic_claim=false order_authority=NONE",
+            profile.name, address[0], address[1], LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
         )
         while not stop.wait(1.0):
             pass

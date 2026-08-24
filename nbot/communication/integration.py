@@ -20,12 +20,15 @@ from nbot.config.profiles import get_profile
 from nbot.config.validation import MachineRole, detect_role, profile_is_armed
 from nbot.execution.outcomes import ExecutionDurableStore
 
+from .authorities import (
+    LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
+    TESTNET_OPERATIONAL_CANARY_AUTHORITY,
+)
 from .client import ObservationClientError, RemoteObservationClient
 from .config import control_link_config_for_profile
 from .validation import PROTOCOL_VERSION
 
 
-TESTNET_OPERATIONAL_CANARY_AUTHORITY = "TESTNET_OPERATIONAL_CANARY_V1"
 V36_DISARMED_VETO_REASON = "V3_6_INTEGRATED_ORDER_GATE_DISARMED"
 
 
@@ -50,13 +53,20 @@ class V37IntegratedObservationClient:
         self.profile_name = get_profile(profile_name).name
         self.release_sha = release_sha
 
-    def _validate_remote(self) -> None:
+    def _validate_remote(self) -> dict[str, Any]:
         health = self.remote.health()
         _validate_health(
             health=health,
             profile_name=self.profile_name,
             release_sha=self.release_sha,
         )
+        return health
+
+    def health(self) -> dict[str, Any]:
+        return self._validate_remote()
+
+    def record_entry_context(self, **kwargs: Any) -> None:
+        self.remote.receipts.record_entry_context(**kwargs)
 
     def request_proposal(
         self,
@@ -84,6 +94,58 @@ class V37IntegratedObservationClient:
             reason=reason,
             rejected_at_ms=rejected_at_ms,
         )
+
+
+class V38LivePaperOperationalClient:
+    """LIVE/PAPER adapter that captures Execution-owned quote truth pre-entry.
+
+    Quote capture happens only while FLAT, immediately after a proposal is
+    durably received.  Failure to capture/persist this audit context raises and
+    therefore leaves capital flat.  No Observation call is introduced into the
+    OPEN-position hot path.
+    """
+
+    def __init__(self, *, base: V37IntegratedObservationClient, exchange: Any) -> None:
+        if base.profile_name != "live-paper":
+            raise ValueError("NBOT_V38_LIVE_PAPER_CLIENT_PROFILE_REQUIRED")
+        self.base = base
+        self.exchange = exchange
+
+    def health(self) -> dict[str, Any]:
+        return self.base.health()
+
+    def request_proposal(self, **kwargs: Any):
+        proposal = self.base.request_proposal(**kwargs)
+        if proposal is None:
+            return None
+        if proposal.entry_authority != LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY:
+            raise ObservationClientError("LIVE_PAPER_OPERATIONAL_AUTHORITY_MISMATCH")
+        quote = self.exchange.quote(proposal.symbol)
+        if getattr(quote, "symbol", None) != proposal.symbol:
+            raise ObservationClientError("LIVE_PAPER_OPERATIONAL_QUOTE_SYMBOL_MISMATCH")
+        observed_at_ms = int(time.time() * 1000)
+        expected_entry_price = float(quote.ask if proposal.side == "LONG" else quote.bid)
+        self.base.record_entry_context(
+            proposal_id=proposal.proposal_id,
+            observed_at_ms=observed_at_ms,
+            quote_timestamp_ms=int(quote.timestamp_ms),
+            bid=float(quote.bid),
+            ask=float(quote.ask),
+            mid=float(quote.mid),
+            spread_pct=float(quote.spread_pct),
+            expected_entry_price=expected_entry_price,
+        )
+        return proposal
+
+    def send_outcome(self, *, outcome_id: str, payload: Mapping[str, Any]) -> str:
+        return self.base.send_outcome(outcome_id=outcome_id, payload=payload)
+
+    def record_veto(self, *, proposal_id: str, reason: str, rejected_at_ms: int) -> None:
+        self.base.record_veto(
+            proposal_id=proposal_id, reason=reason, rejected_at_ms=rejected_at_ms
+        )
+
+
 
 
 @dataclass(frozen=True)
@@ -147,9 +209,14 @@ def _validate_health(
     if health.get("status") not in {"READY", "NOT_READY"}:
         raise ObservationClientError("OBSERVATION_HEALTH_STATUS_INVALID")
     authority = health.get("recommendation_authority")
-    if profile.name == "testnet-trade":
-        if authority not in {None, TESTNET_OPERATIONAL_CANARY_AUTHORITY}:
-            raise ObservationClientError("OBSERVATION_HEALTH_RECOMMENDATION_AUTHORITY_INVALID")
+    expected_authority = {
+        "testnet-trade": TESTNET_OPERATIONAL_CANARY_AUTHORITY,
+        "live-paper": LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
+    }.get(profile.name)
+    if authority not in {None, expected_authority}:
+        raise ObservationClientError("OBSERVATION_HEALTH_RECOMMENDATION_AUTHORITY_INVALID")
+    if health.get("status") == "READY" and authority != expected_authority:
+        raise ObservationClientError("OBSERVATION_HEALTH_READY_AUTHORITY_REQUIRED")
 
 
 def build_integrated_observation_client(

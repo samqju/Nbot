@@ -1,9 +1,10 @@
 """V3.5 recommendation snapshot and idempotent Observation control target.
 
-The module is Observation-owned and has no exchange/order imports.  TESTNET may
+The module is Observation-owned and has no exchange/order imports. TESTNET may
 emit an explicitly operational-only canary proposal from the latest complete
-point-in-time event.  LIVE/PAPER fails closed until a Research Champion exists;
-V3.5 never fabricates that deferred authority.
+point-in-time event. V3.8 LIVE/PAPER may emit a separate explicitly operational-
+only paper canary proposal after the reviewed V3.8.7 gate. Neither canary is a
+Research Champion or economic authority.
 """
 
 from __future__ import annotations
@@ -23,15 +24,20 @@ from nbot.communication.contracts import (
     TradeRequest,
     TradeResponse,
 )
+from nbot.communication.authorities import (
+    LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
+    TESTNET_OPERATIONAL_CANARY_AUTHORITY,
+)
 from nbot.communication.validation import canonical_json, payload_digest
 from nbot.config.profiles import Profile
 
 from .database import EvidenceDatabase
 
 
-TESTNET_OPERATIONAL_CANARY_AUTHORITY = "TESTNET_OPERATIONAL_CANARY_V1"
 TESTNET_OPERATIONAL_CANARY_SELECTOR = TESTNET_OPERATIONAL_CANARY_AUTHORITY
 TESTNET_OPERATIONAL_CANARY_FEATURE_VERSION = "TESTNET_OPERATIONAL_CANARY_NO_RESEARCH_FEATURES_V1"
+LIVE_PAPER_OPERATIONAL_CANARY_SELECTOR = "LIVE_PAPER_OPERATIONAL_CANARY_HASH_V1"
+LIVE_PAPER_OPERATIONAL_CANARY_FEATURE_VERSION = "LIVE_PAPER_OPERATIONAL_CANARY_NO_MODEL_FEATURES_V1"
 CONTROL_SCHEMA_VERSION = "NBOT_V3_OBSERVATION_CONTROL_V1"
 DEFAULT_PROPOSAL_TTL_MS = 30_000
 DEFAULT_MAX_REQUEST_AGE_MS = 30_000
@@ -182,7 +188,7 @@ class RecommendationStore:
         if now <= 0:
             raise ValueError("NBOT_RECOMMENDATION_NOW_INVALID")
         if self.profile.name == "live-paper":
-            snapshot = self._refresh_live_paper_dry(now)
+            snapshot = self._refresh_live_paper_operational_canary(now)
             self._save_snapshot(snapshot)
             return snapshot
         if self.profile.name != "testnet-trade":
@@ -191,39 +197,161 @@ class RecommendationStore:
         self._save_snapshot(snapshot)
         return snapshot
 
-    def _refresh_live_paper_dry(self, now_ms: int) -> RecommendationSnapshot:
-        """Fail closed until a valid Research Champion is explicitly wired.
+    def _refresh_live_paper_operational_canary(self, now_ms: int) -> RecommendationSnapshot:
+        """Build the narrow V3.8 operational-only LIVE/PAPER canary proposal.
 
-        V3.8 is allowed to run operationally in non-promotional dry mode while
-        research evidence is still maturing.  A Research Champion remains
-        RESEARCH_ONLY_NO_EXECUTION and is never silently translated into paper
-        execution authority by this foundation patch.
+        This deliberately does *not* translate the compact Ridge state or a
+        Research Champion into authority.  It exists only to exercise the real
+        LIVE proposal/latency/spread/PaperExchange/outcome path while current
+        research evidence is still maturing.  The proposal therefore carries
+        ``research_evidence=false`` and ``economic_claim=false``.
         """
+        return self._refresh_canonical_operational_canary(
+            now_ms=now_ms,
+            authority=LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
+            selector=LIVE_PAPER_OPERATIONAL_CANARY_SELECTOR,
+            feature_version=LIVE_PAPER_OPERATIONAL_CANARY_FEATURE_VERSION,
+            stale_reason="LIVE_PAPER_LATEST_CANONICAL_EVENT_STALE",
+            unavailable_reason="LIVE_PAPER_CANONICAL_EVENT_NOT_AVAILABLE",
+            generation_prefix="LIVE-PAPER",
+            authority_class="LIVE_PAPER_OPERATIONAL_ONLY",
+        )
+
+    def _refresh_canonical_operational_canary(
+        self,
+        *,
+        now_ms: int,
+        authority: str,
+        selector: str,
+        feature_version: str,
+        stale_reason: str,
+        unavailable_reason: str,
+        generation_prefix: str,
+        authority_class: str,
+    ) -> RecommendationSnapshot:
         with self.database.connection() as conn:
-            table = conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='research_champions'"
+            row = conn.execute(
+                """
+                SELECT
+                    e.event_open_ms,e.event_close_ms,e.captured_at_ms,e.collector_version,
+                    p.evidence_mode,p.context_complete,p.membership_quality,
+                    u.symbol,u.universe_rank,
+                    c.close_price,c.open_price,c.high_price,c.low_price,c.quote_volume,
+                    s.bid_price,s.ask_price,s.spread_pct,s.quote_volume_24h_usd
+                FROM market_events e
+                JOIN event_provenance p ON p.event_open_ms=e.event_open_ms
+                JOIN universe_membership u ON u.event_open_ms=e.event_open_ms
+                JOIN candles_5m c
+                  ON c.event_open_ms=e.event_open_ms AND c.symbol=u.symbol
+                JOIN market_snapshots s
+                  ON s.event_open_ms=e.event_open_ms AND s.symbol=u.symbol
+                WHERE e.status='COMPLETE'
+                  AND p.evidence_mode='LIVE_POINT_IN_TIME'
+                  AND p.context_complete=1
+                  AND p.membership_quality='POINT_IN_TIME'
+                ORDER BY e.event_open_ms DESC,u.universe_rank ASC,u.symbol ASC
+                LIMIT 1
+                """
             ).fetchone()
-            if table is None:
-                reason = "WAIT_FOR_VALID_RESEARCH_CHAMPION"
-            else:
-                row = conn.execute(
-                    """
-                    SELECT champion_version,selector_version,exit_policy_version,authority
-                    FROM research_champions
-                    ORDER BY promoted_at_ms DESC,champion_version DESC
-                    LIMIT 1
-                    """
-                ).fetchone()
-                if row is None:
-                    reason = "WAIT_FOR_VALID_RESEARCH_CHAMPION"
-                elif str(row[3]) != "RESEARCH_ONLY_NO_EXECUTION":
-                    reason = "RESEARCH_CHAMPION_AUTHORITY_INVALID"
-                else:
-                    reason = "RESEARCH_CHAMPION_PRESENT_PROMOTIONAL_WIRING_NOT_ENABLED"
+        if row is None:
+            return RecommendationSnapshot(
+                status="NOT_READY",
+                reason=unavailable_reason,
+                proposal=None,
+                refreshed_at_ms=now_ms,
+            )
+        (
+            event_open_ms, event_close_ms, captured_at_ms, collector_version,
+            evidence_mode, context_complete, membership_quality, symbol_value,
+            universe_rank, close_price, open_price, high_price, low_price,
+            quote_volume, bid_price, ask_price, spread_pct, quote_volume_24h_usd,
+        ) = row
+        source_material = {
+            "event": [
+                int(event_open_ms), int(event_close_ms), int(captured_at_ms),
+                str(collector_version), str(evidence_mode), int(context_complete),
+                str(membership_quality),
+            ],
+            "universe": [str(symbol_value), int(universe_rank)],
+            "candle": [
+                float(open_price), float(high_price), float(low_price),
+                float(close_price), float(quote_volume),
+            ],
+            "snapshot": [
+                float(bid_price), float(ask_price), float(spread_pct),
+                float(quote_volume_24h_usd),
+            ],
+            "authority": authority,
+            "selector": selector,
+        }
+        source_digest = payload_digest(source_material)
+        generated_at_ms = int(captured_at_ms)
+        expires_at_ms = generated_at_ms + self.proposal_ttl_ms
+        if now_ms > expires_at_ms:
+            return RecommendationSnapshot(
+                status="NOT_READY",
+                reason=stale_reason,
+                proposal=None,
+                refreshed_at_ms=now_ms,
+            )
+        side_hash = hashlib.sha256(
+            f"{event_open_ms}|{symbol_value}|{authority}|{source_digest}".encode("utf-8")
+        ).digest()
+        side = "LONG" if side_hash[0] % 2 == 0 else "SHORT"
+        score = int.from_bytes(side_hash[:8], "big") / float((1 << 64) - 1)
+        reference_price = (float(bid_price) + float(ask_price)) / 2.0
+        if not math.isfinite(reference_price) or reference_price <= 0:
+            raise ObservationControlError(f"{generation_prefix}_CANARY_REFERENCE_PRICE_INVALID")
+        identity = "|".join(
+            (
+                self.profile.name, str(event_open_ms), str(symbol_value), side,
+                authority, source_digest,
+            )
+        )
+        proposal_id = "PROP-" + hashlib.sha256(identity.encode("utf-8")).hexdigest()[:40]
+        proposal = ExecutionProposal.create(
+            proposal_id=proposal_id,
+            generated_at_ms=generated_at_ms,
+            expires_at_ms=expires_at_ms,
+            profile=self.profile.name,
+            market_environment=self.profile.market_environment,
+            evidence_lineage=self.profile.evidence_lineage,
+            symbol=str(symbol_value),
+            side=side,
+            market_event_id=f"ME-{int(event_open_ms)}",
+            data_generation_id=f"{generation_prefix}-{int(event_open_ms)}-{source_digest[:16]}",
+            feature_version=feature_version,
+            selector_version=selector,
+            entry_authority=authority,
+            exit_policy_version="INTEGER_R_STEP_CONTROL",
+            reference_price=reference_price,
+            selection_score=score,
+            selection_rank=1,
+            expected_after_cost_net_r=None,
+            source_digest=source_digest,
+            model_digest=None,
+            experiment_context={
+                "authority_class": authority_class,
+                "research_evidence": False,
+                "economic_claim": False,
+                "research_champion": None,
+                "canary_scope": "ONE_FLAT_PROPOSAL_ATTEMPT_PER_EXPLICIT_OPERATOR_ENABLE",
+                "selection_method": "TOP_POINT_IN_TIME_UNIVERSE_RANK_PLUS_DETERMINISTIC_SIDE_HASH",
+                "universe_rank": int(universe_rank),
+                "research_decision_event_open_ms": int(event_open_ms),
+                "research_decision_event_close_ms": int(event_close_ms),
+                "proposal_generation_time_ms": generated_at_ms,
+                "reference_bid": float(bid_price),
+                "reference_ask": float(ask_price),
+                "reference_mid": reference_price,
+                "reference_spread_pct": float(spread_pct),
+                "collector_version": str(collector_version),
+            },
+        )
         return RecommendationSnapshot(
-            status="NOT_READY",
-            reason=reason,
-            proposal=None,
+            status="READY",
+            reason=None,
+            proposal=proposal,
             refreshed_at_ms=now_ms,
         )
 

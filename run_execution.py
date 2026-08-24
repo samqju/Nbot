@@ -16,8 +16,12 @@ from typing import Iterator, Mapping
 from nbot.common.atomic_io import atomic_write_text
 from nbot.common.logging import configure_logging, execution_log_paths
 from nbot.common.time import utc_iso
-from nbot.communication.integration import (
+from nbot.communication.authorities import (
+    LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
     TESTNET_OPERATIONAL_CANARY_AUTHORITY,
+)
+from nbot.communication.integration import (
+    V38LivePaperOperationalClient,
     build_integrated_control_client,
     build_v37_testnet_client,
     run_v36_disarmed_cycle,
@@ -83,9 +87,6 @@ def _positive_int(environment: Mapping[str, str], key: str, default: int) -> int
     if value <= 0:
         raise ValueError(f"{key}_INVALID")
     return value
-
-
-LIVE_PAPER_DRY_SENTINEL_AUTHORITY = "NON_PROMOTIONAL_DRY_NO_ENTRY"
 
 
 @contextmanager
@@ -170,6 +171,7 @@ def _operator_surface(
     worker: ExecutionWorker,
     environment: Mapping[str, str],
     enable_policy,
+    runtime_mode: str | None = None,
 ) -> ExecutionOperatorSurface:
     paths = execution_log_paths(repo_root, profile_name)
     system_log = configure_logging(
@@ -194,6 +196,7 @@ def _operator_surface(
         system_log=system_log,
         trade_log=trade_log,
         enable_policy=enable_policy,
+        runtime_mode=runtime_mode,
         position_manage_warn_ms=warn_ms,
     )
 
@@ -285,7 +288,7 @@ def build_execution_worker(
                 (
                     frozenset({TESTNET_MECHANICAL_AUTHORITY})
                     if profile.name == "testnet-trade"
-                    else frozenset({LIVE_PAPER_DRY_SENTINEL_AUTHORITY})
+                    else frozenset({LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY})
                 )
                 if allowed_entry_authorities is None
                 else allowed_entry_authorities
@@ -330,7 +333,7 @@ def self_check(repo_root: Path, profile_name: str) -> int:
     elif profile.name == "live-paper":
         BinanceLivePublicMarketConfig().validate()
         PaperExchangeConfig()
-        status = "V3_8_NON_PROMOTIONAL_DRY_RUNTIME_READY"
+        status = "V3_8_OPERATIONAL_CANARY_RUNTIME_READY_NO_ECONOMIC_AUTHORITY"
     else:
         # Construction is intentionally not attempted because it would create
         # durable state.  This action is a code/config boundary check only.
@@ -409,7 +412,9 @@ def preflight_live_paper(
         report = {
             "phase": "V3.8",
             "profile": profile.name,
-            "mode": "NON_PROMOTIONAL_DRY",
+            "mode": "LIVE_PAPER_OPERATIONAL_CANARY",
+            "recommendation_authority": LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
+            "economic_claim": False,
             "market_environment": profile.market_environment,
             "paper_capital": True,
             "binance_private_order_writes": False,
@@ -818,20 +823,23 @@ def run_live_paper_runtime(
     idle_poll_seconds: float,
     open_poll_seconds: float,
 ) -> int:
-    """Run V3.8 LIVE_PAPER in explicit non-promotional dry mode.
+    """Run the narrow V3.8 LIVE/PAPER operational-only canary.
 
-    The process owns LIVE public market truth and durable local PAPER state,
-    manages any already-open paper position independently, and delivers pending
-    outcomes while flat.  New entries remain disabled by construction until a
-    later reviewed patch explicitly translates a valid Research Champion into
-    a paper-canary execution authority.
+    The process owns LIVE public market truth and durable local PAPER state.
+    Startup/restart always disables entries; one paper entry can be enabled only
+    through the running operator gate after authenticated Observation health
+    proves ``LIVE_PAPER_OPERATIONAL_CANARY_V1`` READY. This authority makes no
+    Research Champion or economic claim and can never submit a Binance order.
     """
     profile = get_profile("live-paper")
     exchange, market = build_live_paper_exchange(repo_root, environment)
-    remote_client = build_integrated_control_client(
+    base_remote_client = build_integrated_control_client(
         repo_root=repo_root,
         profile_name=profile.name,
         environ=os.environ,
+    )
+    remote_client = V38LivePaperOperationalClient(
+        base=base_remote_client, exchange=exchange
     )
     worker = build_execution_worker(
         repo_root=repo_root,
@@ -839,15 +847,24 @@ def run_live_paper_runtime(
         exchange=exchange,
         proposal_client=remote_client,
         outcome_client=remote_client,
-        allowed_entry_authorities=frozenset({LIVE_PAPER_DRY_SENTINEL_AUTHORITY}),
+        allowed_entry_authorities=frozenset({LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY}),
     )
 
     def enable_policy() -> tuple[bool, str]:
-        return False, "LIVE_PAPER remains NON_PROMOTIONAL_DRY until a reviewed paper-canary authority patch."
+        try:
+            health = remote_client.health()
+        except Exception as exc:
+            return False, f"Observation not ready: {type(exc).__name__}:{exc}"
+        if health.get("status") != "READY":
+            return False, f"Observation not ready: {health.get('reason') or 'NOT_READY'}"
+        if health.get("recommendation_authority") != LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY:
+            return False, "LIVE_PAPER operational canary authority is not active."
+        return True, "LIVE_PAPER operational canary ready for one paper entry."
 
     operator = _operator_surface(
         repo_root=repo_root, profile_name=profile.name, worker=worker,
         environment=environment, enable_policy=enable_policy,
+        runtime_mode="LIVE_PAPER_OPERATIONAL_CANARY",
     )
     stop_requested = False
 
@@ -864,8 +881,9 @@ def run_live_paper_runtime(
         try:
             _write_runtime_identity(repo_root, profile.name)
             prepared = worker.prepare()
-            # This is the defining V3.8 foundation gate.  Do not auto-enable
-            # entries merely because a Research Champion later appears.
+            # Restart/startup is always fail-closed. Every paper entry requires
+            # a fresh explicit operator /enable after Observation health proves
+            # the narrow operational-only authority is READY.
             worker.disable_new_entries()
             operator.start(prepared_status=prepared.status)
             atomic_write_text(
@@ -873,8 +891,11 @@ def run_live_paper_runtime(
                 (
                     f"profile={profile.name}\npid={os.getpid()}\nready_at={utc_iso()}\n"
                     f"prepared={prepared.status}\nphase=V3.8\n"
-                    "mode=NON_PROMOTIONAL_DRY\n"
+                    "mode=LIVE_PAPER_OPERATIONAL_CANARY\n"
+                    f"recommendation_authority={LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY}\n"
                     "recommendation_entry_enabled=false\n"
+                    "economic_claim=false\n"
+                    "canary_entry_budget=ONE_FLAT_ATTEMPT_PER_EXPLICIT_OPERATOR_ENABLE\n"
                     "binance_private_order_writes=false\n"
                 ),
                 mode=0o600,
@@ -885,11 +906,14 @@ def run_live_paper_runtime(
                         "event": "NBOT_EXECUTION_READY",
                         "phase": "V3.8",
                         "profile": profile.name,
-                        "mode": "NON_PROMOTIONAL_DRY",
+                        "mode": "LIVE_PAPER_OPERATIONAL_CANARY",
                         "prepared": prepared.status,
                         "pid": os.getpid(),
                         "entries_enabled": False,
-                        "proposal_source": "REMOTE_CONTROL_LINK_NOT_CONSUMED_WHILE_DRY",
+                        "recommendation_authority": LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
+                        "economic_claim": False,
+                        "canary_entry_budget": "ONE_FLAT_ATTEMPT_PER_EXPLICIT_OPERATOR_ENABLE",
+                        "proposal_source": "REMOTE_CONTROL_LINK",
                         "outcome_transport": "REMOTE_CONTROL_ACK_WHILE_FLAT",
                         "market_truth": "EXECUTION_OWN_BINANCE_LIVE_PUBLIC",
                         "capital": "LOCAL_PAPER",
@@ -903,11 +927,20 @@ def run_live_paper_runtime(
             while not stop_requested:
                 local = worker.state.open_position
                 if local is None:
-                    # Reconcile and deliver any durable outcome first. Since the
-                    # entry gate remains disabled, this can never request or
-                    # execute a recommendation in the dry foundation.
+                    # Reconcile/deliver outcomes first. The worker requests a
+                    # recommendation only after an explicit operator /enable.
+                    attempt_authorized = bool(worker.state.snapshot.entries_enabled)
                     result = worker.process_flat_cycle()
                     operator.after_flat_result(result)
+                    if attempt_authorized:
+                        # Consume the operator permission after exactly one FLAT
+                        # proposal attempt, whether it opens, vetoes, expires or
+                        # returns no trade. Approval can therefore never linger
+                        # until a later 5-minute market event.
+                        worker.disable_new_entries()
+                        operator.sync()
+                    if result == "ENTRY_OPENED":
+                        continue
                     time.sleep(idle_poll_seconds)
                     continue
 

@@ -9,10 +9,13 @@ from nbot.communication.validation import payload_digest
 from nbot.config.profiles import get_profile
 from nbot.observation.config import observation_config_for_profile
 from nbot.observation.database import EvidenceDatabase
+from nbot.communication.authorities import (
+    LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
+    TESTNET_OPERATIONAL_CANARY_AUTHORITY,
+)
 from nbot.observation.recommendation import (
     ObservationControlError,
     ObservationControlTarget,
-    TESTNET_OPERATIONAL_CANARY_AUTHORITY,
 )
 
 
@@ -162,21 +165,31 @@ def outcome_from(proposal, *, request_id="REQ-1", outcome_id="OUT-1", **kwargs):
 
 
 class V35ControlTargetTests(unittest.TestCase):
-    def test_live_paper_fails_closed_without_deferred_research_champion(self):
+    def test_live_paper_requires_fresh_canonical_event_then_exposes_operational_only_authority(self):
         with tempfile.TemporaryDirectory() as td:
             db = database(Path(td), "live-paper")
             target = ObservationControlTarget(
-                db,
-                get_profile("live-paper"),
-                release_sha=SHA,
-                now_ms=lambda: NOW,
+                db, get_profile("live-paper"), release_sha=SHA, now_ms=lambda: NOW
             )
+            empty = target.refresh_recommendation()
+            self.assertEqual(empty.status, "NOT_READY")
+            self.assertEqual(empty.reason, "LIVE_PAPER_CANONICAL_EVENT_NOT_AVAILABLE")
+            event = seed_event(db)
             snapshot = target.refresh_recommendation()
-            self.assertEqual(snapshot.status, "NOT_READY")
-            self.assertEqual(snapshot.reason, "WAIT_FOR_VALID_RESEARCH_CHAMPION")
+            self.assertEqual(snapshot.status, "READY")
+            proposal = snapshot.proposal
+            self.assertIsNotNone(proposal)
+            assert proposal is not None
+            self.assertEqual(proposal.entry_authority, LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY)
+            self.assertEqual(proposal.market_event_id, f"ME-{event}")
+            self.assertEqual(proposal.expires_at_ms - proposal.generated_at_ms, 30_000)
+            self.assertIsNone(proposal.expected_after_cost_net_r)
+            self.assertFalse(proposal.experiment_context["research_evidence"])
+            self.assertFalse(proposal.experiment_context["economic_claim"])
+            self.assertIsNone(proposal.experiment_context["research_champion"])
             health = target.health_snapshot()
             self.assertEqual(health["order_authority"], "NONE")
-            self.assertIsNone(health["recommendation_authority"])
+            self.assertEqual(health["recommendation_authority"], LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY)
 
     def test_testnet_snapshot_is_explicit_operational_only_canary(self):
         with tempfile.TemporaryDirectory() as td:

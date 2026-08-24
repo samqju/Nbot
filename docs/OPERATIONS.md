@@ -491,7 +491,7 @@ Execution bot:
 `/disable` creates an additional durable local entry block and leaves OPEN
 position management fully active.  `/enable` can remove only that operator
 block and then must pass current reconciliation/profile/arm/risk/authority
-gates.  During V3.8 `NON_PROMOTIONAL_DRY`, `/enable` is rejected by design.
+gates. At the V3.8.6 checkpoint `NON_PROMOTIONAL_DRY` rejects `/enable` by design. V3.8.7 replaces only that gate with an authenticated one-entry operational-canary gate; all capital/risk/reconciliation checks remain final.
 Emergency flatten is intentionally not exposed through Telegram.
 
 Observation bot (read-only):
@@ -533,8 +533,7 @@ config/secrets/control-link.env          # authenticated Observation endpoint
 ```
 
 and runs `run_execution.py --profile live-paper` with `Restart=always`.
-Installing/enabling the unit does not create paper-entry authority; V3.8 still
-starts with `NON_PROMOTIONAL_DRY` and entries disabled.
+Installing/enabling the unit does not create paper-entry authority. V3.8.7 startup/restart still begins with entries disabled; a fresh Telegram `/enable` succeeds only while authenticated Observation health is `READY` with exact authority `LIVE_PAPER_OPERATIONAL_CANARY_V1`, and one protected OPEN immediately consumes that permission.
 
 ### V1 operator capability inventory retained in V3
 
@@ -546,3 +545,18 @@ read-only learning/research visibility, and fire-and-forget notification
 failure handling.  V3 deliberately does not restore V1 Strategy/Universe or
 learning writes inside Execution, shared state files, or Telegram emergency
 flatten authority.
+
+
+## V3.8.7 LIVE/PAPER operational canary
+
+This subphase is mechanical/operational only. It deliberately does not invent a Research Champion or expected economic edge. Observation proposals are labeled `LIVE_PAPER_OPERATIONAL_CANARY_V1`, `research_evidence=false`, `economic_claim=false`, and use a 30-second TTL from a fresh canonical LIVE point-in-time event.
+
+Execution remains fail-closed on startup and after every restart. To permit one paper entry, the operator sends `/enable` to the running Execution Telegram bot. The command first checks authenticated Observation health, same release/protocol/lineage, `READY`, and exact operational authority, then reconciles locally before opening the entry gate. The first eligible FLAT proposal attempt immediately disables new entries again, whether or not a position opens.
+
+Operational evidence is retained in Execution proposal receipts and the Observation outcome record: proposal receive latency, Execution-owned bid/ask/mid/spread, reference-price deterioration, fill deterioration, actual paper R, MAE/MFE, holding time, and outcome-delivery timing. Review it with:
+
+```bash
+./.venv/bin/python nbot_admin.py live-paper-canary-report
+```
+
+The report must continue to state `economic_claim=false` and `NO_RESEARCH_CHAMPION_EXPECTED_R_IN_OPERATIONAL_CANARY` until a later validated research authority supplies an expected after-cost result. Operational PASS must never be relabeled as economic PASS.

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from nbot.common.logging import configure_logging, observation_log_paths
+from nbot.communication.authorities import LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY
 from nbot.config.profiles import get_profile
 from nbot.config.validation import MachineRole, detect_role
 from nbot.observation.binance_public import BinanceUsdMPublicClient
@@ -380,6 +381,111 @@ def cmd_research_catchup(args: argparse.Namespace) -> int:
         return 130
     return _emit(report)
 
+def cmd_live_paper_canary_report(_args: argparse.Namespace) -> int:
+    """Read-only V3.8 operational-canary trace/degradation report."""
+    db = _db()
+    with db.connection() as conn:
+        proposal_rows = conn.execute(
+            """
+            SELECT proposal_id,proposal_json,first_served_at_ms,last_served_at_ms,
+                   served_count,invalidated_at_ms,invalidation_reason,completed_outcome_id
+            FROM served_execution_proposals
+            WHERE profile='live-paper'
+            ORDER BY first_served_at_ms
+            """
+        ).fetchall()
+        veto_rows = conn.execute(
+            """SELECT proposal_id,reason,received_at_ms FROM execution_veto_feedback
+               ORDER BY received_at_ms"""
+        ).fetchall()
+        outcome_rows = conn.execute(
+            """SELECT outcome_id,proposal_id,received_at_ms,payload_json
+               FROM received_execution_outcomes
+               WHERE profile='live-paper' ORDER BY received_at_ms"""
+        ).fetchall()
+
+    proposals = []
+    proposal_ids = set()
+    for row in proposal_rows:
+        payload = json.loads(row[1])
+        if payload.get("entry_authority") != LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY:
+            continue
+        proposal_ids.add(str(row[0]))
+        proposals.append({
+            "proposal_id": str(row[0]),
+            "market_event_id": payload.get("market_event_id"),
+            "symbol": payload.get("symbol"),
+            "side": payload.get("side"),
+            "generated_at_ms": payload.get("generated_at_ms"),
+            "expires_at_ms": payload.get("expires_at_ms"),
+            "reference_price": payload.get("reference_price"),
+            "expected_after_cost_net_r": payload.get("expected_after_cost_net_r"),
+            "first_served_at_ms": int(row[2]),
+            "last_served_at_ms": int(row[3]),
+            "served_count": int(row[4]),
+            "invalidated_at_ms": row[5],
+            "invalidation_reason": row[6],
+            "completed_outcome_id": row[7],
+        })
+
+    vetoes = [
+        {"proposal_id": str(row[0]), "reason": str(row[1]), "received_at_ms": int(row[2])}
+        for row in veto_rows if str(row[0]) in proposal_ids
+    ]
+    outcomes = []
+    for row in outcome_rows:
+        if str(row[1]) not in proposal_ids:
+            continue
+        payload = json.loads(row[3])
+        context = payload.get("experiment_context") or {}
+        operational = dict(context.get("execution_operational") or {})
+        if operational:
+            operational["observation_recorded_at_ms"] = int(row[2])
+            started = operational.get("outcome_delivery_started_at_ms")
+            if isinstance(started, int):
+                operational["outcome_transport_to_record_ms"] = max(0, int(row[2]) - started)
+            closed = payload.get("closed_timestamp_ms")
+            if isinstance(closed, int):
+                operational["close_to_observation_record_ms"] = max(0, int(row[2]) - closed)
+        outcomes.append({
+            "outcome_id": str(row[0]),
+            "proposal_id": str(row[1]),
+            "received_at_ms": int(row[2]),
+            "symbol": payload.get("symbol"),
+            "side": payload.get("side"),
+            "realized_pnl_usd": payload.get("realized_pnl_usd"),
+            "realized_r": payload.get("r_multiple"),
+            "mae_r": payload.get("mae_r"),
+            "mfe_r": payload.get("mfe_r"),
+            "holding_seconds": payload.get("holding_seconds"),
+            "exit_reason": payload.get("exit_reason"),
+            "operational": operational,
+        })
+
+    economic_ready = bool(outcomes) and all(
+        item.get("operational", {}).get("expected_after_cost_net_r") is not None
+        for item in outcomes
+    )
+    return _emit({
+        "phase": "V3.8",
+        "profile": "live-paper",
+        "authority": LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
+        "authority_class": "LIVE_PAPER_OPERATIONAL_ONLY",
+        "research_evidence": False,
+        "economic_claim": False,
+        "proposals_served": len(proposals),
+        "veto_count": len(vetoes),
+        "completed_outcomes": len(outcomes),
+        "economic_comparison_ready": economic_ready,
+        "economic_deferred_reason": (
+            None if economic_ready else "NO_RESEARCH_CHAMPION_EXPECTED_R_IN_OPERATIONAL_CANARY"
+        ),
+        "proposals": proposals[-20:],
+        "vetoes": vetoes[-20:],
+        "outcomes": outcomes[-20:],
+    })
+
+
 def cmd_research_audit(_args: argparse.Namespace) -> int:
     reports = {
         component: _audit_result(component)
@@ -453,6 +559,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     research_audit = sub.add_parser("research-audit")
     research_audit.set_defaults(func=cmd_research_audit)
+
+    canary_report = sub.add_parser(
+        "live-paper-canary-report",
+        help="read-only V3.8 LIVE/PAPER operational canary trace/degradation report",
+    )
+    canary_report.set_defaults(func=cmd_live_paper_canary_report)
 
     memory_migrate = sub.add_parser(
         "research-memory-migrate",

@@ -309,7 +309,7 @@ def validate_execution_v31(
             checks.append("EXECUTION_LIVE_PUBLIC_BINANCE_HOST_PINNED")
             checks.append("EXECUTION_PAPER_EXCHANGE_AVAILABLE")
             checks.append("LIVE_PAPER_BINANCE_WRITES_DISABLED_BY_PROFILE")
-            warnings.append("LIVE_PAPER_NON_PROMOTIONAL_DRY_UNTIL_VALID_RESEARCH_AUTHORITY")
+            warnings.append("LIVE_PAPER_OPERATIONAL_CANARY_HAS_NO_ECONOMIC_AUTHORITY")
         elif profile.name == "live-trade":
             warnings.append("LIVE_TRADE_ADAPTER_FORBIDDEN_BEFORE_V3_10")
             ok = False

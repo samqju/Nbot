@@ -131,13 +131,13 @@ class V38LivePaperFoundationTests(unittest.TestCase):
             self.assertEqual(worker.state.snapshot.profile, "live-paper")
             self.assertEqual(
                 worker.entry.config.allowed_entry_authorities,
-                frozenset({run_execution.LIVE_PAPER_DRY_SENTINEL_AUTHORITY}),
+                frozenset({run_execution.LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY}),
             )
             self.assertFalse(get_profile("live-paper").binance_order_writes)
 
-    def test_live_paper_runner_is_non_promotional_and_live_trade_stays_forbidden(self):
+    def test_live_paper_runner_is_operational_only_and_live_trade_stays_forbidden(self):
         text = (REPO / "run_execution.py").read_text(encoding="utf-8")
-        self.assertIn("mode=NON_PROMOTIONAL_DRY", text)
+        self.assertIn("mode=LIVE_PAPER_OPERATIONAL_CANARY", text)
         self.assertIn("worker.disable_new_entries()", text)
         self.assertIn("NBOT_LIVE_TRADE_RUNTIME_FORBIDDEN_BEFORE_V3_10", text)
         self.assertNotIn("NBOT_LIVE_PAPER_RUNTIME_DEFERRED_UNTIL_V3_8", text)
@@ -147,7 +147,7 @@ class V38LivePaperFoundationTests(unittest.TestCase):
         self.assertNotIn("from nbot.observation.worker", text)
         self.assertNotIn("ObservationRuntimeLock(", text)
         self.assertIn("ObservationControlTarget", text)
-        self.assertIn("NON_PROMOTIONAL_DRY", text)
+        self.assertIn("LIVE_PAPER_OPERATIONAL_CANARY", text)
 
     def test_live_paper_service_uses_separate_control_only_process(self):
         text = (

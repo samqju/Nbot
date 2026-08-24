@@ -150,7 +150,10 @@ class V321MechanicalCanaryTests(unittest.TestCase):
         text = (Path(__file__).resolve().parents[1] / "run_execution.py").read_text()
         self.assertIn("proposal_client=proposal_client", text)
         self.assertIn("outcome_client=outcome_client", text)
-        self.assertNotIn("observation", text.lower())
+        # Later V3 phases add only the transport boundary to this entrypoint;
+        # Execution must still never import Observation implementation modules.
+        self.assertNotIn("from nbot.observation", text)
+        self.assertNotIn("import nbot.observation", text)
 
 
 if __name__ == "__main__":

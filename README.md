@@ -29,6 +29,8 @@ At this V3.7 closure boundary Testnet Execution is FLAT, has no entry inflight o
 
 Next implementation phase: **V3.8 LIVE_PAPER**. `live-trade` remains forbidden until V3.10 and its evidence/arming gates.
 
+Current V3.8 operational subphase: `LIVE_PAPER_OPERATIONAL_CANARY_V1` may exercise exactly one local-paper entry per explicit operator enable using fresh canonical LIVE point-in-time evidence. It is explicitly operational-only (`economic_claim=false`) and does not substitute for a Research Champion or satisfy the V3.8 economic gate.
+
 ## Local role identity
 
 Each VPS has an ignored `.nbot-role` file at repository root:

@@ -124,10 +124,10 @@ class V3111RuntimeAcceptanceTests(unittest.TestCase):
         self.assertIn("Environment=NBOT_PROFILE=@NBOT_PROFILE@", text)
         self.assertIn("--profile @NBOT_PROFILE@", text)
 
-    def test_live_paper_runtime_is_v38_non_promotional_dry(self):
+    def test_live_paper_runtime_is_v38_operational_canary(self):
         text = (REPO / "run_execution.py").read_text(encoding="utf-8")
         self.assertIn("run_live_paper_runtime", text)
-        self.assertIn("NON_PROMOTIONAL_DRY", text)
+        self.assertIn("LIVE_PAPER_OPERATIONAL_CANARY", text)
         self.assertNotIn("NBOT_LIVE_PAPER_RUNTIME_DEFERRED_UNTIL_V3_8", text)
 
     def test_live_trade_runtime_is_forbidden(self):
@@ -208,7 +208,7 @@ class V3111RuntimeAcceptanceTests(unittest.TestCase):
             self.assertIn("EXECUTION_PENDING_OUTCOMES:0", result.checks)
             self.assertIn("EXECUTION_SINGLE_INSTANCE_LOCK_AVAILABLE", result.checks)
 
-    def test_live_paper_doctor_reports_non_promotional_dry_gate(self):
+    def test_live_paper_doctor_reports_operational_canary_no_economic_authority(self):
         with tempfile.TemporaryDirectory() as tmp:
             result = validate_execution_v31(
                 repo_root=tmp, profile=get_profile("live-paper"), environment={}
@@ -216,7 +216,7 @@ class V3111RuntimeAcceptanceTests(unittest.TestCase):
             self.assertIn("EXECUTION_LIVE_PUBLIC_MARKET_ADAPTER_AVAILABLE", result.checks)
             self.assertIn("EXECUTION_LIVE_PUBLIC_BINANCE_HOST_PINNED", result.checks)
             self.assertIn(
-                "LIVE_PAPER_NON_PROMOTIONAL_DRY_UNTIL_VALID_RESEARCH_AUTHORITY",
+                "LIVE_PAPER_OPERATIONAL_CANARY_HAS_NO_ECONOMIC_AUTHORITY",
                 result.warnings,
             )
 

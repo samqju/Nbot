@@ -600,7 +600,7 @@ def cmd_entries(args: argparse.Namespace) -> int:
         print(f"OPERATOR_ENTRIES_DISABLED {profile.name}")
         return 0
     if profile.name == "live-paper":
-        raise ValueError("NBOT_LIVE_PAPER_ENABLE_FORBIDDEN_NON_PROMOTIONAL_DRY")
+        raise ValueError("NBOT_LIVE_PAPER_ENABLE_USE_RUNNING_TELEGRAM_OPERATOR_GATE")
     if profile.name == "testnet-trade" and not profile_is_armed(ROOT, profile):
         raise ValueError("NBOT_TESTNET_ENABLE_REQUIRES_ARM")
     if profile.name == "live-trade":
