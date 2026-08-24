@@ -151,6 +151,42 @@ class OperatorObservabilityTests(unittest.TestCase):
         self.assertTrue(self._wait_for(lambda: calls == ["sendMessage"], timeout=1.0))
         dispatcher.stop()
 
+
+    def test_get_updates_failure_is_not_treated_as_empty_success(self):
+        client = TelegramClient(
+            TelegramConfig("token", "123", "456", 1.0),
+            requester=lambda *_args: None,
+        )
+        with self.assertRaisesRegex(RuntimeError, "TELEGRAM_GET_UPDATES_FAILED"):
+            client.get_updates(offset=None, timeout_seconds=60)
+
+    def test_listener_uses_exponential_backoff_instead_of_tight_retry_loop(self):
+        delays = []
+
+        class FailingClient:
+            config = TelegramConfig("token", "123", "456", 1.0)
+
+            def __init__(self):
+                self.calls = 0
+
+            def get_updates(self, *, offset, timeout_seconds):
+                self.calls += 1
+                raise RuntimeError("telegram restricted")
+
+        client = FailingClient()
+        listener = TelegramCommandListener(client, lambda _text: None)
+
+        def controlled_sleep(delay):
+            delays.append(delay)
+            if len(delays) >= 4:
+                listener._stop.set()
+
+        listener.sleep = controlled_sleep
+        listener._run()
+
+        self.assertEqual(client.calls, 4)
+        self.assertEqual(delays, [5.0, 10.0, 20.0, 40.0])
+
     def test_listener_authorizes_chat_and_user_and_discards_others(self):
         received = []
         client = TelegramClient(TelegramConfig("token", "123", "456", 1.0), requester=lambda *_: None)
@@ -199,6 +235,13 @@ class OperatorObservabilityTests(unittest.TestCase):
             self.assertTrue(self._wait_for(lambda: len(calls) >= 1))
             self.assertEqual(calls[-1][0], "sendMessage")
             self.assertIn("TRADE OPEN", calls[-1][1]["text"])
+
+            # Ordinary position ticks with unchanged protection must not touch
+            # Telegram. The panel is event-driven, not tick-driven.
+            before = len(calls)
+            surface.sync()
+            time.sleep(0.05)
+            self.assertEqual(len(calls), before)
 
             worker.state.open_position.stop_price = 100.25
             worker.state.open_position.mfe_r = 1.3

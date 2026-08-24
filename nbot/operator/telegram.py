@@ -26,6 +26,10 @@ from urllib import request as urlrequest
 MAX_MESSAGE_LENGTH = 4000
 
 
+class TelegramPollingError(RuntimeError):
+    """Telegram command polling failed; caller must back off before retrying."""
+
+
 @dataclass(frozen=True, slots=True)
 class TelegramConfig:
     bot_token: str = ""
@@ -199,8 +203,15 @@ class TelegramClient:
             payload,
             max(self.config.timeout_seconds, float(timeout_seconds) + 10.0),
         )
-        result = data.get("result") if data else None
-        return list(result) if isinstance(result, list) else []
+        # A failed Bot API request must never be mistaken for a healthy empty
+        # long poll.  Returning [] here would make the listener spin immediately
+        # and hammer Telegram after a transient/server-side restriction.
+        if data is None:
+            raise TelegramPollingError("TELEGRAM_GET_UPDATES_FAILED")
+        result = data.get("result")
+        if not isinstance(result, list):
+            raise TelegramPollingError("TELEGRAM_GET_UPDATES_RESULT_INVALID")
+        return list(result)
 
 
 class TelegramCommandListener:
@@ -286,15 +297,32 @@ class TelegramCommandListener:
         return True
 
     def _run(self) -> None:
+        consecutive_failures = 0
         while not self._stop.is_set():
             try:
                 rows = self.client.get_updates(offset=self._offset, timeout_seconds=60)
+                if consecutive_failures:
+                    self._log(
+                        "info",
+                        f"TELEGRAM_COMMAND_POLL_RECOVERED failures={consecutive_failures}",
+                    )
+                consecutive_failures = 0
                 for row in rows:
                     if isinstance(row, Mapping):
                         self._dispatch(row)
             except Exception as exc:
-                self._log("warning", f"TELEGRAM_COMMAND_POLL_FAILED error={type(exc).__name__}:{exc}")
-                self.sleep(5.0)
+                consecutive_failures += 1
+                delay = min(60.0, 5.0 * (2 ** min(consecutive_failures - 1, 4)))
+                # Log the first failure and each backoff transition.  Once the
+                # 60-second cap is reached, log only every tenth capped failure.
+                if consecutive_failures <= 5 or consecutive_failures % 10 == 0:
+                    self._log(
+                        "warning",
+                        "TELEGRAM_COMMAND_POLL_BACKOFF "
+                        f"failures={consecutive_failures} delay_seconds={delay:.0f} "
+                        f"error={type(exc).__name__}:{exc}",
+                    )
+                self.sleep(delay)
 
     def stop(self) -> None:
         self._stop.set()
