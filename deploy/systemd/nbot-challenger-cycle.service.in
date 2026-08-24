@@ -1,0 +1,21 @@
+[Unit]
+Description=NBOT V3.9 Daily Continuous Challenger Cycle
+After=network-online.target nbot-observation-live.service nbot-research-epoch.service
+Wants=network-online.target nbot-observation-live.service nbot-research-epoch.service
+
+[Service]
+Type=oneshot
+User=@NBOT_USER@
+WorkingDirectory=@NBOT_ROOT@
+Environment=PYTHONUNBUFFERED=1
+Environment=NBOT_PROFILE=live-paper
+EnvironmentFile=-@NBOT_ROOT@/config/secrets/observation-live.env
+ExecStart=@NBOT_PYTHON@ @NBOT_ROOT@/nbot_admin.py challenger-cycle
+Nice=18
+CPUWeight=10
+IOWeight=10
+IOSchedulingClass=idle
+OOMScoreAdjust=600
+TimeoutStartSec=2h
+UMask=0077
+NoNewPrivileges=true

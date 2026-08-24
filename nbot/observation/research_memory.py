@@ -177,14 +177,16 @@ class ResearchMemoryStore:
                 for example in decoded:
                     yield int(event_open_ms), example
 
-    def iter_event_records(self):
+    def iter_event_records(self, *, after_event_ms: int | None = None):
         """Stream immutable compact events with verified lineage and examples."""
+        lower = -1 if after_event_ms is None else int(after_event_ms)
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT event_open_ms,archive_version,example_row_count,training_blob,"
                 "training_digest,selector_summary_json,policy_summary_json,"
                 "build_manifest_json,archive_digest,authority,source_generation "
-                "FROM research_memory_events ORDER BY event_open_ms"
+                "FROM research_memory_events WHERE event_open_ms>? ORDER BY event_open_ms",
+                (lower,),
             )
             for row in rows:
                 (event_open_ms, archive_version, example_row_count, blob, training_digest,
@@ -532,6 +534,64 @@ class ResearchMemoryStore:
                     float(elapsed_seconds),
                 ),
             )
+
+
+    def persist_artifact(
+        self, artifact_key: str, payload: dict[str, Any], *, recorded_at_ms: int | None = None
+    ) -> dict[str, Any]:
+        """Persist one immutable compact research artifact by identity."""
+        key = str(artifact_key).strip()
+        if not key:
+            raise ValueError("NBOT_V39_MEMORY_ARTIFACT_KEY_REQUIRED")
+        text = _canonical_json(payload)
+        digest = _digest_text(text)
+        now_ms = int(time.time() * 1000) if recorded_at_ms is None else int(recorded_at_ms)
+        with self._connect() as conn:
+            conn.executescript(SCHEMA)
+            existing = conn.execute(
+                "SELECT artifact_json,artifact_digest,recorded_at_ms "
+                "FROM research_memory_artifacts WHERE artifact_key=?",
+                (key,),
+            ).fetchone()
+            if existing is not None:
+                if str(existing[0]) != text or str(existing[1]) != digest:
+                    raise RuntimeError(f"NBOT_V39_MEMORY_ARTIFACT_IDENTITY_CONFLICT:{key}")
+                return {
+                    "artifact_key": key,
+                    "payload": json.loads(str(existing[0])),
+                    "artifact_digest": str(existing[1]),
+                    "recorded_at_ms": int(existing[2]),
+                }
+            conn.execute(
+                "INSERT INTO research_memory_artifacts("
+                "artifact_key,artifact_json,artifact_digest,recorded_at_ms) VALUES(?,?,?,?)",
+                (key, text, digest, now_ms),
+            )
+        return {
+            "artifact_key": key, "payload": payload,
+            "artifact_digest": digest, "recorded_at_ms": now_ms,
+        }
+
+    def list_artifacts(self, *, prefix: str = "") -> list[dict[str, Any]]:
+        prefix = str(prefix)
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT artifact_key,artifact_json,artifact_digest,recorded_at_ms "
+                "FROM research_memory_artifacts WHERE artifact_key LIKE ? "
+                "ORDER BY recorded_at_ms,artifact_key",
+                (prefix + "%",),
+            ).fetchall()
+        result: list[dict[str, Any]] = []
+        for key, text, digest, recorded_at_ms in rows:
+            if _digest_text(str(text)) != str(digest):
+                raise RuntimeError("NBOT_V39_MEMORY_ARTIFACT_DIGEST_MISMATCH")
+            result.append({
+                "artifact_key": str(key),
+                "payload": json.loads(str(text)),
+                "artifact_digest": str(digest),
+                "recorded_at_ms": int(recorded_at_ms),
+            })
+        return result
 
     def artifact(self, key: str) -> dict[str, Any] | None:
         with self._connect() as conn:

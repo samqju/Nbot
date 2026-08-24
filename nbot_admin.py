@@ -15,6 +15,7 @@ from dataclasses import asdict, is_dataclass
 import json
 import os
 from pathlib import Path
+import subprocess
 from typing import Any
 
 from nbot.common.logging import configure_logging, observation_log_paths
@@ -26,6 +27,7 @@ from nbot.observation.champion import (
     MemoryWalkForwardChampionEvaluator,
     WalkForwardChampionEvaluator,
 )
+from nbot.observation.challengers import ContinuousChallengerCycle
 from nbot.observation.catchup import (
     BoundedResearchCatchupController,
     ResearchCatchupError,
@@ -97,6 +99,20 @@ def _v384_active() -> bool:
         return _memory().metadata().get("memory_version") == "RESEARCH_MEMORY_V1"
     except Exception:
         return False
+
+
+
+
+def _release_sha() -> str:
+    return subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+    ).strip()
+
+
+def _challenger_cycle() -> ContinuousChallengerCycle:
+    if not _v384_active():
+        raise RuntimeError("NBOT_V391_COMPACT_RESEARCH_MEMORY_REQUIRED")
+    return ContinuousChallengerCycle(_memory(), release_sha=_release_sha())
 
 
 def _legacy_mixed_research_guard() -> None:
@@ -216,9 +232,10 @@ def cmd_learning_status(_args: argparse.Namespace) -> int:
     if _v384_active():
         return _emit({
             "authority": "RESEARCH_ONLY_NO_EXECUTION",
-            "status": "V3_9_COMPACT_CHAMPION_EVALUATION_ENABLED_CHALLENGER_TRAINING_NOT_YET_ENABLED",
+            "status": "V3_9_CONTINUOUS_CHALLENGER_LEARNING_ENABLED",
             "memory": _memory().status(),
             "champion": MemoryWalkForwardChampionEvaluator(_memory()).status(),
+            "challengers": _challenger_cycle().status(),
             "legacy_learning_foundation": _memory().artifact("learning_foundations"),
             "legacy_model_registry": _memory().artifact("model_registry"),
             "legacy_challenger_registry": _memory().artifact("challenger_registry"),
@@ -226,6 +243,36 @@ def cmd_learning_status(_args: argparse.Namespace) -> int:
     return _emit(ContinuousLearningFoundation(_db()).status())
 
 
+
+
+
+
+def cmd_challenger_cycle(_args: argparse.Namespace) -> int:
+    research_log = configure_logging(
+        role="OBSERVATION", profile=RESEARCH_PROFILE,
+        log_path=observation_log_paths(ROOT)["research"], component="research",
+    )
+    cycle = _challenger_cycle()
+    try:
+        report = cycle.cycle()
+    except Exception:
+        research_log.exception("V39_CHALLENGER_CYCLE_FAILED")
+        raise
+    research_log.info(
+        "V39_CHALLENGER_CYCLE_RESULT %s",
+        json.dumps(report, sort_keys=True, default=_jsonable),
+    )
+    return _emit(report)
+
+
+def cmd_challenger_status(_args: argparse.Namespace) -> int:
+    return _emit(_challenger_cycle().status())
+
+
+def cmd_challenger_audit(_args: argparse.Namespace) -> int:
+    report = _challenger_cycle().audit()
+    _emit(report)
+    return 0 if bool(report.get("healthy")) else 2
 
 
 def cmd_retention_init(_args: argparse.Namespace) -> int:
@@ -561,6 +608,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     learning_status = sub.add_parser("learning-status")
     learning_status.set_defaults(func=cmd_learning_status)
+
+    challenger_cycle = sub.add_parser(
+        "challenger-cycle",
+        help="train/evaluate one V3.9 compact-memory challenger cycle",
+    )
+    challenger_cycle.set_defaults(func=cmd_challenger_cycle)
+
+    challenger_status = sub.add_parser("challenger-status")
+    challenger_status.set_defaults(func=cmd_challenger_status)
+
+    challenger_audit = sub.add_parser("challenger-audit")
+    challenger_audit.set_defaults(func=cmd_challenger_audit)
 
     research_audit = sub.add_parser("research-audit")
     research_audit.set_defaults(func=cmd_research_audit)

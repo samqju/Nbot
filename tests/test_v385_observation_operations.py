@@ -47,6 +47,19 @@ class V385ObservationOperationsTests(unittest.TestCase):
         self.assertNotIn("live-paper-control", target)
         self.assertNotIn("testnet", target.lower())
 
+    def test_v39_daily_challenger_timer_is_future_mature_and_low_priority(self):
+        timer = (REPO / "deploy/systemd/nbot-challenger-cycle.timer.in").read_text()
+        service = (REPO / "deploy/systemd/nbot-challenger-cycle.service.in").read_text()
+        self.assertIn("OnCalendar=*-*-* 04:15:00 UTC", timer)
+        self.assertIn("Persistent=true", timer)
+        self.assertIn("challenger-cycle", service)
+        self.assertIn("After=network-online.target nbot-observation-live.service nbot-research-epoch.service", service)
+        self.assertIn("Wants=network-online.target nbot-observation-live.service nbot-research-epoch.service", service)
+        self.assertIn("Nice=18", service)
+        self.assertIn("CPUWeight=10", service)
+        self.assertIn("IOWeight=10", service)
+        self.assertNotIn("Restart=always", service)
+
     def test_live_paper_control_is_optional_but_restartable(self):
         text = (
             REPO / "deploy/systemd/nbot-observation-live-paper-control.service.in"

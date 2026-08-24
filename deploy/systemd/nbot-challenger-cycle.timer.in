@@ -1,0 +1,12 @@
+[Unit]
+Description=NBOT V3.9 Daily Challenger Scheduler
+PartOf=nbot-observer.target
+
+[Timer]
+OnCalendar=*-*-* 04:15:00 UTC
+AccuracySec=30s
+Persistent=true
+Unit=nbot-challenger-cycle.service
+
+[Install]
+WantedBy=nbot-observer.target
