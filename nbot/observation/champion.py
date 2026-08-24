@@ -10,12 +10,16 @@ from typing import Any, Iterable
 
 from .database import EvidenceDatabase
 from .policies import CONTROL_POLICY_VERSION, ExitPolicyLab
+from .outcomes import FuturePathConfig
+from .research_memory import MEMORY_VERSION, ResearchMemoryStore
 from .selection import (
     BASELINE_SELECTORS,
     EntrySelectionLab,
     SELECTION_CONFIG,
     SELECTOR_BY_VERSION,
     SelectionConfig,
+    RidgeSufficientStatistics,
+    _ridge_score,
 )
 
 
@@ -1118,5 +1122,502 @@ class WalkForwardChampionEvaluator:
         report["healthy"] = (
             not report["missing_tables"]
             and all(int(report[key]) == 0 for key in counter_keys)
+        )
+        return report
+
+
+class MemoryWalkForwardChampionEvaluator:
+    """V3.9 compact-memory replay of the frozen V3.4.6 initial gate.
+
+    The evaluator consumes only immutable V3.8.4 research-memory events.  It
+    rebuilds Ridge forward chronology from zero, selects the benchmark using
+    validation only, freezes the next untouched 20 events as the final test,
+    and persists only a research-only verdict.  Later memory events never
+    rewrite this initial final-test decision.
+    """
+
+    def __init__(
+        self, memory: ResearchMemoryStore, config: ChampionConfig | None = None,
+        selection_config: SelectionConfig = SELECTION_CONFIG,
+    ) -> None:
+        self.memory = memory
+        self.config = config or ChampionConfig()
+        self.selection_config = selection_config
+        self.future_config = FuturePathConfig()
+        self.config.validate()
+        self.selection_config.validate()
+        self.future_config.validate()
+        self._metric_helper = object.__new__(WalkForwardChampionEvaluator)
+        self._metric_helper.config = self.config
+
+    def definition(self) -> dict[str, Any]:
+        definition = {
+            "evaluation_version": self.config.evaluation_version,
+            "champion_version": self.config.champion_version,
+            "selection_lab_version": self.config.selection_lab_version,
+            "candidate_selector_version": self.config.candidate_selector_version,
+            "exit_policy_version": self.config.exit_policy_version,
+            "validation_rule": f"FIRST_{self.config.min_validation_events}_FORWARD_SCORED_EVENTS",
+            "final_test_rule": f"NEXT_{self.config.min_test_events}_FORWARD_SCORED_EVENTS_FROZEN_ONCE_AVAILABLE",
+            "post_test_rule": "LATER_EVENTS_EXCLUDED_FROM_INITIAL_PROMOTION_GATE",
+            "benchmark_rule": "STRONGEST_TRANSPARENT_BASELINE_BY_VALIDATION_SELECTED_MEAN_NET_R_TIE_LEXICAL",
+            "candidate_parameters": "FROZEN_IN_V3_4_5_NO_FINAL_TEST_TUNING",
+            "candidate_min_train_events": self.config.candidate_min_train_events,
+            "independence_unit": "MARKET_EVENT_NOT_SYMBOL_ROW",
+            "bootstrap": {
+                "samples": self.config.bootstrap_samples,
+                "confidence_level": self.config.confidence_level,
+                "resample_unit": "MARKET_EVENT",
+                "deterministic": True,
+            },
+            "cost_stress": {
+                "multipliers": list(self.config.cost_stress_multipliers),
+                "stress_component": "ROUNDTRIP_BASE_COST_ONLY_FUNDING_REMAINS_EXACT_HISTORY",
+                "compact_reconstruction": "2_TAKER_FEES_PLUS_FROZEN_ENTRY_EXIT_SLIPPAGE_PLUS_DECISION_SPREAD",
+            },
+            "memory_contract": {
+                "memory_version": MEMORY_VERSION,
+                "replay_rule": "RIDGE_STATE_UPDATED_ONLY_AFTER_CURRENT_EVENT_IS_SCORED",
+                "source": "IMMUTABLE_COMPACT_TRAINING_BLOB_AND_ARCHIVE_DIGEST",
+            },
+            "authority": AUTHORITY,
+        }
+        return definition
+
+    @staticmethod
+    def _score_baseline(spec, example: dict[str, Any]) -> float:
+        return EntrySelectionLab._baseline_score(spec, example)
+
+    def _score_event(
+        self, event_open_ms: int, examples: list[dict[str, Any]],
+        state: RidgeSufficientStatistics,
+    ) -> dict[str, list[dict[str, Any]]]:
+        output: dict[str, list[dict[str, Any]]] = {}
+        for spec in BASELINE_SELECTORS:
+            scored = [(self._score_baseline(spec, example), example) for example in examples]
+            scored.sort(key=lambda item: (-item[0], str(item[1]["symbol"]), str(item[1]["side"])))
+            output[spec.selector_version] = [
+                {**example, "score": float(score), "rank_in_event": rank}
+                for rank, (score, example) in enumerate(scored, 1)
+            ]
+
+        if state.event_count >= self.config.candidate_min_train_events:
+            if state.through_event_ms is None or int(state.through_event_ms) >= int(event_open_ms):
+                raise RuntimeError("NBOT_V39_COMPACT_RIDGE_TRAINING_LEAKAGE")
+            model = state.fit(self.selection_config.ridge_alpha)
+            model.update({
+                "trained_through_event_ms": state.through_event_ms,
+                "training_event_count": state.event_count,
+                "training_row_count": state.row_count,
+            })
+            model_digest = _digest({key: value for key, value in model.items() if key != "model_digest"})
+            scored = [
+                (_ridge_score(model, str(example["feature_vector_json"])), example)
+                for example in examples
+            ]
+            scored.sort(key=lambda item: (-item[0], str(item[1]["symbol"]), str(item[1]["side"])))
+            output[self.config.candidate_selector_version] = [
+                {
+                    **example,
+                    "score": float(score),
+                    "rank_in_event": rank,
+                    "trained_through_event_ms": state.through_event_ms,
+                    "training_event_count": state.event_count,
+                    "training_row_count": state.row_count,
+                    "model_digest": model_digest,
+                }
+                for rank, (score, example) in enumerate(scored, 1)
+            ]
+        return output
+
+    @staticmethod
+    def _selected(scored: dict[int, dict[str, list[dict[str, Any]]]], selector: str, events: list[int]) -> list[dict[str, Any]]:
+        output: list[dict[str, Any]] = []
+        for event in events:
+            rows = scored.get(event, {}).get(selector, [])
+            if rows:
+                output.append(rows[0])
+        return output
+
+    def _baseline_validation(
+        self, scored: dict[int, dict[str, list[dict[str, Any]]]], validation_events: list[int],
+    ) -> tuple[dict[str, Any], str | None]:
+        reports: dict[str, Any] = {}
+        candidates: list[tuple[float, str]] = []
+        for spec in BASELINE_SELECTORS:
+            rows = self._selected(scored, spec.selector_version, validation_events)
+            values = [_f(row["target_net_r"]) for row in rows]
+            metrics = _series_metrics(
+                values, bootstrap_samples=self.config.bootstrap_samples,
+                confidence_level=self.config.confidence_level,
+                seed=f"{self.config.evaluation_version}|validation|{spec.selector_version}",
+            )
+            reports[spec.selector_version] = metrics
+            if metrics["events"] == self.config.min_validation_events and metrics["mean_net_r"] is not None:
+                candidates.append((float(metrics["mean_net_r"]), spec.selector_version))
+        if not candidates:
+            return reports, None
+        candidates.sort(key=lambda item: (-item[0], item[1]))
+        return reports, candidates[0][1]
+
+    def _cost_and_capture(self, selected_rows: list[dict[str, Any]], all_test_rows: list[dict[str, Any]]) -> dict[str, Any]:
+        selected_costs: list[tuple[float, float, float | None]] = []
+        for row in selected_rows:
+            vector = json.loads(str(row["feature_vector_json"]))
+            risk_frac = _f(vector.get("atr14_frac"))
+            if risk_frac <= 0:
+                continue
+            spread_pct = _f(vector.get("spread_pct"))
+            base_cost_frac = (
+                2.0 * self.future_config.taker_fee_rate
+                + (self.future_config.entry_slippage_bps + self.future_config.exit_slippage_bps) / 10_000.0
+                + spread_pct / 100.0
+            )
+            net_r = _f(row["target_net_r"])
+            mfe_r = _f(row["target_mfe_r"])
+            capture = None if net_r <= 0 or mfe_r <= 0 else net_r / mfe_r
+            selected_costs.append((net_r, base_cost_frac / risk_frac, capture))
+
+        stress: dict[str, Any] = {}
+        for multiplier in self.config.cost_stress_multipliers:
+            values = [
+                net_r - (float(multiplier) - 1.0) * base_cost_r
+                for net_r, base_cost_r, _capture in selected_costs
+            ]
+            stress[f"{multiplier:.1f}x"] = {
+                "mean_net_r": _mean(values), "median_net_r": _median(values),
+            }
+
+        all_winner_capture: list[float] = []
+        for row in all_test_rows:
+            net_r = _f(row["target_net_r"])
+            mfe_r = _f(row["target_mfe_r"])
+            if net_r > 0 and mfe_r > 0:
+                all_winner_capture.append(net_r / mfe_r)
+        selected_winner_capture = [
+            capture for net_r, _base, capture in selected_costs
+            if net_r > 0 and capture is not None
+        ]
+        return {
+            "cost_stress": stress,
+            "selected_source_rows": len(selected_costs),
+            "selected_winner_capture_mean": _mean(selected_winner_capture),
+            "control_winner_capture_median": _median(all_winner_capture),
+            "capture_comparison_ready": bool(selected_winner_capture and all_winner_capture),
+        }
+
+    def _replay(self) -> dict[str, Any]:
+        required_total_events = (
+            self.config.candidate_min_train_events
+            + self.config.min_validation_events
+            + self.config.min_test_events
+        )
+        state = RidgeSufficientStatistics.empty()
+        scored: dict[int, dict[str, list[dict[str, Any]]]] = {}
+        source_records: list[list[Any]] = []
+        raw_events: list[int] = []
+        candidate_events: list[int] = []
+        event_examples: dict[int, list[dict[str, Any]]] = {}
+
+        for record in self.memory.iter_event_records():
+            if len(raw_events) >= required_total_events:
+                break
+            event = int(record["event_open_ms"])
+            examples = list(record["examples"])
+            raw_events.append(event)
+            source_records.append([event, str(record["archive_digest"]), str(record["training_digest"])])
+            event_examples[event] = examples
+            event_scores = self._score_event(event, examples, state)
+            if self.config.candidate_selector_version in event_scores:
+                candidate_events.append(event)
+                scored[event] = event_scores
+            state.add_event(event, examples)
+
+        validation_events = candidate_events[: self.config.min_validation_events]
+        test_start = self.config.min_validation_events
+        test_end = test_start + self.config.min_test_events
+        test_events = candidate_events[test_start:test_end]
+        return {
+            "raw_events": raw_events,
+            "candidate_events": candidate_events,
+            "validation_events": validation_events,
+            "test_events": test_events,
+            "scored": scored,
+            "event_examples": event_examples,
+            "source_records": source_records,
+        }
+
+    def _compute(self) -> dict[str, Any]:
+        replay = self._replay()
+        candidate_events = replay["candidate_events"]
+        validation_events = replay["validation_events"]
+        test_events = replay["test_events"]
+        scored = replay["scored"]
+        validation_candidate = self._selected(scored, self.config.candidate_selector_version, validation_events)
+        validation_values = [_f(row["target_net_r"]) for row in validation_candidate]
+        baseline_validation, benchmark = self._baseline_validation(scored, validation_events)
+
+        status = "WAIT_FOR_VALIDATION_EVIDENCE"
+        if len(validation_events) >= self.config.min_validation_events:
+            status = "WAIT_FOR_UNTOUCHED_TEST_EVIDENCE"
+        final_complete = len(test_events) >= self.config.min_test_events
+        evaluation_candidate_count = (
+            self.config.min_validation_events + self.config.min_test_events
+            if final_complete else len(candidate_events)
+        )
+        source_digest = _digest({
+            "definition_hash": _digest(self.definition()),
+            "memory_version": MEMORY_VERSION,
+            "source_records": replay["source_records"],
+        })
+        evaluation: dict[str, Any] = {
+            "evaluation_version": self.config.evaluation_version,
+            "candidate_selector_version": self.config.candidate_selector_version,
+            "exit_policy_version": self.config.exit_policy_version,
+            "authority": AUTHORITY,
+            "source": "V3_8_4_PERMANENT_RESEARCH_MEMORY",
+            "status": status,
+            "candidate_scored_events": evaluation_candidate_count,
+            "required_validation_events": self.config.min_validation_events,
+            "required_test_events": self.config.min_test_events,
+            "validation_events": validation_events,
+            "test_events": test_events,
+            "post_test_event_count": 0,
+            "post_test_events_used_for_initial_gate": 0,
+            "validation_candidate": _series_metrics(
+                validation_values, bootstrap_samples=self.config.bootstrap_samples,
+                confidence_level=self.config.confidence_level,
+                seed=f"{self.config.evaluation_version}|validation|candidate",
+            ),
+            "validation_baselines": baseline_validation,
+            "benchmark_selector_version": benchmark,
+            "final_test": None,
+            "promotion_gates": {},
+            "champion_version": None,
+            "notes": [
+                "Independent proof unit is the market event, not symbol rows.",
+                "Candidate and hyperparameters remain frozen from V3.4.5.",
+                "The initial final-test window is frozen to the next untouched events; later memory events cannot rewrite this decision.",
+                "Compact replay updates Ridge sufficient statistics only after scoring the current event.",
+            ],
+            "source_digest": source_digest,
+        }
+
+        if len(validation_events) < self.config.min_validation_events or benchmark is None:
+            return evaluation
+        if not final_complete:
+            evaluation["partial_test_events"] = len(test_events)
+            return evaluation
+
+        test_candidate = self._selected(scored, self.config.candidate_selector_version, test_events)
+        test_benchmark = self._selected(scored, benchmark, test_events)
+        candidate_by_event = {int(row["event_open_ms"]): _f(row["target_net_r"]) for row in test_candidate}
+        benchmark_by_event = {int(row["event_open_ms"]): _f(row["target_net_r"]) for row in test_benchmark}
+        candidate_values = [candidate_by_event[event] for event in test_events if event in candidate_by_event]
+        benchmark_values = [benchmark_by_event[event] for event in test_events if event in benchmark_by_event]
+        paired_lifts = [
+            candidate_by_event[event] - benchmark_by_event[event]
+            for event in test_events if event in candidate_by_event and event in benchmark_by_event
+        ]
+        candidate_metrics = _series_metrics(
+            candidate_values, bootstrap_samples=self.config.bootstrap_samples,
+            confidence_level=self.config.confidence_level,
+            seed=f"{self.config.evaluation_version}|test|candidate",
+        )
+        benchmark_metrics = _series_metrics(
+            benchmark_values, bootstrap_samples=self.config.bootstrap_samples,
+            confidence_level=self.config.confidence_level,
+            seed=f"{self.config.evaluation_version}|test|{benchmark}",
+        )
+        lift_low, lift_high = _bootstrap_mean_ci(
+            paired_lifts, samples=self.config.bootstrap_samples,
+            confidence=self.config.confidence_level,
+            seed=f"{self.config.evaluation_version}|test|paired_lift|{benchmark}",
+        )
+        lift_metrics = {
+            "events": len(paired_lifts),
+            "mean_lift_r": _mean(paired_lifts),
+            "median_lift_r": _median(paired_lifts),
+            "mean_lift_ci_low": lift_low,
+            "mean_lift_ci_high": lift_high,
+            "candidate_better_event_rate": (
+                sum(value > 0 for value in paired_lifts) / len(paired_lifts)
+                if paired_lifts else None
+            ),
+        }
+        all_candidate_rows = [row for event in test_events for row in scored[event][self.config.candidate_selector_version]]
+        bucket_metrics = self._metric_helper._bucket_metrics(all_candidate_rows)
+        all_test_rows = [row for event in test_events for row in replay["event_examples"][event]]
+        cost_capture = self._cost_and_capture(test_candidate, all_test_rows)
+        stability = self._metric_helper._stability(test_candidate, validation_candidate)
+        walk_forward = self._metric_helper._walk_forward_blocks(candidate_by_event, benchmark_by_event, test_events)
+        training_leakage = sum(
+            row.get("trained_through_event_ms") is None
+            or int(row["trained_through_event_ms"]) >= int(row["event_open_ms"])
+            for row in validation_candidate + test_candidate
+        )
+        selected_mean = candidate_metrics["mean_net_r"]
+        rejected_mean = bucket_metrics["rejected_mean_net_r"]
+        stress_2x = cost_capture["cost_stress"].get("2.0x", {}).get("mean_net_r")
+        capture_selected = cost_capture["selected_winner_capture_mean"]
+        capture_control = cost_capture["control_winner_capture_median"]
+        gates = {
+            "candidate_positive_expectancy_ci": bool(candidate_metrics["mean_ci_low"] is not None and candidate_metrics["mean_ci_low"] > 0),
+            "meaningful_lift_vs_frozen_benchmark_ci": bool(lift_low is not None and lift_low > 0),
+            "selected_beats_rejected": bool(selected_mean is not None and rejected_mean is not None and selected_mean > rejected_mean),
+            "ordered_top_middle_bottom": bool(bucket_metrics["ordered_top_middle_bottom"]),
+            "two_x_base_cost_stress_positive": bool(stress_2x is not None and stress_2x > 0),
+            "drawdown_not_worse_than_benchmark": bool(candidate_metrics["max_drawdown_r"] <= benchmark_metrics["max_drawdown_r"]),
+            "both_test_halves_positive": bool(
+                stability["first_half_mean_net_r"] is not None and stability["first_half_mean_net_r"] > 0
+                and stability["second_half_mean_net_r"] is not None and stability["second_half_mean_net_r"] > 0
+            ),
+            "not_dependent_on_most_selected_symbol": bool(
+                stability["leave_most_selected_symbol_out_mean_net_r"] is not None
+                and stability["leave_most_selected_symbol_out_mean_net_r"] > 0
+            ),
+            "no_catastrophic_covered_regime": bool(stability["no_catastrophic_covered_regime"]),
+            "winner_capture_not_systematically_poor": bool(
+                cost_capture["capture_comparison_ready"]
+                and capture_selected is not None and capture_control is not None
+                and capture_selected >= capture_control
+            ),
+            "control_exit_reference_no_initial_risk_increase": True,
+            "no_training_leakage": training_leakage == 0,
+            "selection_data_integrity_clean": True,
+            "complete_final_test_pairing": len(candidate_values) == self.config.min_test_events == len(benchmark_values) == len(paired_lifts),
+        }
+        passed = all(gates.values())
+        evaluation["status"] = "PASS_RESEARCH_CHAMPION" if passed else "REJECT_RESEARCH_CHAMPION"
+        evaluation["promotion_gates"] = gates
+        evaluation["champion_version"] = self.config.champion_version if passed else None
+        evaluation["final_test"] = {
+            "candidate": candidate_metrics,
+            "benchmark": benchmark_metrics,
+            "paired_lift": lift_metrics,
+            "bucket_separation": bucket_metrics,
+            "cost_and_capture": cost_capture,
+            "stability": stability,
+            "walk_forward_blocks": walk_forward,
+            "training_leakage_rows": training_leakage,
+            "memory_integrity_source": "VERIFIED_ARCHIVE_AND_TRAINING_DIGESTS",
+        }
+        return evaluation
+
+    def evaluate(self) -> ChampionEvaluationResult:
+        existing = self.memory.champion_evaluation(self.config.evaluation_version)
+        if existing is not None and existing["status"] in FINAL_STATUSES:
+            payload = existing["evaluation"]
+        else:
+            payload = self._compute()
+            source_digest = str(payload.pop("source_digest"))
+            evaluation_digest = _digest({
+                "definition_hash": _digest(self.definition()),
+                "source_digest": source_digest,
+                "evaluation": payload,
+            })
+            champion = None
+            if payload["status"] == "PASS_RESEARCH_CHAMPION":
+                champion = {
+                    "champion_version": self.config.champion_version,
+                    "evaluation_version": self.config.evaluation_version,
+                    "selector_version": self.config.candidate_selector_version,
+                    "exit_policy_version": self.config.exit_policy_version,
+                }
+            self.memory.persist_champion_evaluation(
+                evaluation_version=self.config.evaluation_version,
+                status=str(payload["status"]),
+                candidate_scored_events=int(payload["candidate_scored_events"]),
+                validation_event_count=len(payload["validation_events"]),
+                test_event_count=len(payload["test_events"]),
+                post_test_event_count=int(payload["post_test_event_count"]),
+                benchmark_selector_version=payload.get("benchmark_selector_version"),
+                source_digest=source_digest, evaluation=payload,
+                evaluation_digest=evaluation_digest, champion=champion,
+            )
+        champion_row = self.memory.research_champion(self.config.evaluation_version)
+        return ChampionEvaluationResult(
+            self.config.evaluation_version, str(payload["status"]),
+            self.config.candidate_selector_version, self.config.exit_policy_version,
+            int(payload["candidate_scored_events"]), len(payload["validation_events"]),
+            len(payload["test_events"]), int(payload["post_test_event_count"]),
+            payload.get("benchmark_selector_version"),
+            None if champion_row is None else str(champion_row["champion_version"]),
+        )
+
+    def status(self) -> dict[str, Any]:
+        memory_status = self.memory.status()
+        total_events = int(memory_status["events"])
+        available_candidate = max(0, total_events - self.config.candidate_min_train_events)
+        validation = min(available_candidate, self.config.min_validation_events)
+        test = min(max(0, available_candidate - self.config.min_validation_events), self.config.min_test_events)
+        post = max(0, available_candidate - self.config.min_validation_events - self.config.min_test_events)
+        return {
+            "evaluation_version": self.config.evaluation_version,
+            "candidate_selector_version": self.config.candidate_selector_version,
+            "exit_policy_version": self.config.exit_policy_version,
+            "candidate_scored_events": available_candidate,
+            "required_validation_events": self.config.min_validation_events,
+            "available_validation_events": validation,
+            "required_test_events": self.config.min_test_events,
+            "available_test_events": test,
+            "post_test_events": post,
+            "evaluation": self.memory.champion_evaluation(self.config.evaluation_version),
+            "champion": self.memory.research_champion(self.config.evaluation_version),
+            "authority": AUTHORITY,
+            "source": "V3_8_4_PERMANENT_RESEARCH_MEMORY",
+        }
+
+    def report(self) -> dict[str, Any]:
+        row = self.memory.champion_evaluation(self.config.evaluation_version)
+        if row is None:
+            return self._compute()
+        payload = dict(row["evaluation"])
+        payload["source_digest"] = row["source_digest"]
+        payload["evaluation_digest"] = row["evaluation_digest"]
+        return payload
+
+    def audit(self) -> dict[str, Any]:
+        stored = self.memory.champion_evaluation(self.config.evaluation_version)
+        report = {
+            "evaluation_version": self.config.evaluation_version,
+            "authority": AUTHORITY,
+            "evaluation_missing": int(stored is None),
+            "source_digest_mismatch": 0,
+            "evaluation_digest_mismatch": 0,
+            "window_mismatch": 0,
+            "benchmark_mismatch": 0,
+            "status_mismatch": 0,
+            "champion_without_pass": 0,
+            "champion_authority_mismatch": 0,
+            "healthy": False,
+        }
+        if stored is None:
+            return report
+        payload = stored["evaluation"]
+        computed = self._compute()
+        computed_source = str(computed.pop("source_digest"))
+        computed_digest = _digest({
+            "definition_hash": _digest(self.definition()),
+            "source_digest": computed_source,
+            "evaluation": computed,
+        })
+        report["source_digest_mismatch"] = int(computed_source != stored["source_digest"])
+        report["evaluation_digest_mismatch"] = int(computed_digest != stored["evaluation_digest"])
+        report["benchmark_mismatch"] = int(
+            computed.get("benchmark_selector_version") != payload.get("benchmark_selector_version")
+        )
+        report["status_mismatch"] = int(computed.get("status") != payload.get("status"))
+        report["window_mismatch"] = int(
+            computed.get("validation_events") != payload.get("validation_events")
+            or computed.get("test_events") != payload.get("test_events")
+            or int(payload.get("post_test_events_used_for_initial_gate", -1)) != 0
+        )
+        champion = self.memory.research_champion(self.config.evaluation_version)
+        report["champion_without_pass"] = int(champion is not None and payload.get("status") != "PASS_RESEARCH_CHAMPION")
+        report["champion_authority_mismatch"] = int(champion is not None and champion.get("authority") != AUTHORITY)
+        report["healthy"] = not any(
+            int(report[key]) for key in report
+            if key not in {"healthy"} and isinstance(report[key], int)
         )
         return report

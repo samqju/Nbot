@@ -57,6 +57,29 @@ CREATE TABLE IF NOT EXISTS research_memory_artifacts (
     artifact_digest TEXT NOT NULL,
     recorded_at_ms INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS research_memory_champion_evaluations (
+    evaluation_version TEXT PRIMARY KEY,
+    evaluated_at_ms INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    candidate_scored_events INTEGER NOT NULL CHECK(candidate_scored_events >= 0),
+    validation_event_count INTEGER NOT NULL CHECK(validation_event_count >= 0),
+    test_event_count INTEGER NOT NULL CHECK(test_event_count >= 0),
+    post_test_event_count INTEGER NOT NULL CHECK(post_test_event_count >= 0),
+    benchmark_selector_version TEXT,
+    source_digest TEXT NOT NULL,
+    evaluation_json TEXT NOT NULL,
+    evaluation_digest TEXT NOT NULL,
+    authority TEXT NOT NULL CHECK(authority='RESEARCH_ONLY_NO_EXECUTION')
+);
+CREATE TABLE IF NOT EXISTS research_memory_champions (
+    champion_version TEXT PRIMARY KEY,
+    evaluation_version TEXT NOT NULL UNIQUE,
+    selector_version TEXT NOT NULL,
+    exit_policy_version TEXT NOT NULL,
+    promoted_at_ms INTEGER NOT NULL,
+    authority TEXT NOT NULL CHECK(authority='RESEARCH_ONLY_NO_EXECUTION'),
+    source_evaluation_digest TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS research_epoch_commits (
     epoch_id TEXT PRIMARY KEY,
     generation TEXT NOT NULL,
@@ -153,6 +176,181 @@ class ResearchMemoryStore:
                 decoded = _decode_training_blob(bytes(blob), str(digest))
                 for example in decoded:
                     yield int(event_open_ms), example
+
+    def iter_event_records(self):
+        """Stream immutable compact events with verified lineage and examples."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT event_open_ms,archive_version,example_row_count,training_blob,"
+                "training_digest,selector_summary_json,policy_summary_json,"
+                "build_manifest_json,archive_digest,authority,source_generation "
+                "FROM research_memory_events ORDER BY event_open_ms"
+            )
+            for row in rows:
+                (event_open_ms, archive_version, example_row_count, blob, training_digest,
+                 selector_json, policy_json, manifest_json, archive_digest, authority,
+                 source_generation) = row
+                if str(archive_version) != ARCHIVE_VERSION:
+                    raise RuntimeError("NBOT_V39_MEMORY_ARCHIVE_VERSION_INVALID")
+                if str(authority) != AUTHORITY:
+                    raise RuntimeError("NBOT_V39_MEMORY_AUTHORITY_INVALID")
+                examples = _decode_training_blob(bytes(blob), str(training_digest))
+                if len(examples) != int(example_row_count):
+                    raise RuntimeError("NBOT_V39_MEMORY_TRAINING_ROW_COUNT_MISMATCH")
+                if any(int(example.get("event_open_ms", -1)) != int(event_open_ms) for example in examples):
+                    raise RuntimeError("NBOT_V39_MEMORY_EVENT_ID_MISMATCH")
+                try:
+                    selector_summary = json.loads(str(selector_json))
+                    policy_summary = json.loads(str(policy_json))
+                    build_manifest = json.loads(str(manifest_json))
+                except json.JSONDecodeError as exc:
+                    raise RuntimeError("NBOT_V39_MEMORY_LINEAGE_JSON_INVALID") from exc
+                expected_archive_digest = _digest_text(_canonical_json({
+                    "archive_version": str(archive_version),
+                    "event_open_ms": int(event_open_ms),
+                    "selector_summary": selector_summary,
+                    "policy_summary": policy_summary,
+                    "build_manifest": build_manifest,
+                    "training_digest": str(training_digest),
+                    "example_row_count": int(example_row_count),
+                }))
+                if expected_archive_digest != str(archive_digest):
+                    raise RuntimeError("NBOT_V39_MEMORY_ARCHIVE_DIGEST_MISMATCH")
+                yield {
+                    "event_open_ms": int(event_open_ms),
+                    "examples": examples,
+                    "training_digest": str(training_digest),
+                    "archive_digest": str(archive_digest),
+                    "selector_summary": selector_summary,
+                    "policy_summary": policy_summary,
+                    "build_manifest": build_manifest,
+                    "source_generation": str(source_generation),
+                }
+
+    def champion_evaluation(self, evaluation_version: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            present = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='research_memory_champion_evaluations'"
+            ).fetchone()
+            if present is None:
+                return None
+            row = conn.execute(
+                "SELECT evaluated_at_ms,status,candidate_scored_events,validation_event_count,"
+                "test_event_count,post_test_event_count,benchmark_selector_version,source_digest,"
+                "evaluation_json,evaluation_digest,authority "
+                "FROM research_memory_champion_evaluations WHERE evaluation_version=?",
+                (str(evaluation_version),),
+            ).fetchone()
+        if row is None:
+            return None
+        payload = json.loads(str(row[8]))
+        if _canonical_json(payload) != str(row[8]):
+            raise RuntimeError("NBOT_V39_CHAMPION_EVALUATION_JSON_NOT_CANONICAL")
+        return {
+            "evaluation_version": str(evaluation_version),
+            "evaluated_at_ms": int(row[0]),
+            "status": str(row[1]),
+            "candidate_scored_events": int(row[2]),
+            "validation_event_count": int(row[3]),
+            "test_event_count": int(row[4]),
+            "post_test_event_count": int(row[5]),
+            "benchmark_selector_version": None if row[6] is None else str(row[6]),
+            "source_digest": str(row[7]),
+            "evaluation": payload,
+            "evaluation_digest": str(row[9]),
+            "authority": str(row[10]),
+        }
+
+    def research_champion(self, evaluation_version: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            present = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='research_memory_champions'"
+            ).fetchone()
+            if present is None:
+                return None
+            row = conn.execute(
+                "SELECT champion_version,selector_version,exit_policy_version,promoted_at_ms,"
+                "authority,source_evaluation_digest FROM research_memory_champions "
+                "WHERE evaluation_version=?", (str(evaluation_version),),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "champion_version": str(row[0]),
+            "evaluation_version": str(evaluation_version),
+            "selector_version": str(row[1]),
+            "exit_policy_version": str(row[2]),
+            "promoted_at_ms": int(row[3]),
+            "authority": str(row[4]),
+            "source_evaluation_digest": str(row[5]),
+        }
+
+    def persist_champion_evaluation(
+        self, *, evaluation_version: str, status: str, candidate_scored_events: int,
+        validation_event_count: int, test_event_count: int, post_test_event_count: int,
+        benchmark_selector_version: str | None, source_digest: str, evaluation: dict[str, Any],
+        evaluation_digest: str, champion: dict[str, Any] | None = None,
+    ) -> None:
+        final_statuses = {"PASS_RESEARCH_CHAMPION", "REJECT_RESEARCH_CHAMPION"}
+        text = _canonical_json(evaluation)
+        now_ms = int(time.time() * 1000)
+        with self._connect() as conn:
+            conn.executescript(SCHEMA)
+            conn.execute("BEGIN IMMEDIATE")
+            existing = conn.execute(
+                "SELECT status,source_digest,evaluation_digest FROM research_memory_champion_evaluations "
+                "WHERE evaluation_version=?", (str(evaluation_version),),
+            ).fetchone()
+            if existing is not None and str(existing[0]) in final_statuses:
+                if (str(existing[0]), str(existing[1]), str(existing[2])) != (
+                    str(status), str(source_digest), str(evaluation_digest)
+                ):
+                    raise RuntimeError("NBOT_V39_FINAL_CHAMPION_DECISION_IMMUTABLE")
+            else:
+                conn.execute(
+                    "INSERT INTO research_memory_champion_evaluations("
+                    "evaluation_version,evaluated_at_ms,status,candidate_scored_events,"
+                    "validation_event_count,test_event_count,post_test_event_count,"
+                    "benchmark_selector_version,source_digest,evaluation_json,evaluation_digest,authority"
+                    ") VALUES(?,?,?,?,?,?,?,?,?,?,?,?) "
+                    "ON CONFLICT(evaluation_version) DO UPDATE SET "
+                    "evaluated_at_ms=excluded.evaluated_at_ms,status=excluded.status,"
+                    "candidate_scored_events=excluded.candidate_scored_events,"
+                    "validation_event_count=excluded.validation_event_count,"
+                    "test_event_count=excluded.test_event_count,"
+                    "post_test_event_count=excluded.post_test_event_count,"
+                    "benchmark_selector_version=excluded.benchmark_selector_version,"
+                    "source_digest=excluded.source_digest,evaluation_json=excluded.evaluation_json,"
+                    "evaluation_digest=excluded.evaluation_digest,authority=excluded.authority",
+                    (
+                        str(evaluation_version), now_ms, str(status), int(candidate_scored_events),
+                        int(validation_event_count), int(test_event_count), int(post_test_event_count),
+                        benchmark_selector_version, str(source_digest), text, str(evaluation_digest),
+                        AUTHORITY,
+                    ),
+                )
+            if champion is not None:
+                expected = (
+                    str(champion["evaluation_version"]), str(champion["selector_version"]),
+                    str(champion["exit_policy_version"]), AUTHORITY, str(evaluation_digest),
+                )
+                existing_champion = conn.execute(
+                    "SELECT evaluation_version,selector_version,exit_policy_version,authority,"
+                    "source_evaluation_digest FROM research_memory_champions WHERE champion_version=?",
+                    (str(champion["champion_version"]),),
+                ).fetchone()
+                if existing_champion is not None and tuple(existing_champion) != expected:
+                    raise RuntimeError("NBOT_V39_RESEARCH_CHAMPION_CONFLICT")
+                conn.execute(
+                    "INSERT OR IGNORE INTO research_memory_champions("
+                    "champion_version,evaluation_version,selector_version,exit_policy_version,"
+                    "promoted_at_ms,authority,source_evaluation_digest) VALUES(?,?,?,?,?,?,?)",
+                    (
+                        str(champion["champion_version"]), str(champion["evaluation_version"]),
+                        str(champion["selector_version"]), str(champion["exit_policy_version"]),
+                        now_ms, AUTHORITY, str(evaluation_digest),
+                    ),
+                )
 
     def latest_event_ms(self) -> int | None:
         with self._connect() as conn:
@@ -364,6 +562,17 @@ class ResearchMemoryStore:
                 "FROM research_memory_events"
             ).fetchone()
             epochs = int(conn.execute("SELECT COUNT(*) FROM research_epoch_commits").fetchone()[0])
+            present = {str(row[0]) for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )}
+            champion_evaluations = (
+                int(conn.execute("SELECT COUNT(*) FROM research_memory_champion_evaluations").fetchone()[0])
+                if "research_memory_champion_evaluations" in present else 0
+            )
+            research_champions = (
+                int(conn.execute("SELECT COUNT(*) FROM research_memory_champions").fetchone()[0])
+                if "research_memory_champions" in present else 0
+            )
             ridge = conn.execute(
                 "SELECT through_event_ms,training_event_count,training_row_count,state_digest "
                 "FROM research_memory_ridge_state WHERE lab_version=?",
@@ -381,6 +590,8 @@ class ResearchMemoryStore:
             "training_uncompressed_bytes": int(raw),
             "latest_event_open_ms": None if latest is None else int(latest),
             "epochs": epochs,
+            "champion_evaluations": champion_evaluations,
+            "research_champions": research_champions,
             "ridge_state": None if ridge is None else {
                 "through_event_ms": ridge[0],
                 "training_event_count": int(ridge[1]),

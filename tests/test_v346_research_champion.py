@@ -14,6 +14,7 @@ from nbot.observation.champion import (
     AUTHORITY,
     RESEARCH_CHAMPION_TABLES,
     ChampionConfig,
+    MemoryWalkForwardChampionEvaluator,
     WalkForwardChampionEvaluator,
 )
 from nbot.observation.config import observation_config_for_profile
@@ -21,6 +22,8 @@ from nbot.observation.database import EvidenceDatabase
 from nbot.observation.features import CanonicalFeatureStore
 from nbot.observation.outcomes import FuturePathStore
 from nbot.observation.policies import ExitPolicyLab
+from nbot.observation.research_memory import LEDGER_COLUMNS, ResearchMemoryStore
+from nbot.observation.retention import ResearchRetentionManager
 from nbot.observation.selection import BASELINE_SELECTORS, EntrySelectionLab
 from nbot.observation.signals import ResearchSignalStore
 from tests.test_v343_future_paths import FakePublicClient, INTERVAL, store_live
@@ -163,6 +166,64 @@ class V346ResearchChampionTests(unittest.TestCase):
                 (self.config.evaluation_version,),
             ).fetchone()
         self.assertEqual(champion, (self.config.champion_version, AUTHORITY))
+
+    def test_compact_memory_replay_matches_frozen_relational_gate(self):
+        relational_result = self.lab.evaluate()
+        relational_report = self.lab.report()
+
+        retention = ResearchRetentionManager(self.db)
+        retention.initialize()
+        retention.seal(max_events=0)
+        with self.db.connection() as conn:
+            rows = list(conn.execute(
+                "SELECT " + ",".join(LEDGER_COLUMNS)
+                + " FROM research_event_ledger ORDER BY event_open_ms"
+            ))
+
+        memory = ResearchMemoryStore(Path("research_memory.db"))
+        memory.initialize(generation="TEST_V39", generation_floor_ms=0)
+        memory.import_ledger_rows(rows, source_generation="TEST_V39")
+        compact = MemoryWalkForwardChampionEvaluator(memory, self.config)
+        compact_result = compact.evaluate()
+        compact_report = compact.report()
+
+        self.assertEqual(compact_result.status, relational_result.status)
+        self.assertEqual(compact_result.validation_events, relational_result.validation_events)
+        self.assertEqual(compact_result.test_events, relational_result.test_events)
+        self.assertEqual(
+            compact_report["benchmark_selector_version"],
+            relational_report["benchmark_selector_version"],
+        )
+        self.assertEqual(
+            compact_report["promotion_gates"],
+            relational_report["promotion_gates"],
+        )
+        self.assertEqual(
+            compact_report["final_test"]["candidate"],
+            relational_report["final_test"]["candidate"],
+        )
+        self.assertEqual(
+            compact_report["final_test"]["benchmark"],
+            relational_report["final_test"]["benchmark"],
+        )
+        self.assertEqual(
+            compact_report["final_test"]["paired_lift"],
+            relational_report["final_test"]["paired_lift"],
+        )
+        self.assertEqual(
+            compact_report["final_test"]["bucket_separation"],
+            relational_report["final_test"]["bucket_separation"],
+        )
+        self.assertEqual(
+            compact_report["final_test"]["cost_and_capture"],
+            relational_report["final_test"]["cost_and_capture"],
+        )
+        self.assertEqual(
+            compact_report["final_test"]["stability"],
+            relational_report["final_test"]["stability"],
+        )
+        self.assertTrue(compact.audit()["healthy"])
+        self.assertGreater(compact.status()["post_test_events"], 0)
 
     def test_source_tampering_is_detected(self):
         self.lab.evaluate()

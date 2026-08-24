@@ -22,7 +22,10 @@ from nbot.communication.authorities import LIVE_PAPER_OPERATIONAL_CANARY_AUTHORI
 from nbot.config.profiles import get_profile
 from nbot.config.validation import MachineRole, detect_role
 from nbot.observation.binance_public import BinanceUsdMPublicClient
-from nbot.observation.champion import WalkForwardChampionEvaluator
+from nbot.observation.champion import (
+    MemoryWalkForwardChampionEvaluator,
+    WalkForwardChampionEvaluator,
+)
 from nbot.observation.catchup import (
     BoundedResearchCatchupController,
     ResearchCatchupError,
@@ -142,6 +145,8 @@ def _build_result(component: str, max_events: int, rebuild: bool) -> Any:
 
 
 def _audit_result(component: str) -> dict[str, Any]:
+    if component == "champion" and _v384_active():
+        return MemoryWalkForwardChampionEvaluator(_memory()).audit()
     _legacy_mixed_research_guard()
     db = _db()
     if component == "features":
@@ -174,6 +179,8 @@ def cmd_audit(args: argparse.Namespace) -> int:
 
 
 def cmd_report(args: argparse.Namespace) -> int:
+    if args.component == "champion" and _v384_active():
+        return _emit(MemoryWalkForwardChampionEvaluator(_memory()).report())
     db = _db()
     if args.component == "policies":
         return _emit(ExitPolicyLab(db).report())
@@ -185,19 +192,16 @@ def cmd_report(args: argparse.Namespace) -> int:
 
 
 def cmd_champion_evaluate(args: argparse.Namespace) -> int:
-    _legacy_mixed_research_guard()
+    if _v384_active():
+        if args.rebuild:
+            raise RuntimeError("NBOT_V39_COMPACT_CHAMPION_REBUILD_FORBIDDEN")
+        return _emit(MemoryWalkForwardChampionEvaluator(_memory()).evaluate())
     return _emit(WalkForwardChampionEvaluator(_db()).evaluate(rebuild=args.rebuild))
 
 
 def cmd_champion_status(_args: argparse.Namespace) -> int:
     if _v384_active():
-        return _emit({
-            "authority": "RESEARCH_ONLY_NO_EXECUTION",
-            "source": "V3_8_4_PERMANENT_RESEARCH_MEMORY",
-            "memory": _memory().status(),
-            "research_champion_evaluations": _memory().artifact("research_champion_evaluations"),
-            "research_champions": _memory().artifact("research_champions"),
-        })
+        return _emit(MemoryWalkForwardChampionEvaluator(_memory()).status())
     return _emit(WalkForwardChampionEvaluator(_db()).status())
 
 
@@ -212,8 +216,9 @@ def cmd_learning_status(_args: argparse.Namespace) -> int:
     if _v384_active():
         return _emit({
             "authority": "RESEARCH_ONLY_NO_EXECUTION",
-            "status": "V3_8_4_COMPACT_MEMORY_READY_V3_9_TRAINING_NOT_YET_ENABLED",
+            "status": "V3_9_COMPACT_CHAMPION_EVALUATION_ENABLED_CHALLENGER_TRAINING_NOT_YET_ENABLED",
             "memory": _memory().status(),
+            "champion": MemoryWalkForwardChampionEvaluator(_memory()).status(),
             "legacy_learning_foundation": _memory().artifact("learning_foundations"),
             "legacy_model_registry": _memory().artifact("model_registry"),
             "legacy_challenger_registry": _memory().artifact("challenger_registry"),
