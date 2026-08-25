@@ -363,18 +363,28 @@ class RemoteObservationClient:
         self.receipts = ProposalReceiptStore(receipt_directory)
         self.ca_file = None if ca_file is None else str(Path(ca_file))
 
-    def _connection(self):
+    def _connection(self, *, timeout_seconds: float | None = None):
+        timeout = self.timeout_seconds if timeout_seconds is None else float(timeout_seconds)
+        if not (0.1 <= timeout <= 30.0):
+            raise ValueError("NBOT_OBSERVATION_TIMEOUT_INVALID")
         if self.scheme == "https":
             context = ssl.create_default_context(cafile=self.ca_file)
             return http.client.HTTPSConnection(
                 self.host,
                 self.port,
-                timeout=self.timeout_seconds,
+                timeout=timeout,
                 context=context,
             )
-        return http.client.HTTPConnection(self.host, self.port, timeout=self.timeout_seconds)
+        return http.client.HTTPConnection(self.host, self.port, timeout=timeout)
 
-    def _request_json(self, method: str, path: str, payload: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    def _request_json(
+        self,
+        method: str,
+        path: str,
+        payload: Mapping[str, Any] | None = None,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> dict[str, Any]:
         body = None
         headers = {"Authorization": bearer_header(self.auth_token)}
         if payload is not None:
@@ -385,7 +395,7 @@ class RemoteObservationClient:
             body = encoded
             headers["Content-Type"] = "application/json"
             headers["Content-Length"] = str(len(encoded))
-        connection = self._connection()
+        connection = self._connection(timeout_seconds=timeout_seconds)
         try:
             connection.request(method, path, body=body, headers=headers)
             response = connection.getresponse()
@@ -426,6 +436,7 @@ class RemoteObservationClient:
             "POST",
             "/operator-status",
             {"view": normalized},
+            timeout_seconds=max(self.timeout_seconds, 15.0),
         )
         if payload.get("status") != "OK":
             raise ObservationClientError("OBSERVATION_OPERATOR_STATUS_INVALID")

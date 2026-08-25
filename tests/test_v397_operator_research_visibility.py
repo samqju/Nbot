@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -101,6 +102,42 @@ class V397OperatorResearchVisibilityTests(unittest.TestCase):
                     payload["document"]["decision"],
                     "WAIT_FOR_FROZEN_RESEARCH_ELIGIBILITY",
                 )
+        finally:
+            server.stop()
+
+    def test_operator_status_uses_separate_bounded_timeout(self):
+        def provider(view):
+            time.sleep(0.2)
+            return {
+                "status": "OK",
+                "view": view,
+                "order_authority": "NONE",
+                "telegram_body": "slow read-only report",
+                "document": {},
+            }
+
+        server = ObservationControlServer(
+            target=object(),
+            auth_token=TOKEN,
+            port=0,
+            operator_status_provider=provider,
+        )
+        host, port = server.start()
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                client = RemoteObservationClient(
+                    base_url=f"http://{host}:{port}",
+                    profile="testnet-trade",
+                    auth_token=TOKEN,
+                    receipt_directory=Path(td),
+                    execution_release_sha=SHA,
+                    timeout_seconds=0.1,
+                )
+                self.assertEqual(client.timeout_seconds, 0.1)
+                payload = client.operator_status("regimes")
+                self.assertEqual(payload["view"], "regimes")
+                self.assertEqual(payload["order_authority"], "NONE")
+                self.assertEqual(client.timeout_seconds, 0.1)
         finally:
             server.stop()
 

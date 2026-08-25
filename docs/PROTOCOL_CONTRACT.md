@@ -127,6 +127,9 @@ rejection; it does not add an Observation network call while a position is open.
 
 A human-requested `/operator-status` query may occur while a position is open,
 but only on the Telegram command-listener thread.  It is not called by the
-Execution worker loop, position manager, reconciliation, risk or stop code.  A
-timeout, malformed response or unavailable Observation status therefore changes
-no capital state and cannot interrupt open-position management.
+Execution worker loop, position manager, reconciliation, risk or stop code.
+Operator-status reads use a separate bounded 15-second transport timeout because
+compound research reports can run more than one read-only admin query; the
+normal proposal/outcome/health control timeout is unchanged.  A timeout,
+malformed response or unavailable Observation status therefore changes no
+capital state and cannot interrupt open-position management.
