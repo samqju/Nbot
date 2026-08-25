@@ -30,6 +30,7 @@ from nbot.observation.champion import (
 from nbot.observation.challengers import ContinuousChallengerCycle
 from nbot.observation.governance import ModelGovernanceRegistry
 from nbot.observation.market_regimes import MarketRegimeEvidence
+from nbot.observation.operational_regimes import OperationalRegimeLedger
 from nbot.observation.catchup import (
     BoundedResearchCatchupController,
     ResearchCatchupError,
@@ -129,6 +130,12 @@ def _market_regimes() -> MarketRegimeEvidence:
     if not _v384_active():
         raise RuntimeError("NBOT_V394_COMPACT_RESEARCH_MEMORY_REQUIRED")
     return MarketRegimeEvidence(_memory())
+
+
+def _operational_regimes() -> OperationalRegimeLedger:
+    if not _v384_active():
+        raise RuntimeError("NBOT_V395_COMPACT_RESEARCH_MEMORY_REQUIRED")
+    return OperationalRegimeLedger(_memory())
 
 
 def _legacy_mixed_research_guard() -> None:
@@ -323,6 +330,20 @@ def cmd_market_regime_status(_args: argparse.Namespace) -> int:
 
 def cmd_market_regime_audit(_args: argparse.Namespace) -> int:
     report = _market_regimes().audit()
+    _emit(report)
+    return 0 if bool(report.get("healthy")) else 2
+
+
+def cmd_operational_regime_sync(_args: argparse.Namespace) -> int:
+    return _emit(_operational_regimes().sync())
+
+
+def cmd_operational_regime_status(_args: argparse.Namespace) -> int:
+    return _emit(_operational_regimes().status())
+
+
+def cmd_operational_regime_audit(_args: argparse.Namespace) -> int:
+    report = _operational_regimes().audit()
     _emit(report)
     return 0 if bool(report.get("healthy")) else 2
 
@@ -695,6 +716,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     market_regime_audit = sub.add_parser("market-regime-audit")
     market_regime_audit.set_defaults(func=cmd_market_regime_audit)
+
+    operational_regime_sync = sub.add_parser(
+        "operational-regime-sync",
+        help="initialize the V3.9.5 operational-regime evidence ledger",
+    )
+    operational_regime_sync.set_defaults(func=cmd_operational_regime_sync)
+
+    operational_regime_status = sub.add_parser("operational-regime-status")
+    operational_regime_status.set_defaults(func=cmd_operational_regime_status)
+
+    operational_regime_audit = sub.add_parser("operational-regime-audit")
+    operational_regime_audit.set_defaults(func=cmd_operational_regime_audit)
 
     research_audit = sub.add_parser("research-audit")
     research_audit.set_defaults(func=cmd_research_audit)
