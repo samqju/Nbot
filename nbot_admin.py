@@ -32,6 +32,7 @@ from nbot.observation.governance import ModelGovernanceRegistry
 from nbot.observation.market_regimes import MarketRegimeEvidence
 from nbot.observation.operational_regimes import OperationalRegimeLedger
 from nbot.observation.paper_champion import PaperChampionGate
+from nbot.observation.research_champion import ResearchChampionPromotion
 from nbot.observation.catchup import (
     BoundedResearchCatchupController,
     ResearchCatchupError,
@@ -143,6 +144,12 @@ def _paper_champion_gate() -> PaperChampionGate:
     if not _v384_active():
         raise RuntimeError("NBOT_V396_COMPACT_RESEARCH_MEMORY_REQUIRED")
     return PaperChampionGate(_memory())
+
+
+def _research_champion_promotion() -> ResearchChampionPromotion:
+    if not _v384_active():
+        raise RuntimeError("NBOT_V396B_COMPACT_RESEARCH_MEMORY_REQUIRED")
+    return ResearchChampionPromotion(_memory(), _governance())
 
 
 def _legacy_mixed_research_guard() -> None:
@@ -268,6 +275,8 @@ def cmd_learning_status(_args: argparse.Namespace) -> int:
             "challengers": _challenger_cycle().status(),
             "governance": _governance().status(),
             "market_regimes": _market_regimes().status(),
+            "research_champion_promotion": _research_champion_promotion().review(),
+            "paper_champion": _paper_champion_gate().status(),
             "legacy_learning_foundation": _memory().artifact("learning_foundations"),
             "legacy_model_registry": _memory().artifact("model_registry"),
             "legacy_challenger_registry": _memory().artifact("challenger_registry"),
@@ -323,6 +332,24 @@ def cmd_governance_status(_args: argparse.Namespace) -> int:
 
 def cmd_governance_audit(_args: argparse.Namespace) -> int:
     report = _governance().audit()
+    _emit(report)
+    return 0 if bool(report.get("healthy")) else 2
+
+
+def cmd_research_champion_sync(_args: argparse.Namespace) -> int:
+    return _emit(_research_champion_promotion().sync())
+
+
+def cmd_research_champion_review(_args: argparse.Namespace) -> int:
+    return _emit(_research_champion_promotion().review())
+
+
+def cmd_research_champion_promote(args: argparse.Namespace) -> int:
+    return _emit(_research_champion_promotion().promote(confirm=args.confirm))
+
+
+def cmd_research_champion_audit(_args: argparse.Namespace) -> int:
+    report = _research_champion_promotion().audit()
     _emit(report)
     return 0 if bool(report.get("healthy")) else 2
 
@@ -725,6 +752,25 @@ def build_parser() -> argparse.ArgumentParser:
 
     governance_audit = sub.add_parser("governance-audit")
     governance_audit.set_defaults(func=cmd_governance_audit)
+
+    research_champion_sync = sub.add_parser(
+        "research-champion-sync",
+        help="freeze/materialize the V3.9.6B Research Champion promotion contract",
+    )
+    research_champion_sync.set_defaults(func=cmd_research_champion_sync)
+
+    research_champion_review = sub.add_parser("research-champion-review")
+    research_champion_review.set_defaults(func=cmd_research_champion_review)
+
+    research_champion_promote = sub.add_parser(
+        "research-champion-promote",
+        help="explicitly promote the model from the frozen eligible three-window basis",
+    )
+    research_champion_promote.add_argument("--confirm", required=True)
+    research_champion_promote.set_defaults(func=cmd_research_champion_promote)
+
+    research_champion_audit = sub.add_parser("research-champion-audit")
+    research_champion_audit.set_defaults(func=cmd_research_champion_audit)
 
     market_regime_sync = sub.add_parser(
         "market-regime-sync",

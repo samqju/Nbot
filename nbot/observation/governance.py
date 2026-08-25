@@ -40,8 +40,10 @@ MODEL_REGISTRY_PREFIX = "v39:registry:model:"
 CHALLENGER_REGISTRY_PREFIX = "v39:registry:challenger:"
 ROLLING_REPORT_PREFIX = "v39:rolling:report:"
 CONTRACT_KEY = f"v39:governance:contract:{ELIGIBILITY_VERSION}"
-CHAMPION_POINTER_GENESIS_KEY = "v39:registry:champion-pointer:000000-genesis"
-ROLLBACK_STATE_GENESIS_KEY = "v39:registry:rollback-state:000000-genesis"
+CHAMPION_POINTER_PREFIX = "v39:registry:champion-pointer:"
+ROLLBACK_STATE_PREFIX = "v39:registry:rollback-state:"
+CHAMPION_POINTER_GENESIS_KEY = CHAMPION_POINTER_PREFIX + "000000-genesis"
+ROLLBACK_STATE_GENESIS_KEY = ROLLBACK_STATE_PREFIX + "000000-genesis"
 ELIGIBILITY_EPOCH_KEY = f"v39:governance:eligibility-epoch:{ELIGIBILITY_VERSION}"
 
 
@@ -552,6 +554,18 @@ class ModelGovernanceRegistry:
             "authority": AUTHORITY,
         }
 
+    def _latest_generation_payload(self, prefix: str, genesis_key: str) -> dict[str, Any] | None:
+        records = self.memory.list_artifacts(prefix=prefix)
+        if not records:
+            record = self.memory.artifact(genesis_key)
+            return None if record is None else record["payload"]
+        records.sort(key=lambda row: (
+            int(row["payload"].get("generation", -1)),
+            int(row["recorded_at_ms"]),
+            str(row["artifact_key"]),
+        ))
+        return records[-1]["payload"]
+
     def _genesis_records(self) -> tuple[dict[str, Any], dict[str, Any]]:
         pointer = {
             "registry_version": self.config.registry_version,
@@ -645,8 +659,8 @@ class ModelGovernanceRegistry:
                 "training_cutoff_event_ms": payload["training_cutoff_event_ms"],
                 "state": "ACTIVE_WAITING_FUTURE_EVIDENCE" if evaluation is None else str(evaluation["status"]),
             })
-        pointer = self.memory.artifact(CHAMPION_POINTER_GENESIS_KEY)
-        rollback = self.memory.artifact(ROLLBACK_STATE_GENESIS_KEY)
+        pointer = self._latest_generation_payload(CHAMPION_POINTER_PREFIX, CHAMPION_POINTER_GENESIS_KEY)
+        rollback = self._latest_generation_payload(ROLLBACK_STATE_PREFIX, ROLLBACK_STATE_GENESIS_KEY)
         eligibility_epoch_record = self.memory.artifact(ELIGIBILITY_EPOCH_KEY)
         eligibility_epoch = None if eligibility_epoch_record is None else eligibility_epoch_record["payload"]
         return {
@@ -662,8 +676,8 @@ class ModelGovernanceRegistry:
             "latest_rolling_window": None if not reports else reports[-1],
             "eligibility_epoch": eligibility_epoch,
             "research_champion_eligibility": self._eligibility(reports, eligibility_epoch),
-            "champion_pointer": None if pointer is None else pointer["payload"],
-            "rollback_state": None if rollback is None else rollback["payload"],
+            "champion_pointer": pointer,
+            "rollback_state": rollback,
             "automatic_promotion": False,
             "paper_champion_authority": False,
             "execution_authority": "NONE",
@@ -751,13 +765,35 @@ class ModelGovernanceRegistry:
             if stored is not None and stored["payload"].get("automatic_promotion") is not False:
                 report["automatic_promotion_violation"] += 1
 
-        pointer = self.memory.artifact(CHAMPION_POINTER_GENESIS_KEY)
+        genesis_pointer = self.memory.artifact(CHAMPION_POINTER_GENESIS_KEY)
         expected_pointer, expected_rollback = self._genesis_records()
-        if pointer is None or pointer["payload"] != expected_pointer:
+        if genesis_pointer is None or genesis_pointer["payload"] != expected_pointer:
             report["champion_pointer_violation"] += 1
-        rollback = self.memory.artifact(ROLLBACK_STATE_GENESIS_KEY)
-        if rollback is None or rollback["payload"] != expected_rollback:
+        genesis_rollback = self.memory.artifact(ROLLBACK_STATE_GENESIS_KEY)
+        if genesis_rollback is None or genesis_rollback["payload"] != expected_rollback:
             report["rollback_state_violation"] += 1
+
+        pointer = self._latest_generation_payload(CHAMPION_POINTER_PREFIX, CHAMPION_POINTER_GENESIS_KEY)
+        if pointer is not None and int(pointer.get("generation", 0)) > 0:
+            champion = str(pointer.get("current_research_champion") or "")
+            if (
+                not champion
+                or self.memory.artifact(MODEL_REGISTRY_PREFIX + champion) is None
+                or pointer.get("authority") != AUTHORITY
+                or pointer.get("automatic_promotion") is not False
+                or pointer.get("paper_champion_authority") is not False
+                or pointer.get("execution_authority") != "NONE"
+            ):
+                report["champion_pointer_violation"] += 1
+
+        rollback = self._latest_generation_payload(ROLLBACK_STATE_PREFIX, ROLLBACK_STATE_GENESIS_KEY)
+        if rollback is not None and int(rollback.get("generation", 0)) > 0:
+            if (
+                rollback.get("authority") != AUTHORITY
+                or rollback.get("automatic_rollback") is not False
+                or rollback.get("execution_authority") != "NONE"
+            ):
+                report["rollback_state_violation"] += 1
 
         report["healthy"] = all(
             int(value) == 0

@@ -16,6 +16,7 @@ from typing import Any
 
 from .challengers import AUTHORITY
 from .research_memory import ResearchMemoryStore
+from .research_champion import PROMOTION_PREFIX
 
 
 VERSION = "V39_OPERATIONAL_REGIME_LEDGER_V1"
@@ -153,7 +154,17 @@ class OperationalRegimeLedger:
     def status(self) -> dict[str, Any]:
         record = self.memory.artifact(CONTRACT_KEY)
         contract = self.contract() if record is None else record["payload"]
-        rows = list(contract["requirements"])
+        rows = [dict(row) for row in contract["requirements"]]
+        promotions = self.memory.list_artifacts(prefix=PROMOTION_PREFIX)
+        if promotions:
+            latest = promotions[-1]
+            for row in rows:
+                if row["regime_id"] == "MODEL_PROMOTION":
+                    row["evidence_class"] = "CURRENT_RELEASE_GOVERNANCE_TRANSITION"
+                    row["status"] = "EVIDENCE_ACCEPTED"
+                    row["evidence_reference"] = str(latest["artifact_key"])
+                    row["paper_champion_treatment"] = "CARRY_FORWARD_AS_PROMOTION_OPERATIONAL_EVIDENCE"
+                    break
         accepted = [r for r in rows if r["status"] == "EVIDENCE_ACCEPTED"]
         equivalents = [r for r in rows if r["status"] == "EQUIVALENT_AVAILABLE"]
         deferred = [r for r in rows if r["status"] == "NOT_YET_APPLICABLE"]
