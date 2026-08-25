@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 import nbot_admin
 from nbot.observation.challengers import (
@@ -167,6 +168,76 @@ class V391ContinuousChallengerTests(unittest.TestCase):
         self.assertEqual(first["artifact_digest"], second["artifact_digest"])
         with self.assertRaisesRegex(RuntimeError, "ARTIFACT_IDENTITY_CONFLICT"):
             self.memory.persist_artifact("v39:test:one", {"authority": AUTHORITY, "value": 2})
+
+    def _seed_pending_epoch_transition(self, *, epoch_id: str, target_end_ms: int):
+        self.memory.challenger_transition_status()
+        with self.memory._connect() as conn:
+            conn.execute(
+                "INSERT INTO research_epoch_commits("
+                "epoch_id,generation,target_start_ms,target_end_ms,event_count,"
+                "imported_at_ms,source_digest,elapsed_seconds) VALUES(?,?,?,?,?,?,?,?)",
+                (epoch_id, "TEST_V391", target_end_ms - 95 * 300_000,
+                 target_end_ms, 96, target_end_ms + 1, "d" * 64, 1.0),
+            )
+            conn.execute(
+                "INSERT INTO research_epoch_challenger_transitions("
+                "epoch_id,target_end_ms,state,created_at_ms,attempt_count) "
+                "VALUES(?,?,'PENDING',?,0)",
+                (epoch_id, target_end_ms, target_end_ms + 2),
+            )
+
+    def test_epoch_transition_retry_detects_anchored_challenger_without_second_cycle(self):
+        epoch_id = "EPOCH-TEST-REPLAY"
+        cutoff = 9_600_000
+        self._seed_pending_epoch_transition(epoch_id=epoch_id, target_end_ms=cutoff)
+        self.memory.persist_artifact("v39:challenger:C-REPLAY", {
+            "challenger_version": "C-REPLAY",
+            "training_cutoff_event_ms": cutoff,
+            "authority": AUTHORITY,
+        })
+
+        sync = mock.Mock()
+        sync.sync.return_value = {"status": "PASS"}
+        with (
+            mock.patch.object(nbot_admin, "_memory", return_value=self.memory),
+            mock.patch.object(
+                nbot_admin, "_challenger_cycle",
+                side_effect=AssertionError("duplicate challenger cycle"),
+            ),
+            mock.patch.object(nbot_admin, "_governance", return_value=sync),
+            mock.patch.object(nbot_admin, "_market_regimes", return_value=sync),
+        ):
+            report = nbot_admin._run_epoch_challenger_transition()
+
+        self.assertEqual(report["status"], "PASS")
+        self.assertTrue(report["replay_detected"])
+        self.assertEqual(report["challenger_version"], "C-REPLAY")
+        self.assertEqual(report["cycle"]["action"], "REPLAY_ANCHORED_CHALLENGER")
+        self.assertIsNone(self.memory.pending_challenger_transition())
+        status = self.memory.challenger_transition_status()
+        self.assertEqual(status["pending"], 0)
+        self.assertEqual(status["completed"], 1)
+        self.assertEqual(status["latest"]["challenger_training_cutoff_ms"], cutoff)
+
+    def test_epoch_transition_failure_remains_pending_and_retryable(self):
+        epoch_id = "EPOCH-TEST-FAIL"
+        cutoff = 19_200_000
+        self._seed_pending_epoch_transition(epoch_id=epoch_id, target_end_ms=cutoff)
+        cycle = mock.Mock()
+        cycle.cycle.side_effect = RuntimeError("synthetic challenger failure")
+        with (
+            mock.patch.object(nbot_admin, "_memory", return_value=self.memory),
+            mock.patch.object(nbot_admin, "_challenger_cycle", return_value=cycle),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "synthetic challenger failure"):
+                nbot_admin._run_epoch_challenger_transition()
+
+        pending = self.memory.pending_challenger_transition()
+        self.assertIsNotNone(pending)
+        self.assertEqual(pending["epoch_id"], epoch_id)
+        self.assertEqual(pending["state"], "PENDING")
+        self.assertEqual(pending["attempt_count"], 1)
+        self.assertIn("synthetic challenger failure", pending["last_error"])
 
     def test_admin_parser_exposes_challenger_commands(self):
         parser = nbot_admin.build_parser()

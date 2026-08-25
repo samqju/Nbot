@@ -27,7 +27,6 @@ BASE_UNIT_NAMES = (
 OPTIONAL_UNIT_NAMES = (
     "nbot-observation-live-paper-control.service",
     "nbot-challenger-cycle.service",
-    "nbot-challenger-cycle.timer",
 )
 
 
@@ -94,15 +93,10 @@ def main() -> int:
     parser.add_argument("--start", action="store_true")
     parser.add_argument("--enable-live-paper-control", action="store_true")
     parser.add_argument("--start-live-paper-control", action="store_true")
-    parser.add_argument("--enable-challenger-cycle", action="store_true")
-    parser.add_argument("--start-challenger-cycle", action="store_true")
     args = parser.parse_args()
 
     if args.start_live_paper_control:
         args.enable_live_paper_control = True
-    if args.start_challenger_cycle:
-        args.enable_challenger_cycle = True
-
     written = render_units(
         repo=Path(args.repo),
         python=Path(args.python),
@@ -119,8 +113,6 @@ def main() -> int:
         or args.start
         or args.enable_live_paper_control
         or args.start_live_paper_control
-        or args.enable_challenger_cycle
-        or args.start_challenger_cycle
     )
     if destination != systemd_destination:
         if wants_systemd_action:
@@ -136,8 +128,6 @@ def main() -> int:
             ["systemctl", "enable", "nbot-observation-live-paper-control.service"],
             check=True,
         )
-    if args.enable_challenger_cycle:
-        subprocess.run(["systemctl", "enable", "nbot-challenger-cycle.timer"], check=True)
     if args.start:
         subprocess.run(["systemctl", "start", "nbot-observer.target"], check=True)
     if args.start_live_paper_control:
@@ -145,8 +135,6 @@ def main() -> int:
             ["systemctl", "start", "nbot-observation-live-paper-control.service"],
             check=True,
         )
-    if args.start_challenger_cycle:
-        subprocess.run(["systemctl", "start", "nbot-challenger-cycle.timer"], check=True)
     return 0
 
 

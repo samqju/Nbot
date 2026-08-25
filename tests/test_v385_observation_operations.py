@@ -47,18 +47,22 @@ class V385ObservationOperationsTests(unittest.TestCase):
         self.assertNotIn("live-paper-control", target)
         self.assertNotIn("testnet", target.lower())
 
-    def test_v39_daily_challenger_timer_is_future_mature_and_low_priority(self):
-        timer = (REPO / "deploy/systemd/nbot-challenger-cycle.timer.in").read_text()
+    def test_v39_challenger_is_epoch_triggered_and_daily_timer_is_removed(self):
+        self.assertFalse((REPO / "deploy/systemd/nbot-challenger-cycle.timer.in").exists())
         service = (REPO / "deploy/systemd/nbot-challenger-cycle.service.in").read_text()
-        self.assertIn("OnCalendar=*-*-* 04:15:00 UTC", timer)
-        self.assertIn("Persistent=true", timer)
+        epoch_service = (REPO / "deploy/systemd/nbot-research-epoch.service.in").read_text()
+        installer = (REPO / "deploy/observation/install_services.py").read_text()
+        self.assertIn("Epoch Challenger Transition Recovery", service)
         self.assertIn("challenger-cycle", service)
-        self.assertIn("After=network-online.target nbot-observation-live.service nbot-research-epoch.service", service)
-        self.assertIn("Wants=network-online.target nbot-observation-live.service nbot-research-epoch.service", service)
+        self.assertNotIn("nbot-research-epoch.service", service)
         self.assertIn("Nice=18", service)
         self.assertIn("CPUWeight=10", service)
         self.assertIn("IOWeight=10", service)
         self.assertNotIn("Restart=always", service)
+        self.assertIn("TimeoutStartSec=4h30min", epoch_service)
+        self.assertNotIn("enable-challenger-cycle", installer)
+        self.assertNotIn("start-challenger-cycle", installer)
+        self.assertNotIn("nbot-challenger-cycle.timer", installer)
 
     def test_live_paper_control_is_optional_but_restartable(self):
         text = (
@@ -94,6 +98,8 @@ class V385ObservationOperationsTests(unittest.TestCase):
         epoch_body = text.split("def cmd_research_epoch_run", 1)[1].split("def cmd_research_raw_prune", 1)[0]
         prune_body = text.split("def cmd_research_raw_prune", 1)[1].split("def cmd_research_generation_cutover", 1)[0]
         self.assertIn("with _research_epoch_command_lock()", epoch_body)
+        self.assertIn("pending_challenger_transition", epoch_body)
+        self.assertIn("_run_epoch_challenger_transition()", epoch_body)
         self.assertIn("with _research_epoch_command_lock()", prune_body)
 
     def test_generic_ambiguous_observation_template_is_removed(self):

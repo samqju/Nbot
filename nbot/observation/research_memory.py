@@ -90,6 +90,18 @@ CREATE TABLE IF NOT EXISTS research_epoch_commits (
     source_digest TEXT NOT NULL,
     elapsed_seconds REAL NOT NULL CHECK(elapsed_seconds >= 0)
 );
+CREATE TABLE IF NOT EXISTS research_epoch_challenger_transitions (
+    epoch_id TEXT PRIMARY KEY,
+    target_end_ms INTEGER NOT NULL UNIQUE,
+    state TEXT NOT NULL CHECK(state IN ('PENDING','COMPLETED')),
+    created_at_ms INTEGER NOT NULL,
+    attempt_count INTEGER NOT NULL DEFAULT 0 CHECK(attempt_count >= 0),
+    last_attempt_at_ms INTEGER,
+    completed_at_ms INTEGER,
+    challenger_version TEXT,
+    challenger_training_cutoff_ms INTEGER,
+    last_error TEXT
+);
 CREATE INDEX IF NOT EXISTS idx_memory_events_time
     ON research_memory_events(event_open_ms);
 """
@@ -535,6 +547,289 @@ class ResearchMemoryStore:
                 ),
             )
 
+
+    def commit_epoch_bundle(
+        self,
+        rows: Iterable[tuple[Any, ...]],
+        *,
+        ridge_state_row: tuple[Any, ...],
+        epoch_id: str,
+        generation: str,
+        target_start_ms: int,
+        target_end_ms: int,
+        event_count: int,
+        source_digest: str,
+        elapsed_seconds: float,
+    ) -> dict[str, Any]:
+        """Atomically commit one qualified epoch and its challenger trigger.
+
+        The compact event rows, cumulative Ridge state, immutable epoch commit,
+        and exactly-one pending challenger transition are one SQLite
+        transaction.  A crash can therefore expose either the complete epoch
+        boundary or none of it; it cannot advance memory without also creating
+        the durable challenger opportunity.
+        """
+        materialized = [tuple(row) for row in rows]
+        if len(materialized) != int(event_count) or int(event_count) <= 0:
+            raise RuntimeError("NBOT_V39_EPOCH_BUNDLE_EVENT_COUNT_INVALID")
+        for row in materialized:
+            if len(row) != len(LEDGER_COLUMNS):
+                raise RuntimeError("NBOT_V384_MEMORY_LEDGER_ROW_SHAPE_INVALID")
+            self._verify_ledger_row(row)
+        ridge = tuple(ridge_state_row)
+        if len(ridge) != len(RIDGE_COLUMNS):
+            raise RuntimeError("NBOT_V384_MEMORY_RIDGE_ROW_SHAPE_INVALID")
+
+        epoch_id = str(epoch_id).strip()
+        generation = str(generation).strip()
+        source_digest = str(source_digest).strip()
+        if not epoch_id or not generation or not source_digest:
+            raise RuntimeError("NBOT_V39_EPOCH_BUNDLE_IDENTITY_INVALID")
+        start_ms = int(target_start_ms)
+        end_ms = int(target_end_ms)
+        if start_ms <= 0 or end_ms < start_ms:
+            raise RuntimeError("NBOT_V39_EPOCH_BUNDLE_RANGE_INVALID")
+        elapsed = float(elapsed_seconds)
+        if elapsed < 0:
+            raise RuntimeError("NBOT_V39_EPOCH_BUNDLE_ELAPSED_INVALID")
+
+        now_ms = int(time.time() * 1000)
+        with self._connect() as conn:
+            conn.executescript(SCHEMA)
+            conn.execute("BEGIN IMMEDIATE")
+
+            existing_epoch = conn.execute(
+                "SELECT generation,target_start_ms,target_end_ms,event_count,source_digest "
+                "FROM research_epoch_commits WHERE epoch_id=?",
+                (epoch_id,),
+            ).fetchone()
+            expected_epoch = (generation, start_ms, end_ms, int(event_count), source_digest)
+            if existing_epoch is not None and tuple(existing_epoch) != expected_epoch:
+                raise RuntimeError("NBOT_V384_EPOCH_COMMIT_CONFLICT")
+
+            imported = 0
+            for row in materialized:
+                event = int(row[0])
+                existing = conn.execute(
+                    "SELECT " + ",".join(LEDGER_COLUMNS[1:]) +
+                    " FROM research_memory_events WHERE event_open_ms=?",
+                    (event,),
+                ).fetchone()
+                candidate_tail = tuple(row[1:])
+                if existing is not None:
+                    existing_tail = (
+                        tuple(existing[:-1])
+                        if len(existing) == len(candidate_tail) + 1
+                        else tuple(existing)
+                    )
+                    if existing_tail != candidate_tail:
+                        raise RuntimeError(f"NBOT_V384_MEMORY_EVENT_CONFLICT:{event}")
+                    continue
+                conn.execute(
+                    "INSERT INTO research_memory_events(" + ",".join(LEDGER_COLUMNS) +
+                    ",source_generation) VALUES(" +
+                    ",".join("?" for _ in range(len(LEDGER_COLUMNS) + 1)) + ")",
+                    row + (generation,),
+                )
+                imported += 1
+
+            conn.execute(
+                "INSERT OR REPLACE INTO research_memory_ridge_state(" +
+                ",".join(RIDGE_COLUMNS) + ") VALUES(" +
+                ",".join("?" for _ in RIDGE_COLUMNS) + ")",
+                ridge,
+            )
+
+            memory_events, memory_rows, memory_latest = conn.execute(
+                "SELECT COUNT(*),COALESCE(SUM(example_row_count),0),MAX(event_open_ms) "
+                "FROM research_memory_events"
+            ).fetchone()
+            mapped_ridge = dict(zip(RIDGE_COLUMNS, ridge))
+            if (
+                memory_latest is None
+                or int(memory_latest) != end_ms
+                or mapped_ridge["through_event_ms"] is None
+                or int(mapped_ridge["through_event_ms"]) != end_ms
+                or int(mapped_ridge["training_event_count"]) != int(memory_events)
+                or int(mapped_ridge["training_row_count"]) != int(memory_rows)
+            ):
+                raise RuntimeError("NBOT_V39_EPOCH_BUNDLE_RIDGE_MEMORY_MISMATCH")
+
+            if existing_epoch is None:
+                conn.execute(
+                    "INSERT INTO research_epoch_commits("
+                    "epoch_id,generation,target_start_ms,target_end_ms,event_count,"
+                    "imported_at_ms,source_digest,elapsed_seconds) VALUES(?,?,?,?,?,?,?,?)",
+                    (
+                        epoch_id, generation, start_ms, end_ms, int(event_count),
+                        now_ms, source_digest, elapsed,
+                    ),
+                )
+
+            existing_transition = conn.execute(
+                "SELECT target_end_ms,state FROM research_epoch_challenger_transitions "
+                "WHERE epoch_id=?",
+                (epoch_id,),
+            ).fetchone()
+            transition_created = existing_transition is None
+            if existing_transition is not None:
+                if int(existing_transition[0]) != end_ms:
+                    raise RuntimeError("NBOT_V39_EPOCH_TRANSITION_CONFLICT")
+            else:
+                conn.execute(
+                    "INSERT INTO research_epoch_challenger_transitions("
+                    "epoch_id,target_end_ms,state,created_at_ms,attempt_count) "
+                    "VALUES(?,?,'PENDING',?,0)",
+                    (epoch_id, end_ms, now_ms),
+                )
+
+        return {
+            "epoch_id": epoch_id,
+            "target_end_ms": end_ms,
+            "memory_rows_imported": imported,
+            "challenger_transition_created": transition_created,
+            "challenger_transition_state": (
+                "PENDING" if existing_transition is None else str(existing_transition[1])
+            ),
+        }
+
+    def pending_challenger_transition(self) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            conn.executescript(SCHEMA)
+            row = conn.execute(
+                "SELECT epoch_id,target_end_ms,state,created_at_ms,attempt_count,"
+                "last_attempt_at_ms,completed_at_ms,challenger_version,"
+                "challenger_training_cutoff_ms,last_error "
+                "FROM research_epoch_challenger_transitions "
+                "WHERE state='PENDING' ORDER BY target_end_ms,epoch_id LIMIT 1"
+            ).fetchone()
+        if row is None:
+            return None
+        keys = (
+            "epoch_id", "target_end_ms", "state", "created_at_ms",
+            "attempt_count", "last_attempt_at_ms", "completed_at_ms",
+            "challenger_version", "challenger_training_cutoff_ms", "last_error",
+        )
+        return dict(zip(keys, row))
+
+    def challenger_transition_status(self) -> dict[str, Any]:
+        with self._connect() as conn:
+            conn.executescript(SCHEMA)
+            pending = int(conn.execute(
+                "SELECT COUNT(*) FROM research_epoch_challenger_transitions WHERE state='PENDING'"
+            ).fetchone()[0])
+            completed = int(conn.execute(
+                "SELECT COUNT(*) FROM research_epoch_challenger_transitions WHERE state='COMPLETED'"
+            ).fetchone()[0])
+            latest = conn.execute(
+                "SELECT epoch_id,target_end_ms,state,attempt_count,completed_at_ms,"
+                "challenger_version,challenger_training_cutoff_ms,last_error "
+                "FROM research_epoch_challenger_transitions "
+                "ORDER BY target_end_ms DESC,epoch_id DESC LIMIT 1"
+            ).fetchone()
+        return {
+            "transition_version": "V39_EPOCH_CHALLENGER_TRANSITION_V1",
+            "authority": AUTHORITY,
+            "pending": pending,
+            "completed": completed,
+            "latest": None if latest is None else {
+                "epoch_id": str(latest[0]),
+                "target_end_ms": int(latest[1]),
+                "state": str(latest[2]),
+                "attempt_count": int(latest[3]),
+                "completed_at_ms": None if latest[4] is None else int(latest[4]),
+                "challenger_version": latest[5],
+                "challenger_training_cutoff_ms": (
+                    None if latest[6] is None else int(latest[6])
+                ),
+                "last_error": latest[7],
+            },
+        }
+
+    def begin_challenger_transition_attempt(self, epoch_id: str) -> dict[str, Any]:
+        now_ms = int(time.time() * 1000)
+        with self._connect() as conn:
+            conn.executescript(SCHEMA)
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT target_end_ms,state,attempt_count "
+                "FROM research_epoch_challenger_transitions WHERE epoch_id=?",
+                (str(epoch_id),),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError("NBOT_V39_EPOCH_TRANSITION_MISSING")
+            if str(row[1]) != "PENDING":
+                raise RuntimeError("NBOT_V39_EPOCH_TRANSITION_NOT_PENDING")
+            attempts = int(row[2]) + 1
+            conn.execute(
+                "UPDATE research_epoch_challenger_transitions "
+                "SET attempt_count=?,last_attempt_at_ms=?,last_error=NULL "
+                "WHERE epoch_id=?",
+                (attempts, now_ms, str(epoch_id)),
+            )
+        return {
+            "epoch_id": str(epoch_id),
+            "target_end_ms": int(row[0]),
+            "attempt_count": attempts,
+            "last_attempt_at_ms": now_ms,
+        }
+
+    def fail_challenger_transition(self, epoch_id: str, error: str) -> None:
+        message = str(error).strip()[:2000] or "UNKNOWN_ERROR"
+        with self._connect() as conn:
+            conn.executescript(SCHEMA)
+            result = conn.execute(
+                "UPDATE research_epoch_challenger_transitions "
+                "SET last_error=? WHERE epoch_id=? AND state='PENDING'",
+                (message, str(epoch_id)),
+            )
+            if result.rowcount != 1:
+                raise RuntimeError("NBOT_V39_EPOCH_TRANSITION_FAILURE_RECORD_MISSING")
+
+    def complete_challenger_transition(
+        self, *, epoch_id: str, challenger_version: str, training_cutoff_event_ms: int
+    ) -> dict[str, Any]:
+        version = str(challenger_version).strip()
+        cutoff = int(training_cutoff_event_ms)
+        now_ms = int(time.time() * 1000)
+        if not version:
+            raise RuntimeError("NBOT_V39_EPOCH_TRANSITION_CHALLENGER_REQUIRED")
+        with self._connect() as conn:
+            conn.executescript(SCHEMA)
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT target_end_ms,state,challenger_version,challenger_training_cutoff_ms "
+                "FROM research_epoch_challenger_transitions WHERE epoch_id=?",
+                (str(epoch_id),),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError("NBOT_V39_EPOCH_TRANSITION_MISSING")
+            target_end = int(row[0])
+            if cutoff != target_end:
+                raise RuntimeError("NBOT_V39_EPOCH_TRANSITION_CUTOFF_MISMATCH")
+            if str(row[1]) == "COMPLETED":
+                if str(row[2]) != version or int(row[3]) != cutoff:
+                    raise RuntimeError("NBOT_V39_EPOCH_TRANSITION_COMPLETION_CONFLICT")
+                return {
+                    "epoch_id": str(epoch_id),
+                    "state": "COMPLETED",
+                    "challenger_version": version,
+                    "training_cutoff_event_ms": cutoff,
+                    "already_completed": True,
+                }
+            conn.execute(
+                "UPDATE research_epoch_challenger_transitions "
+                "SET state='COMPLETED',completed_at_ms=?,challenger_version=?,"
+                "challenger_training_cutoff_ms=?,last_error=NULL WHERE epoch_id=?",
+                (now_ms, version, cutoff, str(epoch_id)),
+            )
+        return {
+            "epoch_id": str(epoch_id),
+            "state": "COMPLETED",
+            "challenger_version": version,
+            "training_cutoff_event_ms": cutoff,
+            "already_completed": False,
+        }
 
     def persist_artifact(
         self, artifact_key: str, payload: dict[str, Any], *, recorded_at_ms: int | None = None

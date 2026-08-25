@@ -79,6 +79,15 @@ class V384EpochResearchTests(unittest.TestCase):
                 status = memory.status()
                 self.assertEqual(status["events"], 96)
                 self.assertEqual(status["ridge_state"]["training_event_count"], 96)
+                transition = memory.pending_challenger_transition()
+                self.assertIsNotNone(transition)
+                self.assertEqual(transition["epoch_id"], report["epoch_id"])
+                self.assertEqual(transition["target_end_ms"], plan.target_events[-1])
+                self.assertEqual(transition["state"], "PENDING")
+                self.assertEqual(transition["attempt_count"], 0)
+                transition_status = memory.challenger_transition_status()
+                self.assertEqual(transition_status["pending"], 1)
+                self.assertEqual(transition_status["completed"], 0)
                 scratch = Path("runtime/observation/live/research_epochs") / (
                     f"EPOCH-{plan.target_events[0]}-{plan.target_events[-1]}.db"
                 )

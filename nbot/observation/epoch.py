@@ -317,25 +317,23 @@ class ResearchEpochProcessor:
                     f"NBOT_V384_EPOCH_SEAL_COUNT_INVALID:{len(ledger_rows)}"
                 )
             generation = self.memory.metadata()["generation"]
-            imported = self._stage(
-                timings, "memory_import",
-                lambda: self.memory.import_ledger_rows(
-                    ledger_rows, source_generation=generation
-                ),
-            )
             if ridge is None:
                 raise RuntimeError("NBOT_V384_EPOCH_RIDGE_STATE_MISSING")
-            self.memory.replace_ridge_state(tuple(ridge))
             elapsed = self._now() - started_total
             source_digest = self._source_digest(target_events)
-            self.memory.record_epoch(
-                epoch_id=epoch_id,
-                generation=generation,
-                target_start_ms=target_events[0],
-                target_end_ms=target_events[-1],
-                event_count=len(target_events),
-                source_digest=source_digest,
-                elapsed_seconds=elapsed,
+            memory_commit = self._stage(
+                timings, "memory_commit",
+                lambda: self.memory.commit_epoch_bundle(
+                    ledger_rows,
+                    ridge_state_row=tuple(ridge),
+                    epoch_id=epoch_id,
+                    generation=generation,
+                    target_start_ms=target_events[0],
+                    target_end_ms=target_events[-1],
+                    event_count=len(target_events),
+                    source_digest=source_digest,
+                    elapsed_seconds=elapsed,
+                ),
             )
             success = True
             return {
@@ -357,7 +355,13 @@ class ResearchEpochProcessor:
                 "policies": asdict(policies),
                 "selection": asdict(selection),
                 "seal": seal,
-                "memory_rows_imported": imported,
+                "memory_rows_imported": memory_commit["memory_rows_imported"],
+                "challenger_transition": {
+                    "epoch_id": memory_commit["epoch_id"],
+                    "target_end_ms": memory_commit["target_end_ms"],
+                    "state": memory_commit["challenger_transition_state"],
+                    "created": memory_commit["challenger_transition_created"],
+                },
                 "memory": self.memory.status(),
             }
         finally:

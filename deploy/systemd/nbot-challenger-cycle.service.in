@@ -1,7 +1,7 @@
 [Unit]
-Description=NBOT V3.9 Daily Continuous Challenger Cycle
-After=network-online.target nbot-observation-live.service nbot-research-epoch.service
-Wants=network-online.target nbot-observation-live.service nbot-research-epoch.service
+Description=NBOT V3.9 Epoch Challenger Transition Recovery
+After=network-online.target nbot-observation-live.service
+Wants=network-online.target nbot-observation-live.service
 
 [Service]
 Type=oneshot

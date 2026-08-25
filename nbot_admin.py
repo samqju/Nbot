@@ -288,30 +288,120 @@ def cmd_learning_status(_args: argparse.Namespace) -> int:
 
 
 
+def _challenger_for_training_cutoff(
+    memory: ResearchMemoryStore, training_cutoff_event_ms: int
+) -> dict[str, Any] | None:
+    cutoff = int(training_cutoff_event_ms)
+    matches = [
+        record
+        for record in memory.list_artifacts(prefix="v39:challenger:")
+        if int(record["payload"].get("training_cutoff_event_ms", -1)) == cutoff
+    ]
+    if len(matches) > 1:
+        raise RuntimeError("NBOT_V39_EPOCH_TRANSITION_DUPLICATE_CUTOFF_CHALLENGER")
+    return None if not matches else matches[0]
+
+
+def _run_epoch_challenger_transition() -> dict[str, Any]:
+    """Drain exactly one durable epoch->challenger transition.
+
+    A challenger artifact whose immutable training cutoff equals the epoch end
+    is the idempotency anchor.  If a prior attempt crashed after creating that
+    artifact, retry skips the challenger cycle, replays governance/regime sync,
+    and consumes the same transition rather than creating another challenger.
+    """
+    memory = _memory()
+    pending = memory.pending_challenger_transition()
+    if pending is None:
+        return {
+            "transition_version": "V39_EPOCH_CHALLENGER_TRANSITION_V1",
+            "authority": "RESEARCH_ONLY_NO_EXECUTION",
+            "healthy": True,
+            "status": "NO_PENDING_EPOCH_TRANSITION",
+        }
+
+    epoch_id = str(pending["epoch_id"])
+    target_end_ms = int(pending["target_end_ms"])
+    attempt = memory.begin_challenger_transition_attempt(epoch_id)
+    try:
+        anchored = _challenger_for_training_cutoff(memory, target_end_ms)
+        cycle_report: dict[str, Any]
+        replay_detected = anchored is not None
+        if anchored is None:
+            cycle_report = _challenger_cycle().cycle()
+            anchored = _challenger_for_training_cutoff(memory, target_end_ms)
+            if anchored is None:
+                raise RuntimeError(
+                    "NBOT_V39_EPOCH_TRANSITION_CHALLENGER_NOT_ANCHORED:"
+                    f"{cycle_report.get('action', cycle_report.get('status', 'UNKNOWN'))}"
+                )
+        else:
+            cycle_report = {
+                "action": "REPLAY_ANCHORED_CHALLENGER",
+                "status": "SKIP_DUPLICATE_CHALLENGER_CYCLE",
+                "challenger_version": anchored["payload"].get("challenger_version"),
+                "training_cutoff_event_ms": target_end_ms,
+                "authority": "RESEARCH_ONLY_NO_EXECUTION",
+                "automatic_promotion": False,
+            }
+
+        challenger = anchored["payload"]
+        challenger_version = str(challenger["challenger_version"])
+        challenger_cutoff = int(challenger["training_cutoff_event_ms"])
+        if challenger_cutoff != target_end_ms:
+            raise RuntimeError("NBOT_V39_EPOCH_TRANSITION_CUTOFF_MISMATCH")
+
+        governance = _governance().sync()
+        market_regimes = _market_regimes().sync()
+        completion = memory.complete_challenger_transition(
+            epoch_id=epoch_id,
+            challenger_version=challenger_version,
+            training_cutoff_event_ms=challenger_cutoff,
+        )
+        return {
+            "transition_version": "V39_EPOCH_CHALLENGER_TRANSITION_V1",
+            "authority": "RESEARCH_ONLY_NO_EXECUTION",
+            "healthy": True,
+            "status": "PASS",
+            "epoch_id": epoch_id,
+            "target_end_ms": target_end_ms,
+            "attempt_count": int(attempt["attempt_count"]),
+            "replay_detected": replay_detected,
+            "challenger_version": challenger_version,
+            "cycle": cycle_report,
+            "governance_sync": governance,
+            "market_regime_sync": market_regimes,
+            "completion": completion,
+        }
+    except Exception as exc:
+        memory.fail_challenger_transition(
+            epoch_id, f"{type(exc).__name__}:{exc}"
+        )
+        raise
+
+
 def cmd_challenger_cycle(_args: argparse.Namespace) -> int:
     research_log = configure_logging(
         role="OBSERVATION", profile=RESEARCH_PROFILE,
         log_path=observation_log_paths(ROOT)["research"], component="research",
     )
-    cycle = _challenger_cycle()
     try:
-        report = cycle.cycle()
-        governance = _governance().sync()
-        report["governance_sync"] = governance
-        market_regimes = _market_regimes().sync()
-        report["market_regime_sync"] = market_regimes
+        with _research_epoch_command_lock():
+            report = _run_epoch_challenger_transition()
     except Exception:
-        research_log.exception("V39_CHALLENGER_CYCLE_FAILED")
+        research_log.exception("V39_EPOCH_CHALLENGER_TRANSITION_FAILED")
         raise
     research_log.info(
-        "V39_CHALLENGER_CYCLE_RESULT %s",
+        "V39_EPOCH_CHALLENGER_TRANSITION_RESULT %s",
         json.dumps(report, sort_keys=True, default=_jsonable),
     )
     return _emit(report)
 
 
 def cmd_challenger_status(_args: argparse.Namespace) -> int:
-    return _emit(_challenger_cycle().status())
+    report = _challenger_cycle().status()
+    report["epoch_transition"] = _memory().challenger_transition_status()
+    return _emit(report)
 
 
 def cmd_challenger_audit(_args: argparse.Namespace) -> int:
@@ -458,11 +548,13 @@ def cmd_research_memory_status(_args: argparse.Namespace) -> int:
 
 def cmd_research_epoch_status(_args: argparse.Namespace) -> int:
     processor = _epoch_processor()
+    memory = _memory()
     return _emit({
         "epoch_version": "RESEARCH_EPOCH_V1",
         "authority": "RESEARCH_ONLY_NO_EXECUTION",
         "plan": asdict(processor.plan()),
-        "memory": _memory().status(),
+        "memory": memory.status(),
+        "challenger_transition": memory.challenger_transition_status(),
     })
 
 
@@ -477,9 +569,27 @@ def cmd_research_epoch_run(args: argparse.Namespace) -> int:
     try:
         with _research_epoch_command_lock():
             processor = _epoch_processor()
-            report = processor.run_once()
-            if report.get("status") == "PASS" and args.prune_raw:
-                report["raw_prune"] = processor.prune_raw()
+            memory = _memory()
+            pending_before = memory.pending_challenger_transition()
+            if pending_before is not None:
+                transition = _run_epoch_challenger_transition()
+                report = {
+                    "epoch_version": "RESEARCH_EPOCH_V1",
+                    "authority": "RESEARCH_ONLY_NO_EXECUTION",
+                    "healthy": True,
+                    "status": "PASS_PENDING_CHALLENGER_RECOVERY",
+                    "challenger_transition_run": transition,
+                    "plan": asdict(processor.plan()),
+                    "memory": memory.status(),
+                }
+                if args.prune_raw:
+                    report["raw_prune"] = processor.prune_raw()
+            else:
+                report = processor.run_once()
+                if report.get("status") == "PASS":
+                    report["challenger_transition_run"] = _run_epoch_challenger_transition()
+                    if args.prune_raw:
+                        report["raw_prune"] = processor.prune_raw()
     except Exception as exc:
         research_log.exception("RESEARCH_EPOCH_FAILED")
         telegram.send_critical(
@@ -488,11 +598,23 @@ def cmd_research_epoch_run(args: argparse.Namespace) -> int:
         raise
     research_log.info("RESEARCH_EPOCH_RESULT %s", json.dumps(report, sort_keys=True, default=_jsonable))
     if report.get("status") == "PASS":
-        memory = report.get("memory") if isinstance(report.get("memory"), dict) else {}
+        memory_status = report.get("memory") if isinstance(report.get("memory"), dict) else {}
+        transition = (
+            report.get("challenger_transition_run")
+            if isinstance(report.get("challenger_transition_run"), dict)
+            else {}
+        )
         telegram.send_info(
             "RESEARCH EPOCH COMPLETE",
             f"Status: PASS\nEpoch: {report.get('epoch_id', 'N/A')}\n"
-            f"Memory events: {memory.get('events', 'N/A')}\nAuthority: RESEARCH_ONLY_NO_EXECUTION",
+            f"Memory events: {memory_status.get('events', 'N/A')}\n"
+            f"Challenger transition: {transition.get('status', 'N/A')}\n"
+            "Authority: RESEARCH_ONLY_NO_EXECUTION",
+        )
+    elif report.get("status") == "PASS_PENDING_CHALLENGER_RECOVERY":
+        research_log.info(
+            "V39_PENDING_CHALLENGER_TRANSITION_RECOVERED %s",
+            json.dumps(report.get("challenger_transition_run", {}), sort_keys=True, default=_jsonable),
         )
     elif not bool(report.get("healthy")):
         telegram.send_critical(
@@ -731,7 +853,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     challenger_cycle = sub.add_parser(
         "challenger-cycle",
-        help="train/evaluate one V3.9 compact-memory challenger cycle",
+        help="drain one durable V3.9 epoch-triggered challenger transition",
     )
     challenger_cycle.set_defaults(func=cmd_challenger_cycle)
 
