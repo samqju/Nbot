@@ -24,9 +24,7 @@ from nbot.config.profiles import get_profile
 from nbot.config.validation import MachineRole, detect_role, validate_role_profile
 from nbot.observation import EvidenceDatabase, observation_config_for_profile
 from nbot.observation.recommendation import ObservationControlTarget, RecommendationSupervisor
-from nbot.operator.observation import ObservationOperatorSurface
 from nbot.operator.status_proxy import ObservationReadOnlyStatusProvider
-from nbot.operator.telegram import TelegramClient, TelegramConfig
 
 
 SUPPORTED_CONTROL_PROFILES = frozenset({"live-paper"})
@@ -95,12 +93,6 @@ def main(argv: list[str] | None = None) -> int:
         role="OBSERVATION", profile=profile.name,
         log_path=observation_log_paths(root)["control"], component="control",
     )
-    telegram = TelegramClient(
-        TelegramConfig.from_environment(os.environ, prefix="OBSERVATION"), logger=control_log
-    )
-    operator = ObservationOperatorSurface(
-        repo_root=root, target=target, telegram=telegram, logger=control_log
-    )
     supervisor = RecommendationSupervisor(
         target,
         refresh_seconds=args.control_refresh_seconds,
@@ -127,7 +119,6 @@ def main(argv: list[str] | None = None) -> int:
     signal.signal(signal.SIGINT, request_stop)
 
     supervisor.start()
-    operator.start()
     try:
         address = server.start()
         print(
@@ -156,7 +147,6 @@ def main(argv: list[str] | None = None) -> int:
             pass
         return 0
     finally:
-        operator.stop()
         server.stop()
         supervisor.stop()
 

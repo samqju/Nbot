@@ -12,7 +12,6 @@ from unittest.mock import patch
 from nbot.communication.client import RemoteObservationClient
 from nbot.communication.server import ObservationControlServer
 from nbot.operator.execution import EXECUTION_TELEGRAM_COMMANDS, ExecutionOperatorSurface
-from nbot.operator.observation import OBSERVATION_TELEGRAM_COMMANDS, ObservationOperatorSurface
 from nbot.operator.status_proxy import ObservationReadOnlyStatusProvider
 from nbot.operator.telegram import TelegramClient, TelegramConfig
 from tests.test_v386_operator_observability import FakeWorker
@@ -397,9 +396,8 @@ class V397OperatorResearchVisibilityTests(unittest.TestCase):
                 self.assertIn(command, body)
             self.assertNotIn("/" + "regimes", body)
 
-    def test_telegram_role_menus_include_all_supported_commands_without_regimes(self):
+    def test_execution_is_the_single_telegram_command_surface(self):
         execution_names = {name for name, _description in EXECUTION_TELEGRAM_COMMANDS}
-        observation_names = {name for name, _description in OBSERVATION_TELEGRAM_COMMANDS}
 
         self.assertEqual(
             execution_names,
@@ -410,46 +408,21 @@ class V397OperatorResearchVisibilityTests(unittest.TestCase):
                 "disable", "enable", "help",
             },
         )
-        self.assertEqual(
-            observation_names,
-            {
-                "status", "recommendation", "memory", "epoch", "champion",
-                "challenger", "governance", "research", "paper", "learning", "db", "help",
-            },
-        )
+        self.assertEqual(len(execution_names), 19)
         self.assertNotIn("regimes", execution_names)
-        self.assertNotIn("regimes", observation_names)
 
-    def test_observation_surface_exposes_full_v39_read_only_views(self):
-        target = FakeTarget()
-        surface = ObservationOperatorSurface(
-            repo_root=Path("/repo"),
-            target=target,
-            telegram=self._telegram(),
-            logger=self._logger("v397.obs.commands"),
-        )
-        capture = CaptureDispatcher()
-        surface.dispatcher = capture
-        with patch.object(
-            surface.status_provider,
-            "status",
-            return_value={
-                "status": "OK",
-                "order_authority": "NONE",
-                "telegram_body": "read-only",
-                "document": {},
-            },
-        ) as status:
-            for command in (
-                "/status", "/recommendation", "/memory", "/epoch", "/champion",
-                "/challenger", "/governance", "/research", "/paper", "/learning", "/db",
-            ):
-                surface.handle_command(command)
-        self.assertEqual(status.call_count, 11)
-        self.assertEqual(len(capture.info), 11)
+    def test_observation_control_has_no_telegram_command_listener(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "run_observation_control.py").read_text(encoding="utf-8")
+        unit = (
+            root / "deploy/systemd/nbot-observation-live-paper-control.service.in"
+        ).read_text(encoding="utf-8")
 
-        surface.handle_command("/" + "regimes")
-        self.assertEqual(capture.warning[-1][0], "UNKNOWN COMMAND")
+        self.assertNotIn("ObservationOperatorSurface", source)
+        self.assertNotIn("TelegramCommandListener", source)
+        self.assertNotIn('prefix="OBSERVATION"', source)
+        self.assertIn("ObservationReadOnlyStatusProvider", source)
+        self.assertNotIn("observation-live.env", unit)
 
 
 if __name__ == "__main__":

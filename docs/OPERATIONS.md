@@ -432,25 +432,25 @@ EXECUTION_TELEGRAM_OPERATOR_USER_ID=
 NBOT_TELEGRAM_TIMEOUT_SECONDS=5
 ```
 
-Observation optionally reads:
+Observation may optionally read:
 
 ```text
 config/secrets/observation-live.env
 ```
 
-with:
+for best-effort **outbound notifications only**:
 
 ```text
 OBSERVATION_TELEGRAM_BOT_TOKEN=
 OBSERVATION_TELEGRAM_CHAT_ID=
-OBSERVATION_TELEGRAM_OPERATOR_USER_ID=
 NBOT_TELEGRAM_TIMEOUT_SECONDS=5
 ```
 
-Both files are ignored by Git and should be mode `0600`.  Use separate bots if
-both command listeners are enabled; only one process should consume a given
-bot's `getUpdates` stream.  Sending notifications from the collector/research
-processes does not consume updates.
+The Observation VPS does **not** own a Telegram command listener and does not
+consume `getUpdates`. The single operator command bot runs on Execution.
+Observation/research commands are served through Execution's authenticated
+read-only control-link proxy. Both secret files remain ignored by Git and should
+be mode `0600`.
 
 ### Execution trade panel
 
@@ -517,28 +517,13 @@ block and then must pass current reconciliation/profile/arm/risk/authority
 gates. At the V3.8.6 checkpoint `NON_PROMOTIONAL_DRY` rejects `/enable` by design. V3.8.7 replaces only that gate with an authenticated one-entry operational-canary gate; all capital/risk/reconciliation checks remain final.
 Emergency flatten is intentionally not exposed through Telegram.
 
-The optional separate Observation bot remains read-only. Its command set is:
-
-```text
-/status
-/recommendation
-/memory
-/epoch
-/champion
-/challenger
-/governance
-/research
-/paper
-/learning
-/db
-/help
-```
-
-Both role surfaces register their supported command menus with Telegram at
-startup using the Bot API. Menu registration is best-effort and runs on the
-Telegram dispatcher thread, so Telegram latency/failure cannot delay capital
-management or Observation collection. Observation commands never place orders
-and never change research authority.
+There is exactly one Telegram **command** surface: the Execution bot above.
+It registers all 19 supported commands with Telegram at startup using the Bot
+API. Registration is best-effort and runs on the Telegram dispatcher thread, so
+Telegram latency/failure cannot delay capital management. The eleven
+Observation/research views remain read-only remote status requests: Observation
+builds the documents and Execution displays them. Observation itself never
+long-polls Telegram and never owns a second command menu.
 
 Queued Telegram commands are discarded when a listener starts.  This prevents
 an old `/enable` retained by Telegram while a worker was offline from changing

@@ -147,6 +147,9 @@ class V38LivePaperFoundationTests(unittest.TestCase):
         self.assertNotIn("from nbot.observation.worker", text)
         self.assertNotIn("ObservationRuntimeLock(", text)
         self.assertIn("ObservationControlTarget", text)
+        self.assertIn("ObservationReadOnlyStatusProvider", text)
+        self.assertNotIn("ObservationOperatorSurface", text)
+        self.assertNotIn('prefix="OBSERVATION"', text)
         self.assertIn("LIVE_PAPER_OPERATIONAL_CANARY", text)
 
     def test_live_paper_service_uses_separate_control_only_process(self):
@@ -156,6 +159,7 @@ class V38LivePaperFoundationTests(unittest.TestCase):
         self.assertIn("run_observation_control.py", text)
         self.assertIn("--profile live-paper", text)
         self.assertNotIn("run_observation.py", text)
+        self.assertNotIn("observation-live.env", text)
 
     def test_live_paper_tunnel_has_distinct_ports_from_testnet(self):
         live = (REPO / "deploy/systemd/nbot-control-tunnel-live-paper.service.in").read_text()
