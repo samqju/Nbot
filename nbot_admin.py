@@ -29,6 +29,7 @@ from nbot.observation.champion import (
 )
 from nbot.observation.challengers import ContinuousChallengerCycle
 from nbot.observation.governance import ModelGovernanceRegistry
+from nbot.observation.market_regimes import MarketRegimeEvidence
 from nbot.observation.catchup import (
     BoundedResearchCatchupController,
     ResearchCatchupError,
@@ -122,6 +123,12 @@ def _governance() -> ModelGovernanceRegistry:
     return ModelGovernanceRegistry(
         _memory(), ROOT / "data/observation/live/model_artifacts/v39"
     )
+
+
+def _market_regimes() -> MarketRegimeEvidence:
+    if not _v384_active():
+        raise RuntimeError("NBOT_V394_COMPACT_RESEARCH_MEMORY_REQUIRED")
+    return MarketRegimeEvidence(_memory())
 
 
 def _legacy_mixed_research_guard() -> None:
@@ -246,6 +253,7 @@ def cmd_learning_status(_args: argparse.Namespace) -> int:
             "champion": MemoryWalkForwardChampionEvaluator(_memory()).status(),
             "challengers": _challenger_cycle().status(),
             "governance": _governance().status(),
+            "market_regimes": _market_regimes().status(),
             "legacy_learning_foundation": _memory().artifact("learning_foundations"),
             "legacy_model_registry": _memory().artifact("model_registry"),
             "legacy_challenger_registry": _memory().artifact("challenger_registry"),
@@ -267,6 +275,8 @@ def cmd_challenger_cycle(_args: argparse.Namespace) -> int:
         report = cycle.cycle()
         governance = _governance().sync()
         report["governance_sync"] = governance
+        market_regimes = _market_regimes().sync()
+        report["market_regime_sync"] = market_regimes
     except Exception:
         research_log.exception("V39_CHALLENGER_CYCLE_FAILED")
         raise
@@ -299,6 +309,20 @@ def cmd_governance_status(_args: argparse.Namespace) -> int:
 
 def cmd_governance_audit(_args: argparse.Namespace) -> int:
     report = _governance().audit()
+    _emit(report)
+    return 0 if bool(report.get("healthy")) else 2
+
+
+def cmd_market_regime_sync(_args: argparse.Namespace) -> int:
+    return _emit(_market_regimes().sync())
+
+
+def cmd_market_regime_status(_args: argparse.Namespace) -> int:
+    return _emit(_market_regimes().status())
+
+
+def cmd_market_regime_audit(_args: argparse.Namespace) -> int:
+    report = _market_regimes().audit()
     _emit(report)
     return 0 if bool(report.get("healthy")) else 2
 
@@ -659,6 +683,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     governance_audit = sub.add_parser("governance-audit")
     governance_audit.set_defaults(func=cmd_governance_audit)
+
+    market_regime_sync = sub.add_parser(
+        "market-regime-sync",
+        help="materialize immutable V3.9.4 market-regime companion reports",
+    )
+    market_regime_sync.set_defaults(func=cmd_market_regime_sync)
+
+    market_regime_status = sub.add_parser("market-regime-status")
+    market_regime_status.set_defaults(func=cmd_market_regime_status)
+
+    market_regime_audit = sub.add_parser("market-regime-audit")
+    market_regime_audit.set_defaults(func=cmd_market_regime_audit)
 
     research_audit = sub.add_parser("research-audit")
     research_audit.set_defaults(func=cmd_research_audit)
