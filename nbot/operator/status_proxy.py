@@ -34,7 +34,6 @@ PUBLIC_VIEWS = frozenset(
         "recommendation",
         "db",
         "challenger",
-        "regimes",
         *READ_ONLY_ADMIN_VIEWS,
     }
 )
@@ -281,11 +280,6 @@ class ObservationReadOnlyStatusProvider:
                 "challenger": self._admin_json(("challenger-status",)),
                 "governance": self._admin_json(("governance-status",)),
             }
-        if view == "regimes":
-            return {
-                "market": self._admin_json(("market-regime-status",)),
-                "operational": self._admin_json(("operational-regime-status",)),
-            }
         command = READ_ONLY_ADMIN_VIEWS.get(view)
         if command is None:
             raise ValueError("OBSERVATION_OPERATOR_VIEW_INVALID")
@@ -316,11 +310,6 @@ class ObservationReadOnlyStatusProvider:
             body = _format_market_regimes(document)
         elif normalized == "operational-regimes":
             body = _format_operational_regimes(document)
-        elif normalized == "regimes":
-            market = document.get("market") if isinstance(document.get("market"), Mapping) else {}
-            operational = document.get("operational") if isinstance(document.get("operational"), Mapping) else {}
-            body = "<b>Market regimes</b>\n" + _format_market_regimes(market)
-            body += "\n\n<b>Operational regimes</b>\n" + _format_operational_regimes(operational)
         elif normalized == "learning":
             body = _format_learning(document)
         elif normalized == "db":

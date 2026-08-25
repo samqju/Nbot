@@ -8,14 +8,42 @@ bot, but only one process consumes getUpdates.
 from __future__ import annotations
 
 import html
-import json
 import logging
 from pathlib import Path
-import subprocess
-from typing import Mapping
 
 from nbot.observation.recommendation import ObservationControlTarget
+from .status_proxy import ObservationReadOnlyStatusProvider
 from .telegram import TelegramClient, TelegramCommandListener, TelegramDispatcher
+
+
+OBSERVATION_TELEGRAM_COMMANDS: tuple[tuple[str, str], ...] = (
+    ("status", "Observation control and health"),
+    ("recommendation", "Recommendation readiness"),
+    ("memory", "Compact research memory"),
+    ("epoch", "Research epoch status"),
+    ("champion", "Base Research Champion evaluator"),
+    ("challenger", "Active and latest challenger"),
+    ("governance", "Frozen Research Champion eligibility"),
+    ("research", "Research Champion review"),
+    ("paper", "Frozen Paper Champion gate"),
+    ("learning", "Combined V3.9 learning status"),
+    ("db", "LIVE evidence database integrity"),
+    ("help", "Show all Observation commands"),
+)
+
+OBSERVATION_COMMAND_VIEWS: dict[str, tuple[str, str]] = {
+    "/status": ("observation", "OBSERVATION STATUS"),
+    "/recommendation": ("recommendation", "RECOMMENDATION STATUS"),
+    "/memory": ("memory", "RESEARCH MEMORY"),
+    "/epoch": ("epoch", "RESEARCH EPOCH"),
+    "/champion": ("champion", "RESEARCH CHAMPION"),
+    "/challenger": ("challenger", "CHALLENGER STATUS"),
+    "/governance": ("governance", "RESEARCH GOVERNANCE"),
+    "/research": ("research", "RESEARCH CHAMPION REVIEW"),
+    "/paper": ("paper", "PAPER CHAMPION GATE"),
+    "/learning": ("learning", "V3.9 LEARNING STATUS"),
+    "/db": ("db", "OBSERVATION DATABASE"),
+}
 
 
 class ObservationOperatorSurface:
@@ -32,10 +60,14 @@ class ObservationOperatorSurface:
         self.telegram = telegram
         self.dispatcher = TelegramDispatcher(telegram, logger=logger)
         self.logger = logger
+        self.status_provider = ObservationReadOnlyStatusProvider(
+            repo_root=self.repo_root, target=self.target
+        )
         self.listener = TelegramCommandListener(telegram, self.handle_command, logger=logger)
 
     def start(self) -> None:
         self.dispatcher.start()
+        self.dispatcher.set_commands(OBSERVATION_TELEGRAM_COMMANDS)
         health = self.target.health_snapshot()
         self.dispatcher.send_info(
             "OBSERVATION CONTROL STARTED",
@@ -51,83 +83,32 @@ class ObservationOperatorSurface:
         self.dispatcher.send_info("OBSERVATION CONTROL STOPPED", "Order authority remained NONE.")
         self.dispatcher.stop()
 
-    def _admin_json(self, *args: str) -> Mapping[str, object]:
-        proc = subprocess.run(
-            [str(self.repo_root / ".venv/bin/python"), str(self.repo_root / "nbot_admin.py"), *args],
-            cwd=self.repo_root,
-            text=True,
-            capture_output=True,
-            timeout=30,
-            check=False,
-        )
-        if proc.returncode != 0:
-            raise RuntimeError(f"NBOT_ADMIN_FAILED:{' '.join(args)}:{proc.returncode}")
-        data = json.loads(proc.stdout)
-        if not isinstance(data, dict):
-            raise RuntimeError("NBOT_ADMIN_RESPONSE_INVALID")
-        return data
-
-    @staticmethod
-    def _lines(data: Mapping[str, object], keys: tuple[str, ...]) -> str:
-        rows = []
-        for key in keys:
-            if key in data:
-                rows.append(f"{key}: {html.escape(str(data.get(key)))}")
-        return "\n".join(rows) or html.escape(json.dumps(dict(data), sort_keys=True)[:3500])
-
     def handle_command(self, text: str) -> None:
         command = str(text or "").strip().split()[0].split("@", 1)[0].lower() if str(text or "").strip() else ""
         try:
-            if command in {"/status", "/recommendation"}:
-                health = self.target.health_snapshot()
-                self.dispatcher.send_info(
-                    "OBSERVATION STATUS" if command == "/status" else "RECOMMENDATION STATUS",
-                    self._lines(
-                        health,
-                        (
-                            "status", "reason", "profile", "market_environment", "evidence_lineage",
-                            "recommendation_authority", "order_authority", "release_sha", "store_id",
-                        ),
-                    ),
-                )
-            elif command == "/memory":
-                data = self._admin_json("research-memory-status")
-                ridge = data.get("ridge_state") if isinstance(data.get("ridge_state"), dict) else {}
-                body = self._lines(data, ("memory_version", "epochs", "events", "latest_event_open_ms", "quick_check", "authority"))
-                body += "\n" + self._lines(ridge, ("training_event_count", "training_row_count", "through_event_ms", "state_digest"))
-                self.dispatcher.send_info("RESEARCH MEMORY", body)
-            elif command == "/epoch":
-                data = self._admin_json("research-epoch-status")
-                plan = data.get("plan") if isinstance(data.get("plan"), dict) else {}
-                self.dispatcher.send_info(
-                    "RESEARCH EPOCH",
-                    self._lines(plan, ("status", "target_start_ms", "target_end_ms", "memory_latest_event_ms", "latest_raw_event_ms")),
-                )
-            elif command == "/champion":
-                data = self._admin_json("champion-status")
-                body = (
-                    f"authority: {html.escape(str(data.get('authority')))}\n"
-                    f"source: {html.escape(str(data.get('source')))}\n"
-                    f"research_champions: {html.escape(str(data.get('research_champions')))}\n"
-                    f"evaluations: {html.escape(str(data.get('research_champion_evaluations')))}"
-                )
-                self.dispatcher.send_info("RESEARCH CHAMPION", body)
-            elif command == "/learning":
-                data = self._admin_json("learning-status")
-                self.dispatcher.send_info("LEARNING STATUS", self._lines(data, ("status", "authority")))
-            elif command == "/db":
-                report = self.target.database.integrity_check()
-                self.dispatcher.send_info("OBSERVATION DATABASE", html.escape(json.dumps(report, sort_keys=True, indent=2)[:3500]))
+            if command in OBSERVATION_COMMAND_VIEWS:
+                view, title = OBSERVATION_COMMAND_VIEWS[command]
+                payload = self.status_provider.status(view)
+                if payload.get("order_authority") != "NONE":
+                    raise RuntimeError("OBSERVATION_OPERATOR_AUTHORITY_INVALID")
+                body = payload.get("telegram_body")
+                if not isinstance(body, str) or not body.strip():
+                    raise RuntimeError("OBSERVATION_OPERATOR_BODY_INVALID")
+                self.dispatcher.send_info(title, body)
             elif command == "/help":
                 self.dispatcher.send_info(
                     "OBSERVATION COMMANDS",
                     "/status — control/recommendation health\n"
-                    "/memory — compact research memory\n"
-                    "/epoch — next 96-event epoch plan\n"
-                    "/champion — research Champion state\n"
-                    "/learning — continuous-learning status\n"
-                    "/db — LIVE evidence DB integrity\n"
                     "/recommendation — current recommendation readiness\n"
+                    "/memory — compact research memory\n"
+                    "/epoch — research epoch status\n"
+                    "/champion — base Research Champion evaluator\n"
+                    "/challenger — active/latest challenger + PASS/REJECT\n"
+                    "/governance — frozen Research Champion eligibility\n"
+                    "/research — Research Champion review/pointer\n"
+                    "/paper — frozen Paper Champion gate\n"
+                    "/learning — compact combined V3.9 learning status\n"
+                    "/db — LIVE evidence DB integrity\n"
                     "/help — this list\n\nAll Observation commands are read-only; order authority is NONE.",
                 )
             elif command:

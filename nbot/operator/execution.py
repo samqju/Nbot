@@ -25,6 +25,28 @@ from .telegram import TelegramClient, TelegramCommandListener, TelegramDispatche
 OPERATOR_BLOCK_FILE = "OPERATOR_ENTRIES_DISABLED"
 OPERATOR_STATE_FILE = "operator_state.json"
 
+EXECUTION_TELEGRAM_COMMANDS: tuple[tuple[str, str], ...] = (
+    ("status", "Execution and capital summary"),
+    ("position", "Current protected position"),
+    ("health", "Execution health and latency"),
+    ("recent", "Most recent completed trade"),
+    ("pnl", "Current UTC-day PnL and risk"),
+    ("observation", "Observation health"),
+    ("recommendation", "Recommendation readiness"),
+    ("memory", "Compact research memory"),
+    ("epoch", "Research epoch status"),
+    ("champion", "Base Research Champion evaluator"),
+    ("challenger", "Active and latest challenger"),
+    ("governance", "Frozen Research Champion eligibility"),
+    ("research", "Research Champion review"),
+    ("paper", "Frozen Paper Champion gate"),
+    ("learning", "Combined V3.9 learning status"),
+    ("db", "Observation database integrity"),
+    ("disable", "Block new entries only"),
+    ("enable", "Request new-entry enable gate"),
+    ("help", "Show all Execution commands"),
+)
+
 
 def operator_block_path(repo_root: Path, profile: str) -> Path:
     leaf = {"testnet-trade": "testnet", "live-paper": "paper", "live-trade": "real"}[profile]
@@ -149,6 +171,7 @@ class ExecutionOperatorSurface:
 
     def start(self, *, prepared_status: str) -> None:
         self.dispatcher.start()
+        self.dispatcher.set_commands(EXECUTION_TELEGRAM_COMMANDS)
         self.sync(recovered=True)
         snapshot = self.worker.state.snapshot
         # Some legacy runtime-wiring tests intentionally provide a minimal
@@ -521,8 +544,6 @@ class ExecutionOperatorSurface:
                 self._remote_observation_status(view="research", title="RESEARCH CHAMPION REVIEW")
             elif command == "/paper":
                 self._remote_observation_status(view="paper", title="PAPER CHAMPION GATE")
-            elif command == "/regimes":
-                self._remote_observation_status(view="regimes", title="V3.9 REGIME COVERAGE")
             elif command == "/learning":
                 self._remote_observation_status(view="learning", title="V3.9 LEARNING STATUS")
             elif command == "/db":
@@ -560,7 +581,6 @@ class ExecutionOperatorSurface:
                     "/governance — frozen Research Champion eligibility\n"
                     "/research — Research Champion review/pointer\n"
                     "/paper — frozen Paper Champion gate\n"
-                    "/regimes — market + operational regime coverage\n"
                     "/learning — compact combined V3.9 learning status\n"
                     "/db — Observation DB integrity\n"
                     "\nCapital controls:\n"

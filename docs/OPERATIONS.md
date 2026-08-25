@@ -494,7 +494,6 @@ Execution bot:
 /governance
 /research
 /paper
-/regimes
 /learning
 /db
 
@@ -518,10 +517,28 @@ block and then must pass current reconciliation/profile/arm/risk/authority
 gates. At the V3.8.6 checkpoint `NON_PROMOTIONAL_DRY` rejects `/enable` by design. V3.8.7 replaces only that gate with an authenticated one-entry operational-canary gate; all capital/risk/reconciliation checks remain final.
 Emergency flatten is intentionally not exposed through Telegram.
 
-The optional separate Observation bot remains read-only with its existing
-Observation-local command set. It is not required when the operator prefers
-the expanded single Execution Telegram command surface above. Observation
-commands never place orders and never change research authority.
+The optional separate Observation bot remains read-only. Its command set is:
+
+```text
+/status
+/recommendation
+/memory
+/epoch
+/champion
+/challenger
+/governance
+/research
+/paper
+/learning
+/db
+/help
+```
+
+Both role surfaces register their supported command menus with Telegram at
+startup using the Bot API. Menu registration is best-effort and runs on the
+Telegram dispatcher thread, so Telegram latency/failure cannot delay capital
+management or Observation collection. Observation commands never place orders
+and never change research authority.
 
 Queued Telegram commands are discarded when a listener starts.  This prevents
 an old `/enable` retained by Telegram while a worker was offline from changing

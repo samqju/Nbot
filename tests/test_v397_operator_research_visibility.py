@@ -11,7 +11,8 @@ from unittest.mock import patch
 
 from nbot.communication.client import RemoteObservationClient
 from nbot.communication.server import ObservationControlServer
-from nbot.operator.execution import ExecutionOperatorSurface
+from nbot.operator.execution import EXECUTION_TELEGRAM_COMMANDS, ExecutionOperatorSurface
+from nbot.operator.observation import OBSERVATION_TELEGRAM_COMMANDS, ObservationOperatorSurface
 from nbot.operator.status_proxy import ObservationReadOnlyStatusProvider
 from nbot.operator.telegram import TelegramClient, TelegramConfig
 from tests.test_v386_operator_observability import FakeWorker
@@ -134,8 +135,8 @@ class V397OperatorResearchVisibilityTests(unittest.TestCase):
                     timeout_seconds=0.1,
                 )
                 self.assertEqual(client.timeout_seconds, 0.1)
-                payload = client.operator_status("regimes")
-                self.assertEqual(payload["view"], "regimes")
+                payload = client.operator_status("learning")
+                self.assertEqual(payload["view"], "learning")
                 self.assertEqual(payload["order_authority"], "NONE")
                 self.assertEqual(client.timeout_seconds, 0.1)
         finally:
@@ -245,7 +246,6 @@ class V397OperatorResearchVisibilityTests(unittest.TestCase):
                 result = provider.status(view)
                 self.assertEqual(result["order_authority"], "NONE")
             provider.status("challenger")
-            provider.status("regimes")
 
         allowed = {
             "research-memory-status",
@@ -261,6 +261,8 @@ class V397OperatorResearchVisibilityTests(unittest.TestCase):
         }
         self.assertTrue(calls)
         self.assertTrue(all(call[-1] in allowed for call in calls))
+        with self.assertRaisesRegex(ValueError, "VIEW_INVALID"):
+            provider.status("regimes")
         with self.assertRaisesRegex(ValueError, "VIEW_INVALID"):
             provider.status("research-champion-promote")
 
@@ -390,10 +392,64 @@ class V397OperatorResearchVisibilityTests(unittest.TestCase):
                 "/governance",
                 "/research",
                 "/paper",
-                "/regimes",
                 "/learning",
             ):
                 self.assertIn(command, body)
+            self.assertNotIn("/" + "regimes", body)
+
+    def test_telegram_role_menus_include_all_supported_commands_without_regimes(self):
+        execution_names = {name for name, _description in EXECUTION_TELEGRAM_COMMANDS}
+        observation_names = {name for name, _description in OBSERVATION_TELEGRAM_COMMANDS}
+
+        self.assertEqual(
+            execution_names,
+            {
+                "status", "position", "health", "recent", "pnl",
+                "observation", "recommendation", "memory", "epoch", "champion",
+                "challenger", "governance", "research", "paper", "learning", "db",
+                "disable", "enable", "help",
+            },
+        )
+        self.assertEqual(
+            observation_names,
+            {
+                "status", "recommendation", "memory", "epoch", "champion",
+                "challenger", "governance", "research", "paper", "learning", "db", "help",
+            },
+        )
+        self.assertNotIn("regimes", execution_names)
+        self.assertNotIn("regimes", observation_names)
+
+    def test_observation_surface_exposes_full_v39_read_only_views(self):
+        target = FakeTarget()
+        surface = ObservationOperatorSurface(
+            repo_root=Path("/repo"),
+            target=target,
+            telegram=self._telegram(),
+            logger=self._logger("v397.obs.commands"),
+        )
+        capture = CaptureDispatcher()
+        surface.dispatcher = capture
+        with patch.object(
+            surface.status_provider,
+            "status",
+            return_value={
+                "status": "OK",
+                "order_authority": "NONE",
+                "telegram_body": "read-only",
+                "document": {},
+            },
+        ) as status:
+            for command in (
+                "/status", "/recommendation", "/memory", "/epoch", "/champion",
+                "/challenger", "/governance", "/research", "/paper", "/learning", "/db",
+            ):
+                surface.handle_command(command)
+        self.assertEqual(status.call_count, 11)
+        self.assertEqual(len(capture.info), 11)
+
+        surface.handle_command("/" + "regimes")
+        self.assertEqual(capture.warning[-1][0], "UNKNOWN COMMAND")
 
 
 if __name__ == "__main__":

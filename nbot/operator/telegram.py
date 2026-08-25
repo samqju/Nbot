@@ -18,7 +18,7 @@ import logging
 import queue
 import threading
 import time
-from typing import Callable, Mapping
+from typing import Callable, Mapping, Sequence
 from urllib import error as urlerror
 from urllib import parse as urlparse
 from urllib import request as urlrequest
@@ -188,6 +188,32 @@ class TelegramClient:
 
     def send_critical(self, title: str, body: str = "") -> int | None:
         return self.send_message(f"🔴 <b>{html.escape(title)}</b>\n\n{body}".rstrip())
+
+    def set_commands(self, commands: Sequence[tuple[str, str]]) -> bool:
+        """Best-effort Telegram command-menu registration for this bot role."""
+        if not self.config.commands_enabled:
+            return False
+        payload_commands: list[dict[str, str]] = []
+        for raw_command, raw_description in commands:
+            command = str(raw_command or "").strip().lower().lstrip("/")
+            description = str(raw_description or "").strip()
+            if not command or len(command) > 32 or not command.replace("_", "").isalnum():
+                self._log("warning", f"TELEGRAM_COMMAND_MENU_INVALID command={command!r}")
+                return False
+            if not description or len(description) > 256:
+                self._log("warning", f"TELEGRAM_COMMAND_MENU_DESCRIPTION_INVALID command={command!r}")
+                return False
+            payload_commands.append({"command": command, "description": description})
+        data = self._request(
+            "setMyCommands",
+            {"commands": payload_commands},
+            self.config.timeout_seconds,
+        )
+        if not data:
+            self._log("warning", "TELEGRAM_COMMAND_MENU_SET_FAILED")
+            return False
+        self._log("info", f"TELEGRAM_COMMAND_MENU_SET count={len(payload_commands)}")
+        return True
 
     def get_updates(self, *, offset: int | None, timeout_seconds: int) -> list[dict]:
         if not self.config.commands_enabled:
@@ -404,6 +430,9 @@ class TelegramDispatcher:
             return False
         return self._enqueue("edit", (int(message_id), text))
 
+    def set_commands(self, commands: Sequence[tuple[str, str]]) -> bool:
+        return self._enqueue("set_commands", (tuple(commands),))
+
     def send_info(self, title: str, body: str = "") -> bool:
         text = f"🟢 <b>{html.escape(title)}</b>\n\n{body}".rstrip()
         return self.send_message(text)
@@ -428,6 +457,8 @@ class TelegramDispatcher:
                     result = self.client.send_message(*args)
                 elif operation == "edit":
                     result = self.client.edit_message(*args)
+                elif operation == "set_commands":
+                    result = self.client.set_commands(*args)
             except Exception as exc:
                 self._log("warning", f"TELEGRAM_DISPATCH_FAILED operation={operation} error={type(exc).__name__}:{exc}")
             finally:

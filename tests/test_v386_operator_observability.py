@@ -107,6 +107,31 @@ class OperatorObservabilityTests(unittest.TestCase):
             time.sleep(0.01)
         return bool(predicate())
 
+    def test_telegram_command_menu_registration_is_best_effort(self):
+        calls = []
+
+        def requester(method, payload, timeout):
+            calls.append((method, dict(payload), timeout))
+            return {"ok": True, "result": True}
+
+        client = TelegramClient(
+            TelegramConfig("token", "123", "456", 1.0), requester=requester
+        )
+        self.assertTrue(client.set_commands((("status", "Show status"), ("help", "Show help"))))
+        self.assertEqual(calls[0][0], "setMyCommands")
+        self.assertEqual(
+            calls[0][1]["commands"],
+            [
+                {"command": "status", "description": "Show status"},
+                {"command": "help", "description": "Show help"},
+            ],
+        )
+
+        safe = TelegramClient(
+            TelegramConfig("token", "123", "456", 1.0), requester=lambda *_args: None
+        )
+        self.assertFalse(safe.set_commands((("status", "Show status"),)))
+
     def test_telegram_send_edit_and_failure_are_best_effort(self):
         calls = []
 
