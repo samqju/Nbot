@@ -172,6 +172,7 @@ def _operator_surface(
     environment: Mapping[str, str],
     enable_policy,
     runtime_mode: str | None = None,
+    observation_status_reader=None,
 ) -> ExecutionOperatorSurface:
     paths = execution_log_paths(repo_root, profile_name)
     system_log = configure_logging(
@@ -198,6 +199,7 @@ def _operator_surface(
         enable_policy=enable_policy,
         runtime_mode=runtime_mode,
         position_manage_warn_ms=warn_ms,
+        observation_status_reader=observation_status_reader,
     )
 
 
@@ -722,6 +724,7 @@ def run_testnet_runtime(
     operator = _operator_surface(
         repo_root=repo_root, profile_name=profile.name, worker=worker,
         environment=environment, enable_policy=enable_policy,
+        observation_status_reader=getattr(remote_client, "operator_status", None),
     )
     stop_requested = False
 
@@ -865,6 +868,7 @@ def run_live_paper_runtime(
         repo_root=repo_root, profile_name=profile.name, worker=worker,
         environment=environment, enable_policy=enable_policy,
         runtime_mode="LIVE_PAPER_OPERATIONAL_CANARY",
+        observation_status_reader=getattr(remote_client, "operator_status", None),
     )
     stop_requested = False
 

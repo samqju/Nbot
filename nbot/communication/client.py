@@ -417,6 +417,28 @@ class RemoteObservationClient:
             raise ObservationClientError("OBSERVATION_HEALTH_ORDER_AUTHORITY_INVALID")
         return payload
 
+    def operator_status(self, view: str) -> dict[str, Any]:
+        """Read Observation-owned operator status without creating authority."""
+        normalized = str(view or "").strip().lower()
+        if not normalized or len(normalized) > 64:
+            raise ObservationClientError("OBSERVATION_OPERATOR_VIEW_INVALID")
+        payload = self._request_json(
+            "POST",
+            "/operator-status",
+            {"view": normalized},
+        )
+        if payload.get("status") != "OK":
+            raise ObservationClientError("OBSERVATION_OPERATOR_STATUS_INVALID")
+        if payload.get("view") != normalized:
+            raise ObservationClientError("OBSERVATION_OPERATOR_VIEW_MISMATCH")
+        if payload.get("order_authority") != "NONE":
+            raise ObservationClientError("OBSERVATION_OPERATOR_AUTHORITY_INVALID")
+        if not isinstance(payload.get("document"), dict):
+            raise ObservationClientError("OBSERVATION_OPERATOR_DOCUMENT_INVALID")
+        if not isinstance(payload.get("telegram_body"), str) or not str(payload["telegram_body"]).strip():
+            raise ObservationClientError("OBSERVATION_OPERATOR_BODY_INVALID")
+        return payload
+
     def request_proposal(
         self,
         *,

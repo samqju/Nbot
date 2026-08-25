@@ -65,6 +65,9 @@ class V37IntegratedObservationClient:
     def health(self) -> dict[str, Any]:
         return self._validate_remote()
 
+    def operator_status(self, view: str) -> dict[str, Any]:
+        return self.remote.operator_status(view)
+
     def record_entry_context(self, **kwargs: Any) -> None:
         self.remote.receipts.record_entry_context(**kwargs)
 
@@ -113,6 +116,9 @@ class V38LivePaperOperationalClient:
 
     def health(self) -> dict[str, Any]:
         return self.base.health()
+
+    def operator_status(self, view: str) -> dict[str, Any]:
+        return self.base.operator_status(view)
 
     def request_proposal(self, **kwargs: Any):
         proposal = self.base.request_proposal(**kwargs)

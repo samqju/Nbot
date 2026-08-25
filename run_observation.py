@@ -16,6 +16,7 @@ from nbot.config.profiles import get_profile
 from nbot.config.validation import MachineRole, detect_role, validate_role_profile
 from nbot.communication.server import ObservationControlServer
 from nbot.observation.recommendation import ObservationControlTarget, RecommendationSupervisor
+from nbot.operator.status_proxy import ObservationReadOnlyStatusProvider
 from nbot.operator.telegram import TelegramClient, TelegramConfig, TelegramDispatcher
 from nbot.observation import (
     BinanceUsdMPublicClient,
@@ -196,6 +197,9 @@ def main(argv: list[str] | None = None) -> int:
                 refresh_seconds=args.control_refresh_seconds,
             )
             recommendation_supervisor.start()
+            operator_status_provider = ObservationReadOnlyStatusProvider(
+                repo_root=root, target=target
+            )
             control_server = ObservationControlServer(
                 target=target,
                 auth_token=auth_token,
@@ -203,6 +207,7 @@ def main(argv: list[str] | None = None) -> int:
                 port=args.control_port,
                 tls_certfile=_optional_path(args.control_tls_cert),
                 tls_keyfile=_optional_path(args.control_tls_key),
+                operator_status_provider=operator_status_provider.status,
             )
             address = control_server.start()
             _emit(

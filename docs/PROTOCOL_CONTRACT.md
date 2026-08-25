@@ -41,11 +41,23 @@ non-promotional dry mode, `live-paper` readiness remains fail closed as
 
 ## Transport
 
-Observation exposes only:
+Observation exposes the capital-boundary endpoints:
 
 - `GET /health`
 - `POST /trade-request`
 - `POST /execution-outcome`
+
+V3.9 additionally permits one authenticated **read-only operator extension**:
+
+- `POST /operator-status`
+
+`/operator-status` accepts only a fixed allow-listed status view.  Observation
+constructs the requested status from its own research/governance state and the
+response must declare `order_authority=NONE`.  The endpoint cannot train, run a
+challenger cycle, promote, roll back, change recommendation authority, enable
+entries or mutate Execution state.  It is an operator/observability extension,
+not a new proposal/outcome schema and does not change the frozen
+`NBOT_V3_EXECUTION_V1` capital-message meaning.
 
 Every request requires a strong bearer token.  Plain HTTP is accepted only on
 loopback for local validation; a non-loopback bind/client requires TLS.  Request
@@ -109,6 +121,12 @@ trade-request ordering already enforced by Execution.
 
 ## Open-position rule
 
-No normal V3 control request belongs in the open-position hot path.  V3.5 adds
-only a local veto-feedback persistence hook after a flat-mode entry rejection;
-it does not add an Observation network call while a position is open.
+No normal V3 trading/control request belongs in the open-position hot path.
+V3.5 adds only a local veto-feedback persistence hook after a flat-mode entry
+rejection; it does not add an Observation network call while a position is open.
+
+A human-requested `/operator-status` query may occur while a position is open,
+but only on the Telegram command-listener thread.  It is not called by the
+Execution worker loop, position manager, reconciliation, risk or stop code.  A
+timeout, malformed response or unavailable Observation status therefore changes
+no capital state and cannot interrupt open-position management.

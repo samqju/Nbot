@@ -7,7 +7,7 @@ from pathlib import Path
 import ssl
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any
+from typing import Any, Callable, Mapping
 
 from .auth import authorized, validate_control_token
 from .contracts import ExecutionOutcome, TradeRequest
@@ -29,6 +29,7 @@ class ObservationControlServer:
         port: int = 8765,
         tls_certfile: str | Path | None = None,
         tls_keyfile: str | Path | None = None,
+        operator_status_provider: Callable[[str], Mapping[str, Any]] | None = None,
     ) -> None:
         self.target = target
         self.auth_token = validate_control_token(auth_token)
@@ -40,6 +41,7 @@ class ObservationControlServer:
             raise ValueError("NBOT_CONTROL_PORT_INVALID")
         self.tls_certfile = None if tls_certfile is None else Path(tls_certfile)
         self.tls_keyfile = None if tls_keyfile is None else Path(tls_keyfile)
+        self.operator_status_provider = operator_status_provider
         if (self.tls_certfile is None) != (self.tls_keyfile is None):
             raise ValueError("NBOT_CONTROL_TLS_CERT_KEY_PAIR_REQUIRED")
         if self.host not in _LOOPBACK_HOSTS and self.tls_certfile is None:
@@ -108,6 +110,17 @@ class ObservationControlServer:
                         outcome = ExecutionOutcome.from_dict(payload)
                         acknowledgement = target.receive_execution_outcome(outcome)
                         self._send(200, acknowledgement.to_dict())
+                        return
+                    if self.path == "/operator-status":
+                        if outer.operator_status_provider is None:
+                            self._send(503, {"error": "OPERATOR_STATUS_UNAVAILABLE"})
+                            return
+                        if set(payload) != {"view"} or not isinstance(payload.get("view"), str):
+                            raise ValueError("OBSERVATION_OPERATOR_STATUS_REQUEST_INVALID")
+                        result = dict(outer.operator_status_provider(str(payload["view"])))
+                        if result.get("order_authority") != "NONE":
+                            raise ValueError("OBSERVATION_OPERATOR_STATUS_AUTHORITY_INVALID")
+                        self._send(200, result)
                         return
                     self._send(404, {"error": "NOT_FOUND"})
                 except (ProtocolValidationError, TypeError, ValueError) as exc:

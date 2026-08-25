@@ -84,6 +84,7 @@ class ExecutionOperatorSurface:
         enable_policy: Callable[[], tuple[bool, str]],
         runtime_mode: str | None = None,
         position_manage_warn_ms: float = 1000.0,
+        observation_status_reader: Callable[[str], Mapping[str, object]] | None = None,
     ) -> None:
         self.repo_root = Path(repo_root)
         self.profile = profile
@@ -95,6 +96,7 @@ class ExecutionOperatorSurface:
         self.enable_policy = enable_policy
         self.runtime_mode = None if runtime_mode is None else str(runtime_mode).strip() or None
         self.position_manage_warn_ms = max(1.0, float(position_manage_warn_ms))
+        self.observation_status_reader = observation_status_reader
         paths = ExecutionStatePaths.for_profile(self.repo_root, profile)
         self.operator_state_path = paths.base_dir / OPERATOR_STATE_FILE
         self._state = self._load_operator_state()
@@ -448,6 +450,46 @@ class ExecutionOperatorSurface:
             f"Reason: {html.escape(daily.halt_reason or 'NONE')}"
         )
 
+    def _remote_observation_status(self, *, view: str, title: str) -> None:
+        """Display read-only Observation status on the Execution Telegram bot.
+
+        This method runs only on the Telegram command-listener thread.  Failure
+        to reach Observation is informational and never mutates worker state.
+        """
+        reader = self.observation_status_reader
+        if reader is None:
+            self.dispatcher.send_warning(
+                "OBSERVATION STATUS UNAVAILABLE",
+                "Read-only Observation proxy is not configured. Execution is unchanged.",
+            )
+            return
+        try:
+            payload = reader(view)
+            if not isinstance(payload, Mapping):
+                raise RuntimeError("OBSERVATION_OPERATOR_RESPONSE_INVALID")
+            if payload.get("order_authority") != "NONE":
+                raise RuntimeError("OBSERVATION_OPERATOR_AUTHORITY_INVALID")
+            body = payload.get("telegram_body")
+            if not isinstance(body, str) or not body.strip():
+                raise RuntimeError("OBSERVATION_OPERATOR_BODY_INVALID")
+        except Exception as exc:
+            self.system_log.warning(
+                "OPERATOR_OBSERVATION_STATUS_UNAVAILABLE view=%s error=%s:%s",
+                view,
+                type(exc).__name__,
+                exc,
+            )
+            self.dispatcher.send_warning(
+                "OBSERVATION STATUS UNAVAILABLE",
+                f"View: {html.escape(view)}\nExecution and open-position management are unchanged.",
+            )
+            return
+        self.system_log.info(
+            "OPERATOR_OBSERVATION_STATUS source=TELEGRAM view=%s authority=NONE",
+            view,
+        )
+        self.dispatcher.send_info(title, body)
+
     def handle_command(self, text: str) -> None:
         command = str(text or "").strip().split()[0].split("@", 1)[0].lower() if str(text or "").strip() else ""
         try:
@@ -461,6 +503,30 @@ class ExecutionOperatorSurface:
                 self.dispatcher.send_info("RECENT TRADE", self._recent_body())
             elif command == "/pnl":
                 self.dispatcher.send_info("DAILY PNL", self._pnl_body())
+            elif command == "/observation":
+                self._remote_observation_status(view="observation", title="OBSERVATION STATUS")
+            elif command == "/recommendation":
+                self._remote_observation_status(view="recommendation", title="RECOMMENDATION STATUS")
+            elif command == "/memory":
+                self._remote_observation_status(view="memory", title="RESEARCH MEMORY")
+            elif command == "/epoch":
+                self._remote_observation_status(view="epoch", title="RESEARCH EPOCH")
+            elif command == "/champion":
+                self._remote_observation_status(view="champion", title="RESEARCH CHAMPION")
+            elif command == "/challenger":
+                self._remote_observation_status(view="challenger", title="CHALLENGER STATUS")
+            elif command == "/governance":
+                self._remote_observation_status(view="governance", title="RESEARCH GOVERNANCE")
+            elif command == "/research":
+                self._remote_observation_status(view="research", title="RESEARCH CHAMPION REVIEW")
+            elif command == "/paper":
+                self._remote_observation_status(view="paper", title="PAPER CHAMPION GATE")
+            elif command == "/regimes":
+                self._remote_observation_status(view="regimes", title="V3.9 REGIME COVERAGE")
+            elif command == "/learning":
+                self._remote_observation_status(view="learning", title="V3.9 LEARNING STATUS")
+            elif command == "/db":
+                self._remote_observation_status(view="db", title="OBSERVATION DATABASE")
             elif command == "/disable":
                 set_operator_entry_block(self.repo_root, self.profile, blocked=True)
                 self.worker.disable_new_entries()
@@ -484,6 +550,20 @@ class ExecutionOperatorSurface:
                     "/health — execution health counters/latency\n"
                     "/recent — most recent completed trade\n"
                     "/pnl — current UTC-day PnL/risk state\n"
+                    "\nRead-only Observation / research:\n"
+                    "/observation — Observation health\n"
+                    "/recommendation — recommendation readiness\n"
+                    "/memory — compact research memory\n"
+                    "/epoch — research epoch status\n"
+                    "/champion — base Research Champion evaluator\n"
+                    "/challenger — active/latest challenger + PASS/REJECT\n"
+                    "/governance — frozen Research Champion eligibility\n"
+                    "/research — Research Champion review/pointer\n"
+                    "/paper — frozen Paper Champion gate\n"
+                    "/regimes — market + operational regime coverage\n"
+                    "/learning — compact combined V3.9 learning status\n"
+                    "/db — Observation DB integrity\n"
+                    "\nCapital controls:\n"
                     "/disable — block new entries only\n"
                     "/enable — request entry gate; all profile/authority/risk gates still apply\n"
                     "/help — this list",

@@ -25,6 +25,7 @@ from nbot.config.validation import MachineRole, detect_role, validate_role_profi
 from nbot.observation import EvidenceDatabase, observation_config_for_profile
 from nbot.observation.recommendation import ObservationControlTarget, RecommendationSupervisor
 from nbot.operator.observation import ObservationOperatorSurface
+from nbot.operator.status_proxy import ObservationReadOnlyStatusProvider
 from nbot.operator.telegram import TelegramClient, TelegramConfig
 
 
@@ -104,6 +105,9 @@ def main(argv: list[str] | None = None) -> int:
         target,
         refresh_seconds=args.control_refresh_seconds,
     )
+    operator_status_provider = ObservationReadOnlyStatusProvider(
+        repo_root=root, target=target
+    )
     server = ObservationControlServer(
         target=target,
         auth_token=auth_token,
@@ -111,6 +115,7 @@ def main(argv: list[str] | None = None) -> int:
         port=args.control_port,
         tls_certfile=_optional_path(args.control_tls_cert),
         tls_keyfile=_optional_path(args.control_tls_key),
+        operator_status_provider=operator_status_provider.status,
     )
 
     stop = threading.Event()

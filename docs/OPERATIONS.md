@@ -483,10 +483,34 @@ Execution bot:
 /health
 /recent
 /pnl
+
+# read-only Observation/research proxy
+/observation
+/recommendation
+/memory
+/epoch
+/champion
+/challenger
+/governance
+/research
+/paper
+/regimes
+/learning
+/db
+
+# capital controls
 /disable
 /enable
 /help
 ```
+
+The Observation/research commands above use the authenticated control link as a
+read-only proxy. Observation builds the status document; Execution only displays
+it. No Observation research/learning module is imported into the Execution
+worker, and a failed/slow status request runs only on the Telegram listener
+thread. It cannot block or mutate open-position management, entry state, risk,
+stops, promotion, rollback, or research evidence. This preserves the useful V1
+`/learning` proxy pattern while keeping the V3 worker boundary.
 
 `/disable` creates an additional durable local entry block and leaves OPEN
 position management fully active.  `/enable` can remove only that operator
@@ -494,20 +518,10 @@ block and then must pass current reconciliation/profile/arm/risk/authority
 gates. At the V3.8.6 checkpoint `NON_PROMOTIONAL_DRY` rejects `/enable` by design. V3.8.7 replaces only that gate with an authenticated one-entry operational-canary gate; all capital/risk/reconciliation checks remain final.
 Emergency flatten is intentionally not exposed through Telegram.
 
-Observation bot (read-only):
-
-```text
-/status
-/memory
-/epoch
-/champion
-/learning
-/db
-/recommendation
-/help
-```
-
-Observation commands never place orders and never change research authority.
+The optional separate Observation bot remains read-only with its existing
+Observation-local command set. It is not required when the operator prefers
+the expanded single Execution Telegram command surface above. Observation
+commands never place orders and never change research authority.
 
 Queued Telegram commands are discarded when a listener starts.  This prevents
 an old `/enable` retained by Telegram while a worker was offline from changing
