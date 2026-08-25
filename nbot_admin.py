@@ -31,6 +31,7 @@ from nbot.observation.challengers import ContinuousChallengerCycle
 from nbot.observation.governance import ModelGovernanceRegistry
 from nbot.observation.market_regimes import MarketRegimeEvidence
 from nbot.observation.operational_regimes import OperationalRegimeLedger
+from nbot.observation.paper_champion import PaperChampionGate
 from nbot.observation.catchup import (
     BoundedResearchCatchupController,
     ResearchCatchupError,
@@ -136,6 +137,12 @@ def _operational_regimes() -> OperationalRegimeLedger:
     if not _v384_active():
         raise RuntimeError("NBOT_V395_COMPACT_RESEARCH_MEMORY_REQUIRED")
     return OperationalRegimeLedger(_memory())
+
+
+def _paper_champion_gate() -> PaperChampionGate:
+    if not _v384_active():
+        raise RuntimeError("NBOT_V396_COMPACT_RESEARCH_MEMORY_REQUIRED")
+    return PaperChampionGate(_memory())
 
 
 def _legacy_mixed_research_guard() -> None:
@@ -344,6 +351,20 @@ def cmd_operational_regime_status(_args: argparse.Namespace) -> int:
 
 def cmd_operational_regime_audit(_args: argparse.Namespace) -> int:
     report = _operational_regimes().audit()
+    _emit(report)
+    return 0 if bool(report.get("healthy")) else 2
+
+
+def cmd_paper_champion_sync(_args: argparse.Namespace) -> int:
+    return _emit(_paper_champion_gate().sync())
+
+
+def cmd_paper_champion_status(_args: argparse.Namespace) -> int:
+    return _emit(_paper_champion_gate().status())
+
+
+def cmd_paper_champion_audit(_args: argparse.Namespace) -> int:
+    report = _paper_champion_gate().audit()
     _emit(report)
     return 0 if bool(report.get("healthy")) else 2
 
@@ -728,6 +749,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     operational_regime_audit = sub.add_parser("operational-regime-audit")
     operational_regime_audit.set_defaults(func=cmd_operational_regime_audit)
+
+    paper_champion_sync = sub.add_parser(
+        "paper-champion-sync",
+        help="freeze/materialize the V3.9.6A Paper Champion acceptance contract",
+    )
+    paper_champion_sync.set_defaults(func=cmd_paper_champion_sync)
+
+    paper_champion_status = sub.add_parser("paper-champion-status")
+    paper_champion_status.set_defaults(func=cmd_paper_champion_status)
+
+    paper_champion_audit = sub.add_parser("paper-champion-audit")
+    paper_champion_audit.set_defaults(func=cmd_paper_champion_audit)
 
     research_audit = sub.add_parser("research-audit")
     research_audit.set_defaults(func=cmd_research_audit)
