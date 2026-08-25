@@ -28,6 +28,7 @@ from nbot.observation.champion import (
     WalkForwardChampionEvaluator,
 )
 from nbot.observation.challengers import ContinuousChallengerCycle
+from nbot.observation.governance import ModelGovernanceRegistry
 from nbot.observation.catchup import (
     BoundedResearchCatchupController,
     ResearchCatchupError,
@@ -113,6 +114,14 @@ def _challenger_cycle() -> ContinuousChallengerCycle:
     if not _v384_active():
         raise RuntimeError("NBOT_V391_COMPACT_RESEARCH_MEMORY_REQUIRED")
     return ContinuousChallengerCycle(_memory(), release_sha=_release_sha())
+
+
+def _governance() -> ModelGovernanceRegistry:
+    if not _v384_active():
+        raise RuntimeError("NBOT_V392_COMPACT_RESEARCH_MEMORY_REQUIRED")
+    return ModelGovernanceRegistry(
+        _memory(), ROOT / "data/observation/live/model_artifacts/v39"
+    )
 
 
 def _legacy_mixed_research_guard() -> None:
@@ -236,6 +245,7 @@ def cmd_learning_status(_args: argparse.Namespace) -> int:
             "memory": _memory().status(),
             "champion": MemoryWalkForwardChampionEvaluator(_memory()).status(),
             "challengers": _challenger_cycle().status(),
+            "governance": _governance().status(),
             "legacy_learning_foundation": _memory().artifact("learning_foundations"),
             "legacy_model_registry": _memory().artifact("model_registry"),
             "legacy_challenger_registry": _memory().artifact("challenger_registry"),
@@ -255,6 +265,8 @@ def cmd_challenger_cycle(_args: argparse.Namespace) -> int:
     cycle = _challenger_cycle()
     try:
         report = cycle.cycle()
+        governance = _governance().sync()
+        report["governance_sync"] = governance
     except Exception:
         research_log.exception("V39_CHALLENGER_CYCLE_FAILED")
         raise
@@ -274,6 +286,21 @@ def cmd_challenger_audit(_args: argparse.Namespace) -> int:
     _emit(report)
     return 0 if bool(report.get("healthy")) else 2
 
+
+
+
+def cmd_governance_sync(_args: argparse.Namespace) -> int:
+    return _emit(_governance().sync())
+
+
+def cmd_governance_status(_args: argparse.Namespace) -> int:
+    return _emit(_governance().status())
+
+
+def cmd_governance_audit(_args: argparse.Namespace) -> int:
+    report = _governance().audit()
+    _emit(report)
+    return 0 if bool(report.get("healthy")) else 2
 
 def cmd_retention_init(_args: argparse.Namespace) -> int:
     _legacy_mixed_research_guard()
@@ -620,6 +647,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     challenger_audit = sub.add_parser("challenger-audit")
     challenger_audit.set_defaults(func=cmd_challenger_audit)
+
+    governance_sync = sub.add_parser(
+        "governance-sync",
+        help="materialize/synchronize V3.9.2 model registry and V3.9.3 rolling reports",
+    )
+    governance_sync.set_defaults(func=cmd_governance_sync)
+
+    governance_status = sub.add_parser("governance-status")
+    governance_status.set_defaults(func=cmd_governance_status)
+
+    governance_audit = sub.add_parser("governance-audit")
+    governance_audit.set_defaults(func=cmd_governance_audit)
 
     research_audit = sub.add_parser("research-audit")
     research_audit.set_defaults(func=cmd_research_audit)
