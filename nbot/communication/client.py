@@ -313,6 +313,77 @@ class ProposalReceiptStore:
         return True
 
 
+def probe_observation_health(
+    *,
+    base_url: str,
+    auth_token: str,
+    timeout_seconds: float = 2.0,
+    ca_file: str | Path | None = None,
+) -> dict[str, Any]:
+    """Read-only authenticated health probe with no receipt/state mutation."""
+
+    parsed = urlparse(str(base_url).strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("NBOT_OBSERVATION_URL_INVALID")
+    if parsed.path not in {"", "/"} or parsed.params or parsed.query or parsed.fragment:
+        raise ValueError("NBOT_OBSERVATION_URL_INVALID")
+    host = parsed.hostname
+    if parsed.scheme == "http" and host not in _LOOPBACK_HOSTS:
+        raise ValueError("NBOT_OBSERVATION_TLS_REQUIRED_FOR_NON_LOOPBACK")
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    if not (1 <= int(port) <= 65535):
+        raise ValueError("NBOT_OBSERVATION_PORT_INVALID")
+    timeout = float(timeout_seconds)
+    if not (0.1 <= timeout <= 30.0):
+        raise ValueError("NBOT_OBSERVATION_TIMEOUT_INVALID")
+    token = validate_control_token(auth_token)
+
+    if parsed.scheme == "https":
+        context = ssl.create_default_context(
+            cafile=None if ca_file is None else str(Path(ca_file))
+        )
+        connection = http.client.HTTPSConnection(
+            host,
+            int(port),
+            timeout=timeout,
+            context=context,
+        )
+    else:
+        connection = http.client.HTTPConnection(host, int(port), timeout=timeout)
+
+    try:
+        connection.request(
+            "GET",
+            "/health",
+            headers={"Authorization": bearer_header(token)},
+        )
+        response = connection.getresponse()
+        raw = response.read(_MAX_RESPONSE_BYTES + 1)
+    except TimeoutError as exc:
+        raise ObservationClientError("OBSERVATION_CLIENT_TIMEOUT:/health") from exc
+    except (OSError, ssl.SSLError, http.client.HTTPException) as exc:
+        raise ObservationClientError("OBSERVATION_CLIENT_UNAVAILABLE:/health") from exc
+    finally:
+        connection.close()
+
+    if len(raw) > _MAX_RESPONSE_BYTES:
+        raise ObservationClientError("OBSERVATION_RESPONSE_TOO_LARGE")
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ObservationClientError("OBSERVATION_RESPONSE_JSON_INVALID") from exc
+    if not isinstance(payload, dict):
+        raise ObservationClientError("OBSERVATION_RESPONSE_OBJECT_REQUIRED")
+    if response.status != 200:
+        detail = str(payload.get("detail") or payload.get("error") or "")
+        raise ObservationClientError(
+            f"OBSERVATION_HTTP_ERROR:{response.status}:{detail}"
+        )
+    if payload.get("order_authority") != "NONE":
+        raise ObservationClientError("OBSERVATION_HEALTH_ORDER_AUTHORITY_INVALID")
+    return payload
+
+
 class RemoteObservationClient:
     """Bounded synchronous V3 client used only at the flat capital boundary."""
 

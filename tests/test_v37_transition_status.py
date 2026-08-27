@@ -29,18 +29,20 @@ class V37TransitionStatusTests(unittest.TestCase):
         self.assertIn("RESEARCH_ONLY_NO_EXECUTION", text)
         self.assertNotIn("Because V3.4.6 Research Champion evaluation is deferred", text)
 
-    def test_obsolete_doctor_phase_deferral_labels_are_removed(self):
+    def test_mature_doctor_debt_markers_are_removed(self):
         text = (REPO / "nbot/config/validation.py").read_text(encoding="utf-8")
         self.assertNotIn("OBSERVATION_DATABASE_INTEGRITY_CHECK_DEFERRED_UNTIL_V3_3", text)
         self.assertNotIn("CROSS_VPS_PROTOCOL_CHECK_DEFERRED_UNTIL_V3_6", text)
-        self.assertIn("OPERATOR_TOOLING_DEBT:OBSERVATION_DATABASE_INTEGRITY_NOT_IN_FOUNDATION_DOCTOR", text)
-        self.assertIn("OPERATOR_TOOLING_DEBT:CROSS_VPS_PROTOCOL_COMPATIBILITY_NOT_IN_FOUNDATION_DOCTOR", text)
+        self.assertNotIn("OPERATOR_TOOLING_DEBT:OBSERVATION_DATABASE_INTEGRITY_NOT_IN_FOUNDATION_DOCTOR", text)
+        self.assertNotIn("OPERATOR_TOOLING_DEBT:CROSS_VPS_PROTOCOL_COMPATIBILITY_NOT_IN_FOUNDATION_DOCTOR", text)
+        self.assertIn("validate_observation_database_v39", text)
+        self.assertIn("validate_local_protocol_contract_v39", text)
 
     def test_cluster_debt_is_not_falsely_claimed_complete(self):
         text = (REPO / "nbotctl").read_text(encoding="utf-8")
         self.assertIn("cluster.set_defaults(func=cmd_not_implemented)", text)
         operations = (REPO / "docs/OPERATIONS.md").read_text(encoding="utf-8")
-        self.assertIn("cluster doctor/start/stop/status` remains unimplemented", operations)
+        self.assertIn("`nbotctl cluster doctor/start/stop/status` remains the next separately validated tooling boundary", operations)
 
 
 if __name__ == "__main__":

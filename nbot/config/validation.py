@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import fcntl
 import shutil
+import sqlite3
 import subprocess
 from typing import Mapping
 
@@ -223,17 +224,128 @@ def validate_host_foundation(
         warnings.append("GIT_STATUS_UNAVAILABLE")
         ok = False
 
-    # Mature doctor capabilities that are not yet integrated here remain explicit
-    # operator-tooling debt; do not mislabel already-completed phases as deferred.
-    if role is MachineRole.OBSERVATION:
-        warnings.append(
-            "OPERATOR_TOOLING_DEBT:OBSERVATION_DATABASE_INTEGRITY_NOT_IN_FOUNDATION_DOCTOR"
+    return DoctorResult(ok=ok, checks=tuple(checks), warnings=tuple(warnings))
+
+
+def validate_observation_database_v39(
+    *,
+    repo_root: Path | str,
+    profile: Profile,
+) -> DoctorResult:
+    """Read-only fail-closed integrity/lineage validation for Observation evidence."""
+
+    root = Path(repo_root)
+    checks: list[str] = []
+    warnings: list[str] = []
+    expected_path = root / profile.observation_db
+
+    if not expected_path.is_file():
+        return DoctorResult(
+            ok=False,
+            checks=(),
+            warnings=(f"OBSERVATION_DATABASE_MISSING:{profile.observation_db}",),
         )
-    warnings.append(
-        "OPERATOR_TOOLING_DEBT:CROSS_VPS_PROTOCOL_COMPATIBILITY_NOT_IN_FOUNDATION_DOCTOR"
+
+    try:
+        uri = f"file:{expected_path.resolve()}?mode=ro"
+        conn = sqlite3.connect(uri, uri=True, timeout=30.0)
+        try:
+            conn.execute("PRAGMA query_only=ON")
+            conn.execute("PRAGMA busy_timeout=30000")
+            integrity_rows = tuple(
+                str(row[0]) for row in conn.execute("PRAGMA integrity_check")
+            )
+            foreign_keys = tuple(conn.execute("PRAGMA foreign_key_check"))
+            metadata = {
+                str(key): str(value)
+                for key, value in conn.execute(
+                    "SELECT key, value FROM metadata ORDER BY key"
+                )
+            }
+        finally:
+            conn.close()
+    except (OSError, sqlite3.Error) as exc:
+        return DoctorResult(
+            ok=False,
+            checks=(),
+            warnings=(
+                f"OBSERVATION_DATABASE_INTEGRITY_UNAVAILABLE:"
+                f"{type(exc).__name__}:{exc}",
+            ),
+        )
+
+    if integrity_rows == ("ok",):
+        checks.append("OBSERVATION_DATABASE_INTEGRITY_OK")
+    else:
+        warnings.append(
+            "OBSERVATION_DATABASE_INTEGRITY_FAILED:" + "|".join(integrity_rows)
+        )
+
+    if not foreign_keys:
+        checks.append("OBSERVATION_DATABASE_FOREIGN_KEYS_OK")
+    else:
+        warnings.append(
+            f"OBSERVATION_DATABASE_FOREIGN_KEY_VIOLATIONS:{len(foreign_keys)}"
+        )
+
+    from nbot.observation.config import OBSERVATION_SCHEMA_VERSION
+
+    expected_metadata = {
+        "schema_version": OBSERVATION_SCHEMA_VERSION,
+        "role": "OBSERVATION",
+        "market_environment": profile.market_environment,
+    }
+    metadata_ok = True
+    for key, expected in expected_metadata.items():
+        actual = metadata.get(key)
+        if actual != expected:
+            metadata_ok = False
+            warnings.append(
+                f"OBSERVATION_DATABASE_METADATA_MISMATCH:{key}:{actual}:{expected}"
+            )
+    if metadata_ok:
+        checks.append("OBSERVATION_DATABASE_LINEAGE_METADATA_OK")
+
+    return DoctorResult(
+        ok=not warnings,
+        checks=tuple(checks),
+        warnings=tuple(warnings),
     )
 
-    return DoctorResult(ok=ok, checks=tuple(checks), warnings=tuple(warnings))
+
+def validate_local_protocol_contract_v39(*, profile: Profile) -> DoctorResult:
+    """Prove config and wire-layer profile contracts still agree locally."""
+
+    try:
+        from nbot.communication.validation import (
+            PROTOCOL_VERSION,
+            validate_profile_contract,
+        )
+
+        validate_profile_contract(
+            profile=profile.name,
+            market_environment=profile.market_environment,
+            execution_mode=profile.execution_mode,
+            evidence_lineage=profile.evidence_lineage,
+        )
+    except Exception as exc:
+        return DoctorResult(
+            ok=False,
+            checks=(),
+            warnings=(
+                f"CONTROL_PROTOCOL_LOCAL_CONTRACT_INVALID:"
+                f"{type(exc).__name__}:{exc}",
+            ),
+        )
+
+    return DoctorResult(
+        ok=True,
+        checks=(
+            f"CONTROL_PROTOCOL_VERSION:{PROTOCOL_VERSION}",
+            "CONTROL_PROFILE_CONTRACT_LOCAL_MATCH",
+        ),
+        warnings=(),
+    )
 
 
 

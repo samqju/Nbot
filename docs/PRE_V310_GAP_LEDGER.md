@@ -13,8 +13,8 @@ This ledger tracks non-economic cleanup while V3.9 evidence accumulates. It does
 - [x] Update `nbotctl` phase reporting without claiming economic proof.
 - [x] Ignore generated `NBOT_CURRENT_FULLSOURCE_*.txt` review artifacts.
 - [x] Remove stale V3.8 phase numbers from active LIVE_PAPER/research systemd descriptions without changing service behavior.
-- [ ] Integrate real Observation database integrity into foundation `nbotctl doctor`.
-- [ ] Integrate real cross-VPS protocol/release compatibility into doctor without creating an OPEN-position dependency.
+- [x] Integrate real Observation database integrity into `nbotctl doctor` using read-only SQLite integrity, foreign-key and lineage checks.
+- [x] Integrate local protocol/profile contract validation plus authenticated Execution-to-Observation control-link compatibility into operator `nbotctl doctor`, while excluding the remote network probe from Execution worker startup/reconciliation.
 - [ ] Implement `nbotctl cluster doctor/start/stop/status` with fail-safe ordering, same-release/profile/protocol checks, and no SSH dependency in OPEN management.
 - [ ] Validate/install the final cleanup release on both VPS roles as applicable and prove same-release runtime state.
 

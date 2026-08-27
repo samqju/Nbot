@@ -49,7 +49,7 @@ Do not run `research-epoch-run` or `challenger-cycle` merely to force evidence. 
 
 ### Pre-V3.10 operator-tooling debt
 
-The remaining operator-tooling gaps are tracked in `docs/PRE_V310_GAP_LEDGER.md`. `nbotctl cluster doctor/start/stop/status` remains unimplemented, and the two mature foundation-doctor checks remain open until separately implemented and validated. They must not be falsely described as complete.
+The remaining operator-tooling gaps are tracked in `docs/PRE_V310_GAP_LEDGER.md`. Observation database integrity and local/control-link protocol compatibility are now part of `nbotctl doctor`. The remote compatibility probe is an operator/pre-start diagnostic only; Execution worker startup deliberately excludes that network dependency so an existing OPEN position can still reconcile/manage during Observation loss. `nbotctl cluster doctor/start/stop/status` remains the next separately validated tooling boundary.
 
 ### Preserved historical operational proof
 

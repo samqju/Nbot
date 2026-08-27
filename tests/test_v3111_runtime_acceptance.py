@@ -331,7 +331,7 @@ class V3111RuntimeAcceptanceTests(unittest.TestCase):
                  mock.patch("nbot.config.validation._git_worktree_clean", return_value=True):
                 result = validate_host_foundation(repo_root=root, role=MachineRole.EXECUTION)
             self.assertFalse(any("DEFERRED_UNTIL_V3_1" in item for item in result.warnings))
-            self.assertIn(
+            self.assertNotIn(
                 "OPERATOR_TOOLING_DEBT:CROSS_VPS_PROTOCOL_COMPATIBILITY_NOT_IN_FOUNDATION_DOCTOR",
                 result.warnings,
             )

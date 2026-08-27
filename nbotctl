@@ -24,6 +24,8 @@ from nbot.config.validation import (
     profile_is_armed,
     validate_execution_v31,
     validate_host_foundation,
+    validate_local_protocol_contract_v39,
+    validate_observation_database_v39,
     validate_role_profile,
 )
 
@@ -76,7 +78,73 @@ def _secret_environment(profile_name: str) -> dict[str, str]:
     return merged_environment(environ=os.environ)
 
 
-def _doctor_payload(profile_name: str) -> tuple[dict, int]:
+def _remote_control_compatibility_result(profile_name: str):
+    from nbot.config.validation import DoctorResult
+
+    profile = get_profile(profile_name)
+    if profile.name == "live-trade":
+        return DoctorResult(
+            ok=True,
+            checks=("CONTROL_LINK_REMOTE_COMPATIBILITY_NOT_APPLICABLE_BEFORE_V3_10",),
+            warnings=(),
+        )
+
+    from nbot.communication.config import (
+        control_link_config_for_profile,
+        control_link_secret_path,
+    )
+
+    secret_path = control_link_secret_path(ROOT)
+    if not secret_path.is_file():
+        return DoctorResult(
+            ok=True,
+            checks=("CONTROL_LINK_REMOTE_COMPATIBILITY_NOT_CONFIGURED",),
+            warnings=(),
+        )
+
+    try:
+        from nbot.communication.client import probe_observation_health
+        from nbot.communication.integration import _validate_health
+
+        link = control_link_config_for_profile(ROOT, profile, environ=os.environ)
+        health = probe_observation_health(
+            base_url=link.base_url,
+            auth_token=link.auth_token,
+            timeout_seconds=link.timeout_seconds,
+            ca_file=link.ca_file,
+        )
+        release_sha = _git_identity()["sha"]
+        _validate_health(
+            health=health,
+            profile_name=profile.name,
+            release_sha=release_sha,
+        )
+    except Exception as exc:
+        return DoctorResult(
+            ok=False,
+            checks=(),
+            warnings=(
+                f"CONTROL_LINK_REMOTE_COMPATIBILITY_FAILED:"
+                f"{type(exc).__name__}:{exc}",
+            ),
+        )
+
+    return DoctorResult(
+        ok=True,
+        checks=(
+            "CONTROL_LINK_REMOTE_COMPATIBILITY_OK",
+            f"CONTROL_LINK_REMOTE_PROTOCOL:{health.get('protocol_version')}",
+            f"CONTROL_LINK_REMOTE_RELEASE:{health.get('release_sha')}",
+        ),
+        warnings=(),
+    )
+
+
+def _doctor_payload(
+    profile_name: str,
+    *,
+    include_remote_compatibility: bool = True,
+) -> tuple[dict, int]:
     role = detect_role(ROOT)
     profile = get_profile(profile_name)
     environment = _secret_environment(profile.name) if role.value == "EXECUTION" else dict(os.environ)
@@ -84,13 +152,26 @@ def _doctor_payload(profile_name: str) -> tuple[dict, int]:
         repo_root=ROOT, role=role, profile=profile, environment=environment
     )
     host = validate_host_foundation(repo_root=ROOT, role=role)
-    results = [role_profile, host]
+    results = [
+        role_profile,
+        host,
+        validate_local_protocol_contract_v39(profile=profile),
+    ]
+    if role.value == "OBSERVATION":
+        results.append(
+            validate_observation_database_v39(
+                repo_root=ROOT,
+                profile=profile,
+            )
+        )
     if role.value == "EXECUTION":
         results.append(
             validate_execution_v31(
                 repo_root=ROOT, profile=profile, environment=environment
             )
         )
+        if include_remote_compatibility:
+            results.append(_remote_control_compatibility_result(profile.name))
     ok, checks, warnings = _merge_results(*results)
     payload = {
         "status": "PASS" if ok else "FAIL",
@@ -350,7 +431,7 @@ def _start_execution(profile_name: str) -> int:
             return 0
         raise ValueError("NBOT_EXECUTION_RUNTIME_ALREADY_ACTIVE")
 
-    doctor, doctor_code = _doctor_payload(profile_name)
+    doctor, doctor_code = _doctor_payload(profile_name, include_remote_compatibility=False)
     if doctor_code != 0:
         print(json.dumps(doctor, indent=2, sort_keys=True))
         return 2

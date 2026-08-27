@@ -84,8 +84,8 @@ class V39PreV310CleanupTests(unittest.TestCase):
 
     def test_gap_ledger_keeps_operator_tooling_open(self):
         text = (REPO / "docs/PRE_V310_GAP_LEDGER.md").read_text(encoding="utf-8")
-        self.assertIn("[ ] Integrate real Observation database integrity", text)
-        self.assertIn("[ ] Integrate real cross-VPS protocol/release compatibility", text)
+        self.assertIn("[x] Integrate real Observation database integrity", text)
+        self.assertIn("[x] Integrate local protocol/profile contract validation", text)
         self.assertIn("[ ] Implement `nbotctl cluster doctor/start/stop/status`", text)
         self.assertIn("V3.10 remains hard-blocked", text)
 
