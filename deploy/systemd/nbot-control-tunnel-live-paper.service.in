@@ -1,5 +1,5 @@
 [Unit]
-Description=NBOT V3.8 Execution -> Observation LIVE_PAPER Control Tunnel
+Description=NBOT V3 Execution -> Observation LIVE_PAPER Control Tunnel
 After=network-online.target
 Wants=network-online.target
 

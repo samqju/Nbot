@@ -1,5 +1,5 @@
 [Unit]
-Description=NBOT V3.8 LIVE Research Epoch Scheduler
+Description=NBOT V3 LIVE Research Epoch Scheduler
 PartOf=nbot-observer.target
 
 [Timer]

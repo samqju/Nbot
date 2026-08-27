@@ -1,5 +1,5 @@
 [Unit]
-Description=NBOT V3.8 LIVE Research 96-Event Epoch
+Description=NBOT V3 LIVE Research 96-Event Epoch
 After=network-online.target nbot-observation-live.service
 Wants=network-online.target nbot-observation-live.service
 

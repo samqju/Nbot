@@ -11,25 +11,23 @@ V3 starts from clean runtime state and clean databases. V1/V2 remain engineering
 
 ## Current phase
 
-`V3.7 OPERATIONALLY PROVEN -> V3.8`
+`V3.9 — continuous challenger learning / long-term Paper Champion evidence`
 
-NBOT is now operating with the intended capital-first two-VPS boundary: Observation owns market evidence, research, learning and recommendations; Execution independently owns account truth, risk, orders, protection, position management, reconciliation and emergency action. Observation has no Binance order authority.
+Current status is deliberately split:
 
-Accepted implementation includes the earlier `V3.1 EXECUTION CORE`, the V3.2 standalone Testnet mechanical canary, V3.3 Observation evidence foundation, the V3.4 research/learning stack including V3.4.6 Research Champion evaluation and V3.4.7 Continuous Learning Foundation, V3.5 communication, and V3.6 two-VPS dry integration.
+- **V3.9 implementation:** complete enough for continuous research operation, including compact 96-event research epochs, immutable challenger artifacts, rolling governance, market/operational regime evidence, the frozen Research Champion promotion boundary, and the frozen Paper Champion gate.
+- **V3.9 economic proof:** **NOT PASSED**. Research Champion is currently `NONE`; Paper Champion is `NONE`; Execution research authority is `NONE`.
+- **V3.10:** **BLOCKED** until genuine Research Champion then sustained LIVE/PAPER Paper Champion evidence satisfies the frozen gates.
 
-Current V3.7 operational status:
+Challenger cadence is epoch-driven. `nbot-research-epoch.timer` checks for maturity every 15 minutes, but a challenger opportunity is created only after a genuinely new 96-event epoch is durably committed. `WAIT_FOR_MATURE_EPOCH`, unhealthy/failing epochs, and replay of an already-consumed epoch do not create additional challengers. A committed epoch whose challenger transition fails retains a durable retryable transition.
 
-- **A — Normal LONG: PASS.** The integrated Testnet LONG completed through Execution-managed protective-stop closure, authoritative accounting, durable outcome delivery, and exactly-once Observation recording/ACK.
-- **B — Normal SHORT: PASS.** The integrated Testnet SHORT completed through protected entry, independent OPEN management, autonomous protective-stop closure, authoritative Binance accounting, durable outcome delivery, and exactly-once Observation recording/ACK.
-- **C–V fault/operational campaign: PASS.**
+The Observation/Execution authority boundary remains unchanged: Observation owns research and recommendations but has no Binance order authority; Execution owns capital safety and independently validates any future approved recommendation.
 
-The original canonical V3.7 acceptance gate was not weakened. The previously deferred Testnet SHORT debt was physically closed on 2026-08-23 by proposal `PROP-33b8005daa79db45b237a3c449ec677c3d2d4db6`, autonomous `PROTECTIVE_STOP_TRIGGERED` closure, deterministic outcome `OUT-9b671e52f3e35e5ca9138358a96df3ae`, and exactly-once Observation recording/ACK. Together with the already accepted Normal LONG and C–V campaign, V3.7 is operationally proven. Its canonical tag becomes eligible only after this closure release passes validation and the same SHA is deployed on both VPSs.
+### Preserved operational history
 
-At this V3.7 closure boundary Testnet Execution is FLAT, has no entry inflight or pending outcome, is DISARMED, and has new entries disabled. The LIVE Observation collector remains protected and active.
+The earlier `V3.1 EXECUTION CORE` and subsequent V3.2–V3.8 operational milestones remain preserved as history. V3.7 is historically **OPERATIONALLY PROVEN**. Normal LONG, Normal SHORT, and the C–V fault campaign passed without weakening the canonical gate. V3.8 LIVE_PAPER operational canary work is also preserved as operational evidence. Those historical proofs do not imply V3.9 economic completion.
 
-Next implementation phase: **V3.8 LIVE_PAPER**. `live-trade` remains forbidden until V3.10 and its evidence/arming gates.
-
-Current V3.8 operational subphase: `LIVE_PAPER_OPERATIONAL_CANARY_V1` may exercise exactly one local-paper entry per explicit operator enable using fresh canonical LIVE point-in-time evidence. It is explicitly operational-only (`economic_claim=false`) and does not substitute for a Research Champion or satisfy the V3.8 economic gate.
+`live-trade` remains forbidden until V3.10 and cannot be reached merely by finishing maintenance/documentation work.
 
 ## Local role identity
 

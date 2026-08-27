@@ -1,5 +1,5 @@
 [Unit]
-Description=NBOT V3.8 LIVE_PAPER Observation Control Plane
+Description=NBOT V3 LIVE_PAPER Observation Control Plane
 After=network-online.target
 Wants=network-online.target
 

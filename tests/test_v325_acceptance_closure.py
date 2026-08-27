@@ -8,7 +8,7 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 class V325AcceptanceClosureTests(unittest.TestCase):
-    def test_nbotctl_reports_current_v37_transition_status(self):
+    def test_nbotctl_reports_current_v39_economic_wait_status(self):
         result = subprocess.run(
             [str(REPO / "nbotctl"), "status"],
             cwd=REPO,
@@ -18,12 +18,12 @@ class V325AcceptanceClosureTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
-        self.assertEqual(payload["phase"], "V3.7")
-        self.assertEqual(payload["active_execution_phase"], "V3.7")
-        self.assertEqual(payload["phase_status"], "V3.7_OPERATIONALLY_PROVEN")
-        self.assertEqual(payload["phase_gate_status"], "PASSED")
-        self.assertEqual(payload["next_phase"], "V3.8")
-        self.assertEqual(payload["deferred_acceptance"], [])
+        self.assertEqual(payload["phase"], "V3.9")
+        self.assertEqual(payload["active_execution_phase"], "V3.9")
+        self.assertEqual(payload["phase_status"], "V3.9_IMPLEMENTATION_COMPLETE_ECONOMIC_WAIT")
+        self.assertEqual(payload["phase_gate_status"], "ECONOMIC_WAIT")
+        self.assertEqual(payload["next_phase"], "V3.10")
+        self.assertEqual(payload["deferred_acceptance"], ["RESEARCH_CHAMPION", "PAPER_CHAMPION", "V3.9_ECONOMIC_PROOF"])
 
     def test_operations_records_offline_stop_deterministic_equivalent(self):
         text = (REPO / "docs/OPERATIONS.md").read_text()
@@ -41,12 +41,12 @@ class V325AcceptanceClosureTests(unittest.TestCase):
             text,
         )
 
-    def test_readme_reports_current_v37_to_v38_transition(self):
+    def test_readme_preserves_v37_history_and_reports_v39_current_boundary(self):
         text = (REPO / "README.md").read_text()
-        self.assertIn("V3.7 OPERATIONALLY PROVEN", text)
-        self.assertIn("A — Normal LONG: PASS", text)
-        self.assertIn("B — Normal SHORT: PASS", text)
-        self.assertIn("Next implementation phase: **V3.8 LIVE_PAPER**", text)
+        self.assertIn("V3.7 is historically **OPERATIONALLY PROVEN**", text)
+        self.assertIn("V3.9 — continuous challenger learning", text)
+        self.assertIn("V3.9 economic proof:** **NOT PASSED", text)
+        self.assertIn("V3.10:** **BLOCKED", text)
         self.assertIn("`live-trade` remains forbidden until V3.10", text)
 
 

@@ -32,3 +32,6 @@ models/
 .vscode/
 .idea/
 .DS_Store
+
+# Local generated full-source review snapshots
+NBOT_CURRENT_FULLSOURCE_*.txt

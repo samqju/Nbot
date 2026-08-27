@@ -2,51 +2,58 @@
 
 ## Current operating boundary
 
-Current checkpoint: `V3.7 OPERATIONALLY PROVEN -> V3.8`.
+Current checkpoint: `V3.9 IMPLEMENTATION COMPLETE / ECONOMIC EVIDENCE ACCUMULATING`.
 
-The deployed architecture is the real two-VPS split:
+The deployed architecture remains the real two-VPS split:
 
-- **Observation VPS** — LIVE/Testnet evidence, research, learning, recommendation/control service; no Binance order authority.
-- **Execution VPS** — independent market/account truth, proposal validation, risk, orders, stops, OPEN management, reconciliation, emergency action and durable outcomes.
+- **Observation VPS** — LIVE/Testnet evidence, compact research memory, continuous challenger learning, governance, recommendation/control service; no Binance order authority.
+- **Execution VPS** — independent market/account truth, proposal validation, risk, orders where the profile permits them, stops, OPEN management, reconciliation, emergency action and durable outcomes.
 
-V3.7-A Normal LONG is physically proven end-to-end. V3.7-B Normal SHORT is physically proven end-to-end. V3.7 C–V operational/fault evidence remains accepted. The canonical V3.7 operational gate is therefore passed; `v3.7-testnet-e2e-operational-proven` becomes eligible after the closure release passes same-SHA deployment validation.
+Current authority state must be read from runtime status and never inferred from phase completion. Until a Research Champion is explicitly eligible and promoted under the frozen V3.9 boundary:
 
-### Transition safety state
+- Research Champion = `NONE`;
+- Paper Champion = `NONE`;
+- Execution research authority = `NONE`;
+- Paper Champion evidence collection remains blocked;
+- `live-trade` remains forbidden before V3.10.
 
-Before V3.8 work, Testnet Execution must remain:
+### Continuous research cadence
 
-- exchange/local FLAT;
-- no `entry_inflight`;
-- no pending execution outcome;
-- DISARMED;
-- stopped unless a deliberate Testnet regression is being run.
+`nbot-research-epoch.timer` is a 15-minute maturity checker, not an 8-hour scheduler. The research system advances only when a genuine new 96-event epoch plus required future context is mature. After a successful durable epoch commit, the epoch-to-challenger transition creates exactly one challenger opportunity.
 
-The Observation LIVE collector remains active. `data/observation/live/observer.db` must never be reset, replaced or destructively migrated as part of transition/V3.8 work.
+Required semantics:
 
-### Read-only / safe checks
+- `WAIT_FOR_MATURE_EPOCH` -> no challenger;
+- unhealthy/failing epoch -> no challenger;
+- uncommitted epoch -> no challenger;
+- new durable epoch commit -> exactly one challenger opportunity;
+- retry/restart of the same consumed epoch -> no duplicate challenger;
+- challenger failure after epoch commit -> transition remains durable and retryable.
+
+The former fixed daily `nbot-challenger-cycle.timer` is retired. `nbot-challenger-cycle.service` remains only as a low-priority recovery/oneshot surface for the durable transition path.
+
+### Safe current checks
 
 ```bash
 ./nbotctl status
 ./nbotctl doctor live-paper
 ./nbotctl doctor testnet-trade
-./run_execution.py --profile testnet-trade --self-check
+./.venv/bin/python nbot_admin.py research-epoch-status
+./.venv/bin/python nbot_admin.py challenger-status
+./.venv/bin/python nbot_admin.py governance-status
+./.venv/bin/python nbot_admin.py research-champion-review
+./.venv/bin/python nbot_admin.py paper-champion-status
 ```
 
-Do not arm `testnet-trade` merely to make a doctor/preflight command pass.
+Do not run `research-epoch-run` or `challenger-cycle` merely to force evidence. Natural market maturity owns the research clock.
 
-### Profile boundary
+### Pre-V3.10 operator-tooling debt
 
-- `testnet-trade`: permanent operational regression laboratory; keep DISARMED unless a deliberate Testnet regression is authorized.
-- `live-paper`: V3.8 target; LIVE Binance public truth with local PaperExchange and zero Binance private order writes.
-- `live-trade`: forbidden until V3.10.
+The remaining operator-tooling gaps are tracked in `docs/PRE_V310_GAP_LEDGER.md`. `nbotctl cluster doctor/start/stop/status` remains unimplemented, and the two mature foundation-doctor checks remain open until separately implemented and validated. They must not be falsely described as complete.
 
-### Outstanding operator-tooling debt
+### Preserved historical operational proof
 
-`nbotctl cluster doctor/start/stop/status` remains unimplemented. The local role commands and the already-proven secured two-VPS control path remain the accepted operating method until cluster orchestration is implemented and separately validated.
-
-Foundation `nbotctl doctor` also does not yet own the mature-roadmap Observation database-integrity and cross-VPS protocol-compatibility checks. These are tracked operator-tooling debt and must not be described as future V3.3/V3.6 work.
-
-The historical V3.2 mechanical-canary procedures below are retained as regression/operational history; they are not the current phase.
+V3.7-A Normal LONG is physically proven end-to-end. V3.7-B Normal SHORT is physically proven end-to-end. V3.7 C–V operational/fault evidence remains accepted. The historical Testnet regression/canary procedures below are retained intentionally; they are not current economic authority.
 
 ## V3.2 standalone Testnet mechanical canary
 

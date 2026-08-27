@@ -1,5 +1,5 @@
 [Unit]
-Description=NBOT V3.8 LIVE_PAPER Execution Worker
+Description=NBOT V3 LIVE_PAPER Execution Worker
 After=network-online.target nbot-control-tunnel-live-paper.service
 Wants=network-online.target nbot-control-tunnel-live-paper.service
 
