@@ -208,7 +208,7 @@ class V39PreV310DoctorMaturityTests(unittest.TestCase):
             text,
         )
 
-    def test_gap_ledger_marks_doctor_maturity_closed_but_cluster_open(self):
+    def test_gap_ledger_marks_doctor_and_cluster_maturity_closed(self):
         text = (
             REPO / "docs/PRE_V310_GAP_LEDGER.md"
         ).read_text(encoding="utf-8")
@@ -221,7 +221,7 @@ class V39PreV310DoctorMaturityTests(unittest.TestCase):
             text,
         )
         self.assertIn(
-            "[ ] Implement `nbotctl cluster doctor/start/stop/status`",
+            "[x] Implement `nbotctl cluster doctor/start/stop/status`",
             text,
         )
 

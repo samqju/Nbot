@@ -49,7 +49,51 @@ Do not run `research-epoch-run` or `challenger-cycle` merely to force evidence. 
 
 ### Pre-V3.10 operator-tooling debt
 
-The remaining operator-tooling gaps are tracked in `docs/PRE_V310_GAP_LEDGER.md`. Observation database integrity and local/control-link protocol compatibility are now part of `nbotctl doctor`. The remote compatibility probe is an operator/pre-start diagnostic only; Execution worker startup deliberately excludes that network dependency so an existing OPEN position can still reconcile/manage during Observation loss. `nbotctl cluster doctor/start/stop/status` remains the next separately validated tooling boundary.
+The remaining operator-tooling gaps are tracked in `docs/PRE_V310_GAP_LEDGER.md`. Observation database integrity and local/control-link protocol compatibility are part of `nbotctl doctor`. The remote compatibility probe is an operator/pre-start diagnostic only; Execution worker startup deliberately excludes that network dependency so an existing OPEN position can still reconcile/manage during Observation loss. The V3.9 pre-V3.10 cluster orchestration surface is implemented as an Execution-side operator tool and remains outside all worker/reconciliation hot paths.
+
+### Pre-V3.10 cluster orchestration
+
+The **Execution VPS is the cluster control point** for the current two-VPS deployment. This is deliberate: Execution already owns the installed, strict-host-key-checked SSH tunnel identity used to reach Observation. Cluster tooling derives the SSH target, identity-file path, service user and pinned loopback forward from the installed `nbot-control-tunnel-<profile>.service`; it does not introduce a second hostname/key configuration and does not copy private keys into Git.
+
+Supported operator commands are:
+
+```bash
+./nbotctl cluster doctor live-paper
+./nbotctl cluster start live-paper
+./nbotctl cluster stop
+./nbotctl cluster status
+```
+
+`testnet-trade` uses the same orchestration contract when its regression-only Observation control/tunnel units are installed and Testnet is legitimately armed. `live-trade` is rejected before V3.10.
+
+`cluster doctor` is read-only. It fails closed on local/remote doctor failure, dirty trees, wrong roles, wrong profile contract, protocol mismatch, SHA mismatch, tag asymmetry, missing units, unpinned control endpoint, invalid SSH tunnel definition, or incompatible authenticated runtime control health when the tunnel is active. Both sides may be untagged only when they are on the exact same SHA; if either side has an exact tag, tag parity is required.
+
+`cluster start` performs orchestration only while local Execution durable state is safe for orchestration. If an Execution runtime is already active, the command becomes an idempotent health/compatibility check. If Execution is not active but durable state contains an OPEN position, entry-inflight, pending outcome, or recovery-critical state, **cluster start refuses before creating an SSH/network dependency**. Use the local Execution service/recovery procedure for that capital state. Cluster start must never be used to recover an OPEN position.
+
+For a safe FLAT start, ordering is:
+
+1. static local + SSH remote doctor and exact release/protocol/profile checks;
+2. create/retain the durable local operator entry block;
+3. restart only the profile Observation control service;
+4. restart only the profile Execution-to-Observation SSH tunnel;
+5. prove authenticated runtime control compatibility;
+6. start the Execution worker;
+7. prove the running Execution release/READY state and rerun cluster doctor.
+
+Cluster start **never enables entries** and creates no research, Paper Champion, or real-capital authority. LIVE_PAPER still requires its separate fresh operator `/enable` gate.
+
+`cluster stop` is intentionally conservative. Before any SSH, service stop, or tunnel mutation it reads local durable Execution truth and refuses if any of the following are present:
+
+- OPEN position;
+- entry inflight;
+- pending outcome;
+- recovery-critical state;
+- entries currently enabled;
+- unreadable/invalid Execution state.
+
+When safe and FLAT, it preserves the durable operator entry block, stops Execution first, rechecks safe durable state, then stops the profile tunnel and optional Observation control plane. It does **not** stop `nbot-observation-live.service`, `nbot-research-epoch.timer`, or `nbot-observer.target`.
+
+SSH orchestration is therefore an operator convenience only. It is not imported by `run_execution.py` and never participates in OPEN position pricing, protection, trailing, reconciliation, emergency action, or durable outcome creation.
 
 ### Preserved historical operational proof
 

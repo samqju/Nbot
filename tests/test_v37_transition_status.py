@@ -38,11 +38,14 @@ class V37TransitionStatusTests(unittest.TestCase):
         self.assertIn("validate_observation_database_v39", text)
         self.assertIn("validate_local_protocol_contract_v39", text)
 
-    def test_cluster_debt_is_not_falsely_claimed_complete(self):
+    def test_cluster_orchestration_is_implemented_without_worker_dependency(self):
         text = (REPO / "nbotctl").read_text(encoding="utf-8")
-        self.assertIn("cluster.set_defaults(func=cmd_not_implemented)", text)
+        self.assertIn("cluster.set_defaults(func=cmd_cluster)", text)
+        self.assertNotIn("cluster.set_defaults(func=cmd_not_implemented)", text)
         operations = (REPO / "docs/OPERATIONS.md").read_text(encoding="utf-8")
-        self.assertIn("`nbotctl cluster doctor/start/stop/status` remains the next separately validated tooling boundary", operations)
+        self.assertIn("Execution VPS is the cluster control point", operations)
+        worker = (REPO / "run_execution.py").read_text(encoding="utf-8")
+        self.assertNotIn("nbot.operator.cluster", worker)
 
 
 if __name__ == "__main__":

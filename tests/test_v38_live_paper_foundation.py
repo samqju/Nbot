@@ -167,11 +167,13 @@ class V38LivePaperFoundationTests(unittest.TestCase):
         self.assertIn("127.0.0.1:18765:127.0.0.1:8765", live)
         self.assertIn("127.0.0.1:18766:127.0.0.1:8766", testnet)
 
-    def test_nbotctl_live_paper_start_blocker_is_removed_but_cluster_remains_deferred(self):
+    def test_nbotctl_live_paper_start_blocker_is_removed_and_cluster_is_implemented(self):
         text = (REPO / "nbotctl").read_text(encoding="utf-8")
         self.assertNotIn("NBOT_LIVE_PAPER_RUNTIME_DEFERRED_UNTIL_V3_8", text)
         self.assertIn("def _start_execution", text)
-        self.assertIn("cmd_not_implemented", text)
+        self.assertIn("cluster.set_defaults(func=cmd_cluster)", text)
+        self.assertNotIn("def cmd_not_implemented", text)
+        self.assertIn("NBOT_LIVE_TRADE_RUNTIME_FORBIDDEN_BEFORE_V3_10", text)
 
 
 if __name__ == "__main__":

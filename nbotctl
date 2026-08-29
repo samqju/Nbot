@@ -10,6 +10,7 @@ import signal
 import subprocess
 import sys
 import time
+from urllib.parse import urlparse
 
 from nbot.common.atomic_io import atomic_write_text
 from nbot.common.logging import execution_log_paths, observation_log_paths
@@ -27,6 +28,19 @@ from nbot.config.validation import (
     validate_local_protocol_contract_v39,
     validate_observation_database_v39,
     validate_role_profile,
+)
+from nbot.operator.cluster import (
+    ClusterOperatorError,
+    cluster_profile_units,
+    discover_observation_repo,
+    execution_cluster_start_guard,
+    execution_stop_guard,
+    installed_tunnel_transport,
+    local_systemctl,
+    local_unit_state,
+    remote_nbotctl,
+    remote_systemctl,
+    remote_unit_state,
 )
 
 ROOT = Path(__file__).resolve().parent
@@ -695,8 +709,611 @@ def cmd_entries(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_not_implemented(args: argparse.Namespace) -> int:
-    raise SystemExit(f"NBOT_V3_COMMAND_DEFERRED_TO_LATER_PHASE:{args.command}")
+def _cluster_execution_role() -> None:
+    if detect_role(ROOT).value != "EXECUTION":
+        raise ValueError("NBOT_CLUSTER_EXECUTION_CONTROL_POINT_ONLY")
+
+
+def _cluster_profile(args: argparse.Namespace, *, required: bool) -> str | None:
+    raw = str(getattr(args, "profile", "") or "").strip()
+    if not raw:
+        if required:
+            raise ValueError("NBOT_CLUSTER_PROFILE_REQUIRED")
+        return None
+    cluster_profile_units(raw)
+    return raw
+
+
+def _cluster_json_from_remote(result: subprocess.CompletedProcess[str], *, label: str) -> tuple[dict, int]:
+    if result.returncode not in {0, 2}:
+        detail = (result.stderr or result.stdout).strip().replace("\n", "|")[:300]
+        raise ValueError(f"NBOT_CLUSTER_REMOTE_{label}_FAILED:{result.returncode}:{detail}")
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"NBOT_CLUSTER_REMOTE_{label}_JSON_INVALID") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"NBOT_CLUSTER_REMOTE_{label}_JSON_INVALID")
+    return payload, int(result.returncode)
+
+
+def _cluster_protocol_version(payload: dict) -> str | None:
+    values = [
+        str(item).split(":", 1)[1]
+        for item in payload.get("checks", [])
+        if str(item).startswith("CONTROL_PROTOCOL_VERSION:")
+    ]
+    if len(values) != 1:
+        return None
+    return values[0]
+
+
+def _cluster_endpoint_check(profile_name: str, transport) -> tuple[list[str], list[str]]:
+    checks: list[str] = []
+    warnings: list[str] = []
+    try:
+        from nbot.communication.config import control_link_config_for_profile
+
+        link = control_link_config_for_profile(
+            ROOT,
+            get_profile(profile_name),
+            environ=os.environ,
+        )
+        parsed = urlparse(link.base_url)
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        if (
+            parsed.scheme != "http"
+            or parsed.hostname not in {"127.0.0.1", "localhost"}
+            or int(port) != int(transport.local_port)
+            or parsed.path not in {"", "/"}
+            or parsed.params
+            or parsed.query
+            or parsed.fragment
+        ):
+            warnings.append(
+                "CLUSTER_CONTROL_ENDPOINT_MISMATCH:"
+                f"{link.base_url}:http://127.0.0.1:{transport.local_port}"
+            )
+        else:
+            checks.append("CLUSTER_CONTROL_ENDPOINT_PINNED_TO_TUNNEL")
+    except Exception as exc:
+        warnings.append(
+            f"CLUSTER_CONTROL_ENDPOINT_INVALID:{type(exc).__name__}:{exc}"
+        )
+    return checks, warnings
+
+
+def _cluster_active_runtime(profile_name: str) -> dict | None:
+    rows = _active_runtimes(clean_stale=False)
+    if len(rows) > 1:
+        raise ValueError("NBOT_CLUSTER_MULTIPLE_EXECUTION_RUNTIMES")
+    if not rows:
+        return None
+    row = rows[0]
+    if row.get("profile") != profile_name:
+        raise ValueError(
+            f"NBOT_CLUSTER_OTHER_PROFILE_ACTIVE:{row.get('profile')}:{profile_name}"
+        )
+    return row
+
+
+def _cluster_doctor_payload(
+    profile_name: str,
+    *,
+    require_runtime_link: bool,
+) -> tuple[dict, int]:
+    _cluster_execution_role()
+    units = cluster_profile_units(profile_name)
+    profile = get_profile(profile_name)
+    local_doctor, _ = _doctor_payload(
+        profile_name,
+        include_remote_compatibility=False,
+    )
+    checks: list[str] = []
+    warnings: list[str] = []
+
+    active_runtime = _cluster_active_runtime(profile_name)
+    local_warnings = list(local_doctor.get("warnings") or [])
+    if active_runtime is not None:
+        local_warnings = [
+            item for item in local_warnings
+            if item != "EXECUTION_SINGLE_INSTANCE_LOCK_HELD"
+        ]
+        if "EXECUTION_SINGLE_INSTANCE_LOCK_HELD" in (local_doctor.get("warnings") or []):
+            checks.append("EXECUTION_SINGLE_INSTANCE_LOCK_HELD_BY_MATCHING_RUNTIME")
+    if local_warnings:
+        warnings.extend(f"LOCAL_DOCTOR:{item}" for item in local_warnings)
+    else:
+        checks.append("CLUSTER_LOCAL_DOCTOR_OK")
+
+    local_sha = str(local_doctor.get("git", {}).get("sha") or "UNKNOWN")
+    local_tag = str(local_doctor.get("git", {}).get("tag") or "UNKNOWN")
+    if local_sha == "UNKNOWN":
+        warnings.append("CLUSTER_LOCAL_RELEASE_UNKNOWN")
+
+    try:
+        transport = installed_tunnel_transport(profile_name)
+        checks.append("CLUSTER_SSH_TUNNEL_DEFINITION_STRICT")
+        endpoint_checks, endpoint_warnings = _cluster_endpoint_check(profile_name, transport)
+        checks.extend(endpoint_checks)
+        warnings.extend(endpoint_warnings)
+        remote_root = discover_observation_repo(transport)
+        checks.append("CLUSTER_OBSERVATION_REPO_DISCOVERED")
+
+        remote_status, _ = _cluster_json_from_remote(
+            remote_nbotctl(
+                transport,
+                repo_root=remote_root,
+                arguments=("status",),
+            ),
+            label="STATUS",
+        )
+        remote_doctor, remote_doctor_rc = _cluster_json_from_remote(
+            remote_nbotctl(
+                transport,
+                repo_root=remote_root,
+                arguments=("doctor", profile_name),
+            ),
+            label="DOCTOR",
+        )
+
+        if remote_status.get("role") != "OBSERVATION" or remote_doctor.get("role") != "OBSERVATION":
+            warnings.append("CLUSTER_REMOTE_ROLE_NOT_OBSERVATION")
+        else:
+            checks.append("CLUSTER_REMOTE_ROLE_OBSERVATION")
+
+        remote_sha = str(remote_status.get("git", {}).get("sha") or "UNKNOWN")
+        remote_tag = str(remote_status.get("git", {}).get("tag") or "UNKNOWN")
+        doctor_sha = str(remote_doctor.get("git", {}).get("sha") or "UNKNOWN")
+        if local_sha != "UNKNOWN" and local_sha == remote_sha == doctor_sha:
+            checks.append(f"CLUSTER_SAME_RELEASE_SHA:{local_sha}")
+        else:
+            warnings.append(
+                f"CLUSTER_RELEASE_SHA_MISMATCH:{local_sha}:{remote_sha}:{doctor_sha}"
+            )
+
+        if local_tag == "UNKNOWN" and remote_tag == "UNKNOWN":
+            checks.append("CLUSTER_RELEASE_TAG_BOTH_UNTAGGED")
+        elif local_tag == remote_tag:
+            checks.append(f"CLUSTER_SAME_RELEASE_TAG:{local_tag}")
+        else:
+            warnings.append(f"CLUSTER_RELEASE_TAG_MISMATCH:{local_tag}:{remote_tag}")
+
+        if remote_doctor_rc != 0 or remote_doctor.get("status") != "PASS":
+            warnings.extend(
+                f"REMOTE_DOCTOR:{item}"
+                for item in (remote_doctor.get("warnings") or ["STATUS_FAIL"])
+            )
+        else:
+            checks.append("CLUSTER_REMOTE_DOCTOR_OK")
+
+        local_protocol = _cluster_protocol_version(local_doctor)
+        remote_protocol = _cluster_protocol_version(remote_doctor)
+        if local_protocol and local_protocol == remote_protocol:
+            checks.append(f"CLUSTER_PROTOCOL_MATCH:{local_protocol}")
+        else:
+            warnings.append(
+                f"CLUSTER_PROTOCOL_MISMATCH:{local_protocol}:{remote_protocol}"
+            )
+
+        if (
+            "CONTROL_PROFILE_CONTRACT_LOCAL_MATCH" in local_doctor.get("checks", [])
+            and "CONTROL_PROFILE_CONTRACT_LOCAL_MATCH" in remote_doctor.get("checks", [])
+            and remote_doctor.get("profile") == profile.name
+        ):
+            checks.append("CLUSTER_PROFILE_CONTRACT_MATCH")
+        else:
+            warnings.append("CLUSTER_PROFILE_CONTRACT_MISMATCH")
+
+        tunnel_state = local_unit_state(units.tunnel_unit)
+        remote_control_state = remote_unit_state(
+            transport,
+            unit=units.observation_control_unit,
+        )
+        if not tunnel_state.get("installed"):
+            warnings.append(f"CLUSTER_TUNNEL_UNIT_NOT_INSTALLED:{units.tunnel_unit}")
+        else:
+            checks.append("CLUSTER_TUNNEL_UNIT_INSTALLED")
+        if not remote_control_state.get("installed"):
+            warnings.append(
+                f"CLUSTER_OBSERVATION_CONTROL_UNIT_NOT_INSTALLED:{units.observation_control_unit}"
+            )
+        else:
+            checks.append("CLUSTER_OBSERVATION_CONTROL_UNIT_INSTALLED")
+
+        execution_state = None
+        if units.execution_unit is not None:
+            execution_state = local_unit_state(units.execution_unit)
+            if not execution_state.get("installed"):
+                warnings.append(
+                    f"CLUSTER_EXECUTION_UNIT_NOT_INSTALLED:{units.execution_unit}"
+                )
+            else:
+                checks.append("CLUSTER_EXECUTION_UNIT_INSTALLED")
+
+        if active_runtime is not None:
+            if active_runtime.get("release_sha") != local_sha:
+                warnings.append(
+                    "CLUSTER_RUNNING_EXECUTION_RELEASE_MISMATCH:"
+                    f"{active_runtime.get('release_sha')}:{local_sha}"
+                )
+            elif not active_runtime.get("ready"):
+                warnings.append("CLUSTER_RUNNING_EXECUTION_NOT_READY")
+            else:
+                checks.append("CLUSTER_RUNNING_EXECUTION_RELEASE_READY")
+        elif execution_state is not None and execution_state.get("active"):
+            warnings.append("CLUSTER_EXECUTION_SERVICE_ACTIVE_WITHOUT_READY_RUNTIME")
+
+        link_required = bool(require_runtime_link or tunnel_state.get("active"))
+        if link_required:
+            if not remote_control_state.get("active"):
+                warnings.append("CLUSTER_OBSERVATION_CONTROL_INACTIVE")
+            if not tunnel_state.get("active"):
+                warnings.append("CLUSTER_CONTROL_TUNNEL_INACTIVE")
+            remote_compat = _remote_control_compatibility_result(profile_name)
+            if remote_compat.ok:
+                checks.extend(remote_compat.checks)
+                checks.append("CLUSTER_RUNTIME_CONTROL_LINK_COMPATIBLE")
+            else:
+                warnings.extend(remote_compat.warnings)
+        else:
+            checks.append("CLUSTER_STATIC_DOCTOR_NO_RUNTIME_LINK_REQUIRED")
+
+        remote = {
+            "repo_root": remote_root,
+            "git": remote_status.get("git"),
+            "doctor_status": remote_doctor.get("status"),
+            "observation_control": remote_control_state,
+        }
+        transport_payload = {
+            "unit": transport.unit,
+            "service_user": transport.service_user,
+            "target": transport.target,
+            "local_forward": f"{transport.local_host}:{transport.local_port}",
+            "observation_forward": f"{transport.observation_host}:{transport.observation_port}",
+        }
+    except (ClusterOperatorError, ValueError) as exc:
+        warnings.append(f"CLUSTER_REMOTE_OR_TRANSPORT:{exc}")
+        remote = None
+        transport_payload = None
+        tunnel_state = local_unit_state(units.tunnel_unit)
+
+    ok = not warnings
+    payload = {
+        "status": "PASS" if ok else "FAIL",
+        "phase": PHASE,
+        "phase_status": PHASE_STATUS,
+        "phase_gate_status": PHASE_GATE_STATUS,
+        "v3_10_authorized": False,
+        "action": "CLUSTER_DOCTOR",
+        "profile": profile_name,
+        "control_point_role": "EXECUTION",
+        "git": _git_identity(),
+        "runtime": active_runtime,
+        "execution_state": _execution_state_summary(profile_name),
+        "tunnel": tunnel_state,
+        "transport": transport_payload,
+        "remote": remote,
+        "checks": checks,
+        "warnings": warnings,
+    }
+    return payload, (0 if ok else 2)
+
+
+def _cluster_wait_local(unit: str, *, active: bool, timeout_seconds: float = 20.0) -> bool:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if bool(local_unit_state(unit).get("active")) is active:
+            return True
+        time.sleep(0.25)
+    return False
+
+
+def _cluster_wait_remote(transport, unit: str, *, active: bool, timeout_seconds: float = 20.0) -> bool:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if bool(remote_unit_state(transport, unit=unit).get("active")) is active:
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def _cluster_wait_runtime(profile_name: str, *, timeout_seconds: float = 25.0) -> dict | None:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        row = _runtime_record(profile_name, clean_stale=False)
+        if row is not None and row.get("alive") and row.get("ready"):
+            return row
+        time.sleep(0.25)
+    return None
+
+
+def _cluster_start(profile_name: str) -> tuple[dict, int]:
+    _cluster_execution_role()
+    units = cluster_profile_units(profile_name)
+    active_runtime = _cluster_active_runtime(profile_name)
+    summary = _execution_state_summary(profile_name)
+    allowed, reason = execution_cluster_start_guard(
+        summary,
+        runtime_active=active_runtime is not None,
+    )
+    if not allowed:
+        raise ValueError(f"NBOT_CLUSTER_START_REFUSED:{reason}")
+
+    if active_runtime is not None:
+        doctor, code = _cluster_doctor_payload(
+            profile_name,
+            require_runtime_link=True,
+        )
+        doctor["action"] = "CLUSTER_START"
+        doctor["result"] = "ALREADY_RUNNING" if code == 0 else "ACTIVE_RUNTIME_UNHEALTHY"
+        return doctor, code
+
+    if units.execution_unit is not None and local_unit_state(units.execution_unit).get("active"):
+        raise ValueError("NBOT_CLUSTER_START_EXECUTION_SERVICE_ACTIVE_WITHOUT_READY_RUNTIME")
+
+    static_doctor, static_code = _cluster_doctor_payload(
+        profile_name,
+        require_runtime_link=False,
+    )
+    if static_code != 0:
+        static_doctor["action"] = "CLUSTER_START"
+        static_doctor["result"] = "STATIC_PREFLIGHT_FAILED"
+        return static_doctor, 2
+
+    transport = installed_tunnel_transport(profile_name)
+    remote_root = discover_observation_repo(transport)
+    remote_base_before = remote_unit_state(
+        transport,
+        unit="nbot-observation-live.service",
+    )
+
+    from nbot.operator.execution import set_operator_entry_block
+
+    set_operator_entry_block(ROOT, profile_name, blocked=True)
+
+    remote_systemctl(
+        transport,
+        action="restart",
+        unit=units.observation_control_unit,
+    )
+    if not _cluster_wait_remote(
+        transport,
+        units.observation_control_unit,
+        active=True,
+    ):
+        raise ValueError("NBOT_CLUSTER_START_OBSERVATION_CONTROL_TIMEOUT")
+
+    local_systemctl("restart", units.tunnel_unit)
+    if not _cluster_wait_local(units.tunnel_unit, active=True):
+        raise ValueError("NBOT_CLUSTER_START_TUNNEL_TIMEOUT")
+
+    linked_doctor, linked_code = _cluster_doctor_payload(
+        profile_name,
+        require_runtime_link=True,
+    )
+    if linked_code != 0:
+        linked_doctor["action"] = "CLUSTER_START"
+        linked_doctor["result"] = "RUNTIME_LINK_PREFLIGHT_FAILED"
+        return linked_doctor, 2
+
+    if units.execution_unit is not None:
+        local_systemctl("start", units.execution_unit)
+        if not _cluster_wait_local(units.execution_unit, active=True):
+            raise ValueError("NBOT_CLUSTER_START_EXECUTION_SERVICE_TIMEOUT")
+    else:
+        start_code = _start_execution(profile_name)
+        if start_code != 0:
+            raise ValueError("NBOT_CLUSTER_START_EXECUTION_RUNTIME_FAILED")
+
+    runtime = _cluster_wait_runtime(profile_name)
+    if runtime is None:
+        raise ValueError("NBOT_CLUSTER_START_EXECUTION_READY_TIMEOUT")
+
+    post_doctor, post_code = _cluster_doctor_payload(
+        profile_name,
+        require_runtime_link=True,
+    )
+    post_doctor["action"] = "CLUSTER_START"
+    post_doctor["result"] = "STARTED" if post_code == 0 else "POST_START_DOCTOR_FAILED"
+    post_doctor["entry_authority_created"] = False
+    post_doctor["operator_entry_block"] = True
+    post_doctor["remote_repo_root"] = remote_root
+    post_doctor["observation_base_was_active"] = bool(remote_base_before.get("active"))
+    return post_doctor, post_code
+
+
+def _cluster_resolve_stop_profile(requested: str | None) -> str | None:
+    if requested:
+        cluster_profile_units(requested)
+        return requested
+    active = _active_runtimes(clean_stale=False)
+    if len(active) > 1:
+        raise ValueError("NBOT_CLUSTER_MULTIPLE_EXECUTION_RUNTIMES")
+    if len(active) == 1:
+        return str(active[0]["profile"])
+    candidates = []
+    for name in ("live-paper", "testnet-trade"):
+        units = cluster_profile_units(name)
+        if units.execution_unit and local_unit_state(units.execution_unit).get("active"):
+            candidates.append(name)
+        elif local_unit_state(units.tunnel_unit).get("active"):
+            candidates.append(name)
+    candidates = sorted(set(candidates))
+    if len(candidates) > 1:
+        raise ValueError("NBOT_CLUSTER_STOP_PROFILE_AMBIGUOUS")
+    return None if not candidates else candidates[0]
+
+
+def _cluster_stop(profile_name: str | None) -> tuple[dict, int]:
+    _cluster_execution_role()
+    profile_name = _cluster_resolve_stop_profile(profile_name)
+    if profile_name is None:
+        return {
+            "status": "PASS",
+            "action": "CLUSTER_STOP",
+            "result": "NOT_RUNNING",
+            "v3_10_authorized": False,
+        }, 0
+
+    units = cluster_profile_units(profile_name)
+    summary = _execution_state_summary(profile_name)
+    allowed, reason = execution_stop_guard(summary)
+    if not allowed:
+        raise ValueError(f"NBOT_CLUSTER_STOP_REFUSED:{reason}")
+
+    active_runtime = _cluster_active_runtime(profile_name)
+    transport = installed_tunnel_transport(profile_name)
+    remote_base_before = remote_unit_state(
+        transport,
+        unit="nbot-observation-live.service",
+    )
+
+    from nbot.operator.execution import set_operator_entry_block
+
+    set_operator_entry_block(ROOT, profile_name, blocked=True)
+    summary_after_block = _execution_state_summary(profile_name)
+    allowed, reason = execution_stop_guard(summary_after_block)
+    if not allowed:
+        raise ValueError(f"NBOT_CLUSTER_STOP_REFUSED_AFTER_BLOCK:{reason}")
+
+    if units.execution_unit is not None and local_unit_state(units.execution_unit).get("active"):
+        local_systemctl("stop", units.execution_unit)
+        if not _cluster_wait_local(units.execution_unit, active=False):
+            raise ValueError("NBOT_CLUSTER_STOP_EXECUTION_SERVICE_TIMEOUT")
+    elif active_runtime is not None:
+        stop_code = cmd_stop(argparse.Namespace())
+        if stop_code != 0:
+            raise ValueError("NBOT_CLUSTER_STOP_EXECUTION_RUNTIME_FAILED")
+
+    if _runtime_record(profile_name, clean_stale=True) is not None:
+        raise ValueError("NBOT_CLUSTER_STOP_EXECUTION_RUNTIME_STILL_ACTIVE")
+
+    final_state = _execution_state_summary(profile_name)
+    allowed, reason = execution_stop_guard(final_state)
+    if not allowed:
+        raise ValueError(f"NBOT_CLUSTER_STOP_POST_EXECUTION_UNSAFE:{reason}")
+
+    if local_unit_state(units.tunnel_unit).get("active"):
+        local_systemctl("stop", units.tunnel_unit)
+        if not _cluster_wait_local(units.tunnel_unit, active=False):
+            raise ValueError("NBOT_CLUSTER_STOP_TUNNEL_TIMEOUT")
+
+    remote_systemctl(
+        transport,
+        action="stop",
+        unit=units.observation_control_unit,
+    )
+    if not _cluster_wait_remote(
+        transport,
+        units.observation_control_unit,
+        active=False,
+    ):
+        raise ValueError("NBOT_CLUSTER_STOP_OBSERVATION_CONTROL_TIMEOUT")
+
+    remote_base_after = remote_unit_state(
+        transport,
+        unit="nbot-observation-live.service",
+    )
+    if remote_base_before.get("active") and not remote_base_after.get("active"):
+        raise ValueError("NBOT_CLUSTER_STOP_OBSERVATION_BASE_COLLECTOR_CHANGED")
+
+    return {
+        "status": "PASS",
+        "action": "CLUSTER_STOP",
+        "result": "STOPPED_SAFE_FLAT",
+        "profile": profile_name,
+        "entry_authority_created": False,
+        "operator_entry_block": True,
+        "execution_state": final_state,
+        "observation_base_collector_preserved": bool(remote_base_after.get("active")),
+        "v3_10_authorized": False,
+    }, 0
+
+
+def _cluster_status(profile_name: str | None) -> tuple[dict, int]:
+    _cluster_execution_role()
+    profiles = [profile_name] if profile_name else ["live-paper", "testnet-trade"]
+    rows: dict[str, dict] = {}
+    degraded = False
+    for name in profiles:
+        units = cluster_profile_units(name)
+        row = {
+            "execution_state": _execution_state_summary(name),
+            "runtime": _runtime_record(name, clean_stale=False),
+            "tunnel": local_unit_state(units.tunnel_unit),
+            "execution_unit": None if units.execution_unit is None else local_unit_state(units.execution_unit),
+        }
+        if row["tunnel"].get("installed"):
+            try:
+                transport = installed_tunnel_transport(name)
+                remote_root = discover_observation_repo(transport)
+                remote_status, _ = _cluster_json_from_remote(
+                    remote_nbotctl(
+                        transport,
+                        repo_root=remote_root,
+                        arguments=("status",),
+                    ),
+                    label="STATUS",
+                )
+                row["remote"] = {
+                    "repo_root": remote_root,
+                    "status": remote_status,
+                    "observation_control": remote_unit_state(
+                        transport,
+                        unit=units.observation_control_unit,
+                    ),
+                    "observation_base": remote_unit_state(
+                        transport,
+                        unit="nbot-observation-live.service",
+                    ),
+                }
+                if row["tunnel"].get("active"):
+                    compat = _remote_control_compatibility_result(name)
+                    row["runtime_control_link"] = {
+                        "ok": compat.ok,
+                        "checks": list(compat.checks),
+                        "warnings": list(compat.warnings),
+                    }
+                    degraded = degraded or not compat.ok
+            except Exception as exc:
+                row["remote"] = {"status": "UNAVAILABLE", "reason": f"{type(exc).__name__}:{exc}"}
+                degraded = True
+        rows[name] = row
+
+    return {
+        "status": "DEGRADED" if degraded else "PASS",
+        "action": "CLUSTER_STATUS",
+        "phase": PHASE,
+        "phase_status": PHASE_STATUS,
+        "phase_gate_status": PHASE_GATE_STATUS,
+        "git": _git_identity(),
+        "profiles": rows,
+        "v3_10_authorized": False,
+    }, (2 if degraded else 0)
+
+
+def cmd_cluster(args: argparse.Namespace) -> int:
+    action = str(args.action)
+    profile_name = _cluster_profile(
+        args,
+        required=action in {"doctor", "start"},
+    )
+    if action == "doctor":
+        payload, code = _cluster_doctor_payload(
+            str(profile_name),
+            require_runtime_link=False,
+        )
+    elif action == "start":
+        payload, code = _cluster_start(str(profile_name))
+    elif action == "stop":
+        payload, code = _cluster_stop(profile_name)
+    elif action == "status":
+        payload, code = _cluster_status(profile_name)
+    else:
+        raise ValueError(f"NBOT_CLUSTER_ACTION_INVALID:{action}")
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return code
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -749,7 +1366,7 @@ def build_parser() -> argparse.ArgumentParser:
     cluster = sub.add_parser("cluster")
     cluster.add_argument("action", choices=("doctor", "start", "stop", "status"))
     cluster.add_argument("profile", nargs="?", choices=sorted(PROFILES))
-    cluster.set_defaults(func=cmd_not_implemented)
+    cluster.set_defaults(func=cmd_cluster)
     return parser
 
 
