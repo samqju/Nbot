@@ -805,7 +805,7 @@ class ResearchMemoryStore:
             if row is None:
                 raise RuntimeError("NBOT_V39_EPOCH_TRANSITION_MISSING")
             target_end = int(row[0])
-            if cutoff != target_end:
+            if cutoff > target_end or cutoff < 0:
                 raise RuntimeError("NBOT_V39_EPOCH_TRANSITION_CUTOFF_MISMATCH")
             if str(row[1]) == "COMPLETED":
                 if str(row[2]) != version or int(row[3]) != cutoff:

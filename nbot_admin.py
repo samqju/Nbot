@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import time
 from typing import Any
 
 from nbot.common.logging import configure_logging, observation_log_paths
@@ -26,7 +27,7 @@ from nbot.observation.champion import (
     MemoryWalkForwardChampionEvaluator,
     WalkForwardChampionEvaluator,
 )
-from nbot.observation.challengers import ContinuousChallengerCycle
+from nbot.observation.challengers import ContinuousChallengerCycle, CHALLENGER_PREFIX
 from nbot.observation.governance import ModelGovernanceRegistry
 from nbot.observation.market_regimes import MarketRegimeEvidence
 from nbot.observation.operational_regimes import OperationalRegimeLedger
@@ -295,7 +296,7 @@ def _challenger_for_training_cutoff(
     cutoff = int(training_cutoff_event_ms)
     matches = [
         record
-        for record in memory.list_artifacts(prefix="v39:challenger:")
+        for record in memory.list_artifacts(prefix=CHALLENGER_PREFIX)
         if int(record["payload"].get("training_cutoff_event_ms", -1)) == cutoff
     ]
     if len(matches) > 1:
@@ -331,6 +332,10 @@ def _run_epoch_challenger_transition() -> dict[str, Any]:
         if anchored is None:
             cycle_report = _challenger_cycle().cycle()
             anchored = _challenger_for_training_cutoff(memory, target_end_ms)
+            if anchored is None and cycle_report.get("action") == "EVALUATE_WAIT":
+                # New market evidence must keep accumulating while an existing
+                # frozen model waits for its independent future test window.
+                anchored = memory.artifact(CHALLENGER_PREFIX + cycle_report["challenger_version"])
             if anchored is None:
                 raise RuntimeError(
                     "NBOT_V39_EPOCH_TRANSITION_CHALLENGER_NOT_ANCHORED:"
@@ -349,7 +354,7 @@ def _run_epoch_challenger_transition() -> dict[str, Any]:
         challenger = anchored["payload"]
         challenger_version = str(challenger["challenger_version"])
         challenger_cutoff = int(challenger["training_cutoff_event_ms"])
-        if challenger_cutoff != target_end_ms:
+        if challenger_cutoff > target_end_ms:
             raise RuntimeError("NBOT_V39_EPOCH_TRANSITION_CUTOFF_MISMATCH")
 
         governance = _governance().sync()
@@ -545,6 +550,26 @@ def cmd_research_memory_migrate(args: argparse.Namespace) -> int:
 
 def cmd_research_memory_status(_args: argparse.Namespace) -> int:
     return _emit(_memory().status())
+
+
+def cmd_research_memory_init(_args: argparse.Namespace) -> int:
+    """Initialize a fresh server without resetting or importing existing memory."""
+    with _research_epoch_command_lock():
+        memory = _memory()
+        if memory.path.exists():
+            if memory.metadata().get("memory_version") != "RESEARCH_MEMORY_V1":
+                raise RuntimeError("RESEARCH_MEMORY_EXISTING_STORE_REQUIRES_REVIEW")
+            return _emit({"status": "ALREADY_INITIALIZED", "metadata": memory.metadata()})
+        raw = _db()
+        raw.initialize()
+        with raw.connection() as conn:
+            earliest = conn.execute("SELECT MIN(event_open_ms) FROM market_events WHERE status='COMPLETE'").fetchone()[0]
+        interval = raw.config.candle_interval_ms
+        # Reserve enough past history before the first research target. Never
+        # select the very first candle as a target that can never gain history.
+        start = int(earliest) if earliest is not None else (int(time.time() * 1000) // interval) * interval
+        memory.initialize(generation=V384_GENERATION, generation_floor_ms=start + 48 * interval)
+        return _emit({"status": "INITIALIZED", "metadata": memory.metadata(), "order_authority": "NONE"})
 
 
 def cmd_research_epoch_status(_args: argparse.Namespace) -> int:
@@ -939,6 +964,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="read-only V3.8 LIVE/PAPER operational canary trace/degradation report",
     )
     canary_report.set_defaults(func=cmd_live_paper_canary_report)
+
+    memory_init = sub.add_parser("research-memory-init", help="initialize fresh permanent learning memory without deleting data")
+    memory_init.set_defaults(func=cmd_research_memory_init)
 
     memory_migrate = sub.add_parser(
         "research-memory-migrate",

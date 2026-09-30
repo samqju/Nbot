@@ -12,6 +12,7 @@ from nbot.observation.challengers import (
     AUTHORITY,
     CHALLENGER_FAMILY,
     EVALUATION_PREFIX,
+    CHALLENGER_PREFIX,
     ContinuousChallengerCycle,
 )
 from nbot.observation.research_memory import LEDGER_COLUMNS, RIDGE_COLUMNS, ResearchMemoryStore
@@ -225,7 +226,7 @@ class V391ContinuousChallengerTests(unittest.TestCase):
         epoch_id = "EPOCH-TEST-REPLAY"
         cutoff = 9_600_000
         self._seed_pending_epoch_transition(epoch_id=epoch_id, target_end_ms=cutoff)
-        self.memory.persist_artifact("v39:challenger:C-REPLAY", {
+        self.memory.persist_artifact(CHALLENGER_PREFIX + "C-REPLAY", {
             "challenger_version": "C-REPLAY",
             "training_cutoff_event_ms": cutoff,
             "authority": AUTHORITY,

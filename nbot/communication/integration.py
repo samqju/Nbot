@@ -23,6 +23,7 @@ from nbot.execution.outcomes import ExecutionDurableStore
 from .authorities import (
     LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
     TESTNET_OPERATIONAL_CANARY_AUTHORITY,
+    TESTNET_LEARNED_AUTHORITY,
 )
 from .client import ObservationClientError, RemoteObservationClient
 from .config import control_link_config_for_profile
@@ -219,9 +220,12 @@ def _validate_health(
         "testnet-trade": TESTNET_OPERATIONAL_CANARY_AUTHORITY,
         "live-paper": LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
     }.get(profile.name)
-    if authority not in {None, expected_authority}:
+    accepted = {expected_authority}
+    if profile.name == "testnet-trade":
+        accepted.add(TESTNET_LEARNED_AUTHORITY)
+    if authority is not None and authority not in accepted:
         raise ObservationClientError("OBSERVATION_HEALTH_RECOMMENDATION_AUTHORITY_INVALID")
-    if health.get("status") == "READY" and authority != expected_authority:
+    if health.get("status") == "READY" and authority not in accepted:
         raise ObservationClientError("OBSERVATION_HEALTH_READY_AUTHORITY_REQUIRED")
 
 

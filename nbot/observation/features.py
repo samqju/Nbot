@@ -559,6 +559,7 @@ class CanonicalFeatureStore:
         event_open_ms: int,
         *,
         computed_at_ms: int,
+        register_definition: bool = True,
     ) -> tuple[dict[str, Any], ...]:
         """Calculate one research-ready event without persisting derived rows."""
 
@@ -567,7 +568,8 @@ class CanonicalFeatureStore:
         if computed < 0:
             raise ValueError("NBOT_V341_COMPUTED_AT_INVALID")
 
-        self.initialize()
+        if register_definition:
+            self.initialize()
         with self.db.connection() as conn:
             event = conn.execute(
                 """

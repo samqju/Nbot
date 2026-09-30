@@ -119,6 +119,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--control-refresh-seconds", type=float, default=1.0)
     parser.add_argument("--control-tls-cert")
     parser.add_argument("--control-tls-key")
+    parser.add_argument("--testnet-selection", choices=("learned", "mechanical"), default="learned",
+                        help="learned uses LIVE-trained models; mechanical is an explicit order-plumbing test")
     return parser
 
 
@@ -187,10 +189,15 @@ def main(argv: list[str] | None = None) -> int:
             auth_token = str(os.environ.get("NBOT_CONTROL_AUTH_TOKEN", ""))
             if not auth_token:
                 raise ValueError("NBOT_CONTROL_AUTH_TOKEN_REQUIRED")
+            from nbot.observation.learned_recommendation import testnet_recommendation_source
+            release_sha = _git_sha(root)
+            source = testnet_recommendation_source(worker.database, get_profile(profile_name), release_sha,
+                                                   mode=args.testnet_selection)
             target = ObservationControlTarget(
                 worker.database,
                 get_profile(profile_name),
-                release_sha=_git_sha(root),
+                release_sha=release_sha,
+                learned_source=source,
             )
             recommendation_supervisor = RecommendationSupervisor(
                 target,

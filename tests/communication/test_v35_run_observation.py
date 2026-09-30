@@ -95,6 +95,7 @@ class V35RunObservationTests(unittest.TestCase):
 
         with mock.patch.object(module, "build_observation_worker", return_value=(worker, FakeLock())), \
              mock.patch.object(module, "ObservationControlTarget", return_value=fake_target) as target_ctor, \
+             mock.patch("nbot.observation.learned_recommendation.testnet_recommendation_source", return_value="learned-source") as source_ctor, \
              mock.patch.object(module, "RecommendationSupervisor", side_effect=supervisor_factory), \
              mock.patch.object(module, "ObservationControlServer", FakeServer), \
              mock.patch.object(module, "_git_sha", return_value="a" * 40), \
@@ -105,6 +106,8 @@ class V35RunObservationTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(worker.runs, [1])
         target_ctor.assert_called_once()
+        source_ctor.assert_called_once_with(worker.database, mock.ANY, "a" * 40, mode="learned")
+        self.assertEqual(target_ctor.call_args.kwargs["learned_source"], "learned-source")
         self.assertEqual(supervisors[0].started, 1)
         self.assertEqual(supervisors[0].stopped, 1)
         self.assertIsNotNone(FakeServer.last)

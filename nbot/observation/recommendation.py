@@ -128,10 +128,14 @@ class RecommendationStore:
         profile: Profile,
         *,
         proposal_ttl_ms: int = DEFAULT_PROPOSAL_TTL_MS,
+        learned_source=None,
     ) -> None:
         self.database = database
         self.mutation_lock = threading.RLock()
         self.profile = profile
+        self.learned_source = learned_source
+        if learned_source is not None and profile.name != "testnet-trade":
+            raise ValueError("LEARNED_RECOMMENDATION_TESTNET_ONLY")
         self.proposal_ttl_ms = int(proposal_ttl_ms)
         if self.proposal_ttl_ms <= 0 or self.proposal_ttl_ms > 5 * 60_000:
             raise ValueError("NBOT_RECOMMENDATION_TTL_INVALID")
@@ -190,6 +194,15 @@ class RecommendationStore:
         now = int(time.time() * 1000) if now_ms is None else int(now_ms)
         if now <= 0:
             raise ValueError("NBOT_RECOMMENDATION_NOW_INVALID")
+        if self.learned_source is not None:
+            try:
+                snapshot = self.learned_source.refresh(now_ms=now, ttl_ms=self.proposal_ttl_ms)
+            except Exception as exc:
+                # Invalidate the previous suggestion immediately, including on
+                # artifact corruption. Keep control health available to operators.
+                snapshot = RecommendationSnapshot("NOT_READY", f"LEARNED_INFERENCE_FAILED:{type(exc).__name__}:{exc}", None, now)
+            self._save_snapshot(snapshot)
+            return snapshot
         if self.profile.name == "live-paper":
             snapshot = self._refresh_live_paper_operational_canary(now)
             self._save_snapshot(snapshot)
@@ -543,6 +556,7 @@ class ObservationControlTarget:
         proposal_ttl_ms: int = DEFAULT_PROPOSAL_TTL_MS,
         max_request_age_ms: int = DEFAULT_MAX_REQUEST_AGE_MS,
         max_future_skew_ms: int = DEFAULT_MAX_FUTURE_SKEW_MS,
+        learned_source=None,
     ) -> None:
         from nbot.communication.validation import git_sha
 
@@ -559,6 +573,7 @@ class ObservationControlTarget:
             database,
             profile,
             proposal_ttl_ms=proposal_ttl_ms,
+            learned_source=learned_source,
         )
         self.store_id = "OBS-" + hashlib.sha256(
             f"{database.config.database_path}|{profile.market_environment}|{CONTROL_SCHEMA_VERSION}".encode("utf-8")
@@ -575,16 +590,21 @@ class ObservationControlTarget:
 
     def health_snapshot(self) -> dict[str, Any]:
         snapshot = self.recommendations.current()
+        from nbot.communication.authorities import TESTNET_LEARNED_AUTHORITY
+        if snapshot.proposal is not None and snapshot.proposal.is_expired(now_ms=self._validated_now()):
+            snapshot = RecommendationSnapshot("NOT_READY", "RECOMMENDATION_EXPIRED", None, snapshot.refreshed_at_ms)
         return {
             "status": "READY" if snapshot.status == "READY" else "NOT_READY",
             "reason": snapshot.reason,
+            "selection_mode": "LEARNED_TESTNET" if self.recommendations.learned_source is not None else "MECHANICAL_CANARY",
             "profile": self.profile.name,
             "market_environment": self.profile.market_environment,
             "evidence_lineage": self.profile.evidence_lineage,
             "protocol_version": "NBOT_V3_EXECUTION_V1",
             "release_sha": self.release_sha,
             "recommendation_authority": (
-                None if snapshot.proposal is None else snapshot.proposal.entry_authority
+                (TESTNET_LEARNED_AUTHORITY if self.recommendations.learned_source is not None else None)
+                if snapshot.proposal is None else snapshot.proposal.entry_authority
             ),
             "order_authority": "NONE",
             "store_id": self.store_id,
@@ -776,6 +796,11 @@ class ObservationControlTarget:
             return response
         self._record_veto(request, now)
         snapshot = self.recommendations.current()
+        if snapshot.status == "READY" and snapshot.proposal is None and self.recommendations.learned_source is not None:
+            response = TradeResponse.no_trade(request_id=request.request_id, responded_at_ms=now,
+                                               reason=snapshot.reason or "LEARNED_NO_TRADE")
+            self._record_request_response(request, response, received_at_ms=now)
+            return response
         if snapshot.status != "READY" or snapshot.proposal is None:
             response = TradeResponse.not_ready(
                 request_id=request.request_id,

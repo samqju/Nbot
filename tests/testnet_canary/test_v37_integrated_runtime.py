@@ -9,6 +9,7 @@ import run_execution
 from nbot.communication.client import ObservationClientError
 from nbot.communication.integration import (
     TESTNET_OPERATIONAL_CANARY_AUTHORITY,
+    TESTNET_LEARNED_AUTHORITY,
     V37IntegratedObservationClient,
 )
 
@@ -194,7 +195,7 @@ class V37RuntimeWiringTests(unittest.TestCase):
         self.assertIs(kwargs["outcome_client"], observation)
         self.assertEqual(
             kwargs["allowed_entry_authorities"],
-            frozenset({TESTNET_OPERATIONAL_CANARY_AUTHORITY}),
+            frozenset({TESTNET_OPERATIONAL_CANARY_AUTHORITY, TESTNET_LEARNED_AUTHORITY}),
         )
         self.assertEqual(worker.events[:4], ["prepare", "disable", "enable", "flat"])
         self.assertTrue(exchange.disconnected)

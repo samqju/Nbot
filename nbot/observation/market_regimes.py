@@ -528,7 +528,31 @@ class MarketRegimeEvidence:
             "coverage_policy": "MONITOR_AS_AVAILABLE_DO_NOT_MANUFACTURE_UNOBSERVED_REGIMES",
         }
 
+    def _generation_unavailable(self) -> dict[str, Any] | None:
+        # This historical contract cannot be calibrated from a new generation.
+        # Do not fabricate evidence or prevent independent learning epochs.
+        floor = int(self.memory.metadata()["generation_floor_ms"])
+        if floor <= self.config.calibration_cutoff_event_ms:
+            return None
+        if self.memory.artifact(CONTRACT_KEY) or self.memory.list_artifacts(prefix=REPORT_PREFIX):
+            raise RuntimeError("NBOT_V394_GENERATION_CONTRACT_CONFLICT")
+        return {
+            "regime_version": self.config.regime_version,
+            "status": "UNAVAILABLE_HISTORICAL_CALIBRATION",
+            "reason": "GENERATION_STARTS_AFTER_FROZEN_CALIBRATION_CUTOFF",
+            "generation_floor_ms": floor,
+            "calibration_cutoff_event_ms": self.config.calibration_cutoff_event_ms,
+            "contract_initialized": False,
+            "authority": AUTHORITY,
+            "automatic_promotion": False,
+            "paper_champion_authority": False,
+            "execution_authority": "NONE",
+        }
+
     def sync(self) -> dict[str, Any]:
+        unavailable = self._generation_unavailable()
+        if unavailable is not None:
+            return unavailable
         contract = self.memory.persist_artifact(CONTRACT_KEY, self.contract())
         reports = self._expected_reports()
         for report in reports:
@@ -547,6 +571,9 @@ class MarketRegimeEvidence:
         }
 
     def status(self) -> dict[str, Any]:
+        unavailable = self._generation_unavailable()
+        if unavailable is not None:
+            return unavailable
         contract_record = self.memory.artifact(CONTRACT_KEY)
         reports = [record["payload"] for record in self.memory.list_artifacts(prefix=REPORT_PREFIX)]
         reports.sort(key=lambda report: (
@@ -568,6 +595,9 @@ class MarketRegimeEvidence:
         }
 
     def audit(self) -> dict[str, Any]:
+        unavailable = self._generation_unavailable()
+        if unavailable is not None:
+            return {**unavailable, "healthy": False}
         report = {
             "regime_version": self.config.regime_version,
             "authority": AUTHORITY,

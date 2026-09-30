@@ -11,6 +11,19 @@ V3 starts from clean runtime state and clean databases. V1/V2 remain engineering
 
 ## Current phase
 
+### Learned Testnet testing
+
+Testnet control now defaults to a LIVE-trained model instead of hash-generated
+mechanical proposals. It waits for mature training data, scores fresh market
+features, and abstains when the best prediction is non-positive. Testnet trades
+remain experimental and never become LIVE training evidence. Execution retains
+all risk, arm, session-limit and one-position controls. The explicit mechanical
+canary remains available with `--testnet-selection mechanical`.
+
+See [setup and operating instructions](docs/LEARNED_TESTNET_SETUP.md) and the
+[versioned contract](docs/LEARNED_TESTNET_CONTRACT.md). This addition does not
+enable real-money trading or claim economic validation.
+
 `V3.9 — continuous challenger learning / long-term Paper Champion evidence`
 
 Current status is deliberately split:

@@ -19,6 +19,7 @@ from nbot.common.time import utc_iso
 from nbot.communication.authorities import (
     LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
     TESTNET_OPERATIONAL_CANARY_AUTHORITY,
+    TESTNET_LEARNED_AUTHORITY,
 )
 from nbot.communication.integration import (
     V38LivePaperOperationalClient,
@@ -713,7 +714,7 @@ def run_testnet_runtime(
         exchange=exchange,
         proposal_client=remote_client,
         outcome_client=remote_client,
-        allowed_entry_authorities=frozenset({TESTNET_OPERATIONAL_CANARY_AUTHORITY}),
+        allowed_entry_authorities=frozenset({TESTNET_OPERATIONAL_CANARY_AUTHORITY, TESTNET_LEARNED_AUTHORITY}),
     )
 
     def enable_policy() -> tuple[bool, str]:
@@ -751,7 +752,7 @@ def run_testnet_runtime(
             (
                 f"profile={profile.name}\npid={os.getpid()}\nready_at={utc_iso()}\n"
                 f"prepared={prepared.status}\nphase=V3.7\n"
-                f"recommendation_authority={TESTNET_OPERATIONAL_CANARY_AUTHORITY}\n"
+                f"accepted_recommendation_authorities={TESTNET_OPERATIONAL_CANARY_AUTHORITY},{TESTNET_LEARNED_AUTHORITY}\n"
             ),
             mode=0o600,
         )
@@ -766,7 +767,7 @@ def run_testnet_runtime(
                     "entries_enabled": False,
                     "proposal_source": "REMOTE_CONTROL_LINK",
                     "outcome_transport": "REMOTE_CONTROL_ACK",
-                    "recommendation_authority": TESTNET_OPERATIONAL_CANARY_AUTHORITY,
+                    "accepted_recommendation_authorities": [TESTNET_OPERATIONAL_CANARY_AUTHORITY, TESTNET_LEARNED_AUTHORITY],
                 },
                 sort_keys=True,
             ),
