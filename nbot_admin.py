@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
-import fcntl
 from dataclasses import asdict, is_dataclass
 import json
 import os
@@ -170,12 +169,14 @@ def _research_epoch_command_lock():
     handle = path.open("a+", encoding="utf-8")
     try:
         try:
+            import fcntl
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             raise RuntimeError("NBOT_V384_EPOCH_COMMAND_LOCK_HELD") from exc
         try:
             yield
         finally:
+            import fcntl
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
     finally:
         handle.close()

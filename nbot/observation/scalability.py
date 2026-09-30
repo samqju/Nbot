@@ -275,13 +275,14 @@ def verify_ridge_reference_equivalence(
                 ),
             )]
 
+            decision_state = state.for_decision(event_open_ms)
             if stored:
                 learned_event_index += 1
                 exact_score_required = learned_event_index <= frozen_champion_events
-                if state.event_count < SELECTION_CONFIG.min_train_events:
+                if decision_state.event_count < SELECTION_CONFIG.min_train_events:
                     metadata_mismatches += 1
                 else:
-                    model = state.fit(SELECTION_CONFIG.ridge_alpha)
+                    model = decision_state.fit(SELECTION_CONFIG.ridge_alpha)
                     scored = [
                         (_ridge_score(model, str(row["feature_vector_json"])), row)
                         for row in examples
@@ -306,9 +307,9 @@ def verify_ridge_reference_equivalence(
                             and str(old["side"]) == str(example["side"])
                         )
                         meta_ok = (
-                            int(old["training_event_count"]) == state.event_count
-                            and int(old["training_row_count"]) == state.row_count
-                            and old["trained_through_event_ms"] == state.through_event_ms
+                            int(old["training_event_count"]) == decision_state.event_count
+                            and int(old["training_row_count"]) == decision_state.row_count
+                            and old["trained_through_event_ms"] == decision_state.through_event_ms
                         )
                         if not rank_ok:
                             rank_mismatches += 1
@@ -350,7 +351,7 @@ def verify_ridge_reference_equivalence(
                                 first_post_test_intercept_shift = {
                                     "event_open_ms": event_open_ms,
                                     "learned_event_index": learned_event_index,
-                                    "training_event_count": state.event_count,
+                                    "training_event_count": decision_state.event_count,
                                     "intercept_offset": offset,
                                     "max_abs_centered_diff": score_report[
                                         "max_abs_centered_diff"

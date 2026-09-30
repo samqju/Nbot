@@ -11,11 +11,14 @@ The future V3.5 wire protocol may adapt its validated proposal into
 
 from __future__ import annotations
 
+from nbot.common.synchronization import state_transition
+
 import hashlib
 import math
 import re
+import time
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Callable, Protocol
 
 from nbot.exchange.contracts import EntryNotSubmitted, ExchangePort, Fill, Side
 from nbot.execution.models import EntryInflight, OpenPosition
@@ -163,12 +166,14 @@ class EntryLifecycle:
         risk: RiskManager,
         emergency: VerifiedEmergencyPort,
         config: EntryLifecycleConfig,
+        now_ms: Callable[[], int] | None = None,
     ):
         self.exchange = exchange
         self.state = state
         self.risk = risk
         self.emergency = emergency
         self.config = config
+        self._now_ms = now_ms
         if state.snapshot.profile != config.profile:
             raise ValueError("ENTRY_STATE_PROFILE_MISMATCH")
         if state.snapshot.market_environment != config.market_environment:
@@ -181,7 +186,12 @@ class EntryLifecycle:
         digest = hashlib.sha256(material).hexdigest()[:24]
         return f"NBV3E-{digest}"
 
+    @state_transition
     def execute(self, proposal: EntryProposal, *, now_ms: int) -> OpenPosition:
+        started = time.monotonic()
+        def current_time() -> int:
+            value = self._now_ms() if self._now_ms else now_ms + int((time.monotonic() - started) * 1000)
+            return _timestamp("ENTRY_NOW_MS", value)
         if not isinstance(proposal, EntryProposal):
             raise EntryRejected("PROPOSAL_CONTRACT_INVALID")
         try:
@@ -213,7 +223,7 @@ class EntryLifecycle:
         if quote.symbol != proposal.symbol:
             raise EntryRejected("QUOTE_SYMBOL_MISMATCH")
         try:
-            self.risk.check_quote(quote, now_ms=now)
+            self.risk.check_quote(quote, now_ms=current_time())
             entry_price = self.risk.entry_price(quote, proposal.side)
             self.risk.check_reference_drift(
                 entry_price=entry_price,
@@ -252,6 +262,21 @@ class EntryLifecycle:
         except Exception as exc:
             raise EntryRejected("LEVERAGE_SET_FAILED") from exc
 
+        now = current_time()
+        self._validate_proposal_context(proposal, now_ms=now)
+        self._validate_local_entry_gate(proposal, now_ms=now)
+        try:
+            final_quote = self.exchange.quote(proposal.symbol)
+            if final_quote.symbol != proposal.symbol:
+                raise EntryRejected("QUOTE_SYMBOL_MISMATCH")
+            self.risk.check_quote(final_quote, now_ms=current_time())
+            self.risk.check_reference_drift(
+                entry_price=self.risk.entry_price(final_quote, proposal.side),
+                reference_price=plan.expected_entry_price,
+            )
+        except RiskRejected as exc:
+            raise EntryRejected(exc.reason) from exc
+
         # Durable duplicate reservation and complete recoverable entry identity
         # are written before the first market-order-capable call.
         try:
@@ -280,6 +305,12 @@ class EntryLifecycle:
         except Exception as exc:
             raise EntrySafetyError("ENTRY_JOURNAL_PERSIST_FAILED") from exc
 
+        try:
+            self._validate_proposal_context(proposal, now_ms=current_time())
+            self.risk.check_quote(final_quote, now_ms=current_time())
+        except (EntryRejected, RiskRejected) as exc:
+            self.state.clear_entry_inflight()  # No order-capable call has occurred.
+            raise EntryRejected(exc.reason) from exc
         fill = self._submit_or_recover(plan, client_order_id=client_order_id)
         return self._protect_and_promote(proposal, fill=fill)
 

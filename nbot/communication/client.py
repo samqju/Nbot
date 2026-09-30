@@ -727,7 +727,26 @@ class RemoteObservationClient:
         )
 
     def send_outcome(self, *, outcome_id: str, payload: Mapping[str, Any]) -> str:
-        outcome = self._wire_outcome(outcome_id=outcome_id, payload=payload)
+        # Freeze the complete envelope, including first-delivery telemetry,
+        # before network I/O. An ACK can be lost after the receiver commits.
+        import hashlib
+        key = hashlib.sha256(text(outcome_id, "outcome_id").encode()).hexdigest()
+        path = self.receipts.path / f"outcome-wire-{key}.json"
+        source_digest = payload_digest(dict(payload))
+        if path.exists():
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            if saved.get("source_digest") != source_digest:
+                raise ObservationClientError("OUTCOME_WIRE_SOURCE_COLLISION")
+            wire = saved["outcome"]
+            if payload_digest(wire) != saved.get("wire_digest"):
+                raise ObservationClientError("OUTCOME_WIRE_DIGEST_MISMATCH")
+            outcome = ExecutionOutcome.from_dict(wire)
+            if outcome.outcome_id != outcome_id:
+                raise ObservationClientError("OUTCOME_WIRE_ID_MISMATCH")
+        else:
+            outcome = self._wire_outcome(outcome_id=outcome_id, payload=payload)
+            wire = outcome.to_dict()
+            atomic_write_json(path, {"source_digest": source_digest, "wire_digest": payload_digest(wire), "outcome": wire})
         raw = self._request_json("POST", "/execution-outcome", outcome.to_dict())
         try:
             acknowledgement = OutcomeAcknowledgement.from_dict(raw)

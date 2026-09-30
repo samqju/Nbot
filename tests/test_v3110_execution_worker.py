@@ -92,6 +92,9 @@ def seed_open(state, *, proposal_id: str = "P-OPEN", side: str = "LONG") -> Open
 
 
 class FakeExchange:
+    def connect(self):
+        pass
+
     def __init__(self, events: list[str]):
         self.events = events
         self.tick_error: Exception | None = None
@@ -265,6 +268,16 @@ class ExecutionWorkerPreparationTests(unittest.TestCase):
             self.assertEqual(h.events, ["reconcile"])
             self.assertTrue(h.worker.prepared)
             self.assertEqual(h.durable.state.health.prepare_calls, 1)
+
+    def test_prepare_reloads_state_after_exclusive_exchange_connect(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            h = WorkerHarness(Path(tmp))
+            def concurrent_writer_finishes_before_lock_acquired():
+                latest = ExecutionDurableStore(Path(tmp), profile="live-paper")
+                latest.state.reserve_proposal("OTHER_PROCESS_COMPLETED")
+            h.exchange.connect = concurrent_writer_finishes_before_lock_acquired
+            h.worker.prepare()
+            self.assertTrue(h.durable.state.has_processed_proposal("OTHER_PROCESS_COMPLETED"))
 
     def test_prepare_failure_leaves_worker_unprepared(self):
         with tempfile.TemporaryDirectory() as tmp:

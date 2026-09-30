@@ -13,7 +13,6 @@ catch-up runs.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, is_dataclass
-import fcntl
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -87,6 +86,7 @@ class ResearchCatchupLock:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         handle = self.path.open("a+", encoding="utf-8")
         try:
+            import fcntl
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             handle.close()
@@ -100,6 +100,7 @@ class ResearchCatchupLock:
         if handle is None:
             return
         try:
+            import fcntl
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
         finally:
             handle.close()
@@ -172,10 +173,12 @@ class BoundedResearchCatchupController:
             handle = lock_path.open("a+", encoding="utf-8")
             try:
                 try:
+                    import fcntl
                     fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except BlockingIOError:
                     lock_held = True
                 else:
+                    import fcntl
                     fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
             finally:
                 handle.close()

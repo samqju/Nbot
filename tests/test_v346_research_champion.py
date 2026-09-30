@@ -38,22 +38,22 @@ class V346ResearchChampionTests(unittest.TestCase):
         try:
             cfg = observation_config_for_profile(get_profile("live-paper"))
             db = EvidenceDatabase(cfg)
-            # 125 point-in-time events produce 43 strictly forward-scored ridge
+            # 180 point-in-time events produce 43 strictly forward-scored ridge
             # events: enough to freeze 20 validation + 20 final-test events and
             # leave later evidence outside the initial promotion decision.
-            for index in range(125):
+            for index in range(180):
                 store_live(db, index)
             CanonicalFeatureStore(db).build(max_events=0)
             ResearchSignalStore(db).build(max_events=0)
             db.store_funding_sync(
                 start_ms=INTERVAL,
-                end_ms=125 * INTERVAL - 1,
+                end_ms=180 * INTERVAL - 1,
                 events=(),
-                captured_at_ms=126 * INTERVAL,
+                captured_at_ms=181 * INTERVAL,
             )
             FuturePathStore(
                 db,
-                FakePublicClient(server_time_ms=126 * INTERVAL),
+                FakePublicClient(server_time_ms=181 * INTERVAL),
             ).build(max_events=0)
             ExitPolicyLab(db).build(max_events=0)
             EntrySelectionLab(db).build(max_events=0)

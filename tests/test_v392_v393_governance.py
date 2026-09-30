@@ -5,9 +5,10 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 import nbot_admin
-from nbot.observation.challengers import AUTHORITY, ContinuousChallengerCycle
+from nbot.observation.challengers import AUTHORITY, MODEL_PREFIX, ContinuousChallengerCycle
 from nbot.observation.governance import (
     CONFIG,
     CHAMPION_POINTER_GENESIS_KEY,
@@ -40,6 +41,10 @@ class V392V393GovernanceTests(unittest.TestCase):
         self.governance = ModelGovernanceRegistry(self.memory, self.artifact_root)
         self.release_sha = "b" * 40
         self.next_event = 300_000
+        self.event_spacing = 49 * 300_000
+        clock = mock.patch("nbot.observation.challengers.time.time", side_effect=lambda: (self.next_event - self.event_spacing + 48 * 300_000 + 1) / 1000)
+        clock.start()
+        self.addCleanup(clock.stop)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -72,7 +77,7 @@ class V392V393GovernanceTests(unittest.TestCase):
         ledger = []
         for _ in range(count):
             event = self.next_event
-            self.next_event += 300_000
+            self.next_event += self.event_spacing
             rows = self._event_rows(event, target=target)
             blob, training_digest, raw_bytes = _encode_training_rows(rows)
             selector_summary = {}
@@ -130,7 +135,7 @@ class V392V393GovernanceTests(unittest.TestCase):
         self.assertFalse(status["paper_champion_authority"])
 
         model_version = trained["model_version"]
-        model_memory = self.memory.artifact("v39:model:" + model_version)
+        model_memory = self.memory.artifact(MODEL_PREFIX + model_version)
         registry = self.memory.artifact(MODEL_REGISTRY_PREFIX + model_version)
         self.assertIsNotNone(model_memory)
         self.assertIsNotNone(registry)

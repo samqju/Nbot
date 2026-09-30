@@ -1307,11 +1307,6 @@ class MemoryWalkForwardChampionEvaluator:
         }
 
     def _replay(self) -> dict[str, Any]:
-        required_total_events = (
-            self.config.candidate_min_train_events
-            + self.config.min_validation_events
-            + self.config.min_test_events
-        )
         state = RidgeSufficientStatistics.empty()
         scored: dict[int, dict[str, list[dict[str, Any]]]] = {}
         source_records: list[list[Any]] = []
@@ -1320,14 +1315,14 @@ class MemoryWalkForwardChampionEvaluator:
         event_examples: dict[int, list[dict[str, Any]]] = {}
 
         for record in self.memory.iter_event_records():
-            if len(raw_events) >= required_total_events:
+            if len(candidate_events) >= self.config.min_validation_events + self.config.min_test_events:
                 break
             event = int(record["event_open_ms"])
             examples = list(record["examples"])
             raw_events.append(event)
             source_records.append([event, str(record["archive_digest"]), str(record["training_digest"])])
             event_examples[event] = examples
-            event_scores = self._score_event(event, examples, state)
+            event_scores = self._score_event(event, examples, state.for_decision(event))
             if self.config.candidate_selector_version in event_scores:
                 candidate_events.append(event)
                 scored[event] = event_scores

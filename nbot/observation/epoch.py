@@ -8,7 +8,6 @@ cumulative Ridge state are committed to permanent research memory.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-import fcntl
 import hashlib
 import json
 import os
@@ -421,10 +420,12 @@ def _runtime_lock_is_held(repo_root: Path) -> bool:
     handle = path.open("a+", encoding="utf-8")
     try:
         try:
+            import fcntl
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return True
         else:
+            import fcntl
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
             return False
     finally:

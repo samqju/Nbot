@@ -7,6 +7,8 @@ no order methods. Local PAPER capital remains in nbot.exchange.paper.
 
 from __future__ import annotations
 
+from nbot.common.binance_limits import ExchangeCooldown, budget_for, request_weight
+
 from dataclasses import dataclass
 import json
 import math
@@ -76,6 +78,11 @@ class BinanceLivePublicMarketData:
         }:
             raise BinanceLivePublicMarketError("LIVE_PUBLIC_PATH_FORBIDDEN")
 
+        budget = budget_for(self.config.base_url)
+        try:
+            budget.acquire(request_weight(path, params))
+        except ExchangeCooldown as exc:
+            raise BinanceLivePublicMarketError(str(exc)) from exc
         query = urlencode(sorted((params or {}).items()))
         url = self.config.base_url + path
         if query:
@@ -87,8 +94,12 @@ class BinanceLivePublicMarketData:
                 request,
                 timeout=float(self.config.request_timeout_seconds),
             ) as response:
+                budget.observe(getattr(response, "headers", {}))
                 raw = response.read()
+        except ExchangeCooldown as exc:
+            raise BinanceLivePublicMarketError(str(exc)) from exc
         except HTTPError as exc:
+            budget.observe(exc.headers, exc.code)
             raise BinanceLivePublicMarketError(
                 f"LIVE_PUBLIC_HTTP_ERROR:{path}:{exc.code}"
             ) from exc
@@ -191,10 +202,10 @@ class BinanceLivePublicMarketData:
                 else observed_at
             )
         except (TypeError, ValueError):
-            timestamp_ms = observed_at
+            raise BinanceLivePublicMarketError("LIVE_PUBLIC_SOURCE_TIME_INVALID")
 
-        if timestamp_ms <= 0:
-            timestamp_ms = observed_at
+        if source_time in (None, "") or timestamp_ms <= 0 or abs(observed_at - timestamp_ms) > 5_000:
+            raise BinanceLivePublicMarketError("LIVE_PUBLIC_SOURCE_TIME_INVALID_OR_STALE")
 
         return Quote(
             symbol=symbol,

@@ -9,6 +9,8 @@ Research Champion or economic authority.
 
 from __future__ import annotations
 
+from nbot.common.synchronization import state_transition
+
 from dataclasses import dataclass
 import hashlib
 import json
@@ -128,6 +130,7 @@ class RecommendationStore:
         proposal_ttl_ms: int = DEFAULT_PROPOSAL_TTL_MS,
     ) -> None:
         self.database = database
+        self.mutation_lock = threading.RLock()
         self.profile = profile
         self.proposal_ttl_ms = int(proposal_ttl_ms)
         if self.proposal_ttl_ms <= 0 or self.proposal_ttl_ms > 5 * 60_000:
@@ -544,6 +547,7 @@ class ObservationControlTarget:
         from nbot.communication.validation import git_sha
 
         self.database = database
+        self.mutation_lock = threading.RLock()
         self.profile = profile
         self.release_sha = git_sha(release_sha, "observation_release_sha")
         self._now_ms = now_ms or (lambda: int(time.time() * 1000))
@@ -722,6 +726,7 @@ class ObservationControlTarget:
                 (now_ms, proposal.proposal_id),
             )
 
+    @state_transition
     def handle_trade_request(self, request: TradeRequest) -> TradeResponse:
         if not isinstance(request, TradeRequest):
             raise TypeError("CONTROL_TRADE_REQUEST_TYPE_INVALID")
@@ -818,6 +823,7 @@ class ObservationControlTarget:
         self._record_request_response(request, response, received_at_ms=now)
         return response
 
+    @state_transition
     def receive_execution_outcome(self, outcome: ExecutionOutcome) -> OutcomeAcknowledgement:
         if not isinstance(outcome, ExecutionOutcome):
             raise TypeError("CONTROL_EXECUTION_OUTCOME_TYPE_INVALID")

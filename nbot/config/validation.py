@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from enum import Enum
 import os
 from pathlib import Path
-import fcntl
 import shutil
 import sqlite3
 import subprocess
@@ -351,6 +350,7 @@ def validate_local_protocol_contract_v39(*, profile: Profile) -> DoctorResult:
 
 def _execution_lock_available(path: Path) -> bool:
     """Probe a pre-existing lock file without claiming persistent authority."""
+    import fcntl  # POSIX runtime dependency; pure configuration reads are portable.
     if not path.exists():
         return True
     try:

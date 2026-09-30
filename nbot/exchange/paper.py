@@ -434,6 +434,9 @@ class PaperExchange:
         """Apply one Execution-owned market tick and simulate stop settlement."""
         quote = Quote(symbol=symbol, bid=bid, ask=ask, timestamp_ms=timestamp_ms)
         with self._lock:
+            previous = self._latest_quotes.get(symbol)
+            if previous is not None and quote.timestamp_ms < previous.timestamp_ms:
+                return None
             self._latest_quotes[symbol] = quote
             state = self._require_state()
             position = state["position"]

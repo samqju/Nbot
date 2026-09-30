@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from nbot.config.profiles import get_profile
 from nbot.observation.config import observation_config_for_profile
@@ -194,7 +195,8 @@ class V345EntrySelectionTests(unittest.TestCase):
                 "FROM entry_selection_predictions WHERE selector_version=? ORDER BY event_open_ms",
                 (self.lab.config.learned_selector_version,),
             ).fetchall()
-        self.assertEqual(len(learned), 3)
+        # These 23 adjacent events all fall inside the 48-bar label horizon.
+        self.assertEqual(len(learned), 0)
         for event_open_ms, trained_through, training_events, training_rows in learned:
             self.assertLess(trained_through, event_open_ms)
             self.assertGreaterEqual(training_events, 20)
@@ -263,8 +265,18 @@ class V345EntrySelectionTests(unittest.TestCase):
         self.assertIn("NOT_A_PROBABILITY_MODEL", report["calibration_note"])
         self.assertEqual(set(report["selectors"]), {spec.selector_version for spec in SELECTORS})
         learned = report["selectors"]["RIDGE_EXPECTED_NET_R_V1"]
-        self.assertEqual(learned["independent_market_events"], 3)
-        self.assertIn("mean_event_selection_regret_r", learned)
+        self.assertEqual(learned["independent_market_events"], 0)
+        self.assertEqual(learned["rows"], 0)
+        self.assertNotIn("mean_event_selection_regret_r", learned)
+
+    def test_restart_scores_committed_examples_after_interrupted_build(self):
+        with patch.object(self.lab, "_score_event", side_effect=RuntimeError("crash")):
+            with self.assertRaisesRegex(RuntimeError, "crash"):
+                self.lab.build(max_events=0)
+        self.lab.build(max_events=0)
+        self.assertTrue(self.lab.audit()["healthy"])
+        with self.db.connection() as conn:
+            self.assertEqual(self.lab._load_ridge_state(conn).event_count, 23)
 
     def test_audit_detects_policy_feature_and_signal_source_mutation(self):
         self.lab.build(max_events=0)

@@ -7,6 +7,8 @@ this storage without changing its durability semantics.
 
 from __future__ import annotations
 
+from nbot.common.synchronization import state_transition
+
 import hashlib
 import json
 import math
@@ -233,6 +235,7 @@ class ExecutionDurableStore:
         self.history = ExecutionHistoryStore(self.paths.history_file)
         self.outbox = PendingOutcomeOutbox(self.paths.pending_outcomes_dir)
 
+    @state_transition
     def finalize_closed_position(
         self,
         outcome_id: str,
@@ -263,6 +266,7 @@ class ExecutionDurableStore:
         self.history.append(outcome_id, body)
         self.state._clear_open_after_durable_close(daily_risk=daily_risk)
 
+    @state_transition
     def finalize_closed_inflight(
         self,
         outcome_id: str,

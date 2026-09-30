@@ -13,6 +13,8 @@ strategy, research, learning, or training dependency.
 
 from __future__ import annotations
 
+from nbot.common.synchronization import state_transition
+
 import math
 import time
 from dataclasses import dataclass, replace
@@ -135,6 +137,7 @@ class PositionLifecycle:
         self._monotonic_ns = monotonic_ns
         self.health = ExecutionHealthMonitor(state.health)
 
+    @state_transition
     def manage_tick(self, symbol: str, price: float, timestamp_ms: int) -> PositionManageResult:
         """Process one market tick for the currently open symbol only.
 
@@ -151,6 +154,7 @@ class PositionLifecycle:
 
         started_ns = self._monotonic_ns()
         failed = False
+        self.health = ExecutionHealthMonitor(self.state.health)
         self.health.increment("open_position_ticks")
         try:
             mark = self._require_mark(price=price, timestamp_ms=timestamp_ms)

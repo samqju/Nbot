@@ -18,7 +18,10 @@ import hashlib
 import json
 import math
 import statistics
+import platform
 import time
+from itertools import islice
+from contextlib import closing
 from typing import Any
 
 from .champion import (
@@ -32,6 +35,7 @@ from .champion import (
     _volatility_regime,
 )
 from .outcomes import FuturePathConfig
+from .causal_ridge import LABEL_HORIZON_MS, STATISTICS_VERSION
 from .research_memory import RIDGE_COLUMNS, ResearchMemoryStore
 from .selection import (
     BASELINE_SELECTORS,
@@ -48,10 +52,10 @@ from .selection import (
 AUTHORITY = "RESEARCH_ONLY_NO_EXECUTION"
 FRAMEWORK_VERSION = "V39_CONTINUOUS_CHALLENGER_V1"
 CHALLENGER_FAMILY = "RIDGE_POSITIVE_EXPECTANCY_ABSTAIN_V1"
-EVALUATOR_VERSION = "V39_FROZEN_FUTURE_20_20_V1"
-MODEL_PREFIX = "v39:model:"
-CHALLENGER_PREFIX = "v39:challenger:"
-EVALUATION_PREFIX = "v39:evaluation:"
+EVALUATOR_VERSION = "V39_CAUSAL_DISJOINT_20_20_V3"
+MODEL_PREFIX = "v39:causal-v3:model:"
+CHALLENGER_PREFIX = "v39:causal-v3:challenger:"
+EVALUATION_PREFIX = "v39:causal-v3:evaluation:"
 FINAL_EVALUATION_STATUSES = frozenset({"PASS_RESEARCH_GATE", "REJECT_RESEARCH_GATE"})
 
 
@@ -140,6 +144,9 @@ class ContinuousChallengerCycle:
             "evaluator_version": self.config.evaluator_version,
             "underlying_selector_version": self.config.underlying_selector_version,
             "training_source": "V3_8_4_PERMANENT_RESEARCH_MEMORY_RIDGE_STATE",
+            "statistics_version": STATISTICS_VERSION,
+            "temporal_rule": "DECISIONS_AFTER_MODEL_AVAILABILITY_AND_TRAINING_LABEL_HORIZON",
+            "evaluation_spacing_ms": LABEL_HORIZON_MS + 300_000,
             "artifact_rule": "IMMUTABLE_MODEL_AND_CHALLENGER_ARTIFACTS",
             "selection_rule": {
                 "rank": "HIGHEST_FROZEN_RIDGE_EXPECTED_AFTER_COST_NET_R",
@@ -188,17 +195,31 @@ class ContinuousChallengerCycle:
             raise RuntimeError("NBOT_V391_MEMORY_RIDGE_NOT_SYNCHRONIZED")
         if state.event_count < SELECTION_CONFIG.min_train_events:
             raise RuntimeError("NBOT_V391_INSUFFICIENT_TRAINING_EVENTS")
+        trained_at = int(time.time() * 1000)
+        if int(state.through_event_ms) + LABEL_HORIZON_MS >= trained_at:
+            raise RuntimeError("NBOT_V391_TRAINING_LABELS_NOT_YET_MATURE")
         model = state.fit(SELECTION_CONFIG.ridge_alpha)
         cutoff = int(state.through_event_ms)
         model_version = (
-            f"V39_RIDGE_{cutoff}_{str(model['model_digest'])[:12]}"
+            f"V39_RIDGE_V2_{cutoff}_{str(model['model_digest'])[:12]}_{self.release_sha[:12]}"
         )
+        existing = self.memory.artifact(f"{MODEL_PREFIX}{model_version}")
+        if existing is not None:
+            payload = existing["payload"]
+            if payload.get("training_source_digest") != str(history["source_digest"]):
+                raise RuntimeError("MODEL_TRAINING_SOURCE_COLLISION")
+            return payload
+        available_at = trained_at
         artifact = {
             "artifact_type": "MODEL",
             "model_version": model_version,
             "model_family": "RIDGE_EXPECTED_NET_R_V1",
             "selector_version": self.config.underlying_selector_version,
             "training_cutoff_event_ms": cutoff,
+            "model_available_at_ms": available_at,
+            "evaluation_after_event_ms": max(cutoff + LABEL_HORIZON_MS, available_at),
+            "statistics_version": STATISTICS_VERSION,
+            "runtime": {"python": platform.python_version(), "implementation": platform.python_implementation(), "platform": platform.platform()},
             "training_event_count": state.event_count,
             "training_row_count": state.row_count,
             "training_source_digest": str(history["source_digest"]),
@@ -230,6 +251,7 @@ class ContinuousChallengerCycle:
             "model_version": model_version,
             "model_artifact_digest": model_record["artifact_digest"],
             "training_cutoff_event_ms": cutoff,
+            "evaluation_after_event_ms": model_artifact["evaluation_after_event_ms"],
             "definition_hash": self.definition_hash,
             "definition": self.definition(),
             "release_sha": self.release_sha,
@@ -420,6 +442,16 @@ class ContinuousChallengerCycle:
             "no_catastrophic_covered_regime": no_catastrophe,
         }
 
+    def _future_records(self, after_event_ms):
+        # No shared future candles between validation and test examples.
+        boundary = after_event_ms
+        with closing(self.memory.iter_event_records(after_event_ms=after_event_ms)) as records:
+            for record in records:
+                event = int(record["event_open_ms"])
+                if event > boundary:
+                    yield record
+                    boundary = event + LABEL_HORIZON_MS
+
     def _evaluate(self, challenger_record: dict[str, Any]) -> dict[str, Any]:
         challenger = challenger_record["payload"]
         challenger_version = str(challenger["challenger_version"])
@@ -431,8 +463,12 @@ class ContinuousChallengerCycle:
         model_artifact = model_record["payload"]
         model = model_artifact["model"]
         cutoff = int(challenger["training_cutoff_event_ms"])
-        records = list(self.memory.iter_event_records(after_event_ms=cutoff))
+        if challenger.get("definition_hash") != self.definition_hash or model_artifact.get("statistics_version") != STATISTICS_VERSION:
+            raise RuntimeError("LEGACY_CHALLENGER_REQUIRES_CAUSAL_REEVALUATION")
+        evaluation_after = int(challenger["evaluation_after_event_ms"])
         required = self.config.validation_events + self.config.test_events
+        with closing(self._future_records(evaluation_after)) as events:
+            records = list(islice(events, required))
         if len(records) < required:
             return {
                 "status": "WAIT_FOR_FUTURE_EVIDENCE",
@@ -560,7 +596,7 @@ class ContinuousChallengerCycle:
                 and control_capture is not None and selected_capture >= control_capture
             ),
             "complete_final_test_pairing": len(candidate_values) == self.config.test_events == len(benchmark_values) == len(paired),
-            "future_only_after_training_cutoff": min(validation_events + test_events) > cutoff,
+            "future_only_after_training_cutoff": min(validation_events + test_events) > evaluation_after,
             "authority_research_only": challenger.get("authority") == AUTHORITY == model_artifact.get("authority"),
             "no_automatic_promotion": True,
         }
@@ -691,8 +727,9 @@ class ContinuousChallengerCycle:
         latest = None if active is None else active["payload"]
         future = None
         if latest is not None:
-            cutoff = int(latest["training_cutoff_event_ms"])
-            count = sum(1 for _ in self.memory.iter_event_records(after_event_ms=cutoff))
+            cutoff = int(latest.get("evaluation_after_event_ms", latest["training_cutoff_event_ms"]))
+            with closing(self._future_records(cutoff)) as records:
+                count = sum(1 for _ in islice(records, self.config.validation_events + self.config.test_events))
             future = {
                 "training_cutoff_event_ms": cutoff,
                 "available_future_events": count,
@@ -750,8 +787,11 @@ class ContinuousChallengerCycle:
                 report["automatic_promotion_violation"] += 1
             validation = [int(v) for v in detail.get("validation_events", [])]
             test = [int(v) for v in detail.get("test_events", [])]
-            cutoff = int(payload["training_cutoff_event_ms"])
+            cutoff = int(payload.get("evaluation_after_event_ms", payload["training_cutoff_event_ms"]))
             if validation + test and min(validation + test) <= cutoff:
+                report["future_window_violation"] += 1
+            combined = validation + test
+            if any(right - left <= LABEL_HORIZON_MS for left, right in zip(combined, combined[1:])):
                 report["future_window_violation"] += 1
             if len(validation) != self.config.validation_events or len(test) != self.config.test_events:
                 report["final_window_count_mismatch"] += 1

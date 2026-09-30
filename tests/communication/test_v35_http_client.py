@@ -4,6 +4,7 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 from nbot.communication.client import ObservationClientError, RemoteObservationClient
 from nbot.communication.server import ObservationControlServer
@@ -145,8 +146,20 @@ class V35HTTPClientTests(unittest.TestCase):
                 receipt = client.receipts.get(entry.proposal_id)
                 self.assertEqual(receipt["proposal"]["selector_version"], "TESTNET_OPERATIONAL_CANARY_V1")
                 payload = execution_payload(entry, now_ms=now)
-                self.assertEqual(client.send_outcome(outcome_id="OUT-1", payload=payload), "OUT-1")
-                self.assertEqual(client.send_outcome(outcome_id="OUT-1", payload=payload), "OUT-1")
+                original_request = client._request_json
+                def commit_then_lose_ack(*args, **kwargs):
+                    original_request(*args, **kwargs)
+                    raise ObservationClientError("SIMULATED_LOST_ACK")
+                with patch.object(client, "_request_json", side_effect=commit_then_lose_ack):
+                    with self.assertRaisesRegex(ObservationClientError, "LOST_ACK"):
+                        client.send_outcome(outcome_id="OUT-1", payload=payload)
+                restarted = RemoteObservationClient(
+                    base_url=f"http://{host}:{port}", profile="testnet-trade",
+                    auth_token=TOKEN, receipt_directory=root / "receipts",
+                    execution_release_sha=SHA,
+                )
+                with patch.object(restarted, "_wire_outcome", side_effect=AssertionError("must reuse frozen delivery")):
+                    self.assertEqual(restarted.send_outcome(outcome_id="OUT-1", payload=payload), "OUT-1")
                 audit = target.audit()
                 self.assertTrue(audit["healthy"])
                 self.assertEqual(audit["served_proposals"], 1)

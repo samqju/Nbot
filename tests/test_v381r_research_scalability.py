@@ -127,19 +127,19 @@ class V381RRecoveryIntegrationTests(unittest.TestCase):
         os.chdir(cls.tmp.name)
         cfg = observation_config_for_profile(get_profile("live-paper"))
         cls.db = EvidenceDatabase(cfg)
-        for index in range(85):
+        for index in range(145):
             store_live(cls.db, index)
         CanonicalFeatureStore(cls.db).build(max_events=0)
         ResearchSignalStore(cls.db).build(max_events=0)
         cls.db.store_funding_sync(
             start_ms=INTERVAL,
-            end_ms=85 * INTERVAL - 1,
+            end_ms=145 * INTERVAL - 1,
             events=(),
-            captured_at_ms=86 * INTERVAL,
+            captured_at_ms=146 * INTERVAL,
         )
         FuturePathStore(
             cls.db,
-            FakePublicClient(server_time_ms=86 * INTERVAL),
+            FakePublicClient(server_time_ms=146 * INTERVAL),
         ).build(max_events=0)
         ExitPolicyLab(cls.db).build(max_events=0)
         EntrySelectionLab(cls.db).build(max_events=0)

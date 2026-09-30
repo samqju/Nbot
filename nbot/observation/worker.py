@@ -15,7 +15,6 @@ absent from this module.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import fcntl
 from pathlib import Path
 import threading
 from typing import Callable, Mapping
@@ -63,6 +62,7 @@ class ObservationRuntimeLock:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         handle = self.path.open("a+", encoding="utf-8")
         try:
+            import fcntl
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             handle.close()
@@ -77,6 +77,7 @@ class ObservationRuntimeLock:
         if handle is None:
             return
         try:
+            import fcntl
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
         finally:
             handle.close()

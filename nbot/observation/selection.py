@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 from .database import EvidenceDatabase
+from .causal_ridge import CenteredMoments, LABEL_HORIZON_MS, STATISTICS_VERSION
 from .features import (
     CANONICAL_FEATURE_FIELDS,
     CANONICAL_FEATURE_VERSION,
@@ -134,7 +135,7 @@ SELECTORS: tuple[SelectorSpec, ...] = (
         "Forward-chained ridge regression predicting after-cost net R from decision-time features.",
         {
             "objective": "EXPECTED_AFTER_COST_NET_R",
-            "training_rule": "ONLY_EVENTS_STRICTLY_BEFORE_SCORED_EVENT",
+            "training_rule": "ONLY_LABELS_AVAILABLE_BEFORE_SCORED_EVENT_V2",
             "standardization": "TRAIN_WINDOW_ONLY_ZSCORE",
             "probability_output": False,
         },
@@ -184,6 +185,7 @@ PREDICTION_COLUMNS: tuple[str, ...] = (
 PREDICTION_DIGEST_FIELDS = tuple(field for field in PREDICTION_COLUMNS if field not in {"scored_at_ms", "prediction_digest"})
 
 SELECTION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS entry_selection_causal_seed (lab_version TEXT PRIMARY KEY, state_json TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS entry_selection_labs (
     lab_version TEXT PRIMARY KEY,
     feature_version TEXT NOT NULL,
@@ -308,6 +310,7 @@ CREATE TABLE IF NOT EXISTS entry_selection_history_base (
 """
 
 RESEARCH_SELECTION_TABLES = (
+    "entry_selection_causal_seed",
     "entry_selection_labs",
     "entry_selector_sets",
     "entry_selection_examples",
@@ -471,158 +474,106 @@ def _solve_linear_system(matrix: list[list[float]], vector: list[float]) -> list
 
 
 
-@dataclass
 class RidgeSufficientStatistics:
-    """Cumulative raw moments for exact forward-only Ridge chronology.
+    """Versioned centered statistics plus pending label-availability groups."""
 
-    This state contains only decision-time feature vectors and targets from
-    completed prior events.  It never contains the event currently being
-    scored, so the V3.4.5 no-lookahead contract is preserved.
-    """
-
-    event_count: int
-    row_count: int
-    through_event_ms: int | None
-    sum_y: float
-    sum_x: list[float]
-    sum_x2: list[float]
-    sum_xy: list[float]
-    sum_xx: list[list[float]]
+    def __init__(self):
+        self.full = CenteredMoments(len(FEATURE_VECTOR_NAMES))
+        self.delayed = CenteredMoments(len(FEATURE_VECTOR_NAMES))
+        self.pending = []
 
     @classmethod
-    def empty(cls) -> "RidgeSufficientStatistics":
-        d = len(FEATURE_VECTOR_NAMES)
-        return cls(
-            event_count=0,
-            row_count=0,
-            through_event_ms=None,
-            sum_y=0.0,
-            sum_x=[0.0] * d,
-            sum_x2=[0.0] * d,
-            sum_xy=[0.0] * d,
-            sum_xx=[[0.0] * d for _ in range(d)],
-        )
+    def empty(cls):
+        return cls()
 
-    def add_event(self, event_open_ms: int, rows: list[dict[str, Any]]) -> None:
-        event_open_ms = int(event_open_ms)
+    @property
+    def event_count(self):
+        return self.full.event_count
+
+    @property
+    def row_count(self):
+        return self.full.row_count
+
+    @property
+    def through_event_ms(self):
+        return self.full.through_event_ms
+
+    def add_event(self, event_open_ms, rows):
         if self.through_event_ms is not None and event_open_ms <= self.through_event_ms:
             raise EntrySelectionError("NBOT_V381R_RIDGE_STATE_CHRONOLOGY_INVALID")
         if not rows:
             raise EntrySelectionError("NBOT_V381R_RIDGE_STATE_EMPTY_EVENT")
-        d = len(FEATURE_VECTOR_NAMES)
-        for row in rows:
-            vector = json.loads(str(row["feature_vector_json"]))
-            x = [_f(vector[name]) for name in FEATURE_VECTOR_NAMES]
-            y = _f(row["target_net_r"])
-            self.sum_y = math.fsum((self.sum_y, y))
-            for i in range(d):
-                xi = x[i]
-                self.sum_x[i] = math.fsum((self.sum_x[i], xi))
-                self.sum_x2[i] = math.fsum((self.sum_x2[i], xi * xi))
-                self.sum_xy[i] = math.fsum((self.sum_xy[i], xi * y))
-                for j in range(i, d):
-                    self.sum_xx[i][j] = math.fsum((self.sum_xx[i][j], xi * x[j]))
-        for i in range(d):
-            for j in range(i):
-                self.sum_xx[i][j] = self.sum_xx[j][i]
-        self.row_count += len(rows)
-        self.event_count += 1
-        self.through_event_ms = event_open_ms
+        vectors = [json.loads(str(row["feature_vector_json"])) for row in rows]
+        event = CenteredMoments.event(event_open_ms,
+            [[float(vector[name]) for name in FEATURE_VECTOR_NAMES] for vector in vectors],
+            [float(row["target_net_r"]) for row in rows])
+        self.for_decision(event_open_ms)
+        self.full.merge(event)
+        self.pending.append(event.payload())
 
-    def to_payload(self) -> dict[str, Any]:
-        return {
-            "event_count": self.event_count,
-            "row_count": self.row_count,
-            "through_event_ms": self.through_event_ms,
-            "sum_y": self.sum_y,
-            "sum_x": self.sum_x,
-            "sum_x2": self.sum_x2,
-            "sum_xy": self.sum_xy,
-            "sum_xx": self.sum_xx,
-        }
+    def for_decision(self, event_open_ms):
+        # A label may consume 48 bars after the event. The conservative strict
+        # boundary also leaves the terminal candle closed before the decision.
+        remaining = []
+        for payload in self.pending:
+            if int(payload["through_event_ms"]) + LABEL_HORIZON_MS < event_open_ms:
+                self.delayed.merge(CenteredMoments.restore(payload, len(FEATURE_VECTOR_NAMES)))
+            else:
+                remaining.append(payload)
+        self.pending = remaining
+        result = self.empty()
+        result.full = CenteredMoments.restore(self.delayed.payload(), len(FEATURE_VECTOR_NAMES))
+        return result
+
+    def to_payload(self):
+        return {"statistics_version": STATISTICS_VERSION,
+                "event_count": self.event_count, "row_count": self.row_count,
+                "through_event_ms": self.through_event_ms,
+                "full": self.full.payload(), "delayed": self.delayed.payload(),
+                "pending": self.pending}
 
     @classmethod
-    def from_payload(cls, payload: dict[str, Any]) -> "RidgeSufficientStatistics":
-        d = len(FEATURE_VECTOR_NAMES)
-        state = cls(
-            event_count=int(payload["event_count"]),
-            row_count=int(payload["row_count"]),
-            through_event_ms=(
-                None if payload.get("through_event_ms") is None
-                else int(payload["through_event_ms"])
-            ),
-            sum_y=float(payload["sum_y"]),
-            sum_x=[float(v) for v in payload["sum_x"]],
-            sum_x2=[float(v) for v in payload["sum_x2"]],
-            sum_xy=[float(v) for v in payload["sum_xy"]],
-            sum_xx=[[float(v) for v in row] for row in payload["sum_xx"]],
-        )
-        if not (
-            len(state.sum_x) == len(state.sum_x2) == len(state.sum_xy) == d
-            and len(state.sum_xx) == d
-            and all(len(row) == d for row in state.sum_xx)
-        ):
-            raise EntrySelectionError("NBOT_V381R_RIDGE_STATE_DIMENSION_INVALID")
-        return state
+    def from_payload(cls, payload):
+        if payload.get("statistics_version") != STATISTICS_VERSION:
+            raise EntrySelectionError("RIDGE_V2_MIGRATION_REQUIRED_REPLAY_IMMUTABLE_EXAMPLES")
+        result = cls()
+        result.full = CenteredMoments.restore(payload["full"], len(FEATURE_VECTOR_NAMES))
+        result.delayed = CenteredMoments.restore(payload["delayed"], len(FEATURE_VECTOR_NAMES))
+        result.pending = payload["pending"]
+        previous = result.delayed.through_event_ms
+        events, rows = result.delayed.event_count, result.delayed.row_count
+        for item in result.pending:
+            group = CenteredMoments.restore(item, len(FEATURE_VECTOR_NAMES))
+            if previous is not None and group.through_event_ms <= previous:
+                raise EntrySelectionError("RIDGE_PENDING_CHRONOLOGY_INVALID")
+            previous = group.through_event_ms
+            events += group.event_count
+            rows += group.row_count
+        if (events, rows, previous) != (result.event_count, result.row_count, result.through_event_ms):
+            raise EntrySelectionError("RIDGE_PENDING_COUNTS_INVALID")
+        if (payload["event_count"], payload["row_count"], payload["through_event_ms"]) != (events, rows, previous):
+            raise EntrySelectionError("RIDGE_STATE_METADATA_INVALID")
+        return result
 
-    def fit(self, alpha: float) -> dict[str, Any]:
-        if self.row_count <= 0:
-            raise ValueError("cannot fit ridge without rows")
-        n = float(self.row_count)
-        d = len(FEATURE_VECTOR_NAMES)
-        means: dict[str, float] = {}
-        scales: dict[str, float] = {}
-        means_list: list[float] = []
-        scales_list: list[float] = []
-        for i, name in enumerate(FEATURE_VECTOR_NAMES):
-            mean = self.sum_x[i] / n
-            variance = max(0.0, (self.sum_x2[i] / n) - mean * mean)
-            scale = math.sqrt(variance)
-            mean = 0.0 if mean == 0.0 else mean
-            scale = scale if scale > 1e-12 else 1.0
-            means[name] = mean
-            scales[name] = scale
-            means_list.append(mean)
-            scales_list.append(scale)
-
-        # With training-window z-scoring each feature is centered by
-        # construction.  Solve only the penalized slope block and keep the
-        # unpenalized intercept at mean(y).  This is algebraically the same
-        # Ridge objective as _fit_ridge(), but avoids coupling the intercept
-        # to tiny floating-point residuals in sum(z) that can create a large
-        # common score offset in an otherwise rank-identical model.
-        xtx = [[0.0 for _ in range(d)] for _ in range(d)]
-        xty = [0.0 for _ in range(d)]
-        for i in range(d):
-            mean_i = means_list[i]
-            scale_i = scales_list[i]
-            xty[i] = (self.sum_xy[i] - mean_i * self.sum_y) / scale_i
-            for j in range(i, d):
-                mean_j = means_list[j]
-                scale_j = scales_list[j]
-                centered = (
-                    self.sum_xx[i][j]
-                    - mean_i * self.sum_x[j]
-                    - mean_j * self.sum_x[i]
-                    + n * mean_i * mean_j
-                )
-                value = centered / (scale_i * scale_j)
-                xtx[i][j] = value
-                xtx[j][i] = value
-        for index in range(d):
-            xtx[index][index] += alpha
-        coefficients = _solve_linear_system(xtx, xty)
-        model = {
-            "selector_version": "RIDGE_EXPECTED_NET_R_V1",
-            "feature_names": list(FEATURE_VECTOR_NAMES),
-            "alpha": float(alpha),
-            "means": means,
-            "scales": scales,
-            "intercept": self.sum_y / n,
-            "coefficients": dict(zip(FEATURE_VECTOR_NAMES, coefficients)),
-        }
+    def fit(self, alpha):
+        if self.row_count <= 0 or not math.isfinite(alpha) or alpha <= 0:
+            raise ValueError("RIDGE_FIT_INVALID")
+        state = self.full
+        scales = [math.sqrt(max(0.0, state.cross_xx[i][i] / self.row_count)) for i in range(len(FEATURE_VECTOR_NAMES))]
+        scales = [value if value > 1e-12 else 1.0 for value in scales]
+        matrix = [[state.cross_xx[i][j] / (scales[i] * scales[j]) for j in range(len(scales))] for i in range(len(scales))]
+        for i in range(len(scales)):
+            matrix[i][i] += alpha
+        coefficients = _solve_linear_system(matrix, [value / scales[i] for i, value in enumerate(state.cross_xy)])
+        if any(not math.isfinite(value) for value in coefficients):
+            raise EntrySelectionError("RIDGE_NONFINITE_MODEL")
+        model = {"selector_version": "RIDGE_EXPECTED_NET_R_V1", "feature_names": list(FEATURE_VECTOR_NAMES),
+                 "alpha": float(alpha), "means": dict(zip(FEATURE_VECTOR_NAMES, state.mean_x)),
+                 "scales": dict(zip(FEATURE_VECTOR_NAMES, scales)), "intercept": state.mean_y,
+                 "coefficients": dict(zip(FEATURE_VECTOR_NAMES, coefficients))}
         model["model_digest"] = _digest(model)
         return model
+
 
 def _fit_ridge(rows: list[dict[str, Any]], alpha: float) -> dict[str, Any]:
     if not rows:
@@ -715,7 +666,9 @@ class EntrySelectionLab:
             "learned_selector_version": self.config.learned_selector_version,
             "min_train_events": self.config.min_train_events,
             "ridge_alpha": self.config.ridge_alpha,
-            "chronology_rule": "FOR_EVENT_T_LEARNED_MODEL_USES_ONLY_EXAMPLES_WITH_EVENT_LT_T",
+            "chronology_rule": "LABEL_END_STRICTLY_BEFORE_DECISION_V2",
+            "statistics_version": STATISTICS_VERSION,
+            "label_horizon_ms": LABEL_HORIZON_MS,
             "evaluation_independence": "MARKET_EVENT_IS_PRIMARY_INDEPENDENT_UNIT_NOT_SYMBOL_ROW",
             "probability_calibration": "NOT_APPLICABLE_TO_EXPECTED_NET_R_REGRESSION",
             "authority": "RESEARCH_ONLY_NO_CHAMPION_NO_RECOMMENDATION_NO_EXECUTION",
@@ -1020,7 +973,7 @@ class EntrySelectionLab:
         rows = conn.execute(
             f"SELECT {','.join(fields)} FROM entry_selection_examples WHERE lab_version=? AND event_open_ms<? "
             "ORDER BY event_open_ms, symbol, side",
-            (self.config.lab_version, event_open_ms),
+            (self.config.lab_version, event_open_ms - LABEL_HORIZON_MS),
         ).fetchall()
         result = [dict(zip(fields, row)) for row in rows]
         events = sorted({int(row["event_open_ms"]) for row in result})
@@ -1059,15 +1012,22 @@ class EntrySelectionLab:
         base_through = None if base is None or base[0] is None else int(base[0])
         base_events = 0 if base is None else int(base[1])
         base_rows = 0 if base is None else int(base[2])
-        if base_through is not None:
-            if before_event_ms is not None and int(before_event_ms) <= base_through:
-                raise EntrySelectionError(
-                    "NBOT_V384_HISTORY_QUERY_BEFORE_COMPACT_BASE_UNSUPPORTED"
-                )
-            if through_event_ms is not None and int(through_event_ms) < base_through:
-                raise EntrySelectionError(
-                    "NBOT_V384_HISTORY_QUERY_BEFORE_COMPACT_BASE_UNSUPPORTED"
-                )
+        base_last = base_through
+        boundary = before_event_ms if before_event_ms is not None else (None if through_event_ms is None else through_event_ms + 1)
+        if base_through is not None and boundary is not None and boundary <= base_through:
+            seed_row = conn.execute("SELECT state_json FROM entry_selection_causal_seed WHERE lab_version=?", (self.config.lab_version,)).fetchone()
+            if seed_row is None:
+                raise EntrySelectionError("CAUSAL_SEED_REQUIRED")
+            seed = RidgeSufficientStatistics.from_payload(json.loads(seed_row[0]))
+            delayed = seed.delayed
+            if delayed.through_event_ms is not None and boundary <= delayed.through_event_ms:
+                raise EntrySelectionError("HISTORY_QUERY_BEFORE_CAUSAL_SEED")
+            base_events, base_rows, base_last = delayed.event_count, delayed.row_count, delayed.through_event_ms
+            for group in seed.pending:
+                if group["through_event_ms"] < boundary:
+                    base_events += group["event_count"]
+                    base_rows += group["row_count"]
+                    base_last = group["through_event_ms"]
         present = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='research_event_ledger'"
         ).fetchone()
@@ -1095,7 +1055,7 @@ class EntrySelectionLab:
         )
         event_count = base_events + len(events)
         row_count = base_rows + sum(counts[event] for event in events)
-        last = events[-1] if events else base_through
+        last = events[-1] if events else base_last
         return event_count, row_count, last
 
     def _selection_history_event_count(self, conn, through_event_ms: int) -> int:
@@ -1149,6 +1109,9 @@ class EntrySelectionLab:
             if ridge_state_row is not None:
                 if len(ridge_state_row) != 8:
                     raise EntrySelectionError("NBOT_V384_RIDGE_STATE_ROW_INVALID")
+                RidgeSufficientStatistics.from_payload(json.loads(str(ridge_state_row[5])))
+                conn.execute("INSERT OR IGNORE INTO entry_selection_causal_seed(lab_version,state_json) VALUES (?,?)",
+                             (self.config.lab_version, str(ridge_state_row[5])))
                 conn.execute(
                     "INSERT OR REPLACE INTO entry_selection_ridge_state("
                     "lab_version,selector_version,through_event_ms,training_event_count,"
@@ -1274,7 +1237,7 @@ class EntrySelectionLab:
                 trained_through = ridge_state.through_event_ms
                 if training_event_count < self.config.min_train_events:
                     return 0
-                if trained_through is None or trained_through >= event_open_ms:
+                if trained_through is None or trained_through + LABEL_HORIZON_MS >= event_open_ms:
                     raise EntrySelectionError("NBOT_V381R_RIDGE_STATE_LEAKAGE")
                 model = ridge_state.fit(self.config.ridge_alpha)
             model.update({
@@ -1385,11 +1348,8 @@ class EntrySelectionLab:
                 )
                 conn.commit()
 
-            # Normal V3.8.4 builds score only events created by this invocation.
-            # Historical baseline predictions are immutable and provide no new
-            # learning value; replaying them was the dominant O(history) hot
-            # path discovered during V3.8.3 physical acceptance.  Explicit
-            # rebuild retains the old all-event behavior for offline research.
+            # Resume from the last committed learning state, including examples
+            # written before a previous process crashed during scoring.
             events_to_score = (
                 [int(row[0]) for row in conn.execute(
                     "SELECT event_open_ms FROM entry_selection_builds "
@@ -1402,6 +1362,16 @@ class EntrySelectionLab:
             learned_rows = 0
             learned_ready_events = 0
             ridge_state = self._load_ridge_state(conn)
+            if not rebuild:
+                # Example creation commits before scoring. Recover unfinished
+                # work after a crash instead of considering only new examples.
+                events_to_score = [int(row[0]) for row in conn.execute(
+                    "SELECT event_open_ms FROM entry_selection_builds WHERE lab_version=? "
+                    "AND event_open_ms>? ORDER BY event_open_ms",
+                    (self.config.lab_version, ridge_state.through_event_ms if ridge_state.through_event_ms is not None else -1),
+                )]
+                if limit:
+                    events_to_score = events_to_score[:limit]
             for event_open_ms in events_to_score:
                 for spec in BASELINE_SELECTORS:
                     baseline_rows += self._score_event(conn, event_open_ms, spec, rebuild)
@@ -1410,12 +1380,13 @@ class EntrySelectionLab:
                     ridge_state.through_event_ms is None
                     or event_open_ms > ridge_state.through_event_ms
                 ):
-                    if ridge_state.event_count >= self.config.min_train_events:
+                    decision_state = ridge_state.for_decision(event_open_ms)
+                    if decision_state.event_count >= self.config.min_train_events:
                         learned_ready_events += 1
                         learned_rows += self._score_event(
                             conn, event_open_ms,
                             SELECTOR_BY_VERSION[self.config.learned_selector_version],
-                            rebuild, ridge_state=ridge_state,
+                            rebuild, ridge_state=decision_state,
                         )
                     event_examples = self._examples_for_event(conn, event_open_ms)
                     ridge_state.add_event(event_open_ms, event_examples)
@@ -1807,7 +1778,7 @@ class EntrySelectionLab:
             report["learned_training_leakage"] = int(conn.execute(
                 "SELECT COUNT(*) FROM entry_selection_predictions WHERE lab_version=? "
                 "AND selector_version=? AND (trained_through_event_ms IS NULL "
-                "OR trained_through_event_ms>=event_open_ms)",
+                "OR trained_through_event_ms+14400000>=event_open_ms)",
                 (self.config.lab_version, self.config.learned_selector_version),
             ).fetchone()[0])
             report["learned_before_min_train_events"] = int(conn.execute(
@@ -1962,15 +1933,16 @@ class EntrySelectionLab:
                     )
                 ]
                 for replay_event in replay_events:
+                    decision_replay = replay_state.for_decision(replay_event)
                     if (
                         replay_event in target_set
-                        and replay_state.event_count >= self.config.min_train_events
+                        and decision_replay.event_count >= self.config.min_train_events
                     ):
-                        replay_model = replay_state.fit(self.config.ridge_alpha)
+                        replay_model = decision_replay.fit(self.config.ridge_alpha)
                         replay_model.update({
-                            "trained_through_event_ms": replay_state.through_event_ms,
-                            "training_event_count": replay_state.event_count,
-                            "training_row_count": replay_state.row_count,
+                            "trained_through_event_ms": decision_replay.through_event_ms,
+                            "training_event_count": decision_replay.event_count,
+                            "training_row_count": decision_replay.row_count,
                         })
                         replay_digest = _digest({
                             key: value
@@ -1979,9 +1951,9 @@ class EntrySelectionLab:
                         })
                         scoped_ridge_models[replay_event] = (
                             replay_model,
-                            replay_state.event_count,
-                            replay_state.row_count,
-                            replay_state.through_event_ms,
+                            decision_replay.event_count,
+                            decision_replay.row_count,
+                            decision_replay.through_event_ms,
                             replay_digest,
                         )
                     replay_state.add_event(
@@ -2038,7 +2010,7 @@ class EntrySelectionLab:
                         expected_training_rows,
                         expected_trained_through,
                     ) = self._selection_history_meta(
-                        conn, before_event_ms=event_open_ms
+                        conn, before_event_ms=event_open_ms - LABEL_HORIZON_MS
                     )
                     if expected_training_events < self.config.min_train_events:
                         report["learned_before_min_train_events"] += 1
@@ -2144,7 +2116,7 @@ class EntrySelectionLab:
                         report["baseline_prediction_count_mismatches"] += 1
 
                 prior_events = self._selection_history_meta(
-                    conn, before_event_ms=event_open_ms
+                    conn, before_event_ms=event_open_ms - LABEL_HORIZON_MS
                 )[0]
                 learned_count = int(conn.execute(
                     "SELECT COUNT(*) FROM entry_selection_predictions "

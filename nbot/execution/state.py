@@ -12,6 +12,8 @@ import json
 import math
 import os
 import tempfile
+import threading
+from nbot.common.synchronization import state_transition
 import uuid
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
@@ -405,6 +407,7 @@ class ExecutionStateStore:
     """Atomic typed state store for one Execution capital profile."""
 
     def __init__(self, path: str | Path, *, profile: str, market_environment: str):
+        self.mutation_lock = threading.RLock()
         self.path = Path(path)
         self.profile = profile
         self.market_environment = market_environment
@@ -451,6 +454,11 @@ class ExecutionStateStore:
     def _persist(self, snapshot: ExecutionStateSnapshot) -> None:
         _atomic_write_json(self.path, _snapshot_to_dict(snapshot))
 
+    @state_transition
+    def reload_after_runtime_lock(self) -> None:
+        """Refresh a startup snapshot after exclusive runtime ownership."""
+        self._snapshot = self._load_existing()
+
     def _commit(self, snapshot: ExecutionStateSnapshot) -> None:
         # Reconstruct from encoded form before disk write so no mutation can place
         # a shape on disk that our own restart path would reject.
@@ -482,6 +490,7 @@ class ExecutionStateStore:
     def recovery(self) -> RecoveryMetadata:
         return self._snapshot.recovery
 
+    @state_transition
     def set_entries_enabled(self, enabled: bool) -> None:
         _require_bool("EXECUTION_ENTRIES_ENABLED", enabled)
         self._commit(replace(self._snapshot, entries_enabled=enabled))
@@ -490,6 +499,7 @@ class ExecutionStateStore:
         proposal_id = _require_text("EXECUTION_PROCESSED_PROPOSAL_ID", proposal_id)
         return proposal_id in self._snapshot.processed_proposal_ids
 
+    @state_transition
     def reserve_proposal(self, proposal_id: str) -> bool:
         proposal_id = _require_text("EXECUTION_PROCESSED_PROPOSAL_ID", proposal_id)
         ids = list(self._snapshot.processed_proposal_ids)
@@ -501,6 +511,7 @@ class ExecutionStateStore:
         self._commit(replace(self._snapshot, processed_proposal_ids=tuple(ids)))
         return True
 
+    @state_transition
     def begin_entry(self, inflight: EntryInflight) -> None:
         if not isinstance(inflight, EntryInflight):
             raise ExecutionStateError("EXECUTION_ENTRY_INFLIGHT_INVALID")
@@ -512,6 +523,7 @@ class ExecutionStateStore:
             raise ExecutionStateError("EXECUTION_PROPOSAL_NOT_RESERVED")
         self._commit(replace(self._snapshot, entry_inflight=inflight))
 
+    @state_transition
     def record_inflight_fill(self, fill: Fill) -> None:
         inflight = self._snapshot.entry_inflight
         if inflight is None:
@@ -529,6 +541,7 @@ class ExecutionStateStore:
         )
         self._commit(replace(self._snapshot, entry_inflight=updated))
 
+    @state_transition
     def promote_inflight_position(self, position: OpenPosition) -> None:
         inflight = self._snapshot.entry_inflight
         if inflight is None:
@@ -549,11 +562,13 @@ class ExecutionStateStore:
             raise ExecutionStateError("EXECUTION_OPEN_POLICY_MISMATCH")
         self._commit(replace(self._snapshot, open_position=position, entry_inflight=None))
 
+    @state_transition
     def clear_entry_inflight(self) -> None:
         if self._snapshot.entry_inflight is None:
             raise ExecutionStateError("EXECUTION_ENTRY_INFLIGHT_MISSING")
         self._commit(replace(self._snapshot, entry_inflight=None))
 
+    @state_transition
     def update_open_position(self, position: OpenPosition) -> None:
         current = self._snapshot.open_position
         if current is None:
@@ -573,21 +588,25 @@ class ExecutionStateStore:
             raise ExecutionStateError("EXECUTION_OPEN_POSITION_IDENTITY_CHANGED")
         self._commit(replace(self._snapshot, open_position=position))
 
+    @state_transition
     def set_daily_risk(self, daily_risk: DailyRisk) -> None:
         if not isinstance(daily_risk, DailyRisk):
             raise ExecutionStateError("EXECUTION_DAILY_RISK_INVALID")
         self._commit(replace(self._snapshot, daily_risk=daily_risk))
 
+    @state_transition
     def set_health(self, health: ExecutionHealth) -> None:
         if not isinstance(health, ExecutionHealth):
             raise ExecutionStateError("EXECUTION_HEALTH_INVALID")
         self._commit(replace(self._snapshot, health=health))
 
+    @state_transition
     def set_recovery(self, recovery: RecoveryMetadata) -> None:
         if not isinstance(recovery, RecoveryMetadata):
             raise ExecutionStateError("EXECUTION_RECOVERY_INVALID")
         self._commit(replace(self._snapshot, recovery=recovery))
 
+    @state_transition
     def _clear_open_after_durable_close(self, *, daily_risk: DailyRisk | None = None) -> None:
         """Atomically clear OPEN state after outcome/history durability is proven.
 
@@ -609,6 +628,7 @@ class ExecutionStateStore:
             )
         )
 
+    @state_transition
     def _clear_inflight_after_durable_close(self, *, daily_risk: DailyRisk | None = None) -> None:
         """Atomically settle a proven entry-inflight close after durable outcome writes."""
         if self._snapshot.entry_inflight is None:

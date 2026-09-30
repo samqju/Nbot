@@ -21,6 +21,8 @@ Key restart invariants:
 
 from __future__ import annotations
 
+from nbot.common.synchronization import state_transition
+
 import math
 import time
 import uuid
@@ -145,6 +147,7 @@ class ReconciliationLifecycle:
         self._monotonic = monotonic
         self._sleep = sleep
 
+    @state_transition
     def reconcile(self) -> ReconciliationResult:
         """Perform one capital-first reconciliation with no Observation calls."""
         now = self._validated_now_ms()
@@ -206,6 +209,8 @@ class ReconciliationLifecycle:
                 raise ReconciliationCritical("ENTRY_INFLIGHT_CLEAR_FAILED") from exc
             return ReconciliationResult(status="ENTRY_INFLIGHT_PROVEN_UNFILLED", orphans_removed=removed)
 
+        # Recovery performs network I/O; do not use the pre-recovery position snapshot.
+        exchange_position = self._position_snapshot()
         self._validate_inflight_fill(inflight, fill)
         if inflight.fill is None:
             try:

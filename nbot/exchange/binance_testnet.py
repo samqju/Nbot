@@ -24,7 +24,8 @@ stream plumbing around this ExchangePort without changing the capital contract.
 
 from __future__ import annotations
 
-import fcntl
+from nbot.common.binance_limits import ExchangeCooldown, budget_for, request_weight
+
 import hashlib
 import hmac
 import json
@@ -170,6 +171,7 @@ class _InstanceLock:
         handle = self.path.open("a+", encoding="utf-8")
         os.chmod(self.path, 0o600)
         try:
+            import fcntl
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError as exc:
             handle.close()
@@ -187,6 +189,7 @@ class _InstanceLock:
         if handle is None:
             return
         try:
+            import fcntl
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
         finally:
             handle.close()
@@ -294,10 +297,12 @@ class TestnetTradingGuard:
                 outer._state_lock_path.parent.mkdir(parents=True, exist_ok=True)
                 self_inner.handle = outer._state_lock_path.open("a+", encoding="utf-8")
                 os.chmod(outer._state_lock_path, 0o600)
+                import fcntl
                 fcntl.flock(self_inner.handle.fileno(), fcntl.LOCK_EX)
                 return self_inner
 
             def __exit__(self_inner, exc_type, exc, tb):
+                import fcntl
                 fcntl.flock(self_inner.handle.fileno(), fcntl.LOCK_UN)
                 self_inner.handle.close()
 
@@ -396,6 +401,8 @@ class BinanceTestnetExchange:
         self._instance_lock = _InstanceLock(config.resolved_instance_lock_path)
         self._filters: dict[str, dict[str, float]] = {}
         self._connected = False
+        self._server_epoch_ms: int | None = None
+        self._server_monotonic = 0.0
 
     # --------------------------- transport ---------------------------
 
@@ -413,6 +420,20 @@ class BinanceTestnetExchange:
         query = urlencode(params)
         return hmac.new(self.config.api_secret.encode(), query.encode(), hashlib.sha256).hexdigest()
 
+    def _signed_timestamp_ms(self) -> int:
+        now = time.monotonic()
+        if self._server_epoch_ms is None or now - self._server_monotonic > 60:
+            started = time.monotonic()
+            response = self._public_get("/fapi/v1/time")
+            finished = time.monotonic()
+            if not isinstance(response, dict) or not isinstance(response.get("serverTime"), int):
+                raise TestnetExchangeError("TESTNET_SERVER_TIME_INVALID")
+            if finished - started > 1.0 or response["serverTime"] <= 0:
+                raise TestnetExchangeError("TESTNET_SERVER_TIME_UNCERTAIN")
+            self._server_epoch_ms = response["serverTime"]
+            self._server_monotonic = (started + finished) / 2
+        return self._server_epoch_ms + int((time.monotonic() - self._server_monotonic) * 1000)
+
     def _request(
         self,
         method: str,
@@ -422,10 +443,15 @@ class BinanceTestnetExchange:
         signed: bool = False,
         ambiguous_write: bool = False,
     ) -> Any:
+        budget = budget_for(self.config.base_url)
+        try:
+            budget.acquire(request_weight(path, params))
+        except ExchangeCooldown as exc:
+            raise TestnetExchangeError(str(exc)) from exc
         payload = dict(params or {})
         if signed:
             payload.setdefault("recvWindow", self.config.recv_window_ms)
-            payload.setdefault("timestamp", int(time.time() * 1000))
+            payload.setdefault("timestamp", self._signed_timestamp_ms())
             payload["signature"] = self._signature(payload)
         query = urlencode(payload)
         url = f"{self.config.base_url.rstrip('/')}{path}"
@@ -436,11 +462,19 @@ class BinanceTestnetExchange:
             request.add_header("X-MBX-APIKEY", self.config.api_key)
         try:
             with urlopen(request, timeout=self.config.request_timeout_seconds) as response:
+                budget.observe(getattr(response, "headers", {}))
                 raw = response.read()
                 status = int(response.status)
+        except ExchangeCooldown as exc:
+            if ambiguous_write:
+                raise AmbiguousExecutionError("TESTNET_WRITE_BUDGET_PERSISTENCE_FAILED") from exc
+            raise TestnetExchangeError(str(exc)) from exc
         except HTTPError as exc:
+            budget.observe(exc.headers, exc.code)
             raw = exc.read()
             detail = self._error_detail(raw, exc.code)
+            if "code=-1021" in detail:
+                self._server_epoch_ms = None  # Resync next request; never replay a write here.
             if ambiguous_write and exc.code == 503 and "unknown" in detail.lower():
                 raise AmbiguousExecutionError(f"AMBIGUOUS_503:{path}:{detail}") from exc
             raise TestnetExchangeError(f"REST_FAILED:{method}:{path}:{exc.code}:{detail}") from exc
@@ -472,6 +506,8 @@ class BinanceTestnetExchange:
     # --------------------------- lifecycle ---------------------------
 
     def connect(self) -> None:
+        if self.is_healthy():
+            return
         self._instance_lock.acquire()
         try:
             self._public_get("/fapi/v1/ping")
@@ -502,6 +538,8 @@ class BinanceTestnetExchange:
             if not isinstance(row, dict):
                 continue
             symbol = str(row.get("symbol") or "")
+            if row.get("status") != "TRADING" or row.get("contractType") != "PERPETUAL" or row.get("quoteAsset") != "USDT":
+                continue
             by_type = {str(item.get("filterType")): item for item in row.get("filters", []) if isinstance(item, dict)}
             market = by_type.get("MARKET_LOT_SIZE") or by_type.get("LOT_SIZE")
             lot = by_type.get("LOT_SIZE") or market
@@ -515,6 +553,9 @@ class BinanceTestnetExchange:
                     "market_max": float(market["maxQty"]),
                     "lot_step": float(lot["stepSize"]),
                     "tick": float(price["tickSize"]),
+                    "price_min": float(price.get("minPrice", 0)),
+                    "price_max": float(price.get("maxPrice", 0)),
+                    "min_notional": float(by_type.get("MIN_NOTIONAL", {}).get("notional", 0)),
                 }
             except (KeyError, TypeError, ValueError):
                 continue
@@ -552,6 +593,8 @@ class BinanceTestnetExchange:
         filt = self._filters.get(symbol)
         if filt is None:
             raise TestnetExchangeError(f"SYMBOL_FILTERS_MISSING:{symbol}")
+        if price < filt.get("price_min", 0) or (filt.get("price_max", 0) > 0 and price > filt["price_max"]):
+            raise TestnetExchangeError("STOP_PRICE_OUT_OF_RANGE")
         # A protective-stop quantization must never weaken the requested risk
         # boundary.  For LONG, a higher stop is tighter; for SHORT, a lower
         # stop is tighter.  Therefore LONG rounds up and SHORT rounds down.
@@ -571,7 +614,9 @@ class BinanceTestnetExchange:
         ask = float(data.get("askPrice", 0) or 0)
         if bid <= 0 or ask < bid:
             raise TestnetExchangeError(f"TESTNET_QUOTE_INVALID:{symbol}")
-        timestamp_ms = int(data.get("time") or int(time.time() * 1000))
+        timestamp_ms = int(data.get("time") or 0)
+        if timestamp_ms <= 0:
+            raise TestnetExchangeError("TESTNET_QUOTE_TIME_INVALID")
         return Quote(symbol=symbol, bid=bid, ask=ask, timestamp_ms=timestamp_ms)
 
     def account_snapshot(self) -> AccountSnapshot:
@@ -627,7 +672,9 @@ class BinanceTestnetExchange:
             return "SHORT"
         raise TestnetExchangeError("TESTNET_STOP_SIDE_INVALID")
 
-    def _stop_ref(self, row: dict[str, Any], *, fallback_client_id: str | None = None) -> ProtectiveStopRef:
+    def _stop_ref(self, row: dict[str, Any], *, fallback_client_id: str | None = None, require_trigger_contract: bool = True) -> ProtectiveStopRef:
+        if require_trigger_contract and not self._valid_trigger_contract(row):
+            raise TestnetExchangeError("TESTNET_STOP_TRIGGER_CONTRACT_MISMATCH")
         trigger = float(row.get("triggerPrice", 0) or 0)
         quantity = float(row.get("quantity") or row.get("origQty") or row.get("actualQty") or 0)
         if trigger <= 0 or quantity <= 0:
@@ -642,6 +689,9 @@ class BinanceTestnetExchange:
             stop_id=None if algo_id is None else str(algo_id),
             client_stop_id=client,
         )
+
+    def _valid_trigger_contract(self, row):
+        return row.get("workingType") == "CONTRACT_PRICE" and not self._is_true(row.get("priceProtect"))
 
     def _active_stops(self, symbol: str | None = None) -> list[dict[str, Any]]:
         params = {} if symbol is None else {"symbol": symbol}
@@ -666,6 +716,8 @@ class BinanceTestnetExchange:
             return None
         if len(active) > 1:
             raise TestnetExchangeError(f"TESTNET_MULTIPLE_PROTECTIVE_STOPS_DETECTED:{symbol}:{len(active)}")
+        if not self._valid_trigger_contract(active[0]):
+            return None  # Reconciliation installs the required protection first.
         return self._stop_ref(active[0])
 
     def validate_protective_stop(self, symbol: str, side: Side, stop_price: float) -> bool:
@@ -742,6 +794,8 @@ class BinanceTestnetExchange:
         # ambiguous order write.
         try:
             quantity = self._quantity(plan.symbol, plan.quantity)
+            if quantity * plan.expected_entry_price < self._filters[plan.symbol].get("min_notional", 0):
+                raise TestnetExchangeError("ENTRY_MIN_NOTIONAL_NOT_MET")
             position = self.position_snapshot()
             self.guard.authorize_entry(
                 symbol=plan.symbol,
@@ -755,7 +809,7 @@ class BinanceTestnetExchange:
             "symbol": plan.symbol,
             "side": "BUY" if plan.side == "LONG" else "SELL",
             "type": "MARKET",
-            "quantity": quantity,
+            "quantity": format(Decimal(str(quantity)), "f"),
             "newClientOrderId": client_order_id,
             "newOrderRespType": "RESULT",
         }
@@ -789,28 +843,45 @@ class BinanceTestnetExchange:
                 status = str(order.get("status") or "").upper()
                 last_status = status or "UNKNOWN"
                 fill = self._fill_from_order(order)
-                if status == "FILLED" and fill is not None:
+                terminal = status in {"FILLED", "CANCELED", "EXPIRED", "EXPIRED_IN_MATCH", "REJECTED"}
+                if fill is not None and not terminal:
+                    # A partially executed entry already bears risk. Protect
+                    # proven exposure before trying to cancel the remainder.
+                    if position is None or position.symbol != plan.symbol or position.side != plan.side:
+                        raise TestnetExchangeError("TESTNET_PARTIAL_POSITION_UNRESOLVED")
+                    distance = plan.initial_risk_usd / position.quantity
+                    stop = position.entry_price - distance if plan.side == "LONG" else position.entry_price + distance
+                    try:
+                        self.ensure_protective_stop(plan.symbol, plan.side, position.quantity, stop)
+                    except Exception:
+                        # Preserve the journal even when flattening succeeds.
+                        self.close_position(plan.symbol, plan.side, reason="PARTIAL_ENTRY_PROTECTION_FAILED")
+                        raise
+                    try:
+                        self._signed_delete("/fapi/v1/order", {"symbol": plan.symbol, "origClientOrderId": client_order_id}, ambiguous=True)
+                    except TestnetExchangeError:
+                        pass  # Cancellation is not proof; query the identity again.
+                if terminal and fill is not None:
                     if fill.client_order_id != client_order_id:
                         raise TestnetExchangeError("TESTNET_INFLIGHT_ENTRY_IDENTITY_MISMATCH")
                     if position is None:
-                        # The exact entry filled but the exchange is now flat.
-                        # Reconciliation must recover the authoritative close.
-                        raise TestnetExchangeError("TESTNET_INFLIGHT_ENTRY_FILLED_BUT_POSITION_FLAT")
+                        # A historical fill is valid even after its exposure closed.
+                        return fill
                     if position.symbol != plan.symbol or position.side != plan.side:
                         raise TestnetExchangeError("TESTNET_INFLIGHT_ENTRY_POSITION_MISMATCH")
                     return fill
-                if status in {"CANCELED", "EXPIRED", "REJECTED"} and position is None:
+                if terminal and fill is None and position is None:
                     return None
             time.sleep(0.05)
-        if last_status == "MISSING" and self.position_snapshot() is None:
-            return None
+        # Repeated "not found" after a timed-out POST is not proof that a
+        # delayed write cannot arrive. Keep the journal and block new entries.
         raise TestnetExchangeError(f"TESTNET_INFLIGHT_ENTRY_UNRESOLVED:{last_status}")
 
     # --------------------------- stops ---------------------------
 
     @staticmethod
     def deterministic_stop_client_id(symbol: str, side: Side, quantity: float, stop_price: float) -> str:
-        seed = f"{symbol}|{side}|{quantity:.12g}|{stop_price:.12g}"
+        seed = f"CONTRACT_PRICE_NO_PRICE_PROTECT_V2|{symbol}|{side}|{quantity:.12g}|{stop_price:.12g}"
         return "NBV3SL-" + hashlib.sha256(seed.encode()).hexdigest()[:24]
 
     def _query_algo_order(
@@ -873,10 +944,10 @@ class BinanceTestnetExchange:
             "symbol": symbol,
             "side": "SELL" if side == "LONG" else "BUY",
             "type": "STOP_MARKET",
-            "quantity": qty,
-            "triggerPrice": stop,
+            "quantity": format(Decimal(str(qty)), "f"),
+            "triggerPrice": format(Decimal(str(stop)), "f"),
             "workingType": "CONTRACT_PRICE",
-            "priceProtect": "true",
+            "priceProtect": "false",
             "reduceOnly": "true",
             "clientAlgoId": client_id,
         }
@@ -955,6 +1026,8 @@ class BinanceTestnetExchange:
         if len(active) > 1:
             raise TestnetExchangeError("TESTNET_MULTIPLE_PROTECTIVE_STOPS_DETECTED")
         if len(active) == 1:
+            if not self._valid_trigger_contract(active[0]):
+                return self.replace_protective_stop(symbol, side, quantity, stop_price)
             ref = self._stop_ref(active[0])
             if ref.side == side and math.isclose(ref.quantity, self._quantity(symbol, quantity), rel_tol=1e-9, abs_tol=1e-12):
                 requested = self._stop_price(symbol, side, stop_price)
@@ -983,7 +1056,7 @@ class BinanceTestnetExchange:
             raise TestnetExchangeError("TESTNET_NEW_STOP_NOT_VISIBLE_BEFORE_PRUNE")
         # Do not allow the replacement itself to be looser than existing known protection.
         for row in old:
-            ref = self._stop_ref(row)
+            ref = self._stop_ref(row, require_trigger_contract=False)
             if ref.side != side:
                 raise TestnetExchangeError("TESTNET_EXISTING_STOP_SIDE_MISMATCH")
             if side == "LONG" and new_ref.trigger_price + 1e-12 < ref.trigger_price:
@@ -1024,48 +1097,52 @@ class BinanceTestnetExchange:
         }
 
     def _user_trades_since(self, symbol: str, start_ms: int, end_ms: int) -> list[dict[str, Any]]:
+        return self._complete_history("/fapi/v1/userTrades", {"symbol": symbol}, start_ms, end_ms)
+
+    def _complete_history(self, path: str, params: dict[str, Any], start_ms: int, end_ms: int) -> list[dict[str, Any]]:
+        """Split saturated time windows rather than silently dropping pages.
+
+        A saturated single millisecond cannot prove completeness through this
+        interface. Leave accounting unresolved instead of inventing a result.
+        """
         rows: list[dict[str, Any]] = []
-        cursor = start_ms
-        while cursor <= end_ms:
-            window_end = min(end_ms, cursor + USER_TRADES_MAX_WINDOW_MS - 1)
-            page = self._signed_get(
-                "/fapi/v1/userTrades",
-                {"symbol": symbol, "startTime": cursor, "endTime": window_end, "limit": 1000},
-            )
+        windows = [(start_ms, end_ms)]
+        while windows:
+            start, end = windows.pop()
+            if start > end:
+                continue
+            if end - start >= USER_TRADES_MAX_WINDOW_MS:
+                split = start + USER_TRADES_MAX_WINDOW_MS - 1
+                windows.extend([(split + 1, end), (start, split)])
+                continue
+            page = self._signed_get(path, {**params, "startTime": start, "endTime": end, "limit": 1000})
             if not isinstance(page, list):
-                raise TestnetExchangeError("TESTNET_USER_TRADES_RESPONSE_INVALID")
-            rows.extend(row for row in page if isinstance(row, dict))
-            cursor = window_end + 1
+                raise TestnetExchangeError("TESTNET_HISTORY_RESPONSE_INVALID")
+            if any(not isinstance(row, dict) for row in page):
+                raise TestnetExchangeError("TESTNET_HISTORY_ROW_INVALID")
+            if len(page) >= 1000:
+                if start == end:
+                    raise TestnetExchangeError("TESTNET_HISTORY_MILLISECOND_SATURATED")
+                split = (start + end) // 2
+                windows.extend([(split + 1, end), (start, split)])
+                continue
+            rows.extend(page)
         return rows
 
     def _all_orders_between(self, symbol: str, start_ms: int, end_ms: int) -> list[dict[str, Any]]:
-        page = self._signed_get(
-            "/fapi/v1/allOrders",
-            {"symbol": symbol, "startTime": start_ms, "endTime": end_ms, "limit": 1000},
-        )
-        if not isinstance(page, list):
-            raise TestnetExchangeError("TESTNET_ALL_ORDERS_RESPONSE_INVALID")
-        return [row for row in page if isinstance(row, dict)]
+        return self._complete_history("/fapi/v1/allOrders", {"symbol": symbol}, start_ms, end_ms)
 
     def _all_algo_orders_between(self, symbol: str, start_ms: int, end_ms: int) -> list[dict[str, Any]]:
-        page = self._signed_get(
-            "/fapi/v1/allAlgoOrders",
-            {"symbol": symbol, "startTime": start_ms, "endTime": end_ms, "limit": 1000},
-        )
-        if not isinstance(page, list):
-            raise TestnetExchangeError("TESTNET_ALL_ALGO_ORDERS_RESPONSE_INVALID")
-        return [row for row in page if isinstance(row, dict)]
+        return self._complete_history("/fapi/v1/allAlgoOrders", {"symbol": symbol}, start_ms, end_ms)
 
     def _realized_pnl_income(self, symbol: str, start_ms: int, end_ms: int) -> float | None:
-        rows = self._signed_get(
+        rows = self._complete_history(
             "/fapi/v1/income",
             {
                 "symbol": symbol,
                 "incomeType": "REALIZED_PNL",
-                "startTime": start_ms,
-                "endTime": end_ms,
-                "limit": 1000,
             },
+            start_ms, end_ms,
         )
         if not isinstance(rows, list):
             raise TestnetExchangeError("TESTNET_INCOME_RESPONSE_INVALID")
@@ -1192,24 +1269,9 @@ class BinanceTestnetExchange:
             raise TestnetExchangeError("TESTNET_CLOSE_ORDER_EVIDENCE_AMBIGUOUS_QUANTITY")
         if not exits:
             raise TestnetExchangeError("TESTNET_CLOSE_ORDER_EVIDENCE_MISSING")
-        price = sum(float(row["executedQty"]) * float(row["avgPrice"]) for row in exits) / qty
-        close_ms = max(int(row.get("updateTime") or row.get("time") or 0) for row in exits)
-        first_ms = min(int(row.get("updateTime") or row.get("time") or 0) for row in exits)
-        realized = self._realized_pnl_income(symbol, (first_ms // 1000) * 1000, (close_ms // 1000) * 1000 + 999)
-        if realized is None:
-            raise TestnetExchangeError("TESTNET_CLOSE_ORDER_REALIZED_PNL_MISSING")
-        order_ids = tuple(sorted(str(row.get("orderId")) for row in exits if row.get("orderId") is not None))
-        theoretical = self._theoretical(local, price, qty)
-        return CloseFill(
-            price=price,
-            timestamp_ms=close_ms,
-            reason=self._recover_reason(local, order_ids, close_ms),
-            realized_pnl_usd=realized,
-            order_ids=order_ids,
-            source="ORDER_HISTORY_INCOME_RECOVERY",
-            theoretical_pnl_usd=theoretical,
-            pnl_variance_usd=realized - theoretical,
-        )
+        # A time-bucket income total cannot establish ownership of a close.
+        trades = [trade for order in exits for trade in self._order_trades(symbol, str(order["orderId"]))]
+        return self._settle_from_trades(local, trades)
 
     def _settle_from_finished_stop(self, local: dict[str, Any], end_ms: int) -> CloseFill:
         symbol = local["symbol"]
@@ -1247,21 +1309,7 @@ class BinanceTestnetExchange:
         close_ms = int(order.get("updateTime") or order.get("time") or 0)
         if abs(qty - target) > tolerance or price <= 0 or close_ms <= 0:
             raise TestnetExchangeError("TESTNET_ALGO_CLOSE_ORDER_INVALID")
-        realized = self._realized_pnl_income(symbol, (close_ms // 1000) * 1000, (close_ms // 1000) * 1000 + 999)
-        if realized is None:
-            raise TestnetExchangeError("TESTNET_ALGO_SETTLEMENT_REALIZED_PNL_MISSING")
-        oid = str(order.get("orderId"))
-        theoretical = self._theoretical(local, price, qty)
-        return CloseFill(
-            price=price,
-            timestamp_ms=close_ms,
-            reason="PROTECTIVE_STOP_TRIGGERED",
-            realized_pnl_usd=realized,
-            order_ids=(oid,),
-            source="ALGO_ACTUAL_ORDER_INCOME_RECOVERY",
-            theoretical_pnl_usd=theoretical,
-            pnl_variance_usd=realized - theoretical,
-        )
+        return self._settle_from_trades(local, self._order_trades(symbol, str(order["orderId"])))
 
     def _recover_closed_local(self, local: dict[str, Any]) -> CloseFill:
         if self.position_snapshot() is not None:
@@ -1287,7 +1335,7 @@ class BinanceTestnetExchange:
                 return close
             except TestnetExchangeError as exc:
                 last_error = exc
-                if "MISSING" not in str(exc):
+                if "MISSING" not in str(exc) and "INCOMPLETE" not in str(exc):
                     raise
             try:
                 close = self._settle_from_orders_income(local, now_ms)
@@ -1324,34 +1372,56 @@ class BinanceTestnetExchange:
         seed = f"{position.symbol}|{position.side}|{position.quantity:.12g}|{position.entry_price:.12g}|{reason}"
         return "NBV3C-" + hashlib.sha256(seed.encode()).hexdigest()[:24]
 
+    def _order_trades(self, symbol: str, order_id: str) -> list[dict[str, Any]]:
+        # Start at the oldest trade ID: an unqualified first page returns the
+        # most recent fills and may silently omit the beginning of an order.
+        result = []
+        cursor = 0
+        for _ in range(100):
+            page = self._signed_get("/fapi/v1/userTrades", {
+                "symbol": symbol, "orderId": int(order_id), "fromId": cursor, "limit": 1000,
+            })
+            if not isinstance(page, list):
+                raise TestnetExchangeError("TESTNET_ORDER_TRADES_INVALID")
+            for row in page:
+                if not isinstance(row, dict) or str(row.get("orderId")) != str(order_id) or row.get("symbol") != symbol:
+                    raise TestnetExchangeError("TESTNET_ORDER_TRADES_IDENTITY_MISMATCH")
+                try:
+                    numbers = [float(row[key]) for key in ("qty", "price", "realizedPnl")]
+                    valid = all(math.isfinite(value) for value in numbers) and min(numbers[:2]) > 0 and int(row["time"]) > 0
+                except (KeyError, TypeError, ValueError):
+                    valid = False
+                if not valid:
+                    raise TestnetExchangeError("TESTNET_ORDER_TRADES_INVALID")
+            result.extend(page)
+            if len(page) < 1000:
+                ids = [str(row["id"]) for row in result if "id" in row]
+                if len(ids) != len(set(ids)):
+                    raise TestnetExchangeError("TESTNET_ORDER_TRADES_DUPLICATE")
+                return result
+            try:
+                ids = [int(row["id"]) for row in page]
+            except (KeyError, TypeError, ValueError) as exc:
+                raise TestnetExchangeError("TESTNET_ORDER_TRADES_CURSOR_MISSING") from exc
+            if min(ids) < cursor or len(set(ids)) != len(ids):
+                raise TestnetExchangeError("TESTNET_ORDER_TRADES_CURSOR_INVALID")
+            cursor = max(ids) + 1
+        raise TestnetExchangeError("TESTNET_ORDER_TRADES_INCOMPLETE")
+
     def _settle_close_order(self, position: ExchangePosition, order: dict[str, Any], reason: str) -> CloseFill:
         order_id = order.get("orderId")
         if order_id is None:
             raise TestnetExchangeError("TESTNET_CLOSE_ORDER_ID_MISSING")
         for attempt in range(self.config.close_settlement_retries):
-            rows = self._signed_get(
-                "/fapi/v1/userTrades",
-                {"symbol": position.symbol, "orderId": int(order_id), "limit": 1000},
-            )
+            rows = self._order_trades(position.symbol, str(order_id))
             if isinstance(rows, list) and rows:
                 qty = sum(float(row.get("qty", 0) or 0) for row in rows if isinstance(row, dict))
-                if qty > 0:
+                if abs(qty - position.quantity) <= max(self._filters[position.symbol]["market_step"] / 2.0, 1e-12) and qty > 0:
                     price = sum(float(row["qty"]) * float(row["price"]) for row in rows if isinstance(row, dict)) / qty
                     realized = sum(float(row.get("realizedPnl", 0) or 0) for row in rows if isinstance(row, dict))
                     ts = max(int(row.get("time", 0) or 0) for row in rows if isinstance(row, dict))
                     theoretical = (price - position.entry_price) * qty if position.side == "LONG" else (position.entry_price - price) * qty
                     return CloseFill(price, ts, reason, realized, (str(order_id),), "USER_TRADES_ORDER", theoretical, realized - theoretical)
-            known = order if str(order.get("status") or "").upper() == "FILLED" else self._query_order_by_id(position.symbol, str(order_id))
-            if known is not None and str(known.get("status") or "").upper() == "FILLED":
-                qty = float(known.get("executedQty", 0) or 0)
-                price = float(known.get("avgPrice", 0) or 0)
-                ts = int(known.get("updateTime") or known.get("time") or 0)
-                step = self._filters[position.symbol]["market_step"]
-                if abs(qty - position.quantity) <= max(step / 2.0, 1e-12) and price > 0 and ts > 0:
-                    realized = self._realized_pnl_income(position.symbol, (ts // 1000) * 1000, (ts // 1000) * 1000 + 999)
-                    if realized is not None:
-                        theoretical = (price - position.entry_price) * qty if position.side == "LONG" else (position.entry_price - price) * qty
-                        return CloseFill(price, ts, reason, realized, (str(order_id),), "ORDER_INCOME_SETTLEMENT", theoretical, realized - theoretical)
             if attempt + 1 < self.config.close_settlement_retries:
                 time.sleep(self.config.close_settlement_retry_seconds)
         raise TestnetExchangeError("TESTNET_CLOSE_ACCOUNTING_UNAVAILABLE")
@@ -1368,7 +1438,7 @@ class BinanceTestnetExchange:
             "symbol": position.symbol,
             "side": "SELL" if position.side == "LONG" else "BUY",
             "type": "MARKET",
-            "quantity": quantity,
+            "quantity": format(Decimal(str(quantity)), "f"),
             "reduceOnly": "true",
             "newClientOrderId": client_id,
             "newOrderRespType": "RESULT",

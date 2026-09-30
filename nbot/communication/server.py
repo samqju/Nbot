@@ -161,17 +161,41 @@ class ObservationControlServer:
                 self.end_headers()
                 self.wfile.write(body)
 
-        class ControlHTTPServer(ThreadingHTTPServer):
-            # Individual request sockets are bounded above, and daemon request
-            # threads ensure process shutdown never waits on a broken peer.
-            daemon_threads = True
-
-        server = ControlHTTPServer((self.host, self.port), Handler)
+        context = None
         if self.tls_certfile is not None:
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             context.minimum_version = ssl.TLSVersion.TLSv1_2
             context.load_cert_chain(str(self.tls_certfile), str(self.tls_keyfile))
-            server.socket = context.wrap_socket(server.socket, server_side=True)
+
+        class ControlHTTPServer(ThreadingHTTPServer):
+            # Individual request sockets are bounded above, and daemon request
+            # threads ensure process shutdown never waits on a broken peer.
+            daemon_threads = True
+            slots = threading.BoundedSemaphore(32)
+
+            def process_request(self, request, client_address):
+                if not self.slots.acquire(blocking=False):
+                    self.shutdown_request(request)
+                    return
+                try:
+                    super().process_request(request, client_address)
+                except BaseException:
+                    self.slots.release()
+                    raise
+
+            def process_request_thread(self, request, client_address):
+                try:
+                    request.settimeout(_REQUEST_IO_TIMEOUT_SECONDS)
+                    if context is not None:
+                        # Handshake in the bounded worker, never the accept loop.
+                        request = context.wrap_socket(request, server_side=True)
+                    super().process_request_thread(request, client_address)
+                except (OSError, ssl.SSLError):
+                    self.shutdown_request(request)
+                finally:
+                    self.slots.release()
+
+        server = ControlHTTPServer((self.host, self.port), Handler)
         self._server = server
         self._thread = threading.Thread(
             target=server.serve_forever,

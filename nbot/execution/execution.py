@@ -16,6 +16,8 @@ Safety ordering:
 
 from __future__ import annotations
 
+from nbot.common.synchronization import state_transition
+
 import time
 from dataclasses import replace
 from typing import Any, Callable, Mapping, Protocol, runtime_checkable
@@ -97,6 +99,7 @@ class ExecutionWorker:
         self.outcome_client = outcome_client
         self._now_ms = now_ms or (lambda: int(time.time() * 1000))
         self._prepared = False
+        self._quote_times: dict[str, int] = {}
 
         # Prevent accidentally composing lifecycles against different capital
         # stores/exchange objects.  One worker must have one canonical truth.
@@ -111,10 +114,15 @@ class ExecutionWorker:
     def prepared(self) -> bool:
         return self._prepared
 
+    @state_transition
     def prepare(self) -> ReconciliationResult:
         """Capital-first startup preparation; never contacts remote clients."""
-        self._health_event("EXECUTION_PREPARE_STARTED", counter="prepare_calls")
         try:
+            # Testnet connect acquires the process lock. PAPER callers hold
+            # their runtime lock around prepare. A pre-lock snapshot may be old.
+            self.exchange.connect()
+            self.state.reload_after_runtime_lock()
+            self._health_event("EXECUTION_PREPARE_STARTED", counter="prepare_calls")
             result = self.reconciliation.reconcile()
         except Exception:
             self._prepared = False
@@ -123,6 +131,7 @@ class ExecutionWorker:
         self._health_event(f"EXECUTION_PREPARED_{result.status}")
         return result
 
+    @state_transition
     def enable_new_entries(self) -> ReconciliationResult:
         """Reconcile and pass current daily risk before opening the entry gate."""
         result = self._reconcile_now()
@@ -138,11 +147,13 @@ class ExecutionWorker:
         self._health_event("EXECUTION_NEW_ENTRIES_ENABLED")
         return result
 
+    @state_transition
     def disable_new_entries(self) -> None:
         """Disable future entries without disturbing an already-open position."""
         self.state.set_entries_enabled(False)
         self._health_event("EXECUTION_NEW_ENTRIES_DISABLED")
 
+    @state_transition
     def force_close_open_position(self, *, reason: str) -> ReconciliationResult:
         """Verified operator close followed by authoritative reconciliation.
 
@@ -171,6 +182,7 @@ class ExecutionWorker:
         self._health_event("FORCE_CLOSE_CONFIRMED_FLAT")
         return result
 
+    @state_transition
     def process_flat_cycle(self) -> str:
         """Perform one flat-side cycle in strict capital-first order.
 
@@ -225,7 +237,7 @@ class ExecutionWorker:
             return "NO_TRADE"
 
         try:
-            self.entry.execute(proposal, now_ms=now)
+            self.entry.execute(proposal, now_ms=self._validated_now_ms())
         except EntryRejected as exc:
             self._health_event(
                 f"PROPOSAL_REJECTED_{exc.reason}",
@@ -251,6 +263,7 @@ class ExecutionWorker:
         self._health_event("ENTRY_OPENED")
         return "ENTRY_OPENED"
 
+    @state_transition
     def process_open_quote(self, quote: Quote) -> PositionManageResult | ReconciliationResult:
         """Process one Execution-owned quote for the capital-bearing position.
 
@@ -269,6 +282,19 @@ class ExecutionWorker:
             return PositionManageResult(status="FLAT")
         if quote.symbol != local.symbol:
             return PositionManageResult(status="IGNORED_OTHER_SYMBOL", symbol=local.symbol)
+
+        now = self._validated_now_ms()
+        try:
+            self.risk.check_quote(quote, now_ms=now)
+        except RiskRejected as exc:
+            self._health_event(f"OPEN_QUOTE_REJECTED_{exc.reason}")
+            # Reconcile exchange protection; never simulate a stale paper fill.
+            return self._reconcile_now()
+        previous = self._quote_times.get(quote.symbol, local.entry_timestamp_ms)
+        if quote.timestamp_ms < previous:
+            self._health_event("OPEN_QUOTE_OUT_OF_ORDER")
+            return PositionManageResult(status="IGNORED_OUT_OF_ORDER", symbol=local.symbol)
+        self._quote_times[quote.symbol] = quote.timestamp_ms
 
         paper_tick = getattr(self.exchange, "on_market_tick", None)
         if callable(paper_tick):
@@ -295,6 +321,7 @@ class ExecutionWorker:
             # capital hot path.
             return self._reconcile_now()
 
+    @state_transition
     def reconcile(self) -> ReconciliationResult:
         """Explicit execution-only reconciliation with no proposal/outcome I/O."""
         return self._reconcile_now()

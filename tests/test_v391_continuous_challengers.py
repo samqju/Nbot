@@ -34,6 +34,11 @@ class V391ContinuousChallengerTests(unittest.TestCase):
         self.memory.initialize(generation="TEST_V391", generation_floor_ms=0)
         self.release_sha = "a" * 40
         self.next_event = 300_000
+        # Simulated wall time follows completed labels, not the real date.
+        clock = mock.patch("nbot.observation.challengers.time.time", side_effect=lambda: (self.next_event + 48 * 300_000) / 1000)
+        clock.start()
+        self.addCleanup(clock.stop)
+        self.event_spacing = 300_000
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -67,7 +72,7 @@ class V391ContinuousChallengerTests(unittest.TestCase):
         ledger = []
         for _ in range(count):
             event = self.next_event
-            self.next_event += 300_000
+            self.next_event += self.event_spacing
             rows = self._event_rows(event, target=target)
             blob, training_digest, raw_bytes = _encode_training_rows(rows)
             selector_summary = {}
@@ -141,7 +146,8 @@ class V391ContinuousChallengerTests(unittest.TestCase):
         cycle = ContinuousChallengerCycle(self.memory, release_sha=self.release_sha)
         first = cycle.cycle()
         cutoff = first["training_cutoff_event_ms"]
-
+        self.next_event += 49 * 300_000
+        self.event_spacing = 49 * 300_000
         self._append_events(40, state, target=-1.0)
         second = cycle.cycle()
         self.assertEqual(second["action"], "EVALUATE_FINAL_AND_TRAIN_NEXT")
@@ -168,6 +174,35 @@ class V391ContinuousChallengerTests(unittest.TestCase):
         self.assertEqual(first["artifact_digest"], second["artifact_digest"])
         with self.assertRaisesRegex(RuntimeError, "ARTIFACT_IDENTITY_CONFLICT"):
             self.memory.persist_artifact("v39:test:one", {"authority": AUTHORITY, "value": 2})
+
+    def test_copy_upgrade_replays_examples_and_preserves_source(self):
+        from nbot.observation.migrate_causal import migrate
+        state = RidgeSufficientStatistics.empty()
+        self._append_events(55, state)
+        self.memory.persist_artifact("v39:model:legacy", {"old": True})
+        with self.memory._connect() as conn:
+            conn.execute("UPDATE research_memory_ridge_state SET state_json=?,state_digest=?",
+                         ('{"legacy":true}', 'legacy-digest'))
+        source_history = self.memory.history_base()
+        output = Path(self.tmp.name) / "upgraded.db"
+        report = migrate(self.memory.path, output)
+        self.assertEqual(report["events_replayed"], 55)
+        self.assertEqual(source_history, self.memory.history_base())
+        upgraded = ResearchMemoryStore(output)
+        row = upgraded.history_base()["ridge_state_row"]
+        restored = RidgeSufficientStatistics.from_payload(json.loads(row[5]))
+        self.assertEqual(restored.to_payload(), state.to_payload())
+        self.assertIsNotNone(upgraded.artifact("legacy-causal:v39:model:legacy"))
+        self.assertEqual(ContinuousChallengerCycle(upgraded, release_sha=self.release_sha)._challenger_records(), [])
+        with self.assertRaises(FileExistsError):
+            migrate(self.memory.path, output)
+
+    def test_shared_future_candles_are_excluded_from_evaluation(self):
+        state = RidgeSufficientStatistics.empty()
+        self._append_events(100, state)
+        cycle = ContinuousChallengerCycle(self.memory, release_sha=self.release_sha)
+        events = [record["event_open_ms"] for record in cycle._future_records(0)]
+        self.assertEqual(events, [300_000, 50 * 300_000, 99 * 300_000])
 
     def _seed_pending_epoch_transition(self, *, epoch_id: str, target_end_ms: int):
         self.memory.challenger_transition_status()

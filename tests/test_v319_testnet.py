@@ -71,6 +71,7 @@ class Harness(BinanceTestnetExchange):
         return {
             "symbols": [{
                 "symbol": "BTCUSDT",
+                "status": "TRADING", "contractType": "PERPETUAL", "quoteAsset": "USDT",
                 "filters": [
                     {"filterType": "MARKET_LOT_SIZE", "stepSize": "0.001", "minQty": "0.001", "maxQty": "100"},
                     {"filterType": "LOT_SIZE", "stepSize": "0.001", "minQty": "0.001", "maxQty": "100"},
@@ -176,6 +177,7 @@ class Harness(BinanceTestnetExchange):
             self.next_algo += 1
             aid = str(self.next_algo)
             row = {"algoId": aid, "clientAlgoId": cid, "algoType": "CONDITIONAL", "orderType": "STOP_MARKET", "symbol": params["symbol"], "side": params["side"], "positionSide": "BOTH", "quantity": str(params["quantity"]), "triggerPrice": str(params["triggerPrice"]), "reduceOnly": True, "algoStatus": "NEW", "createTime": 1_800_000_000_010, "updateTime": 1_800_000_000_010, "actualOrderId": ""}
+            row.update({"workingType": params["workingType"], "priceProtect": params["priceProtect"]})
             self.algos[aid] = row
             if self.ambiguous_stop:
                 self.ambiguous_stop = False
@@ -514,15 +516,16 @@ class V319EntryTests(unittest.TestCase):
     def test_recover_known_missing_flat_returns_none(self):
         with tempfile.TemporaryDirectory() as td:
             ex = loaded_exchange(Path(td)); arm(ex.config)
-            self.assertIsNone(ex.recover_inflight_entry(plan(), client_order_id="MISSING"))
+            with self.assertRaisesRegex(TestnetExchangeError, "UNRESOLVED"):
+                ex.recover_inflight_entry(plan(), client_order_id="MISSING")
 
     def test_recover_filled_but_exchange_flat_requires_reconciliation(self):
         with tempfile.TemporaryDirectory() as td:
             ex = loaded_exchange(Path(td)); arm(ex.config)
             ex.open_market(plan(), client_order_id="FILLED")
             ex.positions = []
-            with self.assertRaisesRegex(TestnetExchangeError, "FILLED_BUT_POSITION_FLAT"):
-                ex.recover_inflight_entry(plan(), client_order_id="FILLED")
+            fill = ex.recover_inflight_entry(plan(), client_order_id="FILLED")
+            self.assertEqual(fill.quantity, 1.0)
 
     def test_set_leverage_requires_arm(self):
         with tempfile.TemporaryDirectory() as td:
@@ -554,6 +557,19 @@ class V319StopTests(unittest.TestCase):
             ref = ex.ensure_protective_stop("BTCUSDT", "LONG", 1, 90)
             self.assertEqual(ref.side, "LONG")
             self.assertEqual(ex.protective_stop_snapshot("BTCUSDT"), ref)
+
+    def test_legacy_trigger_settings_are_replaced_before_old_stop_is_removed(self):
+        with tempfile.TemporaryDirectory() as td:
+            ex = self._open(Path(td))
+            old = ex.ensure_protective_stop("BTCUSDT", "LONG", 1, 90)
+            ex.algos[old.stop_id].update({"priceProtect": True, "clientAlgoId": "LEGACY-STOP"})
+            self.assertIsNone(ex.protective_stop_snapshot("BTCUSDT"))
+            before = len(ex.calls)
+            new = ex.ensure_protective_stop("BTCUSDT", "LONG", 1, 90)
+            self.assertNotEqual(old.stop_id, new.stop_id)
+            writes = [call[0] for call in ex.calls[before:] if call[1] == "/fapi/v1/algoOrder" and call[0] in {"POST", "DELETE"}]
+            self.assertEqual(writes, ["POST", "DELETE"])
+            self.assertEqual(ex.protective_stop_snapshot("BTCUSDT"), new)
 
     def test_place_short_stop(self):
         with tempfile.TemporaryDirectory() as td:
@@ -630,6 +646,11 @@ class V319StopTests(unittest.TestCase):
 
 
 class V319CloseRecoveryTests(unittest.TestCase):
+    def setUp(self):
+        clock = mock.patch("nbot.exchange.binance_testnet.time.time", return_value=1_800_000_001)
+        clock.start()
+        self.addCleanup(clock.stop)
+
     def _open_with_stop(self, root, side="LONG"):
         ex = loaded_exchange(root); arm(ex.config)
         fill = ex.open_market(plan(side), client_order_id="ENTRY")
@@ -685,9 +706,8 @@ class V319CloseRecoveryTests(unittest.TestCase):
             ex, local = self._open_with_stop(Path(td))
             ex.close_position("BTCUSDT", "LONG", reason="MANUAL")
             ex.user_trades = []
-            close = ex.recover_closed_position(local)
-            self.assertEqual(close.source, "ORDER_HISTORY_INCOME_RECOVERY")
-            self.assertAlmostEqual(close.realized_pnl_usd, -2.0)
+            with self.assertRaisesRegex(TestnetExchangeError, "SETTLEMENT_FAILED"):
+                ex.recover_closed_position(local)
 
     def test_recover_finished_algo_stop_when_user_trades_missing(self):
         with tempfile.TemporaryDirectory() as td:
@@ -701,9 +721,8 @@ class V319CloseRecoveryTests(unittest.TestCase):
             ex.positions = []
             ex.incomes = [{"symbol":"BTCUSDT","incomeType":"REALIZED_PNL","income":str(pnl),"time":1_800_000_000_100}]
             ex.user_trades = []
-            close = ex.recover_closed_position(local)
-            self.assertEqual(close.source, "ALGO_ACTUAL_ORDER_INCOME_RECOVERY")
-            self.assertEqual(close.reason, "PROTECTIVE_STOP_TRIGGERED")
+            with self.assertRaisesRegex(TestnetExchangeError, "SETTLEMENT_FAILED"):
+                ex.recover_closed_position(local)
 
     def test_missing_close_evidence_never_invents_zero_pnl(self):
         with tempfile.TemporaryDirectory() as td:
@@ -776,6 +795,13 @@ class V319TransportTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.config = TestnetExchangeConfig(api_key="key123", api_secret="secret456", repo_root=self.root)
         self.ex = BinanceTestnetExchange(self.config)
+        timer = mock.patch.object(self.ex, "_signed_timestamp_ms", return_value=1234567)
+        timer.start()
+        self.addCleanup(timer.stop)
+        from nbot.exchange.limits import RequestBudget
+        budget = mock.patch("nbot.exchange.binance_testnet.budget_for", return_value=RequestBudget())
+        budget.start()
+        self.addCleanup(budget.stop)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -836,6 +862,9 @@ class V319TransportTests(unittest.TestCase):
 
 class V319RealLifecycleIntegrationTests(unittest.TestCase):
     def setUp(self):
+        clock = mock.patch("nbot.exchange.binance_testnet.time.time", return_value=1_800_000_001)
+        clock.start()
+        self.addCleanup(clock.stop)
         self.td = tempfile.TemporaryDirectory()
         self.root = Path(self.td.name)
         self.cfg = TestnetExchangeConfig(
@@ -910,3 +939,30 @@ class V319RealLifecycleIntegrationTests(unittest.TestCase):
         stop = ex.protective_stop_snapshot("BTCUSDT")
         self.assertIsNotNone(stop)
         self.assertEqual(stop.side, "SHORT")
+
+    def test_restart_recovers_protection_then_records_close_exactly_once(self):
+        from nbot.execution.outcomes import ExecutionDurableStore
+        from nbot.execution.reconciliation import ReconciliationLifecycle
+        ex, state, opened = self._execute("LONG")
+        # Recreate all local persistence/lifecycle objects, keeping only
+        # simulated exchange truth, just as after a process crash.
+        durable = ExecutionDurableStore(self.root, profile="testnet-trade")
+        lifecycle = ReconciliationLifecycle(
+            exchange=ex, durable=durable, risk=RiskManager(),
+            emergency=EmergencyFlattener(exchange=ex, sleep=lambda _: None),
+            now_ms=lambda: 1_800_000_000_200,
+        )
+        self.assertEqual(lifecycle.reconcile().status, "POSITION_RECONCILED")
+        self.assertEqual(durable.state.open_position.proposal_id, opened.proposal_id)
+        entries_before = len([c for c in ex.calls if c[0] == "POST" and c[1] == "/fapi/v1/order"])
+        ex.close_position("BTCUSDT", "LONG", reason="TEST_RESTART")
+        result = lifecycle.reconcile()
+        self.assertEqual(result.status, "POSITION_CLOSE_RECOVERED")
+        self.assertEqual(durable.outbox.pending_count(), 1)
+        reloaded = ExecutionDurableStore(self.root, profile="testnet-trade")
+        self.assertIsNone(reloaded.state.open_position)
+        self.assertFalse(reloaded.state.reserve_proposal(opened.proposal_id))
+        self.assertEqual(reloaded.outbox.pending_count(), 1)
+        self.assertEqual(lifecycle.reconcile().status, "FLAT")
+        posts = [c for c in ex.calls if c[0] == "POST" and c[1] == "/fapi/v1/order"]
+        self.assertEqual(len(posts), entries_before + 1)  # only the explicit close

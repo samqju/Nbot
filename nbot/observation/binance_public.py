@@ -8,6 +8,8 @@ validated by ObservationConfig.
 
 from __future__ import annotations
 
+from nbot.common.binance_limits import ExchangeCooldown, budget_for, request_weight
+
 from collections.abc import Callable, Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
@@ -55,6 +57,11 @@ class BinanceUsdMPublicClient:
     def _get(self, path: str, params: Mapping[str, Any] | None = None) -> Any:
         if not path.startswith("/fapi/"):
             raise BinancePublicMarketError("NBOT_OBSERVATION_PUBLIC_PATH_INVALID")
+        budget = budget_for(self.config.binance_public_base_url)
+        try:
+            budget.acquire(request_weight(path, params))
+        except ExchangeCooldown as exc:
+            raise BinancePublicMarketError(str(exc)) from exc
         query = urlencode(sorted((params or {}).items()))
         url = f"{self.config.binance_public_base_url}{path}"
         if query:
@@ -62,8 +69,12 @@ class BinanceUsdMPublicClient:
         request = Request(url, headers={"User-Agent": USER_AGENT})
         try:
             with self._urlopen(request, timeout=self.config.request_timeout_seconds) as response:
+                budget.observe(getattr(response, "headers", {}))
                 raw = response.read()
+        except ExchangeCooldown as exc:
+            raise BinancePublicMarketError(str(exc)) from exc
         except HTTPError as exc:
+            budget.observe(exc.headers, exc.code)
             raise BinancePublicMarketError(
                 f"NBOT_OBSERVATION_PUBLIC_HTTP_ERROR:{path}:{exc.code}"
             ) from exc

@@ -248,6 +248,8 @@ class V322OperatorTelemetryTests(unittest.TestCase):
     def test_execution_worker_force_close_requires_verified_flat_then_reconciliation(self):
         class State:
             def __init__(self):
+                import threading
+                self.mutation_lock = threading.RLock()
                 self.open_position = mock.Mock(symbol="BTCUSDT", side="LONG")
                 self.entry_inflight = None
 
@@ -284,6 +286,8 @@ class V322OperatorTelemetryTests(unittest.TestCase):
 
     def test_force_close_fails_closed_when_reconciliation_does_not_prove_flat(self):
         class State:
+            import threading
+            mutation_lock = threading.RLock()
             open_position = mock.Mock(symbol="BTCUSDT", side="LONG")
             entry_inflight = None
 

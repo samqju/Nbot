@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 import nbot_admin
 from nbot.observation.challengers import AUTHORITY, ContinuousChallengerCycle
@@ -41,6 +42,10 @@ class V394MarketRegimeTests(unittest.TestCase):
         self.release_sha = "c" * 40
         self.state = RidgeSufficientStatistics.empty()
         self.next_event = CONFIG.calibration_cutoff_event_ms - (CONFIG.calibration_event_count - 1) * 300_000
+        self.event_spacing = 300_000
+        clock = mock.patch("nbot.observation.challengers.time.time", side_effect=lambda: (self.next_event + 48 * 300_000) / 1000)
+        clock.start()
+        self.addCleanup(clock.stop)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -86,7 +91,7 @@ class V394MarketRegimeTests(unittest.TestCase):
         ledger = []
         for _ in range(count):
             event = self.next_event
-            self.next_event += 300_000
+            self.next_event += self.event_spacing
             rows = self._event_rows(event, target=target)
             blob, training_digest, raw_bytes = _encode_training_rows(rows)
             selector_summary = {}
@@ -173,15 +178,18 @@ class V394MarketRegimeTests(unittest.TestCase):
         self.assertFalse(contract["automatic_promotion"])
 
     def test_pre_governance_final_gets_companion_but_is_excluded_from_eligibility(self):
-        # First challenger freezes 40 events before the V3.9.4 calibration cutoff.
-        self._append_events(440, target=-1.0)
+        # Freeze the calibration archive before collecting disjoint future
+        # evaluation events; governance is still initialized after the final.
+        self._append_events(CONFIG.calibration_event_count, target=-1.0)
         cycle = ContinuousChallengerCycle(self.memory, release_sha=self.release_sha)
         first = cycle.cycle()
+        self.next_event += 49 * 300_000
+        self.event_spacing = 49 * 300_000
         self.assertEqual(first["action"], "TRAIN")
         self._append_events(40, target=-1.0)
         final = cycle.cycle()
         self.assertEqual(final["action"], "EVALUATE_FINAL_AND_TRAIN_NEXT")
-        self.assertEqual(final["next_challenger"]["training_cutoff_event_ms"], CONFIG.calibration_cutoff_event_ms)
+        self.assertEqual(final["next_challenger"]["training_cutoff_event_ms"], self.state.through_event_ms)
 
         # Governance starts only after the first final, matching production history.
         self.governance.sync()
