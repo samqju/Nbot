@@ -458,6 +458,10 @@ rm -f "$NBOT_SUDO_FILE"
 Expected: **parsed OK**. These additions do not remove any broader sudo rights
 your provider already gave ubuntu.
 
+For a table of every private file, template and field, see
+[environment-file setup](ENVIRONMENT_SETUP.md). V3 uses files under
+`config/secrets/`, not a root `.env`.
+
 ## 8. Create their shared connection password
 
 This long random token lets the bot recognize messages from its other half.
@@ -676,8 +680,10 @@ if not key or not secret or any(c.isspace() for c in key + secret):
     raise SystemExit("Empty value or whitespace found. Nothing was saved.")
 with path.open("x", encoding="utf-8") as handle:
     path.chmod(0o600)
-    handle.write("TESTNET_API_KEY=" + key + "\n")
-    handle.write("TESTNET_API_SECRET=" + secret + "\n")
+    template = Path("config/examples/execution-testnet.env.example").read_text(encoding="utf-8")
+    template = template.replace("TESTNET_API_KEY=\n", "TESTNET_API_KEY=" + key + "\n", 1)
+    template = template.replace("TESTNET_API_SECRET=\n", "TESTNET_API_SECRET=" + secret + "\n", 1)
+    handle.write(template)
 print("Saved Testnet credentials without displaying them.")
 PY
 stat -c '%a %n' config/secrets/execution-testnet.env
@@ -685,6 +691,10 @@ stat -c '%a %n' config/secrets/execution-testnet.env
 
 Expected file permission: **600**. Nothing from this step belongs on the learning
 VPS. Do not export API keys globally or put them in the tracked profile files.
+
+The [Testnet template](../config/examples/execution-testnet.env.example) lists
+optional settings; [the field guide](ENVIRONMENT_SETUP.md) explains what each
+value means. Leave default limits unchanged for the first trial.
 
 ## 12. Start the trader, then allow new entries
 
@@ -905,6 +915,24 @@ This stops the Testnet worker, tunnel, and remote Testnet control service.
 The learning VPS's LIVE collector and scheduled research continue.
 If stopping is refused, resolve the stated condition; do not kill processes,
 delete state, or reboot as a shortcut.
+
+### Disarm after safely ending a Testnet trial
+
+Arming means "authorize a Testnet session" and initializes its saved entry counter.
+Enabling entries means "allow new trades within that session." You do not arm or
+disarm every day. Normally use entries disable/enable to pause or resume.
+
+To end the authorization, first follow the safe-stop procedure above. Only when
+the worker is stopped, the account is flat and no entry/outcome is unresolved:
+
+~~~bash
+./nbotctl disarm testnet-trade
+./nbotctl status
+~~~
+
+Disarm does not close positions or replace the pause command. Do not disarm an
+open position. To begin another trial later, use section 12's explicit arm,
+doctor, start, status and enable sequence.
 
 ### Restart after a normal safe stop
 

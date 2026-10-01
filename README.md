@@ -18,6 +18,8 @@ V3 starts from clean runtime state and clean databases. V1/V2 remain engineering
 ## Start here: two VPSs, step by step
 
 New to servers? Follow the [beginner two-VPS installation guide](docs/TWO_VPS_BEGINNER_GUIDE.md).
+For private settings and placeholders, see the [environment-file guide](docs/ENVIRONMENT_SETUP.md).
+
 It covers creating both servers, connecting them securely, starting learned
 Testnet trading, daily checks, restarts, backups, and updates.
 

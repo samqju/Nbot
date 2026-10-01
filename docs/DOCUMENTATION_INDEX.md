@@ -4,6 +4,8 @@ Reviewed: **2026-10-01**, against learner code
 [9fff54c](https://github.com/samqju/Nbot/commit/9fff54c3889e26c21dd217d439783af4803993d6).
 This review covers all **18 existing tracked Markdown files**, plus this new index.
 Documentation publication does not install code or prove that the services are running.
+A follow-up adds the [environment-file field guide](ENVIRONMENT_SETUP.md) and
+explicit Testnet template, plus the safe disarm procedure.
 
 ## Start here
 
@@ -13,6 +15,9 @@ Documentation publication does not install code or prove that the services are r
    what learning can do, inspect rejected models and monitor resources.
 3. [Short Testnet setup](LEARNED_TESTNET_SETUP.md): a shorter reference once you
    understand the complete installation.
+
+For private-file creation and every placeholder, use the
+[environment-file setup guide](ENVIRONMENT_SETUP.md).
 
 ## What the bot currently does, in simple English
 
