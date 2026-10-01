@@ -1,5 +1,8 @@
 # Running the learning bot on Testnet
 
+For a complete first-time installation with copy-and-paste commands, use the
+[beginner two-VPS guide](TWO_VPS_BEGINNER_GUIDE.md).
+
 The bot watches LIVE markets and learns from completed examples. It uses its
 saved model to rank buying/selling opportunities, then recommends one suitable
 opportunity using a matching fresh Testnet quote. The Execution VPS independently

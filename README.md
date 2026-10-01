@@ -9,6 +9,12 @@ The architecture has two independent roles:
 
 V3 starts from clean runtime state and clean databases. V1/V2 remain engineering references in Git history and immutable tags; they are not active V3 runtime dependencies.
 
+## Start here: two VPSs, step by step
+
+New to servers? Follow the [beginner two-VPS installation guide](docs/TWO_VPS_BEGINNER_GUIDE.md).
+It covers creating both servers, connecting them securely, starting learned
+Testnet trading, daily checks, restarts, backups, and updates.
+
 ## Current phase
 
 ### Learned Testnet testing
