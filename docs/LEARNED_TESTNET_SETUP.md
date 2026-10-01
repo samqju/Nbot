@@ -17,6 +17,9 @@ the existing exit-policy families; executed trades retain INTEGER_R_STEP_CONTROL
 The bot does not invent arbitrary strategy code or automatically deploy new exit
 algorithms. Positive model predictions are estimates, not guarantees.
 
+For a 1 CPU / 1 GB test server, follow the [small-VPS learner instructions](SMALL_VPS_LEARNER.md).
+Use **learning-report** to see setup evidence and plain-English rejection reasons.
+
 ## New Observation VPS
 
 Use Linux and Python 3.12. Clone this repository, create `.venv`, install

@@ -189,18 +189,26 @@ class ResearchMemoryStore:
                 for example in decoded:
                     yield int(event_open_ms), example
 
-    def iter_event_records(self, *, after_event_ms: int | None = None):
+    def iter_event_records(self, *, after_event_ms: int | None = None,
+                           through_event_ms: int | None = None, minimum_spacing_ms: int = 0):
         """Stream immutable compact events with verified lineage and examples."""
         lower = -1 if after_event_ms is None else int(after_event_ms)
+        upper = 2**63 - 1 if through_event_ms is None else int(through_event_ms)
+        if minimum_spacing_ms < 0:
+            raise ValueError("MEMORY_EVENT_SPACING_INVALID")
+        previous = None
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT event_open_ms,archive_version,example_row_count,training_blob,"
                 "training_digest,selector_summary_json,policy_summary_json,"
                 "build_manifest_json,archive_digest,authority,source_generation "
-                "FROM research_memory_events WHERE event_open_ms>? ORDER BY event_open_ms",
-                (lower,),
+                "FROM research_memory_events WHERE event_open_ms>? AND event_open_ms<=? ORDER BY event_open_ms",
+                (lower, upper),
             )
             for row in rows:
+                if previous is not None and int(row[0]) - previous < minimum_spacing_ms:
+                    continue
+                previous = int(row[0])
                 (event_open_ms, archive_version, example_row_count, blob, training_digest,
                  selector_json, policy_json, manifest_json, archive_digest, authority,
                  source_generation) = row

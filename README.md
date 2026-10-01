@@ -15,6 +15,13 @@ New to servers? Follow the [beginner two-VPS installation guide](docs/TWO_VPS_BE
 It covers creating both servers, connecting them securely, starting learned
 Testnet trading, daily checks, restarts, backups, and updates.
 
+## Small VPS learning upgrade
+
+For a 1 CPU / 1 GB learning VPS, use the [small-VPS learner guide](docs/SMALL_VPS_LEARNER.md).
+The new version adds recent setup/market-condition calibration, explicit rejection
+explanations, and an opt-in 20-coin resource profile. It is an experimental
+research-ranking system, not a proven profitable trader.
+
 ## Current phase
 
 ### Learned Testnet testing

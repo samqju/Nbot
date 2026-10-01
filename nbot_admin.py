@@ -410,6 +410,18 @@ def cmd_challenger_status(_args: argparse.Namespace) -> int:
     return _emit(report)
 
 
+def cmd_learning_report(args: argparse.Namespace) -> int:
+    from nbot.observation.learning_report import learning_report
+    from nbot.common.atomic_io import atomic_write_text
+    text = learning_report(_memory())
+    if args.output:
+        path = Path(args.output)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(path, text, mode=0o600)
+    print(text)
+    return 0
+
+
 def cmd_challenger_audit(_args: argparse.Namespace) -> int:
     report = _challenger_cycle().audit()
     _emit(report)
@@ -964,6 +976,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="read-only V3.8 LIVE/PAPER operational canary trace/degradation report",
     )
     canary_report.set_defaults(func=cmd_live_paper_canary_report)
+
+    learning_report = sub.add_parser("learning-report", help="explain model progress and rejection reasons in plain English")
+    learning_report.add_argument("--output", help="also save a private Markdown report")
+    learning_report.set_defaults(func=cmd_learning_report)
 
     memory_init = sub.add_parser("research-memory-init", help="initialize fresh permanent learning memory without deleting data")
     memory_init.set_defaults(func=cmd_research_memory_init)

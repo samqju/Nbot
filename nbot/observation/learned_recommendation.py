@@ -20,6 +20,7 @@ from .features import CanonicalFeatureStore, CANONICAL_FEATURE_VERSION
 from .recommendation import RecommendationSnapshot
 from .selection import FEATURE_VECTOR_NAMES, SELECTION_CONFIG, _feature_vector, _ridge_score, _digest
 from .signals import ResearchSignalStore
+from .context_learning import SELECTOR_VERSION, adjustment
 
 
 SIGNAL_INPUTS = (
@@ -93,7 +94,7 @@ class LearnedTestnetSource:
                 if artifact.get("release_sha") != self.release_sha or artifact.get("statistics_version") != STATISTICS_VERSION:
                     raise ValueError("LEARNED_MODEL_VERSION_MISMATCH")
                 if (artifact.get("authority") != "RESEARCH_ONLY_NO_EXECUTION"
-                        or artifact.get("selector_version") != SELECTION_CONFIG.learned_selector_version
+                        or artifact.get("selector_version") != SELECTOR_VERSION
                         or artifact.get("feature_names") != list(FEATURE_VECTOR_NAMES)):
                     raise ValueError("LEARNED_MODEL_CONTRACT_MISMATCH")
                 if (int(artifact["model_available_at_ms"]) >= event_ms
@@ -103,12 +104,16 @@ class LearnedTestnetSource:
                     continue
                 model = artifact["model"]
                 if (model.get("feature_names") != list(FEATURE_VECTOR_NAMES)
-                        or model.get("selector_version") != SELECTION_CONFIG.learned_selector_version):
+                        or model.get("selector_version") != SELECTOR_VERSION):
                     raise ValueError("LEARNED_FEATURE_SCHEMA_MISMATCH")
                 if model["model_digest"] != _digest({k: v for k, v in model.items() if k != "model_digest"}):
                     raise ValueError("LEARNED_MODEL_DIGEST_MISMATCH")
                 if artifact.get("model_digest") != model["model_digest"]:
                     raise ValueError("LEARNED_MODEL_DIGEST_MISMATCH")
+                if "context_calibration" not in model:
+                    raise ValueError("LEARNED_CONTEXT_MODEL_MISSING")
+                if model["context_calibration"].get("cutoff_ms") != int(artifact["training_cutoff_event_ms"]):
+                    raise ValueError("LEARNED_CONTEXT_CUTOFF_MISMATCH")
                 values = [model["intercept"], *model["means"].values(),
                           *model["scales"].values(), *model["coefficients"].values()]
                 if not all(math.isfinite(v) for v in values) or any(model["scales"][n] <= 0 for n in FEATURE_VECTOR_NAMES):
@@ -194,6 +199,9 @@ class LearnedTestnetSource:
         if score <= 0:
             return self._freeze(event_ms, RecommendationSnapshot("READY", "LEARNED_NO_POSITIVE_OPPORTUNITY", None, now_ms))
         _, bid, ask, quote_ms = quotes[symbol]
+        raw_model = {k: v for k, v in artifact["model"].items() if k != "context_calibration"}
+        setup_explanation = adjustment(artifact["model"]["context_calibration"], vector,
+                                      _ridge_score(raw_model, json.dumps(vector)))
         generated = min(captured_ms, int(quote_ms))
         source_digest = payload_digest({"live_event": event_ms, "vector": vector,
                                         "model": artifact["model_digest"], "testnet_quote": quotes[symbol]})
@@ -212,7 +220,9 @@ class LearnedTestnetSource:
                 "execution_environment": "TESTNET", "model_version": artifact["model_version"],
                 "training_cutoff_event_ms": artifact["training_cutoff_event_ms"],
                 "live_market_event_ms": event_ms, "reference_quote_environment": "TESTNET",
-                "selection_method": "FROZEN_RIDGE_POSITIVE_AFTER_COST", "candidate_count": len(candidates)},
+                "selection_method": "CONTEXT_CALIBRATED_RIDGE", "setup_explanation": setup_explanation,
+                "prediction_target": "SIMULATED_ATR_R_4H_NOT_EXECUTION_PNL",
+                "candidate_count": len(candidates)},
         )
         return self._freeze(event_ms, RecommendationSnapshot("READY", None, proposal, now_ms))
 

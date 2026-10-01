@@ -511,6 +511,10 @@ Never post either secret file on GitHub or paste it into a support message.
 
 ## 9. Start the learning services
 
+**Using 1 CPU and 1 GB RAM?** Use the installer command with **--resource-profile tiny**
+in the [small-VPS learner guide](SMALL_VPS_LEARNER.md). It watches up to 20 coins
+and installs resource limits. The plain command below retains standard settings.
+
 **LEARNING:**
 
 ~~~bash

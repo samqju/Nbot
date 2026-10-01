@@ -58,7 +58,10 @@ def render_units(
     python: Path,
     user: str,
     destination: Path,
+    resource_profile: str = "standard",
 ) -> list[Path]:
+    if resource_profile not in {"standard", "tiny"}:
+        raise ValueError("NBOT_OBSERVATION_RESOURCE_PROFILE_INVALID")
     repo = Path(repo).resolve()
     python = _launcher_path(python)
     user = _plain(user, field="USER")
@@ -76,10 +79,13 @@ def render_units(
         if not template.is_file():
             raise ValueError(f"NBOT_SYSTEMD_TEMPLATE_MISSING:{template}")
         target = destination / unit_name
-        target.write_text(
-            _render(template.read_text(encoding="utf-8"), repo=repo, python=python, user=user),
-            encoding="utf-8",
-        )
+        rendered = _render(template.read_text(encoding="utf-8"), repo=repo, python=python, user=user)
+        if resource_profile == "tiny" and "[Service]" in rendered:
+            research = unit_name in {"nbot-research-epoch.service", "nbot-challenger-cycle.service"}
+            settings = "\nEnvironment=NBOT_OBSERVATION_RESOURCE_PROFILE=tiny\n"
+            settings += "MemoryHigh=256M\nMemoryMax=384M\nCPUQuota=60%\n" if research else "MemoryHigh=96M\nMemoryMax=160M\n"
+            rendered = rendered.replace("[Service]\n", "[Service]" + settings, 1)
+        target.write_text(rendered, encoding="utf-8")
         written.append(target)
     return written
 
@@ -90,6 +96,7 @@ def main() -> int:
     parser.add_argument("--python", required=True)
     parser.add_argument("--user", required=True)
     parser.add_argument("--destination", default="/etc/systemd/system")
+    parser.add_argument("--resource-profile", choices=("standard", "tiny"), default="standard")
     parser.add_argument("--enable", action="store_true")
     parser.add_argument("--start", action="store_true")
     parser.add_argument("--enable-live-paper-control", action="store_true")
@@ -107,6 +114,7 @@ def main() -> int:
         python=Path(args.python),
         user=args.user,
         destination=Path(args.destination),
+        resource_profile=args.resource_profile,
     )
     for path in written:
         print(f"WROTE {path}")

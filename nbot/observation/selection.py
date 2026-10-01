@@ -624,6 +624,9 @@ def _ridge_score(model: dict[str, Any], feature_vector_json: str) -> float:
     for name in FEATURE_VECTOR_NAMES:
         standardized = (_f(vector[name]) - _f(model["means"][name])) / _f(model["scales"][name], 1.0)
         score += _f(model["coefficients"][name]) * standardized
+    if "context_calibration" in model:
+        from .context_learning import adjustment
+        score = adjustment(model["context_calibration"], vector, score)["adjusted_score"]
     return 0.0 if score == 0.0 else score
 
 

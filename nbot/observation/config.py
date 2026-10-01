@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import os
 from pathlib import Path
 
 from nbot.config.profiles import Profile
@@ -114,5 +115,11 @@ def observation_config_for_profile(profile: Profile) -> ObservationConfig:
         database_path=profile.observation_db,
         backup_directory=profile.observation_db.parent / "backups",
     )
+    resource_profile = os.environ.get("NBOT_OBSERVATION_RESOURCE_PROFILE", "standard")
+    if resource_profile not in {"standard", "tiny"}:
+        raise ValueError("NBOT_OBSERVATION_RESOURCE_PROFILE_INVALID")
+    if resource_profile == "tiny":
+        config = replace(config, observation_universe_size=20, candle_fetch_workers=2,
+                         gap_recovery_max_events_per_cycle=4)
     config.validate()
     return config

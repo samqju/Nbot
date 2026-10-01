@@ -36,6 +36,7 @@ from .champion import (
 )
 from .outcomes import FuturePathConfig
 from .causal_ridge import LABEL_HORIZON_MS, STATISTICS_VERSION
+from .context_learning import SELECTOR_VERSION, WINDOW_MS, SPACING_MS, train as train_context, explain_gates
 from .research_memory import RIDGE_COLUMNS, ResearchMemoryStore
 from .selection import (
     BASELINE_SELECTORS,
@@ -51,11 +52,11 @@ from .selection import (
 
 AUTHORITY = "RESEARCH_ONLY_NO_EXECUTION"
 FRAMEWORK_VERSION = "V39_CONTINUOUS_CHALLENGER_V1"
-CHALLENGER_FAMILY = "RIDGE_POSITIVE_EXPECTANCY_ABSTAIN_V1"
-EVALUATOR_VERSION = "V39_CAUSAL_DISJOINT_20_20_V3"
-MODEL_PREFIX = "v39:causal-v3:model:"
-CHALLENGER_PREFIX = "v39:causal-v3:challenger:"
-EVALUATION_PREFIX = "v39:causal-v3:evaluation:"
+CHALLENGER_FAMILY = "CONTEXT_CALIBRATED_RIDGE_ABSTAIN_V1"
+EVALUATOR_VERSION = "V39_CONTEXT_DISJOINT_20_20_V4"
+MODEL_PREFIX = "v39:context-v4:model:"
+CHALLENGER_PREFIX = "v39:context-v4:challenger:"
+EVALUATION_PREFIX = "v39:context-v4:evaluation:"
 FINAL_EVALUATION_STATUSES = frozenset({"PASS_RESEARCH_GATE", "REJECT_RESEARCH_GATE"})
 
 
@@ -64,7 +65,7 @@ class ChallengerConfig:
     framework_version: str = FRAMEWORK_VERSION
     challenger_family: str = CHALLENGER_FAMILY
     evaluator_version: str = EVALUATOR_VERSION
-    underlying_selector_version: str = "RIDGE_EXPECTED_NET_R_V1"
+    underlying_selector_version: str = SELECTOR_VERSION
     validation_events: int = 20
     test_events: int = 20
     prediction_threshold_net_r: float = 0.0
@@ -82,7 +83,7 @@ class ChallengerConfig:
             raise ValueError("NBOT_V391_CHALLENGER_FAMILY_IMMUTABLE")
         if self.evaluator_version != EVALUATOR_VERSION:
             raise ValueError("NBOT_V391_EVALUATOR_VERSION_IMMUTABLE")
-        if self.underlying_selector_version != "RIDGE_EXPECTED_NET_R_V1":
+        if self.underlying_selector_version != SELECTOR_VERSION:
             raise ValueError("NBOT_V391_UNDERLYING_SELECTOR_IMMUTABLE")
         if self.validation_events != 20 or self.test_events != 20:
             raise ValueError("NBOT_V391_FUTURE_WINDOWS_IMMUTABLE")
@@ -145,6 +146,8 @@ class ContinuousChallengerCycle:
             "underlying_selector_version": self.config.underlying_selector_version,
             "training_source": "V3_8_4_PERMANENT_RESEARCH_MEMORY_RIDGE_STATE",
             "statistics_version": STATISTICS_VERSION,
+            "setup_calibration": {"selector": SELECTOR_VERSION, "rolling_window_ms": WINDOW_MS,
+                                  "sample_spacing_ms": SPACING_MS, "role": "CAUTIOUS_RERANK_OR_VETO"},
             "temporal_rule": "DECISIONS_AFTER_MODEL_AVAILABILITY_AND_TRAINING_LABEL_HORIZON",
             "evaluation_spacing_ms": LABEL_HORIZON_MS + 300_000,
             "artifact_rule": "IMMUTABLE_MODEL_AND_CHALLENGER_ARTIFACTS",
@@ -200,8 +203,13 @@ class ContinuousChallengerCycle:
             raise RuntimeError("NBOT_V391_TRAINING_LABELS_NOT_YET_MATURE")
         model = state.fit(SELECTION_CONFIG.ridge_alpha)
         cutoff = int(state.through_event_ms)
+        with closing(self.memory.iter_event_records(after_event_ms=cutoff - WINDOW_MS,
+                through_event_ms=cutoff, minimum_spacing_ms=SPACING_MS)) as records:
+            model["context_calibration"] = train_context(records, cutoff_ms=cutoff)
+        model["selector_version"] = SELECTOR_VERSION
+        model["model_digest"] = _selection_digest({k: v for k, v in model.items() if k != "model_digest"})
         model_version = (
-            f"V39_RIDGE_V2_{cutoff}_{str(model['model_digest'])[:12]}_{self.release_sha[:12]}"
+            f"V39_CONTEXT_V4_{cutoff}_{str(model['model_digest'])[:12]}_{self.release_sha[:12]}"
         )
         existing = self.memory.artifact(f"{MODEL_PREFIX}{model_version}")
         if existing is not None:
@@ -209,11 +217,11 @@ class ContinuousChallengerCycle:
             if payload.get("training_source_digest") != str(history["source_digest"]):
                 raise RuntimeError("MODEL_TRAINING_SOURCE_COLLISION")
             return payload
-        available_at = trained_at
+        available_at = int(time.time() * 1000)
         artifact = {
             "artifact_type": "MODEL",
             "model_version": model_version,
-            "model_family": "RIDGE_EXPECTED_NET_R_V1",
+            "model_family": SELECTOR_VERSION,
             "selector_version": self.config.underlying_selector_version,
             "training_cutoff_event_ms": cutoff,
             "model_available_at_ms": available_at,
@@ -664,6 +672,7 @@ class ContinuousChallengerCycle:
                 ],
             },
             "promotion_gates": gates,
+            "rejection_reasons": explain_gates(gates),
             "source_digest": source_digest,
             "release_sha": self.release_sha,
             "authority": AUTHORITY,
@@ -749,6 +758,8 @@ class ContinuousChallengerCycle:
             "rejected_windows": statuses.count("REJECT_RESEARCH_GATE"),
             "active_challenger": latest,
             "active_future_evidence": future,
+            "latest_rejection_reasons": [] if not evaluations else explain_gates(evaluations[-1]["payload"].get("promotion_gates", {})),
+            "learning_explanation": "Long-history price model plus recent, disjoint setup evidence; no strategy code generation.",
             "final_evaluations_by_challenger": sorted(final_by_challenger),
             "automatic_promotion": False,
         }
