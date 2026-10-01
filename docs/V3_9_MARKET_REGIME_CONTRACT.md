@@ -1,5 +1,13 @@
 # V3.9.4 Market Regime Evidence Contract
 
+Current applicability (2026-10-01): the thresholds and historical calibration
+below remain frozen. A fresh generation after this cutoff returns
+`UNAVAILABLE_HISTORICAL_CALIBRATION` and does not pass this audit. Independent
+learning can continue; an incompatible existing contract remains an error.
+The new setup filter's direction/volatility conditions are separate features,
+not a replacement calibration or proof of this contract's regime coverage.
+See the [learned-Testnet contract](LEARNED_TESTNET_CONTRACT.md).
+
 Version: `V39_MARKET_REGIME_EVIDENCE_V1`
 
 V3.9.4 adds an Observation-only, immutable companion report for each finalized
@@ -17,7 +25,7 @@ compact research memory through market event `1787581200000`:
 - database quick check was `ok` and foreign-key errors were zero;
 - broad-market feature invariance errors were zero.
 
-That cutoff is also the V3.9.2/.3 eligibility-epoch cutoff. The already-finalized
+In the original generation, that cutoff is also the V3.9.2/.3 eligibility-epoch cutoff. The already-finalized
 first challenger window remains descriptive/audit history only. The taxonomy is
 therefore frozen before the first eligibility-counting challenger receives
 future evaluation evidence.

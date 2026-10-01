@@ -1,5 +1,12 @@
 # V3.9.6B Research Champion Promotion Contract
 
+Current applicability (2026-10-01): the explicit promotion boundary below is
+unchanged. The learned-Testnet experimental route has separate authority and
+may use a non-rejected unevaluated model; it does not require, create or imply
+Research Champion promotion. Its automatic model selection must not be confused
+with a champion-pointer transition. See the
+[learned-Testnet contract](LEARNED_TESTNET_CONTRACT.md).
+
 Version: `V39_RESEARCH_CHAMPION_PROMOTION_V1`
 
 This contract implements the first Research Champion pointer transition after

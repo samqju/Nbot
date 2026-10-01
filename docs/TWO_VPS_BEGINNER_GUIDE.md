@@ -12,7 +12,9 @@ at a time. This does not mean the strategy is profitable or every roadmap phase
 has passed. A new installation needs time to learn.
 
 Checked against the code at commit
-[6e9348c](https://github.com/samqju/Nbot/commit/6e9348cfc1e4510cb51e6bc541c307b4ec8eb033).
+[9fff54c](https://github.com/samqju/Nbot/commit/9fff54c3889e26c21dd217d439783af4803993d6).
+Documentation consistency review: 2026-10-01. This identifies the reviewed code,
+not the code automatically installed on your servers.
 Updated October 1, 2026. Commands assume **Ubuntu Server 24.04 LTS**, a normal
 login named **ubuntu**, SSH on port **22**, and the bot at **/home/ubuntu/Nbot**.
 
@@ -764,6 +766,21 @@ Learning continues in batches. Existing frozen models are assessed on later
 events that were not part of their training. Testnet suggestions can use an
 experimental model before its full research evaluation is finished; this does
 not make it a proven Research Champion.
+
+A full evaluation uses 20 validation and 20 final-test events spaced four hours
+five minutes apart. Expect roughly seven days of new data plus the last outcome
+maturity; gaps can make it longer. `EVALUATE_WAIT` during this period is normal.
+
+The learner combines a numerical price model with a recent filter for five fixed
+setup types: trend continuation, trend pullback, stretched reversal, volatility
+expansion and relative strength. It checks these against market direction and
+volatility. This is not recognition of every chart pattern. The filter can lower
+scores or reject a suggestion, but cannot raise the original prediction.
+
+Its targets are simulated four-hour outcomes using ATR risk units. The trader
+uses its own fixed-dollar risk and exit rules, so a predicted research score is
+not a prediction of money earned. Read the [small-VPS guide](SMALL_VPS_LEARNER.md)
+for details and use `learning-report` to understand rejected models.
 
 Testnet trade results are stored and acknowledged, but **they do not become
 LIVE-market training labels**. The training examples come from collected market

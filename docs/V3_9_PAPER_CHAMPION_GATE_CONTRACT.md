@@ -1,5 +1,13 @@
 # V3.9.6A Paper Champion Gate Freeze
 
+Current applicability (2026-10-01): these frozen gates are unchanged.
+Experimental learned-Testnet use, positive training setup statistics and the
+small-VPS benchmark cannot count as Paper Champion evidence. The recent setup
+labels do not replace this contract's market-regime coverage. Research targets
+are simulated four-hour ATR-based R; execution uses its own risk/exit lifecycle,
+so equivalence and operational degradation must be established from genuine
+linked evidence. See [current learner limitations](SMALL_VPS_LEARNER.md).
+
 Version: `V39_PAPER_CHAMPION_GATE_V1`
 
 This contract freezes the minimum V3.9 Paper Champion evidence gate **before**

@@ -1,10 +1,17 @@
 # NBOT V3 Operations
 
+For today's learned-Testnet installation, start with the
+[beginner guide](TWO_VPS_BEGINNER_GUIDE.md) and
+[small-VPS settings](SMALL_VPS_LEARNER.md). This reference also preserves older
+phase-specific commands and evidence; those sections are not a fresh-install
+checklist. See the [documentation index](DOCUMENTATION_INDEX.md).
+
 ## Current operating boundary
 
 Current checkpoint: `V3.9 IMPLEMENTATION COMPLETE / ECONOMIC EVIDENCE ACCUMULATING`.
 
-The deployed architecture remains the real two-VPS split:
+The intended deployment architecture is the two-VPS split below. Check runtime
+status to establish which services and releases are actually installed:
 
 - **Observation VPS** — LIVE/Testnet evidence, compact research memory, continuous challenger learning, governance, recommendation/control service; no Binance order authority.
 - **Execution VPS** — independent market/account truth, proposal validation, risk, orders where the profile permits them, stops, OPEN management, reconciliation, emergency action and durable outcomes.
@@ -16,6 +23,25 @@ Current authority state must be read from runtime status and never inferred from
 - Execution research authority = `NONE`;
 - Paper Champion evidence collection remains blocked;
 - `live-trade` remains forbidden before V3.10.
+
+The explicit `TESTNET_LEARNED_EXPERIMENT_V1` path can use an unevaluated,
+non-rejected model without a Research Champion. It does not grant research
+authority or change the LIVE/PAPER operational canary. Normal Testnet selection
+is learned; mechanical selection requires an explicit test-mode choice.
+
+### Current learning and resource checks
+
+On Observation, `.venv/bin/python nbot_admin.py learning-report` explains setup
+support and saved rejection reasons. Add `--output logs/learning-report.md`
+to save it, then copy it and consistent database backups off-server yourself.
+No automatic off-server backup is installed.
+
+The learner combines accumulated Ridge training with a recent 20-day
+setup/condition filter. It evaluates frozen models on disjoint future events;
+a complete 20+20 window takes roughly seven days plus final label maturity.
+Research targets use four-hour simulated ATR-based R, not actual execution P&L.
+Use the opt-in `tiny` resource profile for the planned 1 CPU / 1 GB learner;
+monitor the actual machine because service limits are not a capacity guarantee.
 
 ### Continuous research cadence
 
@@ -30,14 +56,25 @@ Required semantics:
 - retry/restart of the same consumed epoch -> no duplicate challenger;
 - challenger failure after epoch commit -> transition remains durable and retryable.
 
+An opportunity can evaluate an existing frozen challenger and return
+`EVALUATE_WAIT`; it need not train a new model. New epochs continue while
+that challenger waits. Its training cutoff may precede the current epoch end.
+
 The former fixed daily `nbot-challenger-cycle.timer` is retired. `nbot-challenger-cycle.service` remains only as a low-priority recovery/oneshot surface for the durable transition path.
 
 ### Safe current checks
+
+On Execution:
 
 ```bash
 ./nbotctl status
 ./nbotctl doctor live-paper
 ./nbotctl doctor testnet-trade
+```
+
+On Observation:
+
+```bash
 ./.venv/bin/python nbot_admin.py research-epoch-status
 ./.venv/bin/python nbot_admin.py challenger-status
 ./.venv/bin/python nbot_admin.py governance-status
@@ -64,7 +101,7 @@ Supported operator commands are:
 ./nbotctl cluster status
 ```
 
-`testnet-trade` uses the same orchestration contract when its regression-only Observation control/tunnel units are installed and Testnet is legitimately armed. `live-trade` is rejected before V3.10.
+`testnet-trade` uses the same orchestration contract when its learned-Testnet Observation control/tunnel units are installed and Testnet is legitimately armed. `live-trade` is rejected before V3.10.
 
 `cluster doctor` is read-only. It fails closed on local/remote doctor failure, dirty trees, wrong roles, wrong profile contract, protocol mismatch, SHA mismatch, tag asymmetry, missing units, unpinned control endpoint, invalid SSH tunnel definition, or incompatible authenticated runtime control health when the tunnel is active. Both sides may be untagged only when they are on the exact same SHA; if either side has an exact tag, tag parity is required.
 
@@ -304,6 +341,11 @@ The next implementation phase is V3.3 Observation evidence foundation.
 
 ## V3.6 two-VPS dry integration
 
+Historical phase procedure: the current Testnet control service defaults to
+learned recommendations. Reproducing the old mechanical experiment requires
+explicit `--testnet-selection mechanical` in a separate test run. Use the
+beginner guide for normal learned-Testnet startup.
+
 V3.6 converts the V3.5 protocol into a real two-VPS runtime while the
 integrated Binance order gate remains physically disarmed.
 
@@ -404,16 +446,17 @@ prunes raw data only behind the qualified dependency watermark.
 
 `nbot-observation-live-paper-control.service` is optional and should be enabled
 for reboot persistence only while the integrated LIVE_PAPER Execution boundary
-is deliberately active. `nbot-observation-testnet-control.service` remains
-regression-only and disabled outside explicit Testnet campaigns.
+is deliberately active. `nbot-observation-testnet-control.service` is separately enabled for learned
+Testnet operation; it is not part of the base target. The installer defaults
+to learned selection. Mechanical canaries remain explicit test tools.
 
-Render/install the base units with:
+From the prepared repository root, install and enable the base units with:
 
 ```bash
-/root/Nbot/.venv/bin/python deploy/observation/install_services.py \
-  --repo /root/Nbot \
-  --python /root/Nbot/.venv/bin/python \
-  --user root \
+sudo .venv/bin/python deploy/observation/install_services.py \
+  --repo "$PWD" \
+  --python "$PWD/.venv/bin/python" \
+  --user "$(id -un)" \
   --enable
 ```
 

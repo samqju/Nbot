@@ -1,5 +1,12 @@
 # Seven safety fixes
 
+Historical change and verification record: the dated counts and deployment
+statements below describe the safety-fix checkpoint, not today's GitHub or VPS
+state. The later learner release is `9fff54c`; its verification and upgrade
+limits are in the [small-VPS guide](SMALL_VPS_LEARNER.md). Use the
+[beginner guide](TWO_VPS_BEGINNER_GUIDE.md) for current deployment. Preserve the
+original test results; do not treat them as fresh-server acceptance.
+
 This work keeps the one-position design and existing execution-authority gates.
 It does not assess profitability or enable real-money trading.
 

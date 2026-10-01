@@ -1,44 +1,70 @@
 # Observation VPS services
 
-The V3.8 Observation base role has only two boot-managed responsibilities:
+For a complete new installation, use the [beginner guide](../../docs/TWO_VPS_BEGINNER_GUIDE.md).
+For the 1 CPU / 1 GB learner, also read [tiny mode](../../docs/SMALL_VPS_LEARNER.md).
+Reviewed against learner release `9fff54c` on 2026-10-01.
 
-1. `nbot-observation-live.service` — continuous LIVE raw-evidence collector.
-2. `nbot-research-epoch.timer` — low-priority scheduler. It starts the
-   `nbot-research-epoch.service` oneshot only when systemd checks the schedule;
-   the command itself exits cheaply with `WAIT_FOR_MATURE_EPOCH` until 96 mature
-   targets exist.
+The base boot-managed role has two responsibilities:
 
-There is no SQLite/"atomic split" daemon. The bounded epoch command copies the
-required raw window into a disposable SQLite workspace, builds derived research,
-commits compact permanent memory, removes the scratch database after success,
-and prunes raw evidence only behind the qualified dependency watermark.
+1. `nbot-observation-live.service` continuously collects LIVE raw evidence.
+2. `nbot-research-epoch.timer` checks every 15 minutes and invokes the research
+   oneshot. It waits until a 96-event batch and its future labels are mature.
 
-The optional `nbot-observation-live-paper-control.service` is continuous only
-when LIVE_PAPER Execution integration is deliberately active. Testnet control is
-a regression-only service and is not part of the base boot target.
+A timer check is not a retraining promise. Epochs keep collecting evidence while
+a frozen challenger waits for its disjoint future validation/test window.
 
-Render without starting:
+SQLite is embedded; there is no separate database daemon. Research uses a bounded
+disposable workspace, commits compact permanent memory, removes successful scratch
+work and prunes raw evidence only behind the qualified dependency watermark.
 
-```bash
-sudo /root/Nbot/.venv/bin/python deploy/observation/install_services.py \
-  --repo /root/Nbot \
-  --python /root/Nbot/.venv/bin/python \
-  --user root
-```
+The separate `nbot-observation-testnet-control.service` is needed for learned
+Testnet operation. It defaults to learned selection and can be explicitly enabled
+for reboot persistence. Mechanical selection is an explicit runtime test option.
+LIVE/PAPER control is optional and remains an operational canary.
 
-Enable the base role for reboot persistence:
+## Preview generated units without installing or starting
 
-```bash
-sudo /root/Nbot/.venv/bin/python deploy/observation/install_services.py \
-  --repo /root/Nbot \
-  --python /root/Nbot/.venv/bin/python \
-  --user root \
-  --enable
-```
+From an already prepared checkout, as the normal service user:
 
-Use `--start` only after any manually launched LIVE collector has been stopped,
-otherwise the Observation runtime lock will correctly reject a duplicate writer.
+~~~bash
+cd "$HOME/Nbot"
+.venv/bin/python deploy/observation/install_services.py \
+  --repo "$PWD" --python "$PWD/.venv/bin/python" --user "$(id -un)" \
+  --resource-profile tiny --destination runtime/rendered-units
+~~~
 
-When LIVE_PAPER control is intentionally enabled later, add
-`--enable-live-paper-control`; add `--start-live-paper-control` only after the
-control-link secret exists and the control path is ready.
+## Install the fresh learning server
+
+First complete the beginner guide's role identity, Python environment, control
+token, private file permissions and SSH preparation. Both VPSs need the same
+release. Observation needs no Binance private/order credentials.
+
+On a fresh learning installation:
+
+~~~bash
+cd "$HOME/Nbot"
+.venv/bin/python nbot_admin.py research-memory-init
+sudo .venv/bin/python deploy/observation/install_services.py \
+  --repo "$PWD" --python "$PWD/.venv/bin/python" --user "$(id -un)" \
+  --resource-profile tiny \
+  --enable --start --enable-testnet-control --start-testnet-control
+~~~
+
+Tiny mode is opt-in; the default profile is standard. Tiny uses up to 20 coins,
+two candle workers and four gap-recovery events per pass. Installed research
+services have a 60% CPU quota and 384 MB memory ceiling; each collector/control
+service has a 160 MB ceiling. Manual commands do not inherit these limits.
+Monitor the real machine; these limits do not prove that it can keep up.
+
+Do not start units while a manually launched collector still owns its runtime
+lock. Existing installations require a controlled handover, consistent backups
+and review of immutable research-generation contracts. Never delete state to
+make an upgrade pass.
+
+For deliberate LIVE/PAPER use, the installer also provides
+`--enable-live-paper-control` and `--start-live-paper-control`. These do not
+grant Research or Paper Champion authority.
+
+The Observation services are boot-managed. The current Testnet cluster launcher
+starts Execution as a managed local process; after a trader reboot, follow the
+beginner guide's checked recovery/start sequence.

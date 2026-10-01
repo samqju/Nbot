@@ -1,5 +1,47 @@
 # NBOT V3 — Clean Two-VPS Self-Learning Trading System Roadmap
 
+## Current implementation addendum - 2026-10-01
+
+This roadmap contains the original 2026-08-18 plan, dated acceptance records,
+and future goals. Its final "starting status" is the adoption-time snapshot,
+not today's runtime status. V1/V2 references remain in Git history and tags;
+they are not current deployment instructions. Original reset/delete instructions
+describe the one-time V3 rebuild and must not be repeated during upgrades.
+
+The [documentation index](DOCUMENTATION_INDEX.md) summarizes current behavior.
+For a new server use the [beginner guide](TWO_VPS_BEGINNER_GUIDE.md), plus the
+[1 CPU / 1 GB guide](SMALL_VPS_LEARNER.md); historical root-directory examples
+are illustrative, not a requirement to run as root.
+
+The current learned-Testnet implementation is reviewed at `9fff54c`:
+
+- Testnet defaults to an explicitly experimental LIVE-trained model, with
+  mechanical canary selection still explicit. This is separate from Research
+  Champion authority and does not count as LIVE economic proof.
+- The selector is `CONTEXT_CALIBRATED_RIDGE_V1`, with accumulated Ridge training
+  plus recent support for five fixed setup proxies and market conditions.
+  It is not an unrestricted strategy inventor.
+- `V39_CONTEXT_DISJOINT_20_20_V4` evaluates a frozen model on disjoint future
+  events after model availability and label maturity. Historical adjacent-event
+  windows and old selector names below describe their original versions only.
+  New artifacts use `v39:context-v4:`; old evidence is never relabeled.
+- A 96-event epoch continues accumulating evidence while a frozen challenger
+  waits for evaluation. The 15-minute timer does not retrain every 15 minutes.
+- Tiny mode is opt-in: up to 20 coins, two candle workers, four recovery events
+  per pass, and installed-service CPU/RAM limits. Capacity still needs testing
+  on the actual server.
+- Fresh generations cannot recreate the fixed historical V3.9.4 calibration.
+  `UNAVAILABLE_HISTORICAL_CALIBRATION` is not a passed research audit.
+- Research targets remain simulated four-hour ATR-based R; execution uses its
+  own risk and exit lifecycle. Prediction is a ranking proxy, not actual P&L.
+- Research promotion, Paper Champion proof and V3.10 real-capital gates remain
+  separate. Code/tests/documentation do not close those evidence requirements.
+
+This addendum describes implemented changes; it does not alter frozen promotion
+thresholds, rewrite dated test results, or claim deployment on both VPSs.
+
+## Original roadmap and dated phase history
+
 **Version:** 2026-08-18
 **Status:** CANONICAL V3 IMPLEMENTATION CONTRACT
 **Supersedes:** NBOT V1 implementation roadmap and NBOT V2 rebuild roadmap for all new implementation work

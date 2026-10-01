@@ -1,5 +1,9 @@
 # Evidence Lineage Contract
 
+Current learner applicability reviewed 2026-10-01 at `9fff54c`. The
+[learned-Testnet contract](LEARNED_TESTNET_CONTRACT.md) permits experimental
+Testnet proposals from LIVE features; Testnet outcomes remain operational only.
+
 Status: V3.9 implemented lineage contract; V3.9 economic proof remains open.
 
 The canonical implementation authority remains `docs/NBOT_V3_ROADMAP.md`. This document describes implemented lineage boundaries; it does not create research, paper, or execution authority.
@@ -55,7 +59,10 @@ A challenger opportunity is tied to a genuine durable epoch commit, not to every
 - replay/restart of an already-consumed epoch -> no duplicate challenger;
 - challenger failure after epoch commit -> durable retryable transition.
 
-The transition preserves epoch identity, cutoff, state, attempt information, challenger identity, completion state and failure detail. An already-created immutable challenger anchored to the same training cutoff is recognized rather than recreated.
+The transition preserves epoch identity, cutoff, state, attempt information, challenger identity, completion state and failure detail. An already-created immutable challenger is recognized rather than recreated.
+A new epoch can evaluate the existing frozen model, whose training cutoff may
+precede (but must not exceed) that epoch end. Waiting for evaluation does not
+block later epoch commits.
 
 ## 7. Decision-time versus future evidence
 
@@ -75,7 +82,17 @@ Important transformations, model/challenger definitions and evaluation artifacts
 
 V3.9 challengers preserve immutable challenger/model identity, challenger family, training cutoff, definition hash, artifact digest, and release SHA.
 
-The current frozen evaluator uses first 20 mature events after cutoff for validation, next 20 mature events for untouched final test, 2000 bootstrap samples, 95% confidence, 1.0x / 1.5x / 2.0x cost stress, and minimum five actual final-test trade events.
+The current evaluator, `V39_CONTEXT_DISJOINT_20_20_V4`, uses 20 validation
+and 20 untouched final-test events after model availability and training-label
+maturity. Samples are separated by 49 five-minute bars so their four-hour future
+paths do not overlap. It retains 2000 bootstrap samples, 95% confidence,
+1.0x / 1.5x / 2.0x cost stress, and a minimum of five simulated selected trades
+in the final-test window. These are research decisions, not Binance fills.
+
+New artifacts use `v39:context-v4:` and the saved
+`CONTEXT_SETUP_CALIBRATION_V1` alongside the Ridge model. The recent calibration
+uses disjoint event means from at most 20 days and cannot use future evaluation
+labels. Old namespace artifacts retain their original definitions and results.
 
 Later rolling windows add evidence without rewriting historical final-test decisions.
 

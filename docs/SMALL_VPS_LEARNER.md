@@ -1,5 +1,8 @@
 # Learning on a 1 CPU / 1 GB VPS
 
+Reviewed against learner release `9fff54c` on 2026-10-01. See the
+[documentation index](DOCUMENTATION_INDEX.md) for current instructions and historical contracts.
+
 This is an experimental Testnet learner. It learns numerical relationships and
 recent setup reliability. It does not read news, understand every chart pattern,
 invent strategy code, or guarantee profits. Real-money order permission is unchanged.

@@ -26,18 +26,23 @@ carries Binance credentials and never grants Observation order authority.
 Execution independently owns current market/account truth, sizing, entry,
 protection, position management, reconciliation and emergency action.
 
-V3.5 permits only the explicitly non-economic Testnet recommendation authority:
+Current authority applicability (reviewed 2026-10-01 at `9fff54c`):
 
-`TESTNET_OPERATIONAL_CANARY_V1`
+| Profile / selection | Recommendation authority | Evidence boundary |
+|---|---|---|
+| Testnet learned (default) | `TESTNET_LEARNED_EXPERIMENT_V1` | Experimental; Testnet operational outcomes only |
+| Testnet mechanical (explicit) | `TESTNET_OPERATIONAL_CANARY_V1` | Testnet operational outcomes only |
+| LIVE/PAPER operational canary | `LIVE_PAPER_OPERATIONAL_CANARY_V1` | Operational canary, not Paper Champion proof |
+| LIVE real trading | Unavailable before V3.10 | No real-capital permission |
 
-It is labelled `TESTNET_OPERATIONAL_ONLY` and cannot become LIVE economic
-research evidence.  V3.4.6 Research Champion evaluation and the V3.4.7
-Continuous Learning Foundation are implemented and remain
-`RESEARCH_ONLY_NO_EXECUTION`.  A valid evaluator result may still be no Research
-Champion; the control path must never invent or infer one.  Until V3.8 supplies
-a valid research-facing authority, or deliberately runs the roadmap-approved
-non-promotional dry mode, `live-paper` readiness remains fail closed as
-`NOT_READY`.  `live-trade` remote control remains forbidden before V3.10.
+Research promotion remains `RESEARCH_ONLY_NO_EXECUTION`. An unevaluated,
+non-rejected model may be used by the explicit learned-Testnet experiment;
+this neither invents a champion nor bypasses Execution checks.
+
+The learned proposal's experiment metadata carries model identity, setup support
+and `SIMULATED_ATR_R_4H_NOT_EXECUTION_PNL`. A research R estimate is not a forecast
+of execution P&L. These additions do not change the frozen capital-message schema.
+See the [learned-Testnet contract](LEARNED_TESTNET_CONTRACT.md).
 
 ## Transport
 

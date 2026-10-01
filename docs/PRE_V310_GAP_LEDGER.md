@@ -1,5 +1,22 @@
 # NBOT V3 Pre-V3.10 Gap Ledger
 
+## Documentation review addendum - 2026-10-01
+
+- [x] Review all 18 existing tracked Markdown documents against learner release
+  `9fff54c`; add the [documentation index](DOCUMENTATION_INDEX.md).
+- [x] Align current learned-Testnet, evaluation timing, small-VPS configuration,
+  rejection-report and authority descriptions; label historical phase evidence.
+- [ ] Deploy matching releases on both intended VPSs and verify authenticated
+  Testnet operation/recovery. A documentation commit does not close this item.
+- [ ] Measure actual 1 CPU / 1 GB collection/training capacity over time.
+- [ ] Configure and verify private off-server backups at an operator-chosen
+  destination. Reports cannot restore lost models/databases.
+- [ ] Compare simulated research predictions with actual Testnet behavior;
+  the research target and execution risk/exit lifecycle remain different.
+
+The original maintenance baseline below is historical. Its runtime/economic
+requirements remain open unless backed by actual new evidence.
+
 Status: ACTIVE CHANGE-CONTROL LEDGER
 
 Baseline audited: `887f3b5fa135a5e58961fcc580be7372fdd04695`

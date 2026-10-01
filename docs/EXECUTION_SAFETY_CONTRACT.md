@@ -1,5 +1,13 @@
 # Execution Safety Contract
 
+Applicability reviewed 2026-10-01 at `9fff54c`: the capital-safety invariants
+below remain required. The final V3.1 section records that original phase only.
+Current Testnet supports learned experimental recommendations; LIVE/PAPER has an
+operational canary; LIVE real trading remains blocked. These additions do not
+weaken one-position, protection, recovery, risk or outcome-acknowledgement rules.
+See [current operations](OPERATIONS.md) and the
+[learned-Testnet contract](LEARNED_TESTNET_CONTRACT.md).
+
 Status: V3.1 implementation contract.
 
 The canonical requirements remain `NBOT_V3_ROADMAP.md`. The V3.1 codebase implements the capital-side invariants required before standalone Testnet mechanical validation.
@@ -21,7 +29,7 @@ The canonical requirements remain `NBOT_V3_ROADMAP.md`. The V3.1 codebase implem
 - Daily risk state survives restart and rolls by UTC day deterministically.
 - Testnet host pinning, arm/session limits, and single-instance protection remain safety boundaries.
 
-## V3.1 runtime authority
+## Historical V3.1 runtime authority
 
 The V3.1 runtime is intentionally narrow. `testnet-trade` can start only after explicit arming and authenticated Testnet preflight, and it starts with new entries disabled. V3.2 adds the explicit synthetic/manual mechanical-canary proposal path.
 

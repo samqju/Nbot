@@ -11,8 +11,10 @@ armed and enabled, within daily-risk and persistent session limits.
 
 No LIVE orders are enabled. Testnet results test the machinery and are recorded
 separately; they never become LIVE training labels or proof of profitability.
-The initial learned model is Ridge regression over the existing momentum,
-reversal, volatility, liquidity and market-context features. Research compares
+The learned model combines Ridge regression over momentum, reversal, volatility,
+liquidity and market-context features with a recent setup/condition filter.
+The filter can reduce scores or veto a trade; it cannot raise the original score.
+Research compares
 the existing exit-policy families; executed trades retain INTEGER_R_STEP_CONTROL.
 The bot does not invent arbitrary strategy code or automatically deploy new exit
 algorithms. Positive model predictions are estimates, not guarantees.
@@ -88,7 +90,9 @@ correctly make no trades for longer.
 
 Every completed research epoch advances saved learning. A frozen challenger is
 evaluated on genuinely future, non-overlapping events; epochs continue even
-while it waits. Once evaluation finishes, the cycle trains its successor. A
+while it waits. Twenty validation and twenty final-test events are spaced four
+hours five minutes apart: allow roughly seven days of future data plus the final
+outcome maturity, longer with gaps. Once evaluation finishes, the cycle trains its successor. A
 rejected model is not used; a compatible older non-rejected model may be used.
 Testnet experimental use does not promote a Research or Paper Champion.
 
@@ -97,6 +101,7 @@ Useful Observation commands:
 ```bash
 .venv/bin/python nbot_admin.py research-epoch-status
 .venv/bin/python nbot_admin.py challenger-status
+.venv/bin/python nbot_admin.py learning-report --output logs/learning-report.md
 .venv/bin/python nbot_admin.py research-memory-status
 journalctl -u nbot-observation-testnet-control.service -n 50
 journalctl -u nbot-research-epoch.service -n 50

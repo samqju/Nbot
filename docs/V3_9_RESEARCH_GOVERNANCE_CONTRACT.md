@@ -1,5 +1,12 @@
 # NBOT V3.9 Research Governance Contract
 
+Current applicability (2026-10-01, learner `9fff54c`): the eligibility gates
+below are preserved. The current learner/evaluator has its own `v39:context-v4:`
+namespace; historical evaluations must not be relabeled or mixed into new-family
+proof. Its setup filter is not a probability model and does not replace the
+frozen market-regime companion. See [current lineage](EVIDENCE_LINEAGE_CONTRACT.md)
+and [explicit promotion](V3_9_RESEARCH_CHAMPION_PROMOTION_CONTRACT.md).
+
 **Contract version:** `V39_RESEARCH_CHAMPION_ELIGIBILITY_V1`
 **Registry version:** `V39_MODEL_REGISTRY_V1`
 **Rolling reevaluation version:** `V39_ROLLING_REEVALUATION_V1`
@@ -69,7 +76,8 @@ all of the following are true for the latest eligible chronological windows:
 
 1. three consecutive immutable windows are `PASS_RESEARCH_GATE`;
 2. at least 60 untouched final-test market events are included;
-3. at least 15 actual trade events occurred (abstentions do not count);
+3. at least 15 simulated selected trade events occurred (abstentions do not count;
+   this research gate counts simulated decisions, not Binance fills);
 4. the considered test evidence spans at least 48 hours;
 5. the test evidence covers at least three distinct UTC dates;
 6. at least two model-to-model drift transitions were measured;
@@ -91,6 +99,7 @@ V3.9.2 initializes an append-only Champion-pointer genesis record with no
 Research Champion and an append-only rollback-state genesis record with rollback
 disabled. This patch does not mutate either state automatically.
 
-A later reviewed phase may add Research Champion pointer changes/rollback only
-without weakening this frozen evidence contract. `PAPER_CHAMPION` and all
+The later V3.9.6B contract implements the explicit first Research Champion
+promotion after eligibility; see the linked promotion contract. Automatic
+promotion and rollback remain disabled/deferred. `PAPER_CHAMPION` and all
 Execution/order authority remain out of scope.

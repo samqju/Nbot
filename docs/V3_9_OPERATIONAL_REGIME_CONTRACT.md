@@ -1,5 +1,13 @@
 # V3.9.5 Operational Regime Evidence Contract
 
+Current applicability (2026-10-01): historical evidence retains its original
+release and scope. The recent synthetic small-VPS benchmark is not a physical
+test of both live collectors, free-provider throttling, or long-term disk growth.
+Use [current operations](OPERATIONS.md) and verify current-release behavior on
+the actual servers. Explicit first promotion is implemented by the
+[promotion contract](V3_9_RESEARCH_CHAMPION_PROMOTION_CONTRACT.md); its applicability
+depends on actual eligible/pointer state, not code completion.
+
 Version: `V39_OPERATIONAL_REGIME_LEDGER_V1`
 
 V3.9.5 does not erase previously accepted physical fault evidence and does not
