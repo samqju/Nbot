@@ -139,7 +139,7 @@ class V38LivePaperFoundationTests(unittest.TestCase):
         text = (REPO / "run_execution.py").read_text(encoding="utf-8")
         self.assertIn("mode=LIVE_PAPER_OPERATIONAL_CANARY", text)
         self.assertIn("worker.disable_new_entries()", text)
-        self.assertIn("NBOT_LIVE_TRADE_RUNTIME_FORBIDDEN_BEFORE_V3_10", text)
+        self.assertIn("LIVE_EXPLICIT_TRIAL_ARM_REQUIRED", text)
         self.assertNotIn("NBOT_LIVE_PAPER_RUNTIME_DEFERRED_UNTIL_V3_8", text)
 
     def test_control_only_runner_does_not_create_observation_worker(self):
@@ -173,7 +173,7 @@ class V38LivePaperFoundationTests(unittest.TestCase):
         self.assertIn("def _start_execution", text)
         self.assertIn("cluster.set_defaults(func=cmd_cluster)", text)
         self.assertNotIn("def cmd_not_implemented", text)
-        self.assertIn("NBOT_LIVE_TRADE_RUNTIME_FORBIDDEN_BEFORE_V3_10", text)
+        self.assertIn("LIVE_ENABLE_REQUIRES_CURRENT_EXPLICIT_TRIAL_ARM", text)
 
 
 if __name__ == "__main__":

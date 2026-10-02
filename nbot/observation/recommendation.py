@@ -134,13 +134,15 @@ class RecommendationStore:
         self.mutation_lock = threading.RLock()
         self.profile = profile
         self.learned_source = learned_source
-        if learned_source is not None and profile.name != "testnet-trade":
+        if learned_source is not None and profile.name not in {"testnet-trade", "live-paper", "live-trade"}:
             raise ValueError("LEARNED_RECOMMENDATION_TESTNET_ONLY")
+        if learned_source is not None and getattr(learned_source, "profile", profile).name != profile.name:
+            raise ValueError("LEARNED_RECOMMENDATION_PROFILE_MISMATCH")
         self.proposal_ttl_ms = int(proposal_ttl_ms)
         if self.proposal_ttl_ms <= 0 or self.proposal_ttl_ms > 5 * 60_000:
             raise ValueError("NBOT_RECOMMENDATION_TTL_INVALID")
-        if profile.name == "live-trade":
-            raise ValueError("NBOT_RECOMMENDATION_LIVE_TRADE_FORBIDDEN_BEFORE_V3_10")
+        if profile.name == "live-trade" and learned_source is None:
+            raise ValueError("LIVE_TRIAL_REQUIRES_LEARNED_SOURCE")
         if database.config.market_environment != profile.market_environment:
             raise ValueError("NBOT_RECOMMENDATION_DATABASE_ENVIRONMENT_MISMATCH")
         self.initialize()
@@ -596,14 +598,14 @@ class ObservationControlTarget:
         return {
             "status": "READY" if snapshot.status == "READY" else "NOT_READY",
             "reason": snapshot.reason,
-            "selection_mode": "LEARNED_TESTNET" if self.recommendations.learned_source is not None else "MECHANICAL_CANARY",
+            "selection_mode": ("LEARNED_TESTNET" if self.profile.name == "testnet-trade" else "LEARNED_LIVE_PAPER" if self.profile.name == "live-paper" else "LEARNED_LIVE_TRIAL") if self.recommendations.learned_source is not None else "MECHANICAL_CANARY",
             "profile": self.profile.name,
             "market_environment": self.profile.market_environment,
             "evidence_lineage": self.profile.evidence_lineage,
             "protocol_version": "NBOT_V3_EXECUTION_V1",
             "release_sha": self.release_sha,
             "recommendation_authority": (
-                (TESTNET_LEARNED_AUTHORITY if self.recommendations.learned_source is not None else None)
+                (getattr(self.recommendations.learned_source, "authority", TESTNET_LEARNED_AUTHORITY) if self.recommendations.learned_source is not None else None)
                 if snapshot.proposal is None else snapshot.proposal.entry_authority
             ),
             "order_authority": "NONE",

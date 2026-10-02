@@ -22,7 +22,7 @@ Current authority state must be read from runtime status and never inferred from
 - Paper Champion = `NONE`;
 - Execution research authority = `NONE`;
 - Paper Champion evidence collection remains blocked;
-- `live-trade` remains forbidden before V3.10.
+- An explicit small mainnet trial is available; see [mode setup and recovery](TRADING_MODES.md). Automatic Champion approval remains unpassed.
 
 The explicit `TESTNET_LEARNED_EXPERIMENT_V1` path can use an unevaluated,
 non-rejected model without a Research Champion. It does not grant research
@@ -101,7 +101,7 @@ Supported operator commands are:
 ./nbotctl cluster status
 ```
 
-`testnet-trade` uses the same orchestration contract when its learned-Testnet Observation control/tunnel units are installed and Testnet is legitimately armed. `live-trade` is rejected before V3.10.
+`testnet-trade` uses the same orchestration contract when its learned-Testnet Observation control/tunnel units are installed and Testnet is legitimately armed. The separate live-trade route requires explicit small-trial authorization; see [the mode guide](TRADING_MODES.md).
 
 `cluster doctor` is read-only. It fails closed on local/remote doctor failure, dirty trees, wrong roles, wrong profile contract, protocol mismatch, SHA mismatch, tag asymmetry, missing units, unpinned control endpoint, invalid SSH tunnel definition, or incompatible authenticated runtime control health when the tunnel is active. Both sides may be untagged only when they are on the exact same SHA; if either side has an exact tag, tag parity is required.
 

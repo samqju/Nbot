@@ -21,6 +21,7 @@ CONTROL_LINK_SECRET_FILE = Path("config/secrets/control-link.env")
 _PROFILE_URL_KEYS = {
     "testnet-trade": "NBOT_OBSERVATION_TESTNET_URL",
     "live-paper": "NBOT_OBSERVATION_LIVE_PAPER_URL",
+    "live-trade": "NBOT_OBSERVATION_LIVE_TRADE_URL",
 }
 
 
@@ -70,12 +71,10 @@ def control_link_config_for_profile(
 ) -> ControlLinkConfig:
     """Return the fail-closed remote Observation endpoint for one profile.
 
-    V3.6 enables only the TESTNET dry integration target.  LIVE/PAPER uses the
-    same protocol but its integrated runtime remains a later roadmap phase.
+    All three profiles use the same bounded protocol with separate endpoints.
+    A control connection never grants local order permission.
     """
 
-    if profile.name == "live-trade":
-        raise ValueError("NBOT_OBSERVATION_LIVE_TRADE_FORBIDDEN_BEFORE_V3_10")
     try:
         url_key = _PROFILE_URL_KEYS[profile.name]
     except KeyError as exc:

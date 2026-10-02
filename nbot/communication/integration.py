@@ -24,6 +24,8 @@ from .authorities import (
     LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
     TESTNET_OPERATIONAL_CANARY_AUTHORITY,
     TESTNET_LEARNED_AUTHORITY,
+    LIVE_PAPER_LEARNED_AUTHORITY,
+    LIVE_LEARNED_AUTHORITY,
 )
 from .client import ObservationClientError, RemoteObservationClient
 from .config import control_link_config_for_profile
@@ -220,9 +222,13 @@ def _validate_health(
         "testnet-trade": TESTNET_OPERATIONAL_CANARY_AUTHORITY,
         "live-paper": LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
     }.get(profile.name)
-    accepted = {expected_authority}
+    accepted = {expected_authority} if expected_authority is not None else set()
+    if profile.name == "live-trade":
+        accepted.add(LIVE_LEARNED_AUTHORITY)
     if profile.name == "testnet-trade":
         accepted.add(TESTNET_LEARNED_AUTHORITY)
+    if profile.name == "live-paper":
+        accepted.add(LIVE_PAPER_LEARNED_AUTHORITY)
     if authority is not None and authority not in accepted:
         raise ObservationClientError("OBSERVATION_HEALTH_RECOMMENDATION_AUTHORITY_INVALID")
     if health.get("status") == "READY" and authority not in accepted:
@@ -247,12 +253,12 @@ def build_integrated_observation_client(
     if role is not MachineRole.EXECUTION:
         raise ValueError("NBOT_INTEGRATED_CLIENT_EXECUTION_ROLE_REQUIRED")
     profile = get_profile(profile_name)
-    if profile.name not in {"testnet-trade", "live-paper"}:
+    if profile.name not in {"testnet-trade", "live-paper", "live-trade"}:
         raise ValueError("NBOT_INTEGRATED_CLIENT_PROFILE_UNSUPPORTED")
 
     release_sha = _git_sha(root)
     link = control_link_config_for_profile(root, profile, environ=environ)
-    leaf = "testnet" if profile.name == "testnet-trade" else "paper"
+    leaf = profile.execution_state_dir.name
     remote = RemoteObservationClient(
         base_url=link.base_url,
         profile=profile.name,

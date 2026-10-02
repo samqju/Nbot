@@ -1,0 +1,20 @@
+[Unit]
+Description=NBOT V3 LIVE explicit trial Observation Control Plane
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@NBOT_USER@
+WorkingDirectory=@NBOT_ROOT@
+Environment=NBOT_PROFILE=live-trade
+EnvironmentFile=@NBOT_ROOT@/config/secrets/control-link.env
+ExecStart=@NBOT_ROOT@/.venv/bin/python @NBOT_ROOT@/run_observation_control.py --profile live-trade --control-host 127.0.0.1 --control-port 8767 --control-refresh-seconds 5 --selection learned
+Restart=always
+RestartSec=5
+Nice=10
+IOSchedulingClass=idle
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

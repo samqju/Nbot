@@ -25,6 +25,7 @@ BASE_UNIT_NAMES = (
     "nbot-observer.target",
 )
 OPTIONAL_UNIT_NAMES = (
+    "nbot-observation-live-trade-control.service",
     "nbot-observation-testnet-control.service",
     "nbot-observation-live-paper-control.service",
     "nbot-challenger-cycle.service",
@@ -101,12 +102,16 @@ def main() -> int:
     parser.add_argument("--start", action="store_true")
     parser.add_argument("--enable-live-paper-control", action="store_true")
     parser.add_argument("--start-live-paper-control", action="store_true")
+    parser.add_argument("--enable-live-trade-control", action="store_true")
+    parser.add_argument("--start-live-trade-control", action="store_true")
     parser.add_argument("--enable-testnet-control", action="store_true")
     parser.add_argument("--start-testnet-control", action="store_true")
     args = parser.parse_args()
 
     if args.start_live_paper_control:
         args.enable_live_paper_control = True
+    if args.start_live_trade_control:
+        args.enable_live_trade_control = True
     if args.start_testnet_control:
         args.enable_testnet_control = True
     written = render_units(
@@ -126,6 +131,8 @@ def main() -> int:
         or args.start
         or args.enable_live_paper_control
         or args.start_live_paper_control
+        or args.enable_live_trade_control
+        or args.start_live_trade_control
         or args.enable_testnet_control
         or args.start_testnet_control
     )
@@ -154,6 +161,10 @@ def main() -> int:
         subprocess.run(["systemctl", "enable", "nbot-observation-testnet-control.service"], check=True)
     if args.start_testnet_control:
         subprocess.run(["systemctl", "start", "nbot-observation-testnet-control.service"], check=True)
+    if args.enable_live_trade_control:
+        subprocess.run(["systemctl", "enable", "nbot-observation-live-trade-control.service"], check=True)
+    if args.start_live_trade_control:
+        subprocess.run(["systemctl", "start", "nbot-observation-live-trade-control.service"], check=True)
     return 0
 
 

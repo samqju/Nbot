@@ -47,7 +47,8 @@ class V325AcceptanceClosureTests(unittest.TestCase):
         self.assertIn("V3.9 — continuous challenger learning", text)
         self.assertIn("V3.9 economic proof:** **NOT PASSED", text)
         self.assertIn("V3.10:** **BLOCKED", text)
-        self.assertIn("`live-trade` remains forbidden until V3.10", text)
+        self.assertIn("explicit, bounded mainnet trial", text)
+        self.assertIn("still-unpassed automatic V3.10 Champion gates", text)
 
 
 if __name__ == "__main__":

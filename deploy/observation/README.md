@@ -1,5 +1,8 @@
 # Observation VPS services
 
+**2026-10-02 mode update:** [The three-mode guide](../../docs/TRADING_MODES.md) describes Testnet trading, learned mainnet paper, and the separately authorized small mainnet trial. Earlier V3.10-only restrictions below describe the original automatic Champion roadmap. This manual trial does not declare those economic gates passed. No Testnet-paper mode is supported.
+
+
 For a complete new installation, use the [beginner guide](../../docs/TWO_VPS_BEGINNER_GUIDE.md).
 For the 1 CPU / 1 GB learner, also read [tiny mode](../../docs/SMALL_VPS_LEARNER.md).
 Reviewed against learner release `9fff54c` on 2026-10-01.

@@ -71,16 +71,14 @@ class V35HTTPClientTests(unittest.TestCase):
                 port=8765,
             )
 
-    def test_live_trade_remote_client_is_forbidden_before_v3_10(self):
+    def test_live_trial_remote_client_is_advisory_and_profile_scoped(self):
         with tempfile.TemporaryDirectory() as td:
-            with self.assertRaisesRegex(ValueError, "LIVE_TRADE_FORBIDDEN"):
-                RemoteObservationClient(
-                    base_url="http://127.0.0.1:8765",
-                    profile="live-trade",
-                    auth_token=TOKEN,
-                    receipt_directory=Path(td),
-                    execution_release_sha=SHA,
-                )
+            client = RemoteObservationClient(
+                base_url="http://127.0.0.1:18767", profile="live-trade",
+                auth_token=TOKEN, receipt_directory=Path(td), execution_release_sha=SHA)
+            self.assertEqual(client.profile, "live-trade")
+            self.assertEqual(client.market_environment, "LIVE")
+            self.assertEqual(client.evidence_lineage, "LIVE_REAL_CAPITAL")
 
     def test_authentication_failure_returns_no_control_data(self):
         with tempfile.TemporaryDirectory() as td:

@@ -130,9 +130,9 @@ class V3111RuntimeAcceptanceTests(unittest.TestCase):
         self.assertIn("LIVE_PAPER_OPERATIONAL_CANARY", text)
         self.assertNotIn("NBOT_LIVE_PAPER_RUNTIME_DEFERRED_UNTIL_V3_8", text)
 
-    def test_live_trade_runtime_is_forbidden(self):
+    def test_live_trade_runtime_requires_explicit_trial_permission(self):
         text = (REPO / "run_execution.py").read_text(encoding="utf-8")
-        self.assertIn("NBOT_LIVE_TRADE_RUNTIME_FORBIDDEN_BEFORE_V3_10", text)
+        self.assertIn("LIVE_EXPLICIT_TRIAL_ARM_REQUIRED", text)
 
     def test_testnet_runtime_authority_is_mechanical_only(self):
         module = load_run_execution()
@@ -245,7 +245,7 @@ class V3111RuntimeAcceptanceTests(unittest.TestCase):
                 repo_root=tmp, profile=get_profile("live-trade"), environment={}
             )
             self.assertFalse(result.ok)
-            self.assertIn("LIVE_TRADE_ADAPTER_FORBIDDEN_BEFORE_V3_10", result.warnings)
+            self.assertTrue(any("LIVE_CREDENTIALS_MISSING" in w for w in result.warnings))
 
     def test_corrupt_execution_state_fails_doctor(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -1,0 +1,14 @@
+[Unit]
+Description=NBOT V3 Execution -> Observation LIVE explicit trial Control Tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@NBOT_USER@
+ExecStart=/usr/bin/ssh -NT -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=yes -i @NBOT_SSH_KEY@ -L 127.0.0.1:18767:127.0.0.1:8767 @OBSERVATION_SSH_TARGET@
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

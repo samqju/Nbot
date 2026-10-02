@@ -1,5 +1,8 @@
 # NBOT V3 — Clean Two-VPS Self-Learning Trading System Roadmap
 
+**2026-10-02 mode update:** [The three-mode guide](TRADING_MODES.md) describes Testnet trading, learned mainnet paper, and the separately authorized small mainnet trial. Earlier V3.10-only restrictions below describe the original automatic Champion roadmap. This manual trial does not declare those economic gates passed. No Testnet-paper mode is supported.
+
+
 ## Current implementation addendum - 2026-10-01
 
 This roadmap contains the original 2026-08-18 plan, dated acceptance records,

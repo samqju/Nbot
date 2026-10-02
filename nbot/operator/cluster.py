@@ -45,6 +45,11 @@ class ClusterSshTransport:
 
 
 _PROFILE_UNITS = {
+    "live-trade": ClusterProfileUnits(
+        profile="live-trade", observation_control_unit="nbot-observation-live-trade-control.service",
+        tunnel_unit="nbot-control-tunnel-live-trade.service", execution_unit=None,
+        expected_local_port=18767, expected_observation_port=8767,
+    ),
     "testnet-trade": ClusterProfileUnits(
         profile="testnet-trade",
         observation_control_unit="nbot-observation-testnet-control.service",
@@ -66,8 +71,6 @@ _PROFILE_UNITS = {
 
 def cluster_profile_units(profile_name: str) -> ClusterProfileUnits:
     name = str(profile_name or "").strip()
-    if name == "live-trade":
-        raise ClusterOperatorError("NBOT_CLUSTER_LIVE_TRADE_FORBIDDEN_BEFORE_V3_10")
     try:
         return _PROFILE_UNITS[name]
     except KeyError as exc:

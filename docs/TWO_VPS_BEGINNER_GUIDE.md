@@ -1,5 +1,8 @@
 # Two VPSs, one learning bot: beginner setup guide
 
+**2026-10-02 mode update:** [The three-mode guide](TRADING_MODES.md) describes Testnet trading, learned mainnet paper, and the separately authorized small mainnet trial. Earlier V3.10-only restrictions below describe the original automatic Champion roadmap. This manual trial does not declare those economic gates passed. No Testnet-paper mode is supported.
+
+
 This guide takes you from **two empty servers** to a connected bot running
 **Binance USD-M Futures Testnet trades with pretend money**.
 

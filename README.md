@@ -1,9 +1,10 @@
 # NBOT V3
 
-Documentation reviewed 2026-10-01 against learner release
+Learner documentation reviewed 2026-10-01 against learner release
 [9fff54c](https://github.com/samqju/Nbot/commit/9fff54c3889e26c21dd217d439783af4803993d6).
 Use the [documentation index and current behavior summary](docs/DOCUMENTATION_INDEX.md)
 to distinguish setup instructions, frozen contracts, and historical evidence.
+Three-mode execution and its setup guide were updated 2026-10-02.
 A GitHub update is not proof that either VPS is running that release.
 
 NBOT V3 is a clean two-VPS rebuild of NBOT.
@@ -63,7 +64,7 @@ The Observation/Execution authority boundary remains unchanged: Observation owns
 
 The earlier `V3.1 EXECUTION CORE` and subsequent V3.2–V3.8 operational milestones remain preserved as history. V3.7 is historically **OPERATIONALLY PROVEN**. Normal LONG, Normal SHORT, and the C–V fault campaign passed without weakening the canonical gate. V3.8 LIVE_PAPER operational canary work is also preserved as operational evidence. Those historical proofs do not imply V3.9 economic completion.
 
-`live-trade` remains forbidden until V3.10 and cannot be reached merely by finishing maintenance/documentation work.
+An explicit, bounded mainnet trial is now available after your own testing and confirmation. It is independent of the still-unpassed automatic V3.10 Champion gates. Follow [the three-mode setup guide](docs/TRADING_MODES.md); publication does not activate trading.
 
 ## Local role identity
 

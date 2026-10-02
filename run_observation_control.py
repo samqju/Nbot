@@ -27,7 +27,7 @@ from nbot.observation.recommendation import ObservationControlTarget, Recommenda
 from nbot.operator.status_proxy import ObservationReadOnlyStatusProvider
 
 
-SUPPORTED_CONTROL_PROFILES = frozenset({"live-paper"})
+SUPPORTED_CONTROL_PROFILES = frozenset({"live-paper", "live-trade"})
 
 
 def _git_sha(repo_root: Path) -> str:
@@ -55,6 +55,7 @@ def main(argv: list[str] | None = None) -> int:
         description="NBOT V3.8 standalone LIVE_PAPER Observation control plane"
     )
     parser.add_argument("--profile", choices=sorted(SUPPORTED_CONTROL_PROFILES))
+    parser.add_argument("--selection", choices=("mechanical", "learned"), default=os.environ.get("NBOT_PAPER_SELECTION", "mechanical"))
     parser.add_argument("--control-host", default="127.0.0.1")
     parser.add_argument("--control-port", type=int, default=8765)
     parser.add_argument("--control-refresh-seconds", type=float, default=5.0)
@@ -83,11 +84,17 @@ def main(argv: list[str] | None = None) -> int:
     if not auth_token:
         raise ValueError("NBOT_CONTROL_AUTH_TOKEN_REQUIRED")
 
+    if profile_name == "live-trade" and args.selection != "learned":
+        raise ValueError("LIVE_TRIAL_REQUIRES_LEARNED_SELECTION")
     database = EvidenceDatabase(observation_config_for_profile(profile))
+    from nbot.observation.learned_recommendation import LearnedTestnetSource
+    source = (LearnedTestnetSource(database, release_sha=_git_sha(root), profile_name=profile.name)
+              if args.selection == "learned" else None)
     target = ObservationControlTarget(
         database,
         profile,
         release_sha=_git_sha(root),
+        learned_source=source,
     )
     control_log = configure_logging(
         role="OBSERVATION", profile=profile.name,
@@ -127,8 +134,8 @@ def main(argv: list[str] | None = None) -> int:
                     "event": "NBOT_OBSERVATION_CONTROL_READY",
                     "phase": "V3.8",
                     "profile": profile.name,
-                    "mode": "LIVE_PAPER_OPERATIONAL_CANARY",
-                    "recommendation_authority": LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
+                    "mode": ("LIVE_LEARNED_TRIAL" if profile_name == "live-trade" else "LIVE_PAPER_LEARNED") if source else "LIVE_PAPER_OPERATIONAL_CANARY",
+                    "recommendation_authority": source.authority if source else LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
                     "economic_claim": False,
                     "address": f"{address[0]}:{address[1]}",
                     "order_authority": "NONE",
@@ -140,8 +147,10 @@ def main(argv: list[str] | None = None) -> int:
             flush=True,
         )
         control_log.info(
-            "NBOT_OBSERVATION_CONTROL_READY profile=%s address=%s:%s mode=LIVE_PAPER_OPERATIONAL_CANARY authority=%s economic_claim=false order_authority=NONE",
-            profile.name, address[0], address[1], LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
+            "NBOT_OBSERVATION_CONTROL_READY profile=%s address=%s:%s mode=%s authority=%s economic_claim=false order_authority=NONE",
+            profile.name, address[0], address[1],
+            ("LIVE_LEARNED_TRIAL" if profile.name == "live-trade" else "LIVE_PAPER_LEARNED") if source else "LIVE_PAPER_OPERATIONAL_CANARY",
+            source.authority if source else LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
         )
         while not stop.wait(1.0):
             pass

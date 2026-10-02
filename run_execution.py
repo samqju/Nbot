@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import fcntl
 import json
 import os
@@ -20,6 +20,8 @@ from nbot.communication.authorities import (
     LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
     TESTNET_OPERATIONAL_CANARY_AUTHORITY,
     TESTNET_LEARNED_AUTHORITY,
+    LIVE_PAPER_LEARNED_AUTHORITY,
+    LIVE_LEARNED_AUTHORITY,
 )
 from nbot.communication.integration import (
     V38LivePaperOperationalClient,
@@ -66,7 +68,9 @@ from nbot.execution.fault_campaign import fault_campaign_summary
 from nbot.execution.outcomes import ExecutionDurableStore
 from nbot.execution.position import INTEGER_R_STEP_CONTROL, PositionLifecycle
 from nbot.execution.reconciliation import ReconciliationLifecycle
-from nbot.execution.risk import RiskManager
+from nbot.execution.risk import RiskManager, RiskConfig
+from nbot.exchange.binance_live import BinanceLiveExchange, LiveExchangeConfig
+from nbot.execution.ownership import execution_ownership
 from nbot.operator.execution import (
     ExecutionOperatorSurface,
     operator_entries_blocked,
@@ -264,13 +268,14 @@ def build_execution_worker(
     outcome_client: OutcomeClient | None = None,
     telemetry: MechanicalCanaryTelemetry | None = None,
     allowed_entry_authorities: frozenset[str] | None = None,
+    risk_config: RiskConfig | None = None,
 ) -> ExecutionWorker:
     profile = get_profile(profile_name)
-    if profile.name not in {"testnet-trade", "live-paper"}:
+    if profile.name not in {"testnet-trade", "live-paper", "live-trade"}:
         raise ValueError("NBOT_EXECUTION_RUNTIME_PROFILE_UNSUPPORTED")
 
     durable = ExecutionDurableStore(repo_root, profile=profile.name)
-    risk = RiskManager()
+    risk = RiskManager(risk_config)
     if telemetry is None:
         emergency = EmergencyFlattener(exchange=exchange)
         entry_type = EntryLifecycle
@@ -291,7 +296,8 @@ def build_execution_worker(
                 (
                     frozenset({TESTNET_MECHANICAL_AUTHORITY})
                     if profile.name == "testnet-trade"
-                    else frozenset({LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY})
+                    else (frozenset({LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY})
+                          if profile.name == "live-paper" else frozenset())
                 )
                 if allowed_entry_authorities is None
                 else allowed_entry_authorities
@@ -332,7 +338,8 @@ def build_execution_worker(
 def self_check(repo_root: Path, profile_name: str) -> int:
     profile = get_profile(profile_name)
     if profile.name == "live-trade":
-        status = "FORBIDDEN_BEFORE_V3_10"
+        LiveExchangeConfig(api_key="", api_secret="", repo_root=repo_root).validate(require_credentials=False)
+        status = "LIVE_EXPLICIT_SMALL_TRIAL_AVAILABLE_DISARMED_BY_DEFAULT"
     elif profile.name == "live-paper":
         BinanceLivePublicMarketConfig().validate()
         PaperExchangeConfig()
@@ -820,6 +827,110 @@ def run_testnet_runtime(
             pass
 
 
+def run_learned_paper_runtime(*, repo_root: Path, environment: Mapping[str, str],
+                              idle_poll_seconds: float, open_poll_seconds: float,
+                              profile_name: str = "live-paper") -> int:
+    """Run learned paper simulation or an explicitly authorized mainnet trial."""
+    profile = get_profile(profile_name)
+    is_live = profile.name == "live-trade"
+    risk_config = None
+    if is_live:
+        cfg = LiveExchangeConfig.from_env(repo_root=repo_root, environ=environment)
+        cfg.validate()
+        exchange = BinanceLiveExchange(cfg)
+        market = exchange
+        risk_config = RiskConfig(risk_per_trade_usd=cfg.risk_per_trade_usd,
+                                 max_notional_usd=cfg.max_entry_notional_usd, leverage=cfg.leverage)
+        authority = LIVE_LEARNED_AUTHORITY
+        release_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo_root, text=True).strip()
+    else:
+        exchange, market = build_live_paper_exchange(repo_root, environment)
+        authority = LIVE_PAPER_LEARNED_AUTHORITY
+    client = build_integrated_control_client(repo_root=repo_root, profile_name=profile.name,
+                                            environ=os.environ)
+    worker = build_execution_worker(
+        repo_root=repo_root, profile_name=profile.name, exchange=exchange,
+        proposal_client=client, outcome_client=client,
+        allowed_entry_authorities=frozenset({authority}), risk_config=risk_config)
+
+    def local_entry_permission():
+        if not is_live:
+            return True
+        gate = exchange.guard.preflight()
+        if not gate["armed"] or gate["session_entries"] >= gate["max_session_entries"]:
+            return False
+        try:
+            fields = exchange.guard._parse_arm(cfg.resolved_arm_file.read_text())
+            return fields.get("sha") == release_sha
+        except (OSError, ValueError, RuntimeError):
+            return False
+
+    def enable_policy():
+        if not local_entry_permission():
+            return False, "LIVE_EXPLICIT_TRIAL_ARM_REQUIRED"
+        health = client.health()
+        ok = (health.get("status") == "READY" and
+              health.get("recommendation_authority") == authority)
+        return ok, "LEARNED_READY" if ok else "LEARNED_NOT_READY"
+
+    operator = _operator_surface(
+        repo_root=repo_root, profile_name=profile.name, worker=worker,
+        environment=environment, enable_policy=enable_policy,
+        runtime_mode="LIVE_EXPLICIT_TRIAL" if is_live else "LIVE_PAPER_LEARNED",
+        observation_status_reader=getattr(client, "operator_status", None))
+    stop_requested = False
+
+    def request_stop(_signum, _frame):
+        nonlocal stop_requested
+        stop_requested = True
+
+    signal.signal(signal.SIGTERM, request_stop)
+    signal.signal(signal.SIGINT, request_stop)
+    ready = ready_path(repo_root, profile.name)
+    with (nullcontext() if is_live else _live_paper_runtime_lock(repo_root)):
+        try:
+            ready.unlink(missing_ok=True)
+            _write_runtime_identity(repo_root, profile.name)
+            prepared = worker.prepare()
+            worker.disable_new_entries()
+            # A restart requires a fresh enable, including when the old operator
+            # file allowed entries. Position protection remains independent.
+            from nbot.operator.execution import set_operator_entry_block
+            set_operator_entry_block(repo_root, profile.name, blocked=True)
+            operator.start(prepared_status=prepared.status)
+            atomic_write_text(ready,
+                f"profile={profile.name}\npid={os.getpid()}\nready_at={utc_iso()}\n"
+                f"mode={authority}\nbinance_private_order_writes={str(is_live).lower()}\n",
+                mode=0o600)
+            while not stop_requested:
+                local = worker.state.open_position
+                if local is not None:
+                    worker.process_open_quote(exchange.quote(local.symbol))
+                    operator.sync()
+                    time.sleep(open_poll_seconds)
+                    continue
+                if operator_entries_blocked(repo_root, profile.name) or not local_entry_permission():
+                    worker.disable_new_entries()
+                elif not worker.state.snapshot.entries_enabled:
+                    try:
+                        worker.enable_new_entries()
+                    except ExecutionWorkerError:
+                        time.sleep(idle_poll_seconds)
+                        continue
+                result = worker.process_flat_cycle()
+                operator.after_flat_result(result)
+                time.sleep(idle_poll_seconds)
+            return 0
+        except Exception as exc:
+            operator.runtime_error(exc)
+            raise
+        finally:
+            operator.stop()
+            ready.unlink(missing_ok=True)
+            _runtime_pid_path(repo_root, profile.name).unlink(missing_ok=True)
+            market.disconnect()
+
+
 def run_live_paper_runtime(
     *,
     repo_root: Path,
@@ -835,6 +946,13 @@ def run_live_paper_runtime(
     proves ``LIVE_PAPER_OPERATIONAL_CANARY_V1`` READY. This authority makes no
     Research Champion or economic claim and can never submit a Binance order.
     """
+    mode = str(environment.get("NBOT_PAPER_SELECTION", "mechanical")).strip()
+    if mode not in {"mechanical", "learned"}:
+        raise ValueError("NBOT_PAPER_SELECTION_INVALID")
+    if mode == "learned":
+        return run_learned_paper_runtime(repo_root=repo_root, environment=environment,
+                                        idle_poll_seconds=idle_poll_seconds,
+                                        open_poll_seconds=open_poll_seconds)
     profile = get_profile("live-paper")
     exchange, market = build_live_paper_exchange(repo_root, environment)
     base_remote_client = build_integrated_control_client(
@@ -997,10 +1115,19 @@ def main() -> int:
         return self_check(root, args.profile)
 
     profile = get_profile(args.profile)
-    if profile.name == "live-trade":
-        raise SystemExit("NBOT_LIVE_TRADE_RUNTIME_FORBIDDEN_BEFORE_V3_10")
     environment = runtime_environment(root, profile.name, secret_file=args.secrets_file)
     if args.preflight_only:
+        if profile.name == "live-trade":
+            exchange = BinanceLiveExchange(LiveExchangeConfig.from_env(repo_root=root, environ=environment))
+            try:
+                exchange.connect()
+                print(json.dumps({"profile": profile.name, "market_environment": "LIVE",
+                                  "preflight": "READ_ONLY_PASSED", "order_write_attempted": False,
+                                  "position_present": exchange.position_snapshot() is not None,
+                                  "armed": exchange.guard.preflight()["armed"]}))
+                return 0
+            finally:
+                exchange.disconnect()
         if profile.name == "live-paper":
             return preflight_live_paper(
                 repo_root=root,
@@ -1012,7 +1139,7 @@ def main() -> int:
             environment=environment,
             symbol=args.symbol,
         )
-    if profile.name == "live-paper" and (
+    if profile.name != "testnet-trade" and (
         args.testnet_reconcile or args.testnet_force_close or args.testnet_canary or args.v36_dry_cycle
     ):
         raise ValueError("NBOT_TESTNET_ACTION_REQUIRES_TESTNET_PROFILE")
@@ -1062,19 +1189,19 @@ def main() -> int:
 
     idle_poll = _positive_float(environment, "NBOT_EXECUTION_IDLE_POLL_SECONDS", 2.0)
     open_poll = _positive_float(environment, "NBOT_EXECUTION_OPEN_POLL_SECONDS", 0.5)
-    if profile.name == "live-paper":
-        return run_live_paper_runtime(
-            repo_root=root,
-            environment=environment,
-            idle_poll_seconds=idle_poll,
-            open_poll_seconds=open_poll,
-        )
-    return run_testnet_runtime(
-        repo_root=root,
-        environment=environment,
-        idle_poll_seconds=idle_poll,
-        open_poll_seconds=open_poll,
-    )
+    with execution_ownership(root, profile.name):
+        if profile.name == "live-trade":
+            return run_learned_paper_runtime(
+                repo_root=root, environment=environment, profile_name="live-trade",
+                idle_poll_seconds=idle_poll, open_poll_seconds=open_poll)
+        if profile.name == "live-paper":
+            return run_live_paper_runtime(
+                repo_root=root, environment=environment,
+                idle_poll_seconds=idle_poll, open_poll_seconds=open_poll)
+        return run_testnet_runtime(
+            repo_root=root, environment=environment,
+            idle_poll_seconds=idle_poll, open_poll_seconds=open_poll)
+
 
 
 if __name__ == "__main__":

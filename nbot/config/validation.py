@@ -33,6 +33,8 @@ FORBIDDEN_OBSERVATION_SECRET_MARKERS = (
     # aliases.
     "TESTNET_API_KEY",
     "TESTNET_API_SECRET",
+    "LIVE_API_KEY",
+    "LIVE_API_SECRET",
 )
 
 
@@ -423,8 +425,9 @@ def validate_execution_v31(
             checks.append("LIVE_PAPER_BINANCE_WRITES_DISABLED_BY_PROFILE")
             warnings.append("LIVE_PAPER_OPERATIONAL_CANARY_HAS_NO_ECONOMIC_AUTHORITY")
         elif profile.name == "live-trade":
-            warnings.append("LIVE_TRADE_ADAPTER_FORBIDDEN_BEFORE_V3_10")
-            ok = False
+            from nbot.exchange.binance_live import LiveExchangeConfig
+            LiveExchangeConfig.from_env(repo_root=root, environ=env).validate()
+            checks.append("LIVE_EXPLICIT_TRIAL_ADAPTER_AVAILABLE_NO_AUTOMATIC_APPROVAL")
         else:
             raise ValueError("EXECUTION_PROFILE_UNSUPPORTED")
     except Exception as exc:

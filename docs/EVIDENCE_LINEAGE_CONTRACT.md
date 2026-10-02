@@ -1,5 +1,8 @@
 # Evidence Lineage Contract
 
+**2026-10-02 mode update:** [The three-mode guide](TRADING_MODES.md) describes Testnet trading, learned mainnet paper, and the separately authorized small mainnet trial. Earlier V3.10-only restrictions below describe the original automatic Champion roadmap. This manual trial does not declare those economic gates passed. No Testnet-paper mode is supported.
+
+
 Current learner applicability reviewed 2026-10-01 at `9fff54c`. The
 [learned-Testnet contract](LEARNED_TESTNET_CONTRACT.md) permits experimental
 Testnet proposals from LIVE features; Testnet outcomes remain operational only.

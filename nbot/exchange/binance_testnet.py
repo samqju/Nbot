@@ -38,7 +38,7 @@ import time
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_CEILING, ROUND_DOWN
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
@@ -80,6 +80,9 @@ class AmbiguousExecutionError(TestnetExchangeError):
 
 @dataclass(frozen=True, slots=True)
 class TestnetExchangeConfig:
+    PROFILE_NAME: ClassVar[str] = "testnet-trade"
+    REST_HOST: ClassVar[str] = "demo-fapi.binance.com"
+    WS_HOST: ClassVar[str] = "demo-fstream.binance.com"
     api_key: str
     api_secret: str
     repo_root: Path
@@ -131,11 +134,11 @@ class TestnetExchangeConfig:
     def validate(self, *, require_credentials: bool = True) -> None:
         rest = urlparse(self.base_url)
         ws = urlparse(self.ws_base_url)
-        if rest.scheme.lower() != "https" or (rest.hostname or "").lower() != "demo-fapi.binance.com":
+        if rest.scheme.lower() != "https" or (rest.hostname or "").lower() != self.REST_HOST:
             raise ValueError("TESTNET_REST_HOST_INVALID")
         if rest.path not in {"", "/"} or rest.query or rest.fragment or rest.username or rest.password or rest.port:
             raise ValueError("TESTNET_REST_URL_INVALID")
-        if ws.scheme.lower() != "wss" or (ws.hostname or "").lower() != "demo-fstream.binance.com":
+        if ws.scheme.lower() != "wss" or (ws.hostname or "").lower() != self.WS_HOST:
             raise ValueError("TESTNET_WS_HOST_INVALID")
         if ws.path not in {"", "/", "/ws"} or ws.query or ws.fragment or ws.username or ws.password or ws.port:
             raise ValueError("TESTNET_WS_URL_INVALID")
@@ -204,7 +207,12 @@ class TestnetTradingGuard:
     session; deleting/corrupting the sidecar while already armed fails closed.
     """
 
+    PROFILE_NAME = TESTNET_ARM_PROFILE
+    STATE_VERSION = TESTNET_GUARD_STATE_VERSION
+
     def __init__(self, config: TestnetExchangeConfig):
+        if config.PROFILE_NAME != self.PROFILE_NAME:
+            raise ValueError("BINANCE_GUARD_PROFILE_MISMATCH")
         self.config = config
         self._thread_lock = threading.Lock()
 
@@ -212,8 +220,8 @@ class TestnetTradingGuard:
     def _state_lock_path(self) -> Path:
         return Path(str(self.config.resolved_guard_state_path) + ".lock")
 
-    @staticmethod
-    def _parse_arm(raw: str) -> dict[str, str]:
+    @classmethod
+    def _parse_arm(cls, raw: str) -> dict[str, str]:
         result: dict[str, str] = {}
         for line in raw.splitlines():
             if not line.strip():
@@ -226,7 +234,7 @@ class TestnetTradingGuard:
             if not key or not value or key in result:
                 raise TestnetExchangeError("TESTNET_ARM_FILE_INVALID")
             result[key] = value
-        if result.get("profile") != TESTNET_ARM_PROFILE:
+        if result.get("profile") != cls.PROFILE_NAME:
             raise TestnetExchangeError("TESTNET_ARM_PROFILE_INVALID")
         if not result.get("sha") or not result.get("armed_at"):
             raise TestnetExchangeError("TESTNET_ARM_IDENTITY_INVALID")
@@ -256,10 +264,10 @@ class TestnetTradingGuard:
         ).hexdigest()
         return True, "ARMED", fingerprint
 
-    @staticmethod
-    def _state(fingerprint: str | None = None) -> dict[str, Any]:
+    @classmethod
+    def _state(cls, fingerprint: str | None = None) -> dict[str, Any]:
         return {
-            "state_version": TESTNET_GUARD_STATE_VERSION,
+            "state_version": cls.STATE_VERSION,
             "arm_session_fingerprint": fingerprint,
             "session_entries": 0,
         }
@@ -279,7 +287,7 @@ class TestnetTradingGuard:
             raw = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise TestnetExchangeError("TESTNET_GUARD_STATE_INVALID") from exc
-        if not isinstance(raw, dict) or raw.get("state_version") != TESTNET_GUARD_STATE_VERSION:
+        if not isinstance(raw, dict) or raw.get("state_version") != self.STATE_VERSION:
             raise TestnetExchangeError("TESTNET_GUARD_STATE_INVALID")
         entries = raw.get("session_entries")
         fingerprint = raw.get("arm_session_fingerprint")
@@ -393,11 +401,16 @@ def initialize_testnet_guard_for_arm(repo_root: Path) -> None:
 class BinanceTestnetExchange:
     """Fail-closed Binance USD-M Futures Testnet ExchangePort."""
 
+    PROFILE_NAME = "testnet-trade"
+    GUARD_CLASS = TestnetTradingGuard
+
     def __init__(self, config: TestnetExchangeConfig, *, logger: logging.Logger | None = None):
+        if config.PROFILE_NAME != self.PROFILE_NAME:
+            raise ValueError("BINANCE_ADAPTER_PROFILE_MISMATCH")
         config.validate()
         self.config = config
         self.log = logger or LOGGER
-        self.guard = TestnetTradingGuard(config)
+        self.guard = self.GUARD_CLASS(config)
         self._instance_lock = _InstanceLock(config.resolved_instance_lock_path)
         self._filters: dict[str, dict[str, float]] = {}
         self._connected = False
@@ -434,6 +447,9 @@ class BinanceTestnetExchange:
             self._server_monotonic = (started + finished) / 2
         return self._server_epoch_ms + int((time.monotonic() - self._server_monotonic) * 1000)
 
+    def _open_request(self, request, *, timeout):
+        return urlopen(request, timeout=timeout)
+
     def _request(
         self,
         method: str,
@@ -461,7 +477,7 @@ class BinanceTestnetExchange:
         if signed:
             request.add_header("X-MBX-APIKEY", self.config.api_key)
         try:
-            with urlopen(request, timeout=self.config.request_timeout_seconds) as response:
+            with self._open_request(request, timeout=self.config.request_timeout_seconds) as response:
                 budget.observe(getattr(response, "headers", {}))
                 raw = response.read()
                 status = int(response.status)

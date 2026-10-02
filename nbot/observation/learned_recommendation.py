@@ -8,7 +8,7 @@ import math
 from pathlib import Path
 import sqlite3
 
-from nbot.communication.authorities import TESTNET_LEARNED_AUTHORITY
+from nbot.communication.authorities import TESTNET_LEARNED_AUTHORITY, LIVE_PAPER_LEARNED_AUTHORITY, LIVE_LEARNED_AUTHORITY
 from nbot.communication.contracts import ExecutionProposal
 from nbot.communication.validation import payload_digest
 from nbot.config.profiles import get_profile
@@ -38,11 +38,20 @@ class LearnedTestnetSource:
     """
 
     def __init__(self, testnet: EvidenceDatabase, *, release_sha: str,
-                 live: EvidenceDatabase | None = None, memory_path: Path | None = None):
-        if testnet.config.market_environment != "TESTNET":
-            raise ValueError("LEARNED_SOURCE_TESTNET_ONLY")
+                 live: EvidenceDatabase | None = None, memory_path: Path | None = None,
+                 profile_name: str = "testnet-trade"):
+        if profile_name not in {"testnet-trade", "live-paper", "live-trade"}:
+            raise ValueError("LEARNED_SOURCE_PROFILE_UNSUPPORTED")
+        self.profile = get_profile(profile_name)
+        self.authority = (TESTNET_LEARNED_AUTHORITY if profile_name == "testnet-trade"
+                          else LIVE_PAPER_LEARNED_AUTHORITY if profile_name == "live-paper" else LIVE_LEARNED_AUTHORITY)
+        self.decision_table = ("learned_testnet_decisions" if profile_name == "testnet-trade"
+                               else "learned_live_paper_decisions" if profile_name == "live-paper" else "learned_live_trial_decisions")
+        if testnet.config.market_environment != self.profile.market_environment:
+            raise ValueError("LEARNED_SOURCE_TESTNET_ONLY" if profile_name == "testnet-trade" else "LEARNED_SOURCE_REFERENCE_ENVIRONMENT_MISMATCH")
         self.testnet = testnet
-        self.live = live or EvidenceDatabase(observation_config_for_profile(get_profile("live-paper")))
+        self.live = live or (testnet if profile_name in {"live-paper", "live-trade"} else
+                            EvidenceDatabase(observation_config_for_profile(get_profile("live-paper"))))
         if self.live.config.market_environment != "LIVE":
             raise ValueError("LEARNED_SOURCE_LIVE_TRAINING_REQUIRED")
         self.memory_path = memory_path or Path("data/observation/live/research_memory.db")
@@ -50,7 +59,7 @@ class LearnedTestnetSource:
         self.features = CanonicalFeatureStore(self.live)
         self.signals = ResearchSignalStore(self.live)
         with self.testnet.connection() as conn:
-            conn.execute("""CREATE TABLE IF NOT EXISTS learned_testnet_decisions (
+            conn.execute(f"""CREATE TABLE IF NOT EXISTS {self.decision_table} (
                 event_open_ms INTEGER PRIMARY KEY, snapshot_json TEXT NOT NULL,
                 snapshot_digest TEXT NOT NULL)""")
 
@@ -127,7 +136,7 @@ class LearnedTestnetSource:
 
     def _saved(self, event):
         with self.testnet.connection() as conn:
-            row = conn.execute("SELECT snapshot_json,snapshot_digest FROM learned_testnet_decisions "
+            row = conn.execute(f"SELECT snapshot_json,snapshot_digest FROM {self.decision_table} "
                                "WHERE event_open_ms=?", (event,)).fetchone()
         if row is None:
             return None
@@ -142,7 +151,7 @@ class LearnedTestnetSource:
                  "proposal": snapshot.proposal.to_dict() if snapshot.proposal else None,
                  "refreshed_at_ms": snapshot.refreshed_at_ms}
         with self.testnet.connection() as conn:
-            conn.execute("INSERT OR IGNORE INTO learned_testnet_decisions VALUES(?,?,?)",
+            conn.execute(f"INSERT OR IGNORE INTO {self.decision_table} VALUES(?,?,?)",
                          (event, json.dumps(value, sort_keys=True, allow_nan=False), payload_digest(value)))
         return self._saved(event)
 
@@ -179,7 +188,7 @@ class LearnedTestnetSource:
                   and now_ms - int(r[3]) <= ttl_ms and 0 < float(r[1]) <= float(r[2])
                   and math.isfinite(float(r[2]))}
         if not quotes:
-            return self._not_ready("LEARNED_WAIT_FOR_MATCHING_TESTNET_EVENT", now_ms)
+            return self._not_ready("LEARNED_WAIT_FOR_MATCHING_TESTNET_EVENT" if self.profile.name == "testnet-trade" else "LEARNED_WAIT_FOR_MATCHING_LIVE_EVENT", now_ms)
         candidates = []
         for feature in self.features.compute_event_rows(event_ms, computed_at_ms=now_ms, register_definition=False):
             if not feature["full_history_4h"] or feature["symbol"] not in quotes:
@@ -206,20 +215,21 @@ class LearnedTestnetSource:
         source_digest = payload_digest({"live_event": event_ms, "vector": vector,
                                         "model": artifact["model_digest"], "testnet_quote": quotes[symbol]})
         proposal = ExecutionProposal.create(
-            proposal_id="PROP-" + hashlib.sha256(f"{TESTNET_LEARNED_AUTHORITY}:{event_ms}".encode()).hexdigest()[:40],
+            proposal_id="PROP-" + hashlib.sha256(f"{self.authority}:{event_ms}".encode()).hexdigest()[:40],
             generated_at_ms=generated, expires_at_ms=generated + ttl_ms,
-            profile="testnet-trade", market_environment="TESTNET", evidence_lineage="TESTNET_OPERATIONAL_ONLY",
+            profile=self.profile.name, market_environment=self.profile.market_environment,
+            evidence_lineage=self.profile.evidence_lineage,
             symbol=symbol, side=side, market_event_id=f"ME-{event_ms}",
-            data_generation_id=f"LEARNED-TESTNET-{event_ms}", feature_version=CANONICAL_FEATURE_VERSION,
-            selector_version=artifact["selector_version"], entry_authority=TESTNET_LEARNED_AUTHORITY,
+            data_generation_id=f"LEARNED-{self.profile.name.upper()}-{event_ms}", feature_version=CANONICAL_FEATURE_VERSION,
+            selector_version=artifact["selector_version"], entry_authority=self.authority,
             exit_policy_version="INTEGER_R_STEP_CONTROL", reference_price=(float(bid) + float(ask)) / 2,
             selection_score=score, selection_rank=1, expected_after_cost_net_r=score,
             source_digest=source_digest, model_digest=artifact["model_digest"],
-            experiment_context={"authority_class": "TESTNET_LEARNED_EXPERIMENT", "economic_claim": False,
+            experiment_context={"authority_class": self.authority, "economic_claim": False,
                 "research_evidence": False, "training_environment": "LIVE", "inference_environment": "LIVE",
-                "execution_environment": "TESTNET", "model_version": artifact["model_version"],
+                "execution_environment": self.profile.market_environment, "model_version": artifact["model_version"],
                 "training_cutoff_event_ms": artifact["training_cutoff_event_ms"],
-                "live_market_event_ms": event_ms, "reference_quote_environment": "TESTNET",
+                "live_market_event_ms": event_ms, "reference_quote_environment": self.profile.market_environment,
                 "selection_method": "CONTEXT_CALIBRATED_RIDGE", "setup_explanation": setup_explanation,
                 "prediction_target": "SIMULATED_ATR_R_4H_NOT_EXECUTION_PNL",
                 "candidate_count": len(candidates)},

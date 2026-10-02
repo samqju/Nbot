@@ -22,7 +22,7 @@ its private-file steps; it is not an alternative service-start procedure.
 | Learning | observation-live.env | [observation.env.example](../config/examples/observation.env.example) | Optional outbound Telegram notifications |
 
 The old `execution.env.example` name now points to the specific templates.
-There is no real-money setup to fill in: `live-trade` remains blocked.
+For a deliberately approved small mainnet trial, copy [execution-live.env.example](../config/examples/execution-live.env.example) to config/secrets/execution-live.env on Trading only. Follow [the three-mode guide](TRADING_MODES.md) for every field and the separate approval steps.
 
 The tracked `config/profiles/*.env` files define operating profiles. They are
 not secret templates and must not contain your API keys or tokens.
@@ -92,6 +92,7 @@ private connection file through verified SSH to the fresh Learning server.
 | NBOT_OBSERVATION_TESTNET_URL | Keep http://127.0.0.1:18766 for the guide's Testnet SSH tunnel |
 | NBOT_OBSERVATION_TIMEOUT_SECONDS | Keep 2.0 |
 | NBOT_OBSERVATION_LIVE_PAPER_URL | Only for separately configured paper mode: http://127.0.0.1:18765 |
+| NBOT_OBSERVATION_LIVE_TRADE_URL | Mainnet trial tunnel: http://127.0.0.1:18767 |
 | NBOT_OBSERVATION_CA_FILE | Leave absent for the SSH setup; advanced HTTPS certificate path only |
 
 A blank token is invalid. Do not generate a different token independently on each
@@ -101,8 +102,7 @@ not in the loopback URL. The optional paper URL alone does not configure paper m
 ## Optional Telegram fields
 
 For Testnet, leave all Telegram fields blank if you only want terminal controls.
-For the current LIVE/PAPER canary, Telegram is needed for its explicit `/enable`
-command; terminal `entries enable live-paper` is not a substitute.
+The older mechanical LIVE/PAPER canary needs Telegram /enable. Learned paper uses NBOT_PAPER_SELECTION=learned on both sides and supports terminal entries enable live-paper. Mainnet trial also supports terminal controls.
 
 | Field | What to enter |
 |---|---|

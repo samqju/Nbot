@@ -96,12 +96,6 @@ def _remote_control_compatibility_result(profile_name: str):
     from nbot.config.validation import DoctorResult
 
     profile = get_profile(profile_name)
-    if profile.name == "live-trade":
-        return DoctorResult(
-            ok=True,
-            checks=("CONTROL_LINK_REMOTE_COMPATIBILITY_NOT_APPLICABLE_BEFORE_V3_10",),
-            warnings=(),
-        )
 
     from nbot.communication.config import (
         control_link_config_for_profile,
@@ -404,7 +398,30 @@ def cmd_arm(args: argparse.Namespace) -> int:
     if not profile.requires_arm_gate:
         raise SystemExit("NBOT_PROFILE_DOES_NOT_REQUIRE_ARMING")
     if profile.name == "live-trade":
-        raise SystemExit("NBOT_LIVE_TRADE_ARMING_FORBIDDEN_BEFORE_V3_10")
+        if not getattr(args, "confirm_real_money", False):
+            raise ValueError("LIVE_ARM_REQUIRES_CONFIRM_REAL_MONEY")
+        from nbot.exchange.binance_live import LiveExchangeConfig, LiveTradingGuard
+        from nbot.execution.ownership import execution_ownership
+        cfg = LiveExchangeConfig.from_env(repo_root=ROOT, environ=_secret_environment(profile.name))
+        cfg.validate()
+        if subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True).strip():
+            raise ValueError("LIVE_ARM_REQUIRES_CLEAN_RELEASE")
+        identity = _git_identity()
+        if len(identity["sha"]) != 40:
+            raise ValueError("LIVE_ARM_RELEASE_UNAVAILABLE")
+        with execution_ownership(ROOT, profile.name, arming=True):
+            path = arm_path(ROOT, profile)
+            atomic_write_text(path,
+                f"profile=live-trade\nsha={identity['sha']}\narmed_at={utc_iso()}\n"
+                "authorization=EXPLICIT_SMALL_MAINNET_TRIAL_V1\n"
+                f"settings_digest={cfg.authorization_digest()}\n", mode=0o600)
+            try:
+                LiveTradingGuard(cfg).initialize_new_arm_session()
+            except Exception:
+                path.unlink(missing_ok=True)
+                raise
+        print("ARMED live-trade EXPLICIT_SMALL_MAINNET_TRIAL; entries remain separately controlled")
+        return 0
     path = arm_path(ROOT, profile)
     identity = _git_identity()
     atomic_write_text(
@@ -432,7 +449,12 @@ def cmd_disarm(args: argparse.Namespace) -> int:
     if not profile.requires_arm_gate:
         raise SystemExit("NBOT_PROFILE_DOES_NOT_REQUIRE_ARMING")
     path = arm_path(ROOT, profile)
-    path.unlink(missing_ok=True)
+    if profile.name == "live-trade":
+        from nbot.execution.ownership import execution_ownership
+        with execution_ownership(ROOT, profile.name, arming=True):
+            path.unlink(missing_ok=True)
+    else:
+        path.unlink(missing_ok=True)
     print(f"DISARMED {profile.name}")
     return 0
 
@@ -446,6 +468,14 @@ def _start_execution(profile_name: str) -> int:
         raise ValueError("NBOT_EXECUTION_RUNTIME_ALREADY_ACTIVE")
 
     doctor, doctor_code = _doctor_payload(profile_name, include_remote_compatibility=False)
+    if profile_name == "live-trade" and doctor_code != 0:
+        summary = _execution_state_summary(profile_name)
+        recovery_needed = (summary.get("open_position") or summary.get("entry_inflight")
+                           or summary.get("pending_outcomes"))
+        warnings = doctor.get("warnings", [])
+        if recovery_needed and warnings and set(warnings) == {"PROFILE_DISARMED"}:
+            # Recover capital locally; the live loop still forbids new entries.
+            doctor_code = 0
     if doctor_code != 0:
         print(json.dumps(doctor, indent=2, sort_keys=True))
         return 2
@@ -562,8 +592,6 @@ def cmd_start(args: argparse.Namespace) -> int:
     if role.value != "EXECUTION":
         raise ValueError("NBOT_START_EXECUTION_ROLE_ONLY_BEFORE_V3_3")
     profile = get_profile(args.profile)
-    if profile.name == "live-trade":
-        raise ValueError("NBOT_LIVE_TRADE_RUNTIME_FORBIDDEN_BEFORE_V3_10")
     _guard_manual_execution_lifecycle(profile.name, action="start")
     return _start_execution(profile.name)
 
@@ -698,12 +726,17 @@ def cmd_entries(args: argparse.Namespace) -> int:
         set_operator_entry_block(ROOT, profile.name, blocked=True)
         print(f"OPERATOR_ENTRIES_DISABLED {profile.name}")
         return 0
-    if profile.name == "live-paper":
+    if profile.name == "live-paper" and _secret_environment(profile.name).get("NBOT_PAPER_SELECTION", "mechanical") != "learned":
         raise ValueError("NBOT_LIVE_PAPER_ENABLE_USE_RUNNING_TELEGRAM_OPERATOR_GATE")
     if profile.name == "testnet-trade" and not profile_is_armed(ROOT, profile):
         raise ValueError("NBOT_TESTNET_ENABLE_REQUIRES_ARM")
     if profile.name == "live-trade":
-        raise ValueError("NBOT_LIVE_TRADE_RUNTIME_FORBIDDEN_BEFORE_V3_10")
+        from nbot.exchange.binance_live import LiveExchangeConfig, LiveTradingGuard
+        cfg = LiveExchangeConfig.from_env(repo_root=ROOT, environ=_secret_environment(profile.name))
+        cfg.validate()
+        gate = LiveTradingGuard(cfg)
+        if not gate.preflight()["armed"] or gate._parse_arm(cfg.resolved_arm_file.read_text()).get("sha") != _git_identity()["sha"]:
+            raise ValueError("LIVE_ENABLE_REQUIRES_CURRENT_EXPLICIT_TRIAL_ARM")
     set_operator_entry_block(ROOT, profile.name, blocked=False)
     print(f"OPERATOR_ENTRIES_ENABLED_REQUEST {profile.name}")
     return 0
@@ -1133,7 +1166,7 @@ def _cluster_resolve_stop_profile(requested: str | None) -> str | None:
     if len(active) == 1:
         return str(active[0]["profile"])
     candidates = []
-    for name in ("live-paper", "testnet-trade"):
+    for name in ("live-paper", "testnet-trade", "live-trade"):
         units = cluster_profile_units(name)
         if units.execution_unit and local_unit_state(units.execution_unit).get("active"):
             candidates.append(name)
@@ -1233,7 +1266,7 @@ def _cluster_stop(profile_name: str | None) -> tuple[dict, int]:
 
 def _cluster_status(profile_name: str | None) -> tuple[dict, int]:
     _cluster_execution_role()
-    profiles = [profile_name] if profile_name else ["live-paper", "testnet-trade"]
+    profiles = [profile_name] if profile_name else ["live-paper", "testnet-trade", "live-trade"]
     rows: dict[str, dict] = {}
     degraded = False
     for name in profiles:
@@ -1333,6 +1366,8 @@ def build_parser() -> argparse.ArgumentParser:
     for name in ("arm", "disarm"):
         p = sub.add_parser(name)
         p.add_argument("profile", choices=("testnet-trade", "live-trade"))
+        if name == "arm":
+            p.add_argument("--confirm-real-money", action="store_true")
         p.set_defaults(func=cmd_arm if name == "arm" else cmd_disarm)
 
     start = sub.add_parser("start")

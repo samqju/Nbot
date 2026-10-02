@@ -1,5 +1,8 @@
 # Documentation index and current bot behavior
 
+**2026-10-02 mode update:** [The three-mode guide](TRADING_MODES.md) describes Testnet trading, learned mainnet paper, and the separately authorized small mainnet trial. Earlier V3.10-only restrictions below describe the original automatic Champion roadmap. This manual trial does not declare those economic gates passed. No Testnet-paper mode is supported.
+
+
 Reviewed: **2026-10-01**, against learner code
 [9fff54c](https://github.com/samqju/Nbot/commit/9fff54c3889e26c21dd217d439783af4803993d6).
 This review covers all **18 existing tracked Markdown files**, plus this new index.

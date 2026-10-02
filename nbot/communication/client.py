@@ -418,8 +418,7 @@ class RemoteObservationClient:
         except KeyError as exc:
             raise ValueError("NBOT_OBSERVATION_PROFILE_INVALID") from exc
         # LIVE real order authority is not enabled by V3.5.
-        if profile_name == "live-trade":
-            raise ValueError("NBOT_OBSERVATION_LIVE_TRADE_FORBIDDEN_BEFORE_V3_10")
+        # Mainnet proposals remain advisory; local explicit trial arming owns order permission.
 
         self.scheme = parsed.scheme
         self.host = host

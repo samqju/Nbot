@@ -39,12 +39,12 @@ def _unit(*, profile: str = "live-paper", strict: bool = True, forward: str | No
 
 
 class V39PreV310ClusterOrchestrationTests(unittest.TestCase):
-    def test_live_trade_cluster_is_hard_blocked_before_v310(self):
-        with self.assertRaisesRegex(
-            ClusterOperatorError,
-            "NBOT_CLUSTER_LIVE_TRADE_FORBIDDEN_BEFORE_V3_10",
-        ):
-            cluster_profile_units("live-trade")
+    def test_live_trial_cluster_uses_isolated_tunnel_and_control(self):
+        units = cluster_profile_units("live-trade")
+        self.assertEqual(units.expected_local_port, 18767)
+        self.assertEqual(units.expected_observation_port, 8767)
+        self.assertEqual(units.observation_control_unit, "nbot-observation-live-trade-control.service")
+        self.assertIsNone(units.execution_unit)
 
     def test_live_paper_tunnel_definition_parses_strict_pinned_transport(self):
         units = cluster_profile_units("live-paper")

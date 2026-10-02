@@ -1,5 +1,8 @@
 # Execution Safety Contract
 
+**2026-10-02 mode update:** [The three-mode guide](TRADING_MODES.md) describes Testnet trading, learned mainnet paper, and the separately authorized small mainnet trial. Earlier V3.10-only restrictions below describe the original automatic Champion roadmap. This manual trial does not declare those economic gates passed. No Testnet-paper mode is supported.
+
+
 Applicability reviewed 2026-10-01 at `9fff54c`: the capital-safety invariants
 below remain required. The final V3.1 section records that original phase only.
 Current Testnet supports learned experimental recommendations; LIVE/PAPER has an
