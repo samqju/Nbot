@@ -1,5 +1,8 @@
 # Learning on a 1 CPU / 1 GB VPS
 
+Paper feedback update: [30-day auto-learning experiment](PAPER_AUTO_LEARNING.md). Learned mainnet-paper now adapts setup rankings from its own settled paper trades. Testnet and real-money selection remain separate; economic proof is still unestablished.
+
+
 Reviewed against learner release `9fff54c` on 2026-10-01. See the
 [documentation index](DOCUMENTATION_INDEX.md) for current instructions and historical contracts.
 

@@ -1,5 +1,8 @@
 # Three trading modes: simple setup and switching guide
 
+Paper feedback update: [30-day auto-learning experiment](PAPER_AUTO_LEARNING.md). Learned mainnet-paper now adapts setup rankings from its own settled paper trades. Testnet and real-money selection remain separate; economic proof is still unestablished.
+
+
 Updated 2026-10-02. This is a small, manually approved mainnet trial, not automatic
 Research/Paper Champion approval or a promise of profit.
 

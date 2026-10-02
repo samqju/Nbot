@@ -21,6 +21,7 @@ from .recommendation import RecommendationSnapshot
 from .selection import FEATURE_VECTOR_NAMES, SELECTION_CONFIG, _feature_vector, _ridge_score, _digest
 from .signals import ResearchSignalStore
 from .context_learning import SELECTOR_VERSION, adjustment
+from .paper_feedback import PaperFeedback
 
 
 SIGNAL_INPUTS = (
@@ -56,6 +57,7 @@ class LearnedTestnetSource:
             raise ValueError("LEARNED_SOURCE_LIVE_TRAINING_REQUIRED")
         self.memory_path = memory_path or Path("data/observation/live/research_memory.db")
         self.release_sha = release_sha
+        self.paper_feedback = PaperFeedback(self.live, release_sha=release_sha) if profile_name == "live-paper" else None
         self.features = CanonicalFeatureStore(self.live)
         self.signals = ResearchSignalStore(self.live)
         with self.testnet.connection() as conn:
@@ -156,6 +158,8 @@ class LearnedTestnetSource:
         return self._saved(event)
 
     def refresh(self, *, now_ms: int, ttl_ms: int):
+        if self.paper_feedback:
+            self.paper_feedback.ingest(cutoff_ms=now_ms)
         if not self.live.path.is_file():
             return self._not_ready("LEARNING_WAIT_FOR_LIVE_COLLECTOR", now_ms)
         with self.live.connection() as conn:
@@ -177,6 +181,10 @@ class LearnedTestnetSource:
             # A newly rejected/replaced model cannot leave its old proposal live.
             if saved.proposal and saved.proposal.model_digest != artifact["model_digest"]:
                 return self._not_ready("LEARNED_EVENT_MODEL_CHANGED_WAIT_NEXT_EVENT", now_ms)
+            if self.paper_feedback and saved.proposal:
+                detail = (saved.proposal.experiment_context or {}).get("paper_feedback")
+                if detail:
+                    self.paper_feedback.record_decision(saved.proposal.proposal_id, saved.refreshed_at_ms, detail)
             return saved
         with self.testnet.connection() as conn:
             quotes = conn.execute("""SELECT s.symbol,s.bid_price,s.ask_price,s.captured_at_ms
@@ -189,6 +197,7 @@ class LearnedTestnetSource:
                   and math.isfinite(float(r[2]))}
         if not quotes:
             return self._not_ready("LEARNED_WAIT_FOR_MATCHING_TESTNET_EVENT" if self.profile.name == "testnet-trade" else "LEARNED_WAIT_FOR_MATCHING_LIVE_EVENT", now_ms)
+        feedback_model = self.paper_feedback.snapshot(cutoff_ms=event_ms) if self.paper_feedback else None
         candidates = []
         for feature in self.features.compute_event_rows(event_ms, computed_at_ms=now_ms, register_definition=False):
             if not feature["full_history_4h"] or feature["symbol"] not in quotes:
@@ -204,7 +213,21 @@ class LearnedTestnetSource:
                 candidates.append((score, feature["symbol"], side, vector))
         if not candidates:
             return self._not_ready("LEARNING_WAIT_FOR_FULL_FEATURE_HISTORY", now_ms)
-        score, symbol, side, vector = sorted(candidates, key=lambda r: (-r[0], r[1], r[2]))[0]
+        baseline = sorted(candidates, key=lambda r: (-r[0], r[1], r[2]))[0]
+        feedback_detail = None
+        if feedback_model is not None:
+            ranked = []
+            for base_score, candidate_symbol, candidate_side, candidate_vector in candidates:
+                adjusted, detail = self.paper_feedback.adjust(feedback_model, candidate_vector, candidate_side, base_score)
+                ranked.append((adjusted, candidate_symbol, candidate_side, candidate_vector, base_score, detail))
+            score, symbol, side, vector, base_score, feedback_detail = sorted(ranked, key=lambda r: (-r[0], r[1], r[2]))[0]
+            feedback_detail.update(
+                base_score=base_score, adjusted_score=score,
+                ranking_changed=(symbol, side) != (baseline[1], baseline[2]),
+                baseline_symbol=baseline[1], baseline_side=baseline[2], baseline_score=baseline[0])
+        else:
+            score, symbol, side, vector = baseline
+            base_score = score
         if score <= 0:
             return self._freeze(event_ms, RecommendationSnapshot("READY", "LEARNED_NO_POSITIVE_OPPORTUNITY", None, now_ms))
         _, bid, ask, quote_ms = quotes[symbol]
@@ -223,7 +246,7 @@ class LearnedTestnetSource:
             data_generation_id=f"LEARNED-{self.profile.name.upper()}-{event_ms}", feature_version=CANONICAL_FEATURE_VERSION,
             selector_version=artifact["selector_version"], entry_authority=self.authority,
             exit_policy_version="INTEGER_R_STEP_CONTROL", reference_price=(float(bid) + float(ask)) / 2,
-            selection_score=score, selection_rank=1, expected_after_cost_net_r=score,
+            selection_score=score, selection_rank=1, expected_after_cost_net_r=base_score,
             source_digest=source_digest, model_digest=artifact["model_digest"],
             experiment_context={"authority_class": self.authority, "economic_claim": False,
                 "research_evidence": False, "training_environment": "LIVE", "inference_environment": "LIVE",
@@ -232,9 +255,14 @@ class LearnedTestnetSource:
                 "live_market_event_ms": event_ms, "reference_quote_environment": self.profile.market_environment,
                 "selection_method": "CONTEXT_CALIBRATED_RIDGE", "setup_explanation": setup_explanation,
                 "prediction_target": "SIMULATED_ATR_R_4H_NOT_EXECUTION_PNL",
-                "candidate_count": len(candidates)},
+                "candidate_count": len(candidates),
+                **({"paper_feedback": feedback_detail} if feedback_detail else {})},
         )
-        return self._freeze(event_ms, RecommendationSnapshot("READY", None, proposal, now_ms))
+        snapshot = self._freeze(event_ms, RecommendationSnapshot("READY", None, proposal, now_ms))
+        if self.paper_feedback and snapshot.proposal:
+            self.paper_feedback.record_decision(snapshot.proposal.proposal_id, now_ms,
+                                                snapshot.proposal.experiment_context["paper_feedback"])
+        return snapshot
 
 
 def testnet_recommendation_source(database, profile, release_sha, *, mode="learned"):

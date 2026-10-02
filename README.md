@@ -1,5 +1,8 @@
 # NBOT V3
 
+Paper feedback update: [30-day auto-learning experiment](docs/PAPER_AUTO_LEARNING.md). Learned mainnet-paper now adapts setup rankings from its own settled paper trades. Testnet and real-money selection remain separate; economic proof is still unestablished.
+
+
 Learner documentation reviewed 2026-10-01 against learner release
 [9fff54c](https://github.com/samqju/Nbot/commit/9fff54c3889e26c21dd217d439783af4803993d6).
 Use the [documentation index and current behavior summary](docs/DOCUMENTATION_INDEX.md)
