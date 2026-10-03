@@ -1,4 +1,4 @@
-"""LIVE-trained inference for TESTNET only; never train in a request handler."""
+"""LIVE-trained inference with separate profile authority and paper-only feedback."""
 from __future__ import annotations
 
 from contextlib import closing
@@ -22,6 +22,7 @@ from .selection import FEATURE_VECTOR_NAMES, SELECTION_CONFIG, _feature_vector, 
 from .signals import ResearchSignalStore
 from .context_learning import SELECTOR_VERSION, adjustment
 from .paper_feedback import PaperFeedback
+from .candidate_setups import load_histories, matches, FALLBACK, CATALOG_DIGEST, history_digest, tie_key
 
 
 SIGNAL_INPUTS = (
@@ -199,9 +200,11 @@ class LearnedTestnetSource:
             return self._not_ready("LEARNED_WAIT_FOR_MATCHING_TESTNET_EVENT" if self.profile.name == "testnet-trade" else "LEARNED_WAIT_FOR_MATCHING_LIVE_EVENT", now_ms)
         feedback_model = self.paper_feedback.snapshot(cutoff_ms=event_ms) if self.paper_feedback else None
         candidates = []
+        btc_available = {}
         for feature in self.features.compute_event_rows(event_ms, computed_at_ms=now_ms, register_definition=False):
             if not feature["full_history_4h"] or feature["symbol"] not in quotes:
                 continue
+            btc_available[feature["symbol"]] = feature.get("btc_ret_1h") is not None
             signals = self.signals._signals_for_feature_row(
                 tuple(feature[k] for k in SIGNAL_INPUTS), computed_at_ms=now_ms)
             signals = {r["signal_version"]: r for r in signals}
@@ -216,11 +219,24 @@ class LearnedTestnetSource:
         baseline = sorted(candidates, key=lambda r: (-r[0], r[1], r[2]))[0]
         feedback_detail = None
         if feedback_model is not None:
+            histories = load_histories(self.live, quotes, event_ms)
             ranked = []
             for base_score, candidate_symbol, candidate_side, candidate_vector in candidates:
-                adjusted, detail = self.paper_feedback.adjust(feedback_model, candidate_vector, candidate_side, base_score)
-                ranked.append((adjusted, candidate_symbol, candidate_side, candidate_vector, base_score, detail))
-            score, symbol, side, vector, base_score, feedback_detail = sorted(ranked, key=lambda r: (-r[0], r[1], r[2]))[0]
+                bars = histories.get(candidate_symbol, [])
+                bars_digest = history_digest(bars)
+                rule_vector = dict(candidate_vector, candidate_btc_available=float(btc_available[candidate_symbol]))
+                rules = matches(rule_vector, candidate_side, bars) or [FALLBACK]
+                for rule in rules:
+                    adjusted, detail = self.paper_feedback.adjust(
+                        feedback_model, candidate_vector, candidate_side, base_score, candidate=rule)
+                    detail.update(matched_candidates=[item["id"] for item in rules],
+                                  catalog_digest=CATALOG_DIGEST, history_digest=bars_digest)
+                    ranked.append((adjusted, candidate_symbol, candidate_side, candidate_vector, base_score, detail))
+            # Equal scores use reproducible event-specific attribution, not permanent alphabetical preference.
+            score, symbol, side, vector, base_score, feedback_detail = sorted(
+                ranked, key=lambda r: (-r[0], r[1], r[2],
+                    tie_key(event_ms, r[1], r[2], r[5]["candidate"]["id"])))[0]
+            feedback_detail["matched_candidate_count"] = len(ranked)
             feedback_detail.update(
                 base_score=base_score, adjusted_score=score,
                 ranking_changed=(symbol, side) != (baseline[1], baseline[2]),
@@ -235,8 +251,11 @@ class LearnedTestnetSource:
         setup_explanation = adjustment(artifact["model"]["context_calibration"], vector,
                                       _ridge_score(raw_model, json.dumps(vector)))
         generated = min(captured_ms, int(quote_ms))
-        source_digest = payload_digest({"live_event": event_ms, "vector": vector,
-                                        "model": artifact["model_digest"], "testnet_quote": quotes[symbol]})
+        source_inputs = {"live_event": event_ms, "vector": vector,
+                         "model": artifact["model_digest"], "testnet_quote": quotes[symbol]}
+        if feedback_detail is not None:
+            source_inputs["paper_feedback"] = feedback_detail
+        source_digest = payload_digest(source_inputs)
         proposal = ExecutionProposal.create(
             proposal_id="PROP-" + hashlib.sha256(f"{self.authority}:{event_ms}".encode()).hexdigest()[:40],
             generated_at_ms=generated, expires_at_ms=generated + ttl_ms,

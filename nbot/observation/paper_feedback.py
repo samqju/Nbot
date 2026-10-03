@@ -15,8 +15,9 @@ from nbot.communication.authorities import LIVE_PAPER_LEARNED_AUTHORITY
 from nbot.communication.contracts import ExecutionOutcome, ExecutionProposal
 from nbot.communication.validation import payload_digest
 from .context_learning import describe
+from .candidate_setups import BY_ID, FALLBACK
 
-VERSION = "PAPER_EXECUTION_FEEDBACK_V1"
+VERSION = "PAPER_EXECUTION_FEEDBACK_V2_CANDIDATES"
 DAY_MS = 86_400_000
 WINDOW_MS = 30 * DAY_MS
 BUCKET_MS = 49 * 300_000
@@ -62,7 +63,16 @@ def _verified(text, digest):
     return value
 
 
-def group_keys(info, side):
+def group_keys(info, side, candidate=None):
+    if candidate is not None:
+        if not isinstance(candidate, dict):
+            raise ValueError("PAPER_CANDIDATE_INVALID")
+        expected = FALLBACK if candidate.get("id") == "MODEL_ONLY" else (
+            BY_ID[candidate["id"]].tag() if candidate.get("id") in BY_ID else None)
+        if candidate != expected:
+            raise ValueError("PAPER_CANDIDATE_INVALID")
+        if candidate["id"] != "MODEL_ONLY":
+            info = dict(info, setup="CANDIDATE:" + candidate["id"])
     return (info["setup"] + "|" + info["context"] + "|" + side,
             info["setup"] + "|ALL|" + side)
 
@@ -126,12 +136,15 @@ class PaperFeedback:
                                         rel_tol=1e-6, abs_tol=1e-8):
                         raise ValueError("OUTCOME_R_INCONSISTENT")
                     info = (proposal.experiment_context or {})["setup_explanation"]
-                    keys = group_keys(info, proposal.side)
+                    if not isinstance(tag.get("candidate"), dict):
+                        raise ValueError("PAPER_CANDIDATE_INVALID")
+                    keys = group_keys(info, proposal.side, tag["candidate"])
                     cohort = tag["release_sha"]
                     if not isinstance(cohort, str) or len(cohort) != 40:
                         raise ValueError("COHORT_INVALID")
                     sample = {
                         "outcome_id": outcome_id, "symbol": outcome.symbol, "side": outcome.side,
+                        "candidate_id": tag["candidate"]["id"],
                         "keys": list(keys), "net_usd": outcome.realized_pnl_usd,
                         "risk_usd": outcome.initial_risk_usd, "net_r": outcome.r_multiple,
                         "learning_r": max(-3., min(3., outcome.r_multiple)),
@@ -219,13 +232,15 @@ class PaperFeedback:
         return _verified(*saved)
 
     @staticmethod
-    def adjust(model, vector, side, base_score):
+    def adjust(model, vector, side, base_score, candidate=None):
         info = describe(vector)
         result = {"version": VERSION, "release_sha": model["release_sha"],
                   "model_id": model["model_id"], "trained_before_ms": model["cutoff_ms"],
                   "factor": 1., "predicted_paper_r": None,
                   "support_buckets": 0, "group": None, "status": "INSUFFICIENT_PAPER_EVIDENCE"}
-        for key in group_keys(info, side):
+        if candidate is not None:
+            result["candidate"] = dict(candidate)
+        for key in group_keys(info, side, candidate):
             group = model["groups"].get(key)
             if group and group["supported"]:
                 result.update(factor=group["factor"], predicted_paper_r=group["mean_clipped_r"],

@@ -118,15 +118,16 @@ On **Learning**, render the additional services without starting trading:
 cd "$HOME/Nbot"
 sudo .venv/bin/python deploy/observation/install_services.py \
   --repo "$PWD" --python "$PWD/.venv/bin/python" --user ubuntu \
-  --resource-profile tiny
+  --resource-profile standard
 sudo mkdir -p /etc/systemd/system/nbot-observation-live-paper-control.service.d
 printf '%s\n' '[Service]' 'Environment=NBOT_PAPER_SELECTION=learned' | \
   sudo tee /etc/systemd/system/nbot-observation-live-paper-control.service.d/selection.conf >/dev/null
 sudo systemctl daemon-reload
 ~~~
 
-Keep the existing base collector and research timer running. On a 1 CPU/1 GB
-server, use [tiny settings](SMALL_VPS_LEARNER.md). Start only the control service
+Keep the existing base collector and research timer running. For 4 CPU / 8-12 GB, use standard as above and see the
+[24-candidate guide](CANDIDATE_LIBRARY.md). On a 1 CPU/1 GB server, replace standard
+with tiny and use [tiny settings](SMALL_VPS_LEARNER.md). Start only the control service
 for the mode you use; cluster start below does this.
 
 ## 4. Install Trading tunnels and the paper worker

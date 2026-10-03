@@ -1,5 +1,7 @@
 # Documentation index and current bot behavior
 
+**2026-10-03 candidate expansion:** [24-candidate paper learner and larger-VPS setup](CANDIDATE_LIBRARY.md). Learned paper selection now tests 24 versioned rules with separate completed-trade attribution. Use the standard profile for 4 CPU / 8-12 GB RAM.
+
 Paper feedback update: [30-day auto-learning experiment](PAPER_AUTO_LEARNING.md). Learned mainnet-paper now adapts setup rankings from its own settled paper trades. Testnet and real-money selection remain separate; economic proof is still unestablished.
 
 

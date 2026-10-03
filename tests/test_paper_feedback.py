@@ -53,7 +53,8 @@ class PaperFeedbackTests(unittest.TestCase):
     def test_losses_reduce_supported_setup_weight(self):
         self.populate()
         model = self.feedback.snapshot(cutoff_ms=NOW)
-        key = group_keys(self.proposal.experiment_context["setup_explanation"], self.proposal.side)[0]
+        key = group_keys(self.proposal.experiment_context["setup_explanation"], self.proposal.side,
+                         self.proposal.experiment_context["paper_feedback"]["candidate"])[0]
         self.assertLess(model["groups"][key]["factor"], 1)
         self.assertGreaterEqual(model["groups"][key]["factor"], .25)
 

@@ -6,7 +6,9 @@ No new packages, neural network, GPU or language-model API is required.
 
 ## What it learns
 
-The base learner still studies price features and five measurable setup families:
+The paper selector now checks [24 named candidates](CANDIDATE_LIBRARY.md), with
+one selected candidate receiving each completed trade outcome. The base research
+learner still studies price features and five measurable setup families:
 trend continuation, pullback, stretched reversal, volatility expansion and relative
 strength. These are limited proxies for market structure, not every chart pattern.
 
@@ -40,9 +42,11 @@ The observation supervisor performs this work, not the HTTP request handler or
 the trading position-management loop. Even when the base model is temporarily
 unavailable, received paper outcomes can be archived by the supervisor.
 
-## Small-VPS limits
+## Resources and bounds
 
-The design target remains 1 CPU / 1 GB RAM with the existing tiny profile.
+Use standard mode on the planned 4 CPU / 8-12 GB Learning VPS; see the
+[candidate library setup](CANDIDATE_LIBRARY.md). The tiny profile remains available
+for 1 CPU / 1 GB testing with fewer collected coins.
 The feedback layer imports at most 256 receipts per pass and trains on at most
 2,048 recent completed trades. It makes no new exchange requests.
 
@@ -120,7 +124,8 @@ The second shows:
 
 - completed eligible paper trades and elapsed days since the first recommendation;
 - weekly paper PnL, win counts and closed-trade drawdown;
-- current setup/condition weights and evidence support;
+- completed trades and paper profit/loss for each of the 24 candidates, plus MODEL_ONLY;
+- current candidate/condition weights and evidence support;
 - how many executed choices differed from the original ranking;
 - prediction error on trades completed AFTER their prediction was made;
 - the same-trade error of an always-predict-zero reference;
@@ -187,3 +192,7 @@ late-result exclusion, duplicate/restart handling, evidence support, rolling
 expiry, outcome integrity, bounded training, changed recommendations and the
 HTTP-to-paper-execution-to-feedback path. Tests use simulated data; no 30-day
 market result is claimed.
+
+The 2026-10-03 [candidate expansion](CANDIDATE_LIBRARY.md) adds 24 named rules,
+per-candidate results and larger-VPS instructions. Its full regression run passed
+1,162 tests; final edge-case changes passed 56 focused checks.

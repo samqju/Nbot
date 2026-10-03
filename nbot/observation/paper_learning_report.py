@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import sqlite3
 import statistics
 from .paper_feedback import DAY_MS, VERSION, _verified
+from .candidate_setups import REGISTRY, FALLBACK
 
 
 def paper_learning_report(database, *, release_sha, now_ms):
@@ -69,6 +70,14 @@ def paper_learning_report(database, *, release_sha, now_ms):
             lines += [f"| {week} | {len(items)} | {sum(s['net_usd'] for s in items):.4f} | {statistics.fmean(s['net_r'] for s in items):.4f} |"]
     else:
         lines += ["", "No completed eligible paper trades yet: no execution feedback is available."]
+    lines += ["", "## Candidate results", "",
+              "Each completed trade belongs to ONE selected candidate. Matching rules are not extra trades.",
+              "Zero trades means untested here, not unsuccessful. These are experimental rules, not proven strategies.",
+              "", "| Candidate | Family | Completed trades | Paper PnL USD |",
+              "|---|---|---:|---:|"]
+    for candidate in [item.tag() for item in REGISTRY] + [FALLBACK]:
+        items = [sample for sample in samples if sample.get("candidate_id", "MODEL_ONLY") == candidate["id"]]
+        lines += [f"| {candidate['id']} | {candidate['family']} | {len(items)} | {sum(s['net_usd'] for s in items):.4f} |"]
     if model:
         lines += ["", "## Current setup weights", "", f"Snapshot: {model['model_id']}",
                   f"Training trades in last 30 days: {model['sample_count']}",
