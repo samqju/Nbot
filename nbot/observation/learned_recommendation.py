@@ -5,6 +5,8 @@ from contextlib import closing
 import hashlib
 import json
 import math
+import logging
+import os
 from pathlib import Path
 import sqlite3
 
@@ -22,6 +24,7 @@ from .selection import FEATURE_VECTOR_NAMES, SELECTION_CONFIG, _feature_vector, 
 from .signals import ResearchSignalStore
 from .context_learning import SELECTOR_VERSION, adjustment
 from .paper_feedback import PaperFeedback
+from .shadow import ShadowBook, ShadowConfig
 from .candidate_setups import load_histories, matches, FALLBACK, CATALOG_DIGEST, history_digest, tie_key
 
 
@@ -59,6 +62,17 @@ class LearnedTestnetSource:
         self.memory_path = memory_path or Path("data/observation/live/research_memory.db")
         self.release_sha = release_sha
         self.paper_feedback = PaperFeedback(self.live, release_sha=release_sha) if profile_name == "live-paper" else None
+        shadow_enabled = os.environ.get("NBOT_SHADOW_ENABLED", "1")
+        if shadow_enabled not in {"0", "1"}:
+            raise ValueError("NBOT_SHADOW_ENABLED_INVALID")
+        self.shadow = None
+        self.shadow_error = None
+        if profile_name in {"live-paper", "live-trade"} and shadow_enabled == "1":
+            shadow_config = ShadowConfig(**{
+                field: float(os.environ["NBOT_SHADOW_" + field.upper()])
+                for field in ShadowConfig.__dataclass_fields__
+                if "NBOT_SHADOW_" + field.upper() in os.environ})
+            self.shadow = ShadowBook(self.live, release_sha=release_sha, profile=profile_name, config=shadow_config)
         self.features = CanonicalFeatureStore(self.live)
         self.signals = ResearchSignalStore(self.live)
         with self.testnet.connection() as conn:
@@ -158,7 +172,18 @@ class LearnedTestnetSource:
                          (event, json.dumps(value, sort_keys=True, allow_nan=False), payload_digest(value)))
         return self._saved(event)
 
+    def _shadow_call(self, method, **kwargs):
+        try:
+            getattr(self.shadow, method)(**kwargs)
+            self.shadow_error = None
+        except Exception as exc:
+            # Simulations must never disrupt the main position/control path.
+            self.shadow_error = type(exc).__name__ + ":" + str(exc)[:180]
+            logging.getLogger(__name__).exception("SHADOW_SIMULATION_FAILED")
+
     def refresh(self, *, now_ms: int, ttl_ms: int):
+        if self.shadow:
+            self._shadow_call("advance", now_ms=now_ms)
         if self.paper_feedback:
             self.paper_feedback.ingest(cutoff_ms=now_ms)
         if not self.live.path.is_file():
@@ -218,8 +243,18 @@ class LearnedTestnetSource:
             return self._not_ready("LEARNING_WAIT_FOR_FULL_FEATURE_HISTORY", now_ms)
         baseline = sorted(candidates, key=lambda r: (-r[0], r[1], r[2]))[0]
         feedback_detail = None
-        if feedback_model is not None:
+        histories = {}
+        shadow_history_ready = True
+        if self.paper_feedback:
             histories = load_histories(self.live, quotes, event_ms)
+        elif self.shadow:
+            try:
+                histories = load_histories(self.live, quotes, event_ms)
+            except Exception as exc:
+                shadow_history_ready = False
+                self.shadow_error = type(exc).__name__ + ":" + str(exc)[:180]
+                logging.getLogger(__name__).exception("SHADOW_HISTORY_FAILED")
+        if feedback_model is not None:
             ranked = []
             for base_score, candidate_symbol, candidate_side, candidate_vector in candidates:
                 bars = histories.get(candidate_symbol, [])
@@ -244,6 +279,30 @@ class LearnedTestnetSource:
         else:
             score, symbol, side, vector = baseline
             base_score = score
+        shadow_opportunities = []
+        main_candidate = None
+        if self.shadow and shadow_history_ready and score > 0:
+            try:
+                for candidate_score, candidate_symbol, candidate_side, candidate_vector in candidates:
+                    if candidate_score <= 0:
+                        continue
+                    rule_vector = dict(candidate_vector, candidate_btc_available=float(btc_available[candidate_symbol]))
+                    rules = matches(rule_vector, candidate_side, histories.get(candidate_symbol, []))
+                    if (candidate_symbol, candidate_side) == (symbol, side):
+                        main_candidate = (feedback_detail["candidate"]["id"] if feedback_detail else
+                            min((rule["id"] for rule in rules),
+                                key=lambda name: tie_key(event_ms,symbol,side,name), default=None))
+                    bars_digest = history_digest(histories.get(candidate_symbol, []))
+                    for rule in rules:
+                        shadow_opportunities.append({
+                            "candidate_id": rule["id"], "symbol": candidate_symbol, "side": candidate_side,
+                            "score": candidate_score, "bid": float(quotes[candidate_symbol][1]),
+                            "ask": float(quotes[candidate_symbol][2]), "model_digest": artifact["model_digest"],
+                            "history_digest": bars_digest})
+            except Exception as exc:
+                self.shadow_error = type(exc).__name__ + ":" + str(exc)[:180]
+                logging.getLogger(__name__).exception("SHADOW_CANDIDATES_FAILED")
+                shadow_opportunities = []
         if score <= 0:
             return self._freeze(event_ms, RecommendationSnapshot("READY", "LEARNED_NO_POSITIVE_OPPORTUNITY", None, now_ms))
         _, bid, ask, quote_ms = quotes[symbol]
@@ -275,12 +334,18 @@ class LearnedTestnetSource:
                 "selection_method": "CONTEXT_CALIBRATED_RIDGE", "setup_explanation": setup_explanation,
                 "prediction_target": "SIMULATED_ATR_R_4H_NOT_EXECUTION_PNL",
                 "candidate_count": len(candidates),
+                **({"shadow_main_candidate": main_candidate} if self.shadow else {}),
                 **({"paper_feedback": feedback_detail} if feedback_detail else {})},
         )
         snapshot = self._freeze(event_ms, RecommendationSnapshot("READY", None, proposal, now_ms))
         if self.paper_feedback and snapshot.proposal:
             self.paper_feedback.record_decision(snapshot.proposal.proposal_id, now_ms,
                                                 snapshot.proposal.experiment_context["paper_feedback"])
+        if self.shadow and snapshot.proposal and shadow_opportunities:
+            # Freeze main attribution first. No replay-generated entries after a restart.
+            chosen = snapshot.proposal.experiment_context.get("shadow_main_candidate")
+            self._shadow_call("offer", event_ms=event_ms, now_ms=now_ms,
+                              opportunities=shadow_opportunities, excluded=[chosen] if chosen else [])
         return snapshot
 
 

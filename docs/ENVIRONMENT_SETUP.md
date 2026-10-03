@@ -151,3 +151,11 @@ reach a running worker; do not restart an open position casually.
 
 Back up these files privately and separately from GitHub. Do not post file
 contents, screenshots of keys or secret-bearing shell commands when asking for help.
+
+## Learning-only shadow simulation settings
+
+The control-link template now includes optional NBOT_SHADOW_* fields. These
+configure separate simulated accounts, never real-order permission or Trading
+risk. Defaults enable up to ten shadow slots in learned LIVE modes. Read the
+[shadow guide](SHADOW_TRADING.md) before changing settings; simulation settings
+are frozen per release/mode to keep experiment results comparable.

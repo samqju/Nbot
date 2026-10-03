@@ -1,5 +1,7 @@
 # A 30-day paper auto-learning experiment
 
+See also [the shadow simulation guide](SHADOW_TRADING.md): up to ten additional, separate simulated positions; the main account still permits only one position.
+
 This update adds feedback from completed mainnet PAPER trades to the existing
 market-data learner. It keeps the one-position limit, sizing, stops and exits.
 No new packages, neural network, GPU or language-model API is required.

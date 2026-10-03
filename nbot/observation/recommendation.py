@@ -608,6 +608,8 @@ class ObservationControlTarget:
                 (getattr(self.recommendations.learned_source, "authority", TESTNET_LEARNED_AUTHORITY) if self.recommendations.learned_source is not None else None)
                 if snapshot.proposal is None else snapshot.proposal.entry_authority
             ),
+            "shadow_enabled": bool(getattr(self.recommendations.learned_source, "shadow", None)),
+            "shadow_error": getattr(self.recommendations.learned_source, "shadow_error", None),
             "order_authority": "NONE",
             "store_id": self.store_id,
         }
@@ -970,6 +972,8 @@ class ObservationControlTarget:
             "outcome_digest_mismatches": 0,
             "outcomes_without_proposal": 0,
             "multiple_outcomes_per_proposal": 0,
+            "shadow_enabled": bool(getattr(self.recommendations.learned_source, "shadow", None)),
+            "shadow_error": getattr(self.recommendations.learned_source, "shadow_error", None),
             "order_authority": "NONE",
         }
         with self.database.connection() as conn:

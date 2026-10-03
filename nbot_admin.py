@@ -410,6 +410,19 @@ def cmd_challenger_status(_args: argparse.Namespace) -> int:
     return _emit(report)
 
 
+def cmd_shadow_report(args: argparse.Namespace) -> int:
+    from nbot.observation.shadow import shadow_report
+    from nbot.common.atomic_io import atomic_write_text
+    sha = args.release_sha or subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    text = shadow_report(_db(), release_sha=sha)
+    if args.output:
+        path = Path(args.output)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(path, text, mode=0o600)
+    print(text)
+    return 0
+
+
 def cmd_paper_learning_report(args: argparse.Namespace) -> int:
     from nbot.observation.paper_learning_report import paper_learning_report
     from nbot.common.atomic_io import atomic_write_text
@@ -989,6 +1002,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="read-only V3.8 LIVE/PAPER operational canary trace/degradation report",
     )
     canary_report.set_defaults(func=cmd_live_paper_canary_report)
+
+    shadow_parser = sub.add_parser("shadow-report", help="separate read-only shadow candidate results")
+    shadow_parser.add_argument("--output", help="also save a private Markdown report")
+    shadow_parser.add_argument("--release-sha", help="older release cohort; default current Git commit")
+    shadow_parser.set_defaults(func=cmd_shadow_report)
 
     paper_report = sub.add_parser("paper-learning-report", help="read-only settled paper-trade learning report")
     paper_report.add_argument("--output", help="also save a private Markdown report")

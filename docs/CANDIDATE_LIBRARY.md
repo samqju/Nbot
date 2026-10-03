@@ -1,5 +1,7 @@
 # The 24-candidate paper learner
 
+See also [the shadow simulation guide](SHADOW_TRADING.md): up to ten additional, separate simulated positions; the main account still permits only one position.
+
 For the planned 4 CPU / 8-12 GB Learning VPS, use the **standard** resource
 profile. The bot now checks 24 named trade candidates in learned mainnet-paper
 mode. A candidate is a rule describing an opportunity, not a promise of profit.
@@ -178,7 +180,9 @@ so do not add their trade counts together.
 
 The report records completed trades, not a count of every detected signal.
 Overlapping matches for the selected opportunity are kept in the durable proposal.
-Unselected opportunities are not retained as simulated wins/losses.
+Unselected opportunities do not become main-account wins/losses. The separate
+[shadow simulator](SHADOW_TRADING.md) can track up to ten additional opportunities
+without adding those outcomes to main-account feedback.
 
 Candidate evidence, snapshots and decisions survive ordinary restarts. Upgrading
 the Git release starts a new experiment cohort; old records remain stored.
