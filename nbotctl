@@ -830,6 +830,16 @@ def _cluster_active_runtime(profile_name: str) -> dict | None:
     return row
 
 
+def _cluster_local_warnings(profile_name: str, doctor: dict) -> list[str]:
+    # This is an economic disclaimer, not a failed operational check.
+    # Keep every other warning, including real-money authorization failures.
+    return [
+        item for item in (doctor.get("warnings") or [])
+        if not (profile_name == "live-paper"
+                and item == "LIVE_PAPER_OPERATIONAL_CANARY_HAS_NO_ECONOMIC_AUTHORITY")
+    ]
+
+
 def _cluster_doctor_payload(
     profile_name: str,
     *,
@@ -846,7 +856,9 @@ def _cluster_doctor_payload(
     warnings: list[str] = []
 
     active_runtime = _cluster_active_runtime(profile_name)
-    local_warnings = list(local_doctor.get("warnings") or [])
+    local_warnings = _cluster_local_warnings(profile_name, local_doctor)
+    if profile_name == "live-paper" and "LIVE_PAPER_OPERATIONAL_CANARY_HAS_NO_ECONOMIC_AUTHORITY" in (local_doctor.get("warnings") or []):
+        checks.append("LIVE_PAPER_SIMULATION_ONLY_NO_ECONOMIC_AUTHORITY")
     if active_runtime is not None:
         local_warnings = [
             item for item in local_warnings

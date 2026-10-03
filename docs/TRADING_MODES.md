@@ -318,3 +318,6 @@ accounts.
 
 See [environment settings](ENVIRONMENT_SETUP.md), [documentation index](DOCUMENTATION_INDEX.md)
 and the [Binance USD-M API](https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/general-info).
+
+Operational note: the paper-only economic-approval disclaimer is informational.
+Cluster startup still blocks actual safety, release, state and connection failures.
