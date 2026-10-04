@@ -13,6 +13,9 @@ import html
 import json
 from pathlib import Path
 import subprocess
+import sqlite3
+import time
+from contextlib import closing
 from typing import Any, Mapping
 
 
@@ -202,6 +205,60 @@ def _format_operational_regimes(data: Mapping[str, Any]) -> str:
     )
 
 
+def _activity_summary(database_path: Path, profile: str, release_sha: str) -> dict:
+    """Read a consistent snapshot, including older releases without pooling scores."""
+    if not database_path.exists():
+        return {"status": "No shadow database yet"}
+    deadline = time.monotonic() + 2.0
+    with closing(sqlite3.connect(database_path.resolve().as_uri() + "?mode=ro",
+                               uri=True, timeout=2)) as conn:
+        conn.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+        conn.execute("BEGIN")
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='shadow_results'").fetchone():
+            return {"status": "No shadow history yet"}
+        active = conn.execute("SELECT state_json FROM shadow_positions WHERE profile=?", (profile,)).fetchall()
+        states = [json.loads(row[0]) for row in active]
+        counts = conn.execute("""SELECT COUNT(*),COALESCE(SUM(eligible),0),MAX(closed_ms)
+                                FROM shadow_results WHERE profile=?""", (profile,)).fetchone()
+        current = conn.execute("""SELECT COUNT(*),COALESCE(SUM(eligible),0),
+            COALESCE(SUM(CASE WHEN eligible=1 THEN json_extract(result_json,'$.net_usd') ELSE 0 END),0)
+            FROM shadow_results WHERE profile=? AND release_sha=?""", (profile,release_sha)).fetchone()
+        latest = conn.execute("SELECT MAX(event_ms) FROM shadow_batches WHERE profile=?", (profile,)).fetchone()[0]
+        return {"status": "Recorded", "open": sum(p.get("status")=="OPEN" for p in states),
+                "pending": sum(p.get("status")=="PENDING" for p in states),
+                "completed": counts[1], "excluded": counts[0]-counts[1],
+                "latest_result_ms": counts[2], "latest_opportunity_ms": latest,
+                "current_completed": current[1], "current_excluded": current[0]-current[1],
+                "current_net_usd": round(current[2], 4)}
+
+
+def _activity_text(data: Mapping[str, Any]) -> str:
+    activity = data.get("shadow_activity", {})
+    readiness = data.get("recommendation", {})
+    reason = str(readiness.get("reason") or "none")
+    waiting = {
+        "LEARNED_LIVE_EVENT_STALE_OR_FUTURE": "Waiting for the next fresh 5-minute market update.",
+        "LEARNING_WAIT_FOR_COMPATIBLE_MODEL": "Waiting for a compatible trained model.",
+        "LEARNED_NO_POSITIVE_OPPORTUNITY": "No qualifying setup in the latest market update.",
+    }.get(reason, reason.replace("_", " ").lower())
+    def when(value):
+        return time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(value/1000)) if value else "none yet"
+    return (
+        f"Trade suggestions: {_e(readiness.get('status', 'unknown'))}\n"
+        f"Waiting reason: {_e(waiting)}\n"
+        f"Compatible model available: {_e(data.get('compatible_model_available', 'unknown'))}\n"
+        f"Shadow simulations: {_e(activity.get('status', 'unavailable'))}\n"
+        f"Open: {_e(activity.get('open'))} | Pending entry: {_e(activity.get('pending'))}\n"
+        f"Completed, all releases: {_e(activity.get('completed'))}\n"
+        f"Cancelled/unscorable, all releases: {_e(activity.get('excluded'))}\n"
+        f"This release: {_e(activity.get('current_completed'))} completed; "
+        f"net {_e(activity.get('current_net_usd'))} simulated USD\n"
+        f"Last shadow opportunity: {_e(when(activity.get('latest_opportunity_ms')))}\n"
+        f"Last shadow result: {_e(when(activity.get('latest_result_ms')))}\n"
+        "Shadow results are separate simulations; they do not currently train the main model.\n\n"
+    )
+
+
 def _format_learning(data: Mapping[str, Any]) -> str:
     challengers = data.get("challengers") if isinstance(data.get("challengers"), Mapping) else {}
     active = challengers.get("active_challenger") if isinstance(challengers.get("active_challenger"), Mapping) else {}
@@ -213,7 +270,7 @@ def _format_learning(data: Mapping[str, Any]) -> str:
     finalized = [row for row in states if isinstance(row, Mapping)
                  and row.get("state") != "ACTIVE_WAITING_FUTURE_EVIDENCE"]
     latest = finalized[-1] if finalized else {}
-    return (
+    return _activity_text(data) + (
         f"Learning state: {_e(str(data.get('status') or 'unknown').replace('_', ' ').lower())}\n"
         f"New model being tested: {_e(active.get('model_version') or 'none currently')}\n"
         f"Later market samples collected: {_e(future.get('available_future_events'))}"
@@ -282,6 +339,21 @@ class ObservationReadOnlyStatusProvider:
             if not isinstance(data, dict):
                 raise RuntimeError("OBSERVATION_DATABASE_STATUS_INVALID")
             return dict(data)
+        if view == "learning":
+            data = self._admin_json(READ_ONLY_ADMIN_VIEWS["learning"])
+            data["recommendation"] = self.target.health_snapshot()
+            try:
+                data["shadow_activity"] = _activity_summary(
+                    self.target.database.path, self.target.profile.name, self.target.release_sha)
+            except Exception:
+                data["shadow_activity"] = {"status": "Activity report unavailable"}
+            try:
+                source = self.target.recommendations.learned_source
+                data["compatible_model_available"] = (
+                    source._model(int(time.time()*1000)) is not None if source else False)
+            except Exception:
+                data["compatible_model_available"] = "unavailable"
+            return data
         if view == "challenger":
             return {
                 "challenger": self._admin_json(("challenger-status",)),

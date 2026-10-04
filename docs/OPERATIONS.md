@@ -662,3 +662,9 @@ Operational evidence is retained in Execution proposal receipts and the Observat
 ```
 
 The report must continue to state `economic_claim=false` and `NO_RESEARCH_CHAMPION_EXPECTED_R_IN_OPERATIONAL_CANARY` until a later validated research authority supplies an expected after-cost result. Operational PASS must never be relabeled as economic PASS.
+
+### Learning continuity and activity
+
+See [PAPER_AUTO_LEARNING.md](PAPER_AUTO_LEARNING.md#restarts-updates-and-recommendation-timing)
+for safe model reuse after operational updates, actual check intervals and the
+shadow activity fields shown by /learning.

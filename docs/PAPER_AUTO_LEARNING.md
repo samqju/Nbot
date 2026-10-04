@@ -198,3 +198,29 @@ market result is claimed.
 The 2026-10-03 [candidate expansion](CANDIDATE_LIBRARY.md) adds 24 named rules,
 per-candidate results and larger-VPS instructions. Its full regression run passed
 1,162 tests; final edge-case changes passed 56 focused checks.
+
+### Restarts, updates and recommendation timing
+
+A service restart retains saved training data and models. For paper and testnet,
+an older model can also survive an operational update when Git proves its
+training, feature, data-contract, shared utility, configuration and dependency
+sources unchanged. Missing Git history, changed training sources or invalid
+artifact contracts block reuse. The original model provenance is retained.
+Rejected models, corrupt artifacts and models with future/unmature labels remain
+blocked. Real-money trials still require an exact-release model. Both VPSs must
+still run the same deployed release.
+
+New market events arrive every five minutes. The recommendation supervisor
+refreshes every five seconds by default; the execution worker polls every two
+seconds while flat and every 0.5 seconds while managing a position, plus request
+time. These faster checks do not retrain or create new market events.
+Recommendations expire after their existing short freshness window; between
+events, waiting for fresh data is expected. No trade is forced each cycle.
+
+The /learning report now includes recommendation readiness and its waiting
+reason, compatible-model availability, shadow positions open/pending, completed
+and excluded results, and last opportunity/result timestamps in UTC. Counts across
+releases show historical activity; net simulated PnL is reported for the current
+release only. Cancelled/unscorable results are not counted as completed scored
+trades. Shadow results do not currently train the main model. The main paper
+position and its results remain separate (/position, /recent, /pnl).

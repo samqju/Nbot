@@ -25,6 +25,7 @@ from .signals import ResearchSignalStore
 from .context_learning import SELECTOR_VERSION, adjustment
 from .paper_feedback import PaperFeedback
 from .shadow import ShadowBook, ShadowConfig
+from .model_compatibility import compatible_training_release
 from .candidate_setups import load_histories, matches, FALLBACK, CATALOG_DIGEST, history_digest, tie_key
 
 
@@ -61,6 +62,7 @@ class LearnedTestnetSource:
             raise ValueError("LEARNED_SOURCE_LIVE_TRAINING_REQUIRED")
         self.memory_path = memory_path or Path("data/observation/live/research_memory.db")
         self.release_sha = release_sha
+        self._release_compatibility = {}
         self.paper_feedback = PaperFeedback(self.live, release_sha=release_sha) if profile_name == "live-paper" else None
         shadow_enabled = os.environ.get("NBOT_SHADOW_ENABLED", "1")
         if shadow_enabled not in {"0", "1"}:
@@ -90,6 +92,17 @@ class LearnedTestnetSource:
             raise ValueError("LEARNED_MODEL_ARTIFACT_CORRUPT")
         return json.loads(row[0]), row[1]
 
+    def _compatible_release(self, trained_sha):
+        if trained_sha == self.release_sha:
+            return True
+        # Real-money trials still require the exact explicitly tested release.
+        if self.profile.name == "live-trade":
+            return False
+        if trained_sha not in self._release_compatibility:
+            self._release_compatibility[trained_sha] = compatible_training_release(
+                Path(__file__).resolve().parents[2], trained_sha, self.release_sha)
+        return self._release_compatibility[trained_sha]
+
     def _model(self, event_ms):
         if not self.memory_path.is_file():
             return None
@@ -101,7 +114,7 @@ class LearnedTestnetSource:
                                 (CHALLENGER_PREFIX + "%",)).fetchall()
             for (key,) in keys:
                 challenger, _ = self._artifact(conn, key)
-                if challenger.get("release_sha") != self.release_sha:
+                if not self._compatible_release(challenger.get("release_sha")):
                     continue
                 if challenger.get("evaluator_version") != EVALUATOR_VERSION:
                     continue
@@ -117,7 +130,8 @@ class LearnedTestnetSource:
                 artifact, digest = self._artifact(conn, MODEL_PREFIX + challenger["model_version"])
                 if digest != challenger["model_artifact_digest"]:
                     raise ValueError("LEARNED_MODEL_LINK_MISMATCH")
-                if artifact.get("release_sha") != self.release_sha or artifact.get("statistics_version") != STATISTICS_VERSION:
+                if (artifact.get("release_sha") != challenger.get("release_sha")
+                        or artifact.get("statistics_version") != STATISTICS_VERSION):
                     raise ValueError("LEARNED_MODEL_VERSION_MISMATCH")
                 if (artifact.get("authority") != "RESEARCH_ONLY_NO_EXECUTION"
                         or artifact.get("selector_version") != SELECTOR_VERSION
