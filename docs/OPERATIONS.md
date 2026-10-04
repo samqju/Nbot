@@ -569,55 +569,47 @@ from durable position/history truth after restart.
 
 ### Telegram commands
 
-Execution bot:
+The Execution bot registers exactly eight commands at startup:
 
-```text
-/status
-/position
-/health
-/recent
-/pnl
+| Command | What it does |
+|---|---|
+| /help | Lists the eight commands |
+| /status | Trading state, recommendation readiness and waiting reason |
+| /position | Current trade, size and stop-loss |
+| /recent | Most recently completed trade and result |
+| /pnl | Current UTC-day results and daily risk limits |
+| /learning | Model test progress, later evidence, passes and rejections |
+| /enable | Requests new trades, subject to every safety gate |
+| /disable | Pauses new trades while continuing open-position management |
 
-# read-only Observation/research proxy
-/observation
-/recommendation
-/memory
-/epoch
-/champion
-/challenger
-/governance
-/research
-/paper
-/learning
-/db
+Only /enable and /disable change trading permission. They do not switch trading
+mode or start real-money trading. Daily reporting uses UTC (05:30 IST reset).
+Learning test counts alone do not prove increasing profitability.
 
-# capital controls
-/disable
-/enable
-/help
-```
+Status and learning use authenticated read-only requests to the Learning VPS.
+Requests run on the command listener, never on the open-position management
+thread. If the Learning VPS is unavailable, local status remains available.
 
-The Observation/research commands above use the authenticated control link as a
-read-only proxy. Observation builds the status document; Execution only displays
-it. No Observation research/learning module is imported into the Execution
-worker, and a failed/slow status request runs only on the Telegram listener
-thread. It cannot block or mutate open-position management, entry state, risk,
-stops, promotion, rollback, or research evidence. This preserves the useful V1
-`/learning` proxy pattern while keeping the V3 worker boundary.
+Detailed diagnostics remain available through nbotctl, nbot_admin.py and the
+authenticated operator-status API. Removed Telegram commands are rejected.
 
-`/disable` creates an additional durable local entry block and leaves OPEN
-position management fully active.  `/enable` can remove only that operator
-block and then must pass current reconciliation/profile/arm/risk/authority
-gates. At the V3.8.6 checkpoint `NON_PROMOTIONAL_DRY` rejects `/enable` by design. V3.8.7 replaces only that gate with an authenticated one-entry operational-canary gate; all capital/risk/reconciliation checks remain final.
-Emergency flatten is intentionally not exposed through Telegram.
+For channel notifications plus private commands, set these in the Execution
+profile's private env file:
 
-There is exactly one Telegram **command** surface: the Execution bot above.
-It registers all 19 supported commands with Telegram at startup using the Bot
-API. Registration is best-effort and runs on the Telegram dispatcher thread, so
-Telegram latency/failure cannot delay capital management. The eleven
-Observation/research views remain read-only remote status requests: Observation
-builds the documents and Execution displays them. Observation itself never
-long-polls Telegram and never owns a second command menu.
+- EXECUTION_TELEGRAM_CHAT_ID: notification channel's numeric ID.
+- EXECUTION_TELEGRAM_OPERATOR_USER_ID: your personal numeric Telegram user ID.
+- EXECUTION_TELEGRAM_COMMAND_CHAT_ID: your private chat's numeric ID (normally
+  the same as your personal user ID). Open the bot privately and press Start.
+
+Command replies go to the command chat; automatic trade notifications stay in
+the notification channel. Only the configured user in the configured command
+chat is accepted. Channel posts are not commands. Leave COMMAND_CHAT_ID empty
+to keep using the notification chat for both commands and replies, as before.
+After env changes, restart the execution service and re-enable entries.
+Do not commit private env files.
+
+Observation owns no Telegram command listener. Safety gates, research evidence
+and server-side diagnostic reports are unchanged by this simpler menu.
 
 Queued Telegram commands are discarded when a listener starts.  This prevents
 an old `/enable` retained by Telegram while a worker was offline from changing
@@ -649,7 +641,7 @@ Installing/enabling the unit does not create paper-entry authority. V3.8.7 start
 
 Useful V1 concepts retained or reintroduced in V3 are: separate system/trade
 logs, startup/reconciliation visibility, open/close trade receipts, editable
-trade panel, restart panel recovery, status/position/health/PnL/recent-trade
+trade panel, restart panel recovery, status/position/PnL/recent-trade
 queries, safe enable/disable semantics, stale Telegram-command flushing,
 read-only learning/research visibility, and fire-and-forget notification
 failure handling.  V3 deliberately does not restore V1 Strategy/Universe or

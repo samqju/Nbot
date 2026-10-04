@@ -36,6 +36,7 @@ class TelegramConfig:
     chat_id: str = ""
     operator_user_id: str = ""
     timeout_seconds: float = 5.0
+    command_chat_id: str = ""
 
     @property
     def enabled(self) -> bool:
@@ -78,7 +79,8 @@ class TelegramConfig:
             token = ""
             chat_id = ""
             operator = ""
-        return cls(token, chat_id, operator, timeout)
+        command_chat = str(environment.get(f"{prefix}_TELEGRAM_COMMAND_CHAT_ID", "")).strip()
+        return cls(token, chat_id, operator, timeout, command_chat)
 
 
 class TelegramClient:

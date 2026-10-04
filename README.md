@@ -108,3 +108,9 @@ learned-Testnet setup and explicitly enable entries only when ready to test.
 The V3.2 mechanical canary is a separate historical/test procedure.
 
 The canonical implementation contract is `docs/NBOT_V3_ROADMAP.md`.
+
+### Telegram menu
+
+Use /help, /status, /position, /recent, /pnl, /learning, /enable and /disable.
+For channel notifications and private commands, configure a separate command
+chat as explained in [docs/OPERATIONS.md](docs/OPERATIONS.md#telegram-commands).

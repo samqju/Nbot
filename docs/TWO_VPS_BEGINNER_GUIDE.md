@@ -1240,3 +1240,9 @@ More detail:
 - [V3 roadmap](NBOT_V3_ROADMAP.md)
 - [Ubuntu OpenSSH documentation](https://ubuntu.com/server/docs/how-to/security/openssh-server/)
 - [Ubuntu firewall documentation](https://documentation.ubuntu.com/server/how-to/security/firewalls/index.html)
+
+### Telegram menu
+
+Use /help, /status, /position, /recent, /pnl, /learning, /enable and /disable.
+For channel notifications and private commands, configure a separate command
+chat as explained in [OPERATIONS.md](OPERATIONS.md#telegram-commands).

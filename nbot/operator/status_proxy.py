@@ -209,18 +209,25 @@ def _format_learning(data: Mapping[str, Any]) -> str:
     governance = data.get("governance") if isinstance(data.get("governance"), Mapping) else {}
     eligibility = governance.get("research_champion_eligibility") if isinstance(governance.get("research_champion_eligibility"), Mapping) else {}
     research = data.get("research_champion_promotion") if isinstance(data.get("research_champion_promotion"), Mapping) else {}
-    paper = data.get("paper_champion") if isinstance(data.get("paper_champion"), Mapping) else {}
+    states = governance.get("challenger_states") or []
+    finalized = [row for row in states if isinstance(row, Mapping)
+                 and row.get("state") != "ACTIVE_WAITING_FUTURE_EVIDENCE"]
+    latest = finalized[-1] if finalized else {}
     return (
-        f"Learning: {_e(data.get('status'))}\n"
-        f"Active challenger: {_e(active.get('challenger_version') or 'NONE')}\n"
-        f"Future evidence: {_e(future.get('available_future_events'))}/{_e(future.get('required_future_events'))}\n"
-        f"PASS / REJECT windows: {_e(challengers.get('passed_windows'))} / {_e(challengers.get('rejected_windows'))}\n"
-        f"Research eligibility: {_e(eligibility.get('decision'))}\n"
-        f"Research review: {_e(research.get('decision'))}\n"
-        f"Research Champion: {_e(research.get('current_research_champion') or 'NONE')}\n"
-        f"Paper gate: {_e(paper.get('decision'))}\n"
-        f"Paper evidence counted: {_e(paper.get('paper_evidence_counted'))}\n"
-        "Execution authority: NONE"
+        f"Learning state: {_e(str(data.get('status') or 'unknown').replace('_', ' ').lower())}\n"
+        f"New model being tested: {_e(active.get('model_version') or 'none currently')}\n"
+        f"Later market samples collected: {_e(future.get('available_future_events'))}"
+        f" / {_e(future.get('required_future_events'))} needed\n"
+        f"Tests passed: {_e(challengers.get('passed_windows'))}\n"
+        f"Tests rejected: {_e(challengers.get('rejected_windows'))}\n"
+        f"Latest completed test: {_e(str(latest.get('state') or 'none yet').replace('_', ' ').lower())}\n"
+        f"Research model selected: {_e(research.get('current_research_champion') or 'none yet')}\n"
+        f"Review progress: {_e(str(eligibility.get('decision') or 'unknown').replace('_', ' ').lower())}\n\n"
+        "The learner tests predictions against later market outcomes.\n"
+        "Waiting means more evidence is needed. Rejected means a test did not pass.\n"
+        "These counts alone do not prove improving trading profits.\n"
+        "Use /recent and /pnl for your actual paper-trade results.\n"
+        "This report does not approve real-money trading."
     )
 
 

@@ -108,6 +108,7 @@ The older mechanical LIVE/PAPER canary needs Telegram /enable. Learned paper use
 |---|---|
 | EXECUTION_TELEGRAM_BOT_TOKEN | Your Execution Telegram bot's token |
 | EXECUTION_TELEGRAM_CHAT_ID | Numeric ID of the chat receiving the bot's messages |
+| EXECUTION_TELEGRAM_COMMAND_CHAT_ID | Optional separate numeric private/group chat ID for commands and replies; empty uses the notification chat |
 | EXECUTION_TELEGRAM_OPERATOR_USER_ID | Numeric Telegram user ID of the person authorized to issue commands |
 | OBSERVATION_TELEGRAM_BOT_TOKEN | Optional separate notification bot token for Learning |
 | OBSERVATION_TELEGRAM_CHAT_ID | Numeric destination chat ID for Learning notifications |

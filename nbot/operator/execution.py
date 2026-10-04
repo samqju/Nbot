@@ -8,7 +8,7 @@ capital worker.
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import html
 import json
 import logging
@@ -26,25 +26,14 @@ OPERATOR_BLOCK_FILE = "OPERATOR_ENTRIES_DISABLED"
 OPERATOR_STATE_FILE = "operator_state.json"
 
 EXECUTION_TELEGRAM_COMMANDS: tuple[tuple[str, str], ...] = (
-    ("status", "Execution and capital summary"),
-    ("position", "Current protected position"),
-    ("health", "Execution health and latency"),
-    ("recent", "Most recent completed trade"),
-    ("pnl", "Current UTC-day PnL and risk"),
-    ("observation", "Observation health"),
-    ("recommendation", "Recommendation readiness"),
-    ("memory", "Compact research memory"),
-    ("epoch", "Research epoch status"),
-    ("champion", "Base Research Champion evaluator"),
-    ("challenger", "Active and latest challenger"),
-    ("governance", "Frozen Research Champion eligibility"),
-    ("research", "Research Champion review"),
-    ("paper", "Frozen Paper Champion gate"),
-    ("learning", "Combined V3.9 learning status"),
-    ("db", "Observation database integrity"),
-    ("disable", "Block new entries only"),
-    ("enable", "Request new-entry enable gate"),
-    ("help", "Show all Execution commands"),
+    ("help", "Show the eight commands"),
+    ("status", "Bot status and why it is waiting"),
+    ("position", "Current trade and stop-loss"),
+    ("recent", "Last completed trade"),
+    ("pnl", "Today: profit, loss and risk limits"),
+    ("learning", "Learning progress and model tests"),
+    ("enable", "Allow new trades after safety checks"),
+    ("disable", "Pause new trades; manage the open trade"),
 )
 
 
@@ -113,6 +102,14 @@ class ExecutionOperatorSurface:
         self.worker = worker
         self.telegram = telegram
         self.dispatcher = TelegramDispatcher(telegram, logger=system_log)
+        self._command_dispatcher = None
+        command_telegram = telegram
+        command_chat = telegram.config.command_chat_id
+        if command_chat and command_chat != telegram.config.chat_id:
+            command_telegram = TelegramClient(
+                replace(telegram.config, chat_id=command_chat),
+                logger=system_log, requester=telegram._requester)
+            self._command_dispatcher = TelegramDispatcher(command_telegram, logger=system_log)
         self.system_log = system_log
         self.trade_log = trade_log
         self.enable_policy = enable_policy
@@ -123,11 +120,16 @@ class ExecutionOperatorSurface:
         self.operator_state_path = paths.base_dir / OPERATOR_STATE_FILE
         self._state = self._load_operator_state()
         self._listener = TelegramCommandListener(
-            telegram,
+            command_telegram,
             self.handle_command,
             logger=system_log,
         )
         self._last_daily_halt_reason: str | None = None
+
+    @property
+    def command_dispatcher(self):
+        # Share the existing dispatcher unless a separate command chat is set.
+        return self._command_dispatcher or self.dispatcher
 
     def _default_state(self) -> dict[str, object]:
         return {
@@ -203,6 +205,8 @@ class ExecutionOperatorSurface:
         self._listener.stop()
         self.dispatcher.send_info("EXECUTION WORKER STOPPED", f"Profile: {html.escape(self.profile)}")
         self.dispatcher.stop()
+        if self._command_dispatcher is not None:
+            self._command_dispatcher.stop()
 
     def runtime_error(self, exc: BaseException) -> None:
         self.dispatcher.send_critical(
@@ -430,7 +434,7 @@ class ExecutionOperatorSurface:
         snap = self.worker.state.snapshot
         pos = snap.open_position
         daily = snap.daily_risk
-        return (
+        body = (
             f"Profile: {html.escape(self.profile)}\n"
             f"Entries enabled: {str(snap.entries_enabled).lower()}\n"
             f"Operator block: {str(operator_entries_blocked(self.repo_root, self.profile)).lower()}\n"
@@ -441,6 +445,30 @@ class ExecutionOperatorSurface:
             f"Daily halt: {str(daily.halted).lower()}\n"
             f"Last event: {html.escape(snap.health.last_event or 'NONE')}"
         )
+
+        if daily.halted:
+            body += "\nNew trades paused: daily risk limit reached."
+        elif operator_entries_blocked(self.repo_root, self.profile) or not snap.entries_enabled:
+            body += "\nNew trades paused: entries are disabled."
+        elif pos is not None:
+            body += "\nManaging the open trade; no second main position is allowed."
+        else:
+            body += "\nWaiting for a valid trade suggestion."
+        try:
+            payload = self.observation_status_reader("recommendation") if self.observation_status_reader else None
+            if not isinstance(payload, Mapping) or payload.get("order_authority") != "NONE":
+                raise ValueError("READ_ONLY_STATUS_UNAVAILABLE")
+            data = payload.get("document")
+            if not isinstance(data, Mapping):
+                raise ValueError("READ_ONLY_STATUS_INVALID")
+            ready = data.get("status") == "READY"
+            body += "\nLearning service: " + ("ready to suggest trades." if ready else "not ready.")
+            reason = str(data.get("reason") or "").replace("_", " ").lower()
+            if reason:
+                body += "\nReason: " + html.escape(reason)
+        except Exception:
+            body += "\nLearning service status unavailable; open-trade management continues."
+        return body
 
     def _position_body(self) -> str:
         pos = self.worker.state.open_position
@@ -481,7 +509,7 @@ class ExecutionOperatorSurface:
         """
         reader = self.observation_status_reader
         if reader is None:
-            self.dispatcher.send_warning(
+            self.command_dispatcher.send_warning(
                 "OBSERVATION STATUS UNAVAILABLE",
                 "Read-only Observation proxy is not configured. Execution is unchanged.",
             )
@@ -502,7 +530,7 @@ class ExecutionOperatorSurface:
                 type(exc).__name__,
                 exc,
             )
-            self.dispatcher.send_warning(
+            self.command_dispatcher.send_warning(
                 "OBSERVATION STATUS UNAVAILABLE",
                 f"View: {html.escape(view)}\nExecution and open-position management are unchanged.",
             )
@@ -511,85 +539,42 @@ class ExecutionOperatorSurface:
             "OPERATOR_OBSERVATION_STATUS source=TELEGRAM view=%s authority=NONE",
             view,
         )
-        self.dispatcher.send_info(title, body)
+        self.command_dispatcher.send_info(title, body)
 
     def handle_command(self, text: str) -> None:
         command = str(text or "").strip().split()[0].split("@", 1)[0].lower() if str(text or "").strip() else ""
         try:
             if command == "/status":
-                self.dispatcher.send_info("EXECUTION STATUS", self._status_body())
+                self.command_dispatcher.send_info("EXECUTION STATUS", self._status_body())
             elif command == "/position":
-                self.dispatcher.send_info("POSITION", self._position_body())
-            elif command == "/health":
-                self.dispatcher.send_info("EXECUTION HEALTH", self._health_body())
+                self.command_dispatcher.send_info("POSITION", self._position_body())
             elif command == "/recent":
-                self.dispatcher.send_info("RECENT TRADE", self._recent_body())
+                self.command_dispatcher.send_info("RECENT TRADE", self._recent_body())
             elif command == "/pnl":
-                self.dispatcher.send_info("DAILY PNL", self._pnl_body())
-            elif command == "/observation":
-                self._remote_observation_status(view="observation", title="OBSERVATION STATUS")
-            elif command == "/recommendation":
-                self._remote_observation_status(view="recommendation", title="RECOMMENDATION STATUS")
-            elif command == "/memory":
-                self._remote_observation_status(view="memory", title="RESEARCH MEMORY")
-            elif command == "/epoch":
-                self._remote_observation_status(view="epoch", title="RESEARCH EPOCH")
-            elif command == "/champion":
-                self._remote_observation_status(view="champion", title="RESEARCH CHAMPION")
-            elif command == "/challenger":
-                self._remote_observation_status(view="challenger", title="CHALLENGER STATUS")
-            elif command == "/governance":
-                self._remote_observation_status(view="governance", title="RESEARCH GOVERNANCE")
-            elif command == "/research":
-                self._remote_observation_status(view="research", title="RESEARCH CHAMPION REVIEW")
-            elif command == "/paper":
-                self._remote_observation_status(view="paper", title="PAPER CHAMPION GATE")
+                self.command_dispatcher.send_info("DAILY PNL", self._pnl_body())
             elif command == "/learning":
-                self._remote_observation_status(view="learning", title="V3.9 LEARNING STATUS")
-            elif command == "/db":
-                self._remote_observation_status(view="db", title="OBSERVATION DATABASE")
+                self._remote_observation_status(view="learning", title="LEARNING PROGRESS")
             elif command == "/disable":
                 set_operator_entry_block(self.repo_root, self.profile, blocked=True)
                 self.worker.disable_new_entries()
                 self.system_log.warning("OPERATOR_ENTRY_DISABLE source=TELEGRAM")
-                self.dispatcher.send_warning("NEW ENTRIES DISABLED", "Open-position management remains active.")
+                self.command_dispatcher.send_warning("NEW ENTRIES DISABLED", "Open-position management remains active.")
             elif command == "/enable":
                 allowed, reason = self.enable_policy()
                 if not allowed:
                     self.system_log.warning("OPERATOR_ENTRY_ENABLE_REJECTED reason=%s", reason)
-                    self.dispatcher.send_warning("ENABLE REJECTED", html.escape(reason))
+                    self.command_dispatcher.send_warning("ENABLE REJECTED", html.escape(reason))
                     return
                 set_operator_entry_block(self.repo_root, self.profile, blocked=False)
                 result = self.worker.enable_new_entries()
                 self.system_log.warning("OPERATOR_ENTRY_ENABLE source=TELEGRAM reconciliation=%s", result.status)
-                self.dispatcher.send_info("NEW ENTRIES ENABLED", f"Reconciliation: {html.escape(result.status)}")
+                self.command_dispatcher.send_info("NEW ENTRIES ENABLED", f"Reconciliation: {html.escape(result.status)}")
             elif command == "/help":
-                self.dispatcher.send_info(
-                    "EXECUTION COMMANDS",
-                    "/status — engine/capital summary\n"
-                    "/position — current protected position\n"
-                    "/health — execution health counters/latency\n"
-                    "/recent — most recent completed trade\n"
-                    "/pnl — current UTC-day PnL/risk state\n"
-                    "\nRead-only Observation / research:\n"
-                    "/observation — Observation health\n"
-                    "/recommendation — recommendation readiness\n"
-                    "/memory — compact research memory\n"
-                    "/epoch — research epoch status\n"
-                    "/champion — base Research Champion evaluator\n"
-                    "/challenger — active/latest challenger + PASS/REJECT\n"
-                    "/governance — frozen Research Champion eligibility\n"
-                    "/research — Research Champion review/pointer\n"
-                    "/paper — frozen Paper Champion gate\n"
-                    "/learning — compact combined V3.9 learning status\n"
-                    "/db — Observation DB integrity\n"
-                    "\nCapital controls:\n"
-                    "/disable — block new entries only\n"
-                    "/enable — request entry gate; all profile/authority/risk gates still apply\n"
-                    "/help — this list",
-                )
+                body = "\n".join(f"/{name} - {description}" for name, description in EXECUTION_TELEGRAM_COMMANDS)
+                body += "\n\nOnly /enable and /disable change trading.\n/disable keeps managing an open trade."
+                self.command_dispatcher.send_info("BOT COMMANDS", body)
             elif command:
-                self.dispatcher.send_warning("UNKNOWN COMMAND", f"{html.escape(command)}\nUse /help.")
+                self.command_dispatcher.send_warning("UNKNOWN COMMAND", f"{html.escape(command)}\nUse /help.")
         except Exception as exc:
             self.system_log.warning("OPERATOR_COMMAND_FAILED command=%s error=%s:%s", command, type(exc).__name__, exc)
-            self.dispatcher.send_warning("COMMAND FAILED", "Execution safety state was not bypassed.")
+            self.command_dispatcher.send_warning("COMMAND FAILED", "Execution safety state was not bypassed.")

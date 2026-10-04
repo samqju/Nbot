@@ -338,7 +338,7 @@ class V397OperatorResearchVisibilityTests(unittest.TestCase):
             self.assertEqual(worker.disable_calls, 0)
             self.assertEqual(worker.enable_calls, 0)
             self.assertIs(worker.state.open_position, sentinel_position)
-            self.assertEqual(capture.info[0][0], "V3.9 LEARNING STATUS")
+            self.assertEqual(capture.info[0][0], "LEARNING PROGRESS")
 
     def test_execution_remote_status_failure_does_not_mutate_capital_state(self):
         with tempfile.TemporaryDirectory() as td:
@@ -361,7 +361,7 @@ class V397OperatorResearchVisibilityTests(unittest.TestCase):
             )
             capture = CaptureDispatcher()
             surface.dispatcher = capture
-            surface.handle_command("/research")
+            surface.handle_command("/learning")
 
             self.assertEqual(worker.disable_calls, 0)
             self.assertEqual(worker.enable_calls, 0)
@@ -369,7 +369,7 @@ class V397OperatorResearchVisibilityTests(unittest.TestCase):
             self.assertEqual(capture.warning[0][0], "OBSERVATION STATUS UNAVAILABLE")
             self.assertIn("unchanged", capture.warning[0][1])
 
-    def test_execution_help_lists_v39_read_only_views(self):
+    def test_execution_help_lists_eight_commands(self):
         with tempfile.TemporaryDirectory() as td:
             worker = FakeWorker()
             surface = ExecutionOperatorSurface(
@@ -385,15 +385,11 @@ class V397OperatorResearchVisibilityTests(unittest.TestCase):
             surface.dispatcher = capture
             surface.handle_command("/help")
             body = capture.info[0][1]
-            for command in (
-                "/observation",
-                "/challenger",
-                "/governance",
-                "/research",
-                "/paper",
-                "/learning",
-            ):
+            for command in ("/help", "/status", "/position", "/recent", "/pnl",
+                            "/learning", "/enable", "/disable"):
                 self.assertIn(command, body)
+            for command in ("/db", "/governance", "/research", "/paper", "/health"):
+                self.assertNotIn(command, body)
             self.assertNotIn("/" + "regimes", body)
 
     def test_execution_is_the_single_telegram_command_surface(self):
@@ -402,13 +398,10 @@ class V397OperatorResearchVisibilityTests(unittest.TestCase):
         self.assertEqual(
             execution_names,
             {
-                "status", "position", "health", "recent", "pnl",
-                "observation", "recommendation", "memory", "epoch", "champion",
-                "challenger", "governance", "research", "paper", "learning", "db",
-                "disable", "enable", "help",
+                "help", "status", "position", "recent", "pnl", "learning", "enable", "disable",
             },
         )
-        self.assertEqual(len(execution_names), 19)
+        self.assertEqual(len(execution_names), 8)
         self.assertNotIn("regimes", execution_names)
 
     def test_observation_control_has_no_telegram_command_listener(self):
