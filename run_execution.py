@@ -35,6 +35,7 @@ from nbot.config.validation import MachineRole, detect_role, profile_is_armed
 from nbot.exchange.binance_public import (
     BinanceLivePublicMarketConfig,
     BinanceLivePublicMarketData,
+    BinanceLivePublicMarketError,
 )
 from nbot.exchange.binance_testnet import (
     TESTNET_REST_BASE_URL,
@@ -902,10 +903,36 @@ def run_learned_paper_runtime(*, repo_root: Path, environment: Mapping[str, str]
                 f"profile={profile.name}\npid={os.getpid()}\nready_at={utc_iso()}\n"
                 f"mode={authority}\nbinance_private_order_writes={str(is_live).lower()}\n",
                 mode=0o600)
+            quote_failures = 0
+            next_quote_warning = 0.0
             while not stop_requested:
                 local = worker.state.open_position
                 if local is not None:
-                    worker.process_open_quote(exchange.quote(local.symbol))
+                    # Only the public quote read is retryable. Never swallow
+                    # position-management, persistence or real-order errors.
+                    try:
+                        quote = exchange.quote(local.symbol)
+                    except BinanceLivePublicMarketError as exc:
+                        if is_live:
+                            raise
+                        quote_failures += 1
+                        now = time.monotonic()
+                        if quote_failures == 1 or now >= next_quote_warning:
+                            operator.system_log.warning(
+                                "PAPER_QUOTE_UNAVAILABLE symbol=%s failures=%s error=%s; "
+                                "position retained; waiting for fresh quote",
+                                local.symbol, quote_failures, exc)
+                            next_quote_warning = now + 60.0
+                        # Keep the worker and operator listener alive. No stale
+                        # tick reaches the paper exchange or trailing-stop logic.
+                        time.sleep(max(5.0, open_poll_seconds))
+                        continue
+                    if quote_failures:
+                        operator.system_log.info(
+                            "PAPER_QUOTE_RECOVERED symbol=%s rejected_quotes=%s",
+                            local.symbol, quote_failures)
+                        quote_failures = 0
+                    worker.process_open_quote(quote)
                     operator.sync()
                     time.sleep(open_poll_seconds)
                     continue

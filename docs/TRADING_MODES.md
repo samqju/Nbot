@@ -321,3 +321,18 @@ and the [Binance USD-M API](https://developers.binance.com/en/docs/products/deri
 
 Operational note: the paper-only economic-approval disclaimer is informational.
 Cluster startup still blocks actual safety, release, state and connection failures.
+
+### Paper price-feed interruptions
+
+If Binance supplies an old/invalid price timestamp or the public quote request
+fails while a learned paper position is open, the worker keeps that position and
+retries after at least five seconds. It never trades or moves the simulated stop
+using the rejected price. Warnings (PAPER_QUOTE_UNAVAILABLE) are logged at most
+once per minute during a continuous interruption; PAPER_QUOTE_RECOVERED records
+recovery. The timestamp warning includes source time, receive time and quote age.
+This avoids repeated worker restarts and their entry-disable side effect.
+Actual process restarts still require entries to be enabled again.
+
+A paper stop cannot be evaluated while fresh prices are unavailable. On recovery,
+it uses the next valid observed quote; it does not invent fills for the missing
+interval. This limitation matters when interpreting paper results.

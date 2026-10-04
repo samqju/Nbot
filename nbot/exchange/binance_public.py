@@ -205,7 +205,11 @@ class BinanceLivePublicMarketData:
             raise BinanceLivePublicMarketError("LIVE_PUBLIC_SOURCE_TIME_INVALID")
 
         if source_time in (None, "") or timestamp_ms <= 0 or abs(observed_at - timestamp_ms) > 5_000:
-            raise BinanceLivePublicMarketError("LIVE_PUBLIC_SOURCE_TIME_INVALID_OR_STALE")
+            raise BinanceLivePublicMarketError(
+                "LIVE_PUBLIC_SOURCE_TIME_INVALID_OR_STALE:"
+                f"symbol={symbol}:source_ms={source_time}:observed_ms={observed_at}:"
+                f"age_ms={observed_at - timestamp_ms}:limit_ms=5000"
+            )
 
         return Quote(
             symbol=symbol,
