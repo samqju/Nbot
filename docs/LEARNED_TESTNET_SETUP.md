@@ -1,5 +1,10 @@
 # Running the learning bot on Testnet
 
+This document is intentionally Testnet-specific. For the equivalent LIVE-paper
+and bounded LIVE-trade operator commands, use
+[ALL_MODES_COMMANDS.md](ALL_MODES_COMMANDS.md) and
+[TRADING_MODES.md](TRADING_MODES.md).
+
 For a complete first-time installation with copy-and-paste commands, use the
 [beginner two-VPS guide](TWO_VPS_BEGINNER_GUIDE.md).
 
@@ -72,6 +77,26 @@ blocks suggestions; it does not fall back to random trades.
 ```
 
 Arming does not bypass model readiness. While waiting, the worker stays flat.
+
+For comparison, the other two mode start sequences are:
+
+~~~bash
+# Learned LIVE paper: no arm file
+./nbotctl cluster doctor live-paper
+./nbotctl cluster start live-paper
+./nbotctl cluster status live-paper
+./nbotctl entries enable live-paper
+
+# Bounded LIVE trade: explicit real-money arm required
+./nbotctl arm live-trade --confirm-real-money
+./nbotctl cluster doctor live-trade
+./nbotctl cluster start live-trade
+./nbotctl cluster status live-trade
+./nbotctl entries enable live-trade
+~~~
+
+Do not run these alternatives simultaneously with Testnet. Switch modes only
+after the current profile is safely flat and stopped.
 `./nbotctl entries disable testnet-trade` blocks new entries while open-position
 protection continues. Never use deletion of state/arm/session files to bypass a
 limit or an unresolved order. The existing explicit re-arm/session controls apply.
@@ -104,6 +129,8 @@ Useful Observation commands:
 .venv/bin/python nbot_admin.py learning-report --output logs/learning-report.md
 .venv/bin/python nbot_admin.py research-memory-status
 journalctl -u nbot-observation-testnet-control.service -n 50
+journalctl -u nbot-observation-live-paper-control.service -n 50
+journalctl -u nbot-observation-live-trade-control.service -n 50
 journalctl -u nbot-research-epoch.service -n 50
 ```
 
