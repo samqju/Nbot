@@ -72,6 +72,17 @@ class PaperFeedbackTests(unittest.TestCase):
         model = self.feedback.snapshot(cutoff_ms=NOW)
         self.assertTrue(all(g["factor"]==1 and not g["supported"] for g in model["groups"].values()))
 
+    def test_supported_feedback_is_shrunk_toward_neutral(self):
+        self.populate(3., count=8)
+        model = self.feedback.snapshot(cutoff_ms=NOW)
+        group = next(iter(model["groups"].values()))
+        self.assertAlmostEqual(group["raw_mean_clipped_r"], 3.0)
+        self.assertGreater(group["shrinkage_factor"], 0)
+        self.assertLess(group["shrinkage_factor"], 1)
+        self.assertGreater(group["mean_clipped_r"], 0)
+        self.assertLess(group["mean_clipped_r"], group["raw_mean_clipped_r"])
+        self.assertGreater(group["factor"], 1)
+
     def test_many_trades_in_one_time_bucket_do_not_create_support(self):
         t = (NOW-2*DAY_MS)//BUCKET_MS*BUCKET_MS+1000
         for i in range(20):
@@ -155,10 +166,18 @@ class PaperFeedbackTests(unittest.TestCase):
     def test_report_is_read_only_and_does_not_claim_profitability(self):
         self.populate()
         self.feedback.snapshot(cutoff_ms=NOW)
+        self.feedback.record_check(NOW-300000, NOW-299000, {
+            "baseline": {"symbol": "BTCUSDT", "side": "LONG", "candidate": "MODEL_ONLY", "score": 1.0},
+            "selected": {"symbol": "ETHUSDT", "side": "LONG", "candidate": "MODEL_ONLY", "score": 0.8,
+                         "factor": 0.8, "reason": "PAPER_FEEDBACK_APPLIED"},
+            "choice_changed": True, "no_trade": False,
+        })
         with self.db.connection() as conn:
             counts=conn.execute("SELECT COUNT(*) FROM paper_feedback_models").fetchone()
         report=paper_learning_report(self.db,release_sha=SHA,now_ms=NOW+1)
         self.assertIn("Completed eligible paper trades: 12",report)
+        self.assertIn("Frozen baseline decision audit",report)
+        self.assertIn("Adaptive choice differed from frozen base ranking: 1 / 1",report)
         self.assertIn("INSUFFICIENT",report)
         self.assertIn("funding",report)
         with self.db.connection() as conn:

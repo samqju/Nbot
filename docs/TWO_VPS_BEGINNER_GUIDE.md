@@ -14,11 +14,10 @@ data, train its existing model, recommend trades, and manage one Testnet positio
 at a time. This does not mean the strategy is profitable or every roadmap phase
 has passed. A new installation needs time to learn.
 
-Checked against the code at commit
-[9fff54c](https://github.com/samqju/Nbot/commit/9fff54c3889e26c21dd217d439783af4803993d6).
-Documentation consistency review: 2026-10-01. This identifies the reviewed code,
-not the code automatically installed on your servers.
-Updated October 1, 2026. Commands assume **Ubuntu Server 24.04 LTS**, a normal
+Documentation consistency review: 2026-10-05 against the current V3.9
+three-mode CLI and this research branch. This describes reviewed repository
+behavior, not the code automatically installed on your servers.
+Updated October 5, 2026. Commands assume **Ubuntu Server 24.04 LTS**, a normal
 login named **ubuntu**, SSH on port **22**, and the bot at **/home/ubuntu/Nbot**.
 
 > Already have a running bot? Do not overwrite its folder, keys, or databases
@@ -755,6 +754,27 @@ The request may take a worker cycle to appear in status. A trade happens only if
 the model is ready, it finds a suitable opportunity, and all trading checks pass.
 Do not change to the mechanical selection mode merely to make trades appear.
 
+### Equivalent start sequences for the other two modes
+
+Do not run these at the same time as Testnet. They are shown here so this
+beginner guide does not imply Testnet is the only supported profile. Complete the
+additional mode setup in [TRADING_MODES.md](TRADING_MODES.md) first.
+
+~~~bash
+# Learned LIVE paper: no arm file
+./nbotctl cluster doctor live-paper
+./nbotctl cluster start live-paper
+./nbotctl cluster status live-paper
+./nbotctl entries enable live-paper
+
+# Bounded LIVE trade: real-money authorization is a separate deliberate gate
+./nbotctl arm live-trade --confirm-real-money
+./nbotctl cluster doctor live-trade
+./nbotctl cluster start live-trade
+./nbotctl cluster status live-trade
+./nbotctl entries enable live-trade
+~~~
+
 The trader continues after you close your terminal. **In this version its Testnet
 launcher is a managed background process, not a boot-enabled trading systemd
 service.** Observation and the tunnel restart after a VPS reboot; Testnet
@@ -851,6 +871,26 @@ Follow the trader log:
 ./nbotctl logs testnet-trade --follow
 ~~~
 
+The same daily operator checks exist for the other profiles:
+
+~~~bash
+# LIVE paper
+./nbotctl cluster status live-paper
+./nbotctl position live-paper
+./nbotctl health live-paper
+./nbotctl recent live-paper
+./nbotctl pnl live-paper
+./nbotctl logs live-paper --lines 100
+
+# LIVE trade
+./nbotctl cluster status live-trade
+./nbotctl position live-trade
+./nbotctl health live-trade
+./nbotctl recent live-trade
+./nbotctl pnl live-trade
+./nbotctl logs live-trade --lines 100
+~~~
+
 Press Ctrl+C to stop viewing. This does **not** stop the bot.
 
 ### LEARNING: everyday checks
@@ -898,6 +938,21 @@ To resume, after checking the same session is still healthy:
 ./nbotctl entries enable testnet-trade
 ~~~
 
+Equivalent pause/resume commands for the other profiles are:
+
+~~~bash
+./nbotctl entries disable live-paper
+./nbotctl cluster status live-paper
+./nbotctl entries enable live-paper
+
+./nbotctl entries disable live-trade
+./nbotctl cluster status live-trade
+./nbotctl entries enable live-trade
+~~~
+
+LIVE-trade enable still requires its current explicit arm. LIVE-paper enable is
+still subject to learned Observation readiness.
+
 ### Stop the Testnet system safely
 
 Disable entries first. Wait until status shows:
@@ -916,6 +971,16 @@ Then, **TRADING:**
 
 This stops the Testnet worker, tunnel, and remote Testnet control service.
 The learning VPS's LIVE collector and scheduled research continue.
+
+The same safe-flat rule applies to the other profiles:
+
+~~~bash
+./nbotctl cluster stop live-paper
+./nbotctl cluster stop live-trade
+./nbotctl disarm live-trade
+~~~
+
+LIVE paper has no disarm command.
 If stopping is refused, resolve the stated condition; do not kill processes,
 delete state, or reboot as a shortcut.
 
@@ -971,6 +1036,22 @@ cd "$HOME/Nbot"
 ./nbotctl start testnet-trade
 ./nbotctl status
 ./nbotctl health testnet-trade
+~~~
+
+For a crashed LIVE-trade managed process, use the same local pattern:
+
+~~~bash
+./nbotctl start live-trade
+./nbotctl status
+./nbotctl health live-trade
+~~~
+
+The installed LIVE-paper worker is systemd-managed:
+
+~~~bash
+sudo systemctl start nbot-execution-live-paper.service
+./nbotctl status
+./nbotctl health live-paper
 ~~~
 
 Local startup lets Execution reconcile its saved state with Binance without

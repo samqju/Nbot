@@ -1,5 +1,10 @@
 # NBOT V3 Operations
 
+Current command syntax for all three profiles is centralized in
+[ALL_MODES_COMMANDS.md](ALL_MODES_COMMANDS.md). The current sections below use
+explicit three-mode examples; preserved historical sections retain their original
+phase-specific commands.
+
 For today's learned-Testnet installation, start with the
 [beginner guide](TWO_VPS_BEGINNER_GUIDE.md) and
 [small-VPS settings](SMALL_VPS_LEARNER.md). This reference also preserves older
@@ -43,6 +48,14 @@ Research targets use four-hour simulated ATR-based R, not actual execution P&L.
 Use the opt-in `tiny` resource profile for the planned 1 CPU / 1 GB learner;
 monitor the actual machine because service limits are not a capacity guarantee.
 
+### Paper-feedback V4 experiment on this branch
+
+The learned-paper feedback layer now shrinks supported group means toward neutral
+before changing ranking. This reduces small-sample overreaction without changing
+the base model or Execution risk path. The paper report also summarizes frozen
+pre-feedback choices versus adaptive choices as a causal decision audit; unchosen
+alternatives still receive no invented PnL.
+
 ### Continuous research cadence
 
 `nbot-research-epoch.timer` is a 15-minute maturity checker, not an 8-hour scheduler. The research system advances only when a genuine new 96-event epoch plus required future context is mature. After a successful durable epoch commit, the epoch-to-challenger transition creates exactly one challenger opportunity.
@@ -64,13 +77,20 @@ The former fixed daily `nbot-challenger-cycle.timer` is retired. `nbot-challenge
 
 ### Safe current checks
 
-On Execution:
+On Execution, check all configured profiles explicitly:
 
 ```bash
 ./nbotctl status
-./nbotctl doctor live-paper
 ./nbotctl doctor testnet-trade
+./nbotctl doctor live-paper
+./nbotctl doctor live-trade
+
+./run_execution.py --profile testnet-trade --self-check
+./run_execution.py --profile live-paper --self-check
+./run_execution.py --profile live-trade --self-check
 ```
+
+These are read-only checks; they do not arm or enable entries.
 
 On Observation:
 
@@ -92,16 +112,33 @@ The remaining operator-tooling gaps are tracked in `docs/PRE_V310_GAP_LEDGER.md`
 
 The **Execution VPS is the cluster control point** for the current two-VPS deployment. This is deliberate: Execution already owns the installed, strict-host-key-checked SSH tunnel identity used to reach Observation. Cluster tooling derives the SSH target, identity-file path, service user and pinned loopback forward from the installed `nbot-control-tunnel-<profile>.service`; it does not introduce a second hostname/key configuration and does not copy private keys into Git.
 
-Supported operator commands are:
+Supported cluster commands exist for every active profile:
 
 ```bash
+./nbotctl cluster doctor testnet-trade
+./nbotctl cluster start testnet-trade
+./nbotctl cluster status testnet-trade
+
 ./nbotctl cluster doctor live-paper
 ./nbotctl cluster start live-paper
-./nbotctl cluster stop
-./nbotctl cluster status
+./nbotctl cluster status live-paper
+
+./nbotctl cluster doctor live-trade
+./nbotctl cluster start live-trade
+./nbotctl cluster status live-trade
 ```
 
-`testnet-trade` uses the same orchestration contract when its learned-Testnet Observation control/tunnel units are installed and Testnet is legitimately armed. The separate live-trade route requires explicit small-trial authorization; see [the mode guide](TRADING_MODES.md).
+Safe stop accepts the explicit selected profile:
+
+```bash
+./nbotctl cluster stop testnet-trade
+./nbotctl cluster stop live-paper
+./nbotctl cluster stop live-trade
+```
+
+Testnet must be armed before entry enable. LIVE paper has no arm file. LIVE trade
+requires the separately configured and explicitly confirmed small-trial arm.
+See [the mode guide](TRADING_MODES.md) and [all-mode commands](ALL_MODES_COMMANDS.md).
 
 `cluster doctor` is read-only. It fails closed on local/remote doctor failure, dirty trees, wrong roles, wrong profile contract, protocol mismatch, SHA mismatch, tag asymmetry, missing units, unpinned control endpoint, invalid SSH tunnel definition, or incompatible authenticated runtime control health when the tunnel is active. Both sides may be untagged only when they are on the exact same SHA; if either side has an exact tag, tag parity is required.
 
@@ -117,7 +154,7 @@ For a safe FLAT start, ordering is:
 6. start the Execution worker;
 7. prove the running Execution release/READY state and rerun cluster doctor.
 
-Cluster start **never enables entries** and creates no research, Paper Champion, or real-capital authority. LIVE_PAPER still requires its separate fresh operator `/enable` gate.
+Cluster start **never enables entries** and creates no research, Paper Champion, or real-capital authority. Every mode still needs its separate entry-enable step; learned LIVE paper supports `./nbotctl entries enable live-paper` (and the authenticated Telegram `/enable` surface when configured).
 
 `cluster stop` is intentionally conservative. Before any SSH, service stop, or tunnel mutation it reads local durable Execution truth and refuses if any of the following are present:
 

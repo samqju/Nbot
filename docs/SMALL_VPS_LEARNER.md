@@ -1,9 +1,14 @@
 # Learning on a 1 CPU / 1 GB VPS
 
+The tiny Observation learner can serve the current three-mode architecture:
+`testnet-trade`, learned `live-paper`, and the separately authorized bounded
+`live-trade` route. Only one Execution mode should run at a time. See
+[ALL_MODES_COMMANDS.md](ALL_MODES_COMMANDS.md) for operator syntax.
+
 Paper feedback update: [30-day auto-learning experiment](PAPER_AUTO_LEARNING.md). Learned mainnet-paper now adapts setup rankings from its own settled paper trades. Testnet and real-money selection remain separate; economic proof is still unestablished.
 
 
-Reviewed against learner release `9fff54c` on 2026-10-01. See the
+Reviewed 2026-10-05 against the current V3.9 tiny-service and three-mode operator behavior. See the
 [documentation index](DOCUMENTATION_INDEX.md) for current instructions and historical contracts.
 
 This is an experimental Testnet learner. It learns numerical relationships and
@@ -47,8 +52,28 @@ One material limitation remains: targets are four-hour, candle-based research
 simulations with ATR-based risk units. Execution uses its own fixed-dollar risk
 and position-management lifecycle. Thus a predicted research R is not a forecast
 of actual trade P&L. Proposal metadata and the report now state that distinction.
-Actual Testnet outcomes must be compared with predictions before treating this
-research ranking as evidence of trading usefulness.
+Execution outcomes remain mode-scoped. Testnet outcomes test the Testnet route;
+learned paper outcomes can feed the paper-only feedback layer; bounded LIVE-trade
+outcomes do not silently become paper-feedback labels. None of these alone proves
+economic usefulness.
+
+## Mode-specific control service choices
+
+The base LIVE collector and research timer are shared. Start only the control
+service for the selected mode. The installer supports these mode flags:
+
+~~~bash
+# Testnet control
+--enable-testnet-control --start-testnet-control
+
+# Learned LIVE-paper control
+--enable-live-paper-control --start-live-paper-control
+
+# Bounded LIVE-trade control
+--enable-live-trade-control --start-live-trade-control
+~~~
+
+Do not run multiple Execution modes merely because multiple control units exist.
 
 ## Fresh server installation
 
@@ -97,7 +122,9 @@ sudo journalctl -u nbot-research-epoch.service -n 50 --no-pager
 ```
 
 The report shows setup sample counts, training descriptions, latest evaluation
-results, and plain-English reasons for each failed requirement. It also shows
+results, and plain-English reasons for each failed requirement.
+ Learned-paper reporting additionally shows raw versus shrunk feedback means and
+the frozen-base versus adaptive decision audit. It also shows
 candidate/benchmark results, the confidence-bound comparison, minimum-trade
 count and doubled-cost result. A positive average alone is not a pass.
 

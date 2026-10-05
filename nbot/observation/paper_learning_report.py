@@ -4,6 +4,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 import sqlite3
 import statistics
+import json
 from .paper_feedback import DAY_MS, VERSION, _verified
 from .candidate_setups import REGISTRY, FALLBACK
 
@@ -28,6 +29,11 @@ def paper_learning_report(database, *, release_sha, now_ms):
         model = _verified(*row) if row else None
         versions = conn.execute("SELECT COUNT(*) FROM paper_feedback_models WHERE release_sha=?", (release_sha,)).fetchone()[0]
         rejected = conn.execute("SELECT COUNT(*) FROM paper_feedback_rejections").fetchone()[0]
+        check_rows = []
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE name='paper_feedback_checks'").fetchone():
+            check_rows = conn.execute("""SELECT detail_json FROM paper_feedback_checks
+                WHERE release_sha=? AND decision_ms<? ORDER BY decision_ms DESC LIMIT 10001""",
+                (release_sha, now_ms)).fetchall()
     lines += [f"Algorithm: {VERSION}", f"Release/cohort: {release_sha}",
               f"Recorded recommendation decisions: {decisions} (not all become trades)",
               f"Completed eligible paper trades: {len(samples)}",
@@ -41,6 +47,33 @@ def paper_learning_report(database, *, release_sha, now_ms):
                   "30 days reached: review the evidence; do not auto-promote." if days >= 30 else "30-day observation period still running."]
     else:
         lines += ["Waiting for the first eligible recommendation; check base learner and control health."]
+    checks = []
+    for row in check_rows[:10000]:
+        try:
+            value = json.loads(row[0])
+            if isinstance(value, dict):
+                checks.append(value)
+        except (TypeError, ValueError):
+            continue
+    lines += ["", "## Frozen baseline decision audit", ""]
+    if checks:
+        changed = sum(bool(c.get("choice_changed")) for c in checks)
+        abstained = sum(bool(c.get("no_trade")) for c in checks)
+        baseline_positive = sum(float((c.get("baseline") or {}).get("score") or 0) > 0 for c in checks)
+        selected_positive = sum(float((c.get("selected") or {}).get("score") or 0) > 0 for c in checks)
+        lines += [
+            f"Comparable market decisions: {len(checks)}",
+            f"Adaptive choice differed from frozen base ranking: {changed} / {len(checks)}",
+            f"Adaptive no-trade decisions: {abstained}",
+            f"Frozen baseline positive opportunities: {baseline_positive}",
+            f"Adaptive positive selections: {selected_positive}",
+            "This is a causal selection audit, not counterfactual PnL: an unchosen baseline is not treated as a win or loss.",
+        ]
+    else:
+        lines += ["No comparable decision checks recorded yet."]
+    if len(check_rows) > 10000:
+        lines += ["Decision audit limited to the latest 10,000 checks."]
+
     if samples:
         equity = peak = drawdown = 0.
         for sample in samples:
@@ -85,18 +118,21 @@ def paper_learning_report(database, *, release_sha, now_ms):
                   f"Active loss pauses at this snapshot: {len(model.get('cooldowns',{}))}",
                   f"Training cap reached: {model['sample_cap_reached']}",
                   "1.0 = unchanged; below 1.0 = downranked; above 1.0 = increased preference.",
+                  "Sparse supported evidence is shrunk toward neutral before it can move ranking.",
                   "Time buckets reduce repeated-trade influence; they do not guarantee independence.",
-                  "", "| Setup / market / direction | Trades | Buckets | Effective buckets | Weight |",
-                  "|---|---:|---:|---:|---:|"]
+                  "", "| Setup / market / direction | Trades | Buckets | Effective buckets | Raw mean R | Shrunk mean R | Shrinkage | Weight |",
+                  "|---|---:|---:|---:|---:|---:|---:|---:|"]
         for key, group in sorted(model["groups"].items()):
             label = key.replace("|", " / ")
-            lines += [f"| {label} | {group['trades']} | {group['buckets']} | {group['effective_buckets']:.1f} | {group['factor']:.3f} |"]
+            raw_mean = group.get("raw_mean_clipped_r", group["mean_clipped_r"])
+            shrinkage = group.get("shrinkage_factor", 1.0)
+            lines += [f"| {label} | {group['trades']} | {group['buckets']} | {group['effective_buckets']:.1f} | {raw_mean:.3f} | {group['mean_clipped_r']:.3f} | {shrinkage:.3f} | {group['factor']:.3f} |"]
         if not any(g["supported"] for g in model["groups"].values()):
             lines += ["Insufficient supported outcome evidence; separate loss pauses or entry-practicality penalties may still apply."]
     lines += ["", "## Review notes", "",
               "Check growing trade counts, supported weight changes, prediction error, weekly PnL and drawdown.",
               "Only executed trades have execution outcomes. Unchosen opportunities are not labelled wins or losses.",
-              "No parallel frozen-baseline account is traded: changed choices do not prove improvement over a baseline.",
+              "Frozen baseline choices are now recorded and summarized causally, but unchosen alternatives still do not receive invented PnL.",
               "This learner adapts supported setups; it does not invent strategy code.",
               "Back up the Observation database, research memory and Execution history off the VPS."]
     return "\n".join(lines) + "\n"

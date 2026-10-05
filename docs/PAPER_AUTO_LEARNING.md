@@ -1,5 +1,10 @@
 # A 30-day paper auto-learning experiment
 
+This experiment applies only to learned `live-paper` feedback. The base learner
+and operator tooling also support `testnet-trade` and the separately authorized
+bounded `live-trade` route; see
+[ALL_MODES_COMMANDS.md](ALL_MODES_COMMANDS.md) for their current commands.
+
 See also [the shadow simulation guide](SHADOW_TRADING.md): up to ten additional, separate simulated positions; the main account still permits only one position.
 
 This update adds feedback from completed mainnet PAPER trades to the existing
@@ -63,6 +68,12 @@ recency-weighted buckets, and a negative result beyond the caution margin.
 Increasing preference additionally needs at least eight buckets.
 Buckets reduce repetition; they do not prove statistical independence.
 
+Before a supported group's result can change ranking, its clipped mean R is
+shrunk toward a neutral 0R prior with four evidence-mass units. This does not
+invent winning or losing trades. It deliberately makes small samples move ranking
+less aggressively; the influence of the neutral prior fades as independent
+evidence mass grows. The report shows both raw and shrunk means.
+
 With insufficient evidence the weight is 1.0, meaning unchanged.
 Outcome weights range from 0.25 to 1.5. A separate entry-practicality factor ranges from 0.7 to 1; an active loss pause sets the final factor to zero. A negative base prediction never becomes
 an entry because of feedback. Weak setups are downranked rather than permanently
@@ -82,6 +93,30 @@ Use the [small-VPS guide](SMALL_VPS_LEARNER.md) for resource limits.
 If journals report memory-limit failures, missing collection or training jobs
 that cannot keep up, upgrade capacity before judging the learning.
 A faster VPS cannot create missing trade evidence or make a strategy profitable.
+
+## Mode boundary
+
+The paper-feedback weights in this document are not silently shared into Testnet
+or real-money ranking. Operator syntax remains mode-specific:
+
+~~~bash
+# Testnet
+./nbotctl arm testnet-trade
+./nbotctl cluster start testnet-trade
+./nbotctl entries enable testnet-trade
+
+# Learned paper
+./nbotctl cluster start live-paper
+./nbotctl entries enable live-paper
+
+# Bounded LIVE trade
+./nbotctl arm live-trade --confirm-real-money
+./nbotctl cluster start live-trade
+./nbotctl entries enable live-trade
+~~~
+
+Only one Execution profile may run at a time. These examples show command
+equivalence, not permission to skip the setup/safety steps in the mode guide.
 
 ## Start the experiment
 
@@ -130,6 +165,8 @@ cat logs/paper-learning-report.md
 The first report explains market-data models and research rejection reasons.
 The second shows:
 
+- a frozen-base decision audit: what the original model/rule ranking would have chosen
+  before paper feedback versus what the adaptive ranking selected;
 - completed eligible paper trades and elapsed days since the first recommendation;
 - weekly paper PnL, win counts and closed-trade drawdown;
 - completed trades and paper profit/loss for each of the 24 candidates, plus MODEL_ONLY;
@@ -143,9 +180,11 @@ The error uses clipped paper R, matching the learner's target. Lower error is
 better, but it does not itself prove profitable selection. Weekly PnL is not a
 controlled before/after experiment: market conditions may have changed.
 
-The original top choice is logged but is not traded in a second account.
-There is no claimed profit result for unchosen alternatives or a parallel frozen
-baseline. That would require a separate, carefully matched simulation study.
+The original top choice is logged for every comparable decision and summarized
+against the adaptive choice. This is a causal selection audit, not invented PnL.
+An unchosen alternative is never labelled as a win or loss. A true counterfactual
+profit comparison still requires a separately matched forward simulation that
+actually follows the frozen choice.
 
 ## After 30 days
 

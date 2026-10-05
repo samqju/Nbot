@@ -1,8 +1,14 @@
 # Learned Testnet V1
 
-## Current learner addendum - 2026-10-01
+This contract is intentionally specific to `testnet-trade`. Current operator
+syntax for `testnet-trade`, `live-paper`, and the separately authorized
+bounded `live-trade` route is documented in
+[ALL_MODES_COMMANDS.md](ALL_MODES_COMMANDS.md). Nothing in this Testnet contract
+grants authority to either LIVE mode.
 
-Reviewed implementation: `9fff54c`. The authority remains
+## Current learner addendum - Testnet scope
+
+The Testnet authority remains
 `TESTNET_LEARNED_EXPERIMENT_V1`; proposal/outcome wire schema versions are unchanged.
 
 - Selector: `CONTEXT_CALIBRATED_RIDGE_V1`.

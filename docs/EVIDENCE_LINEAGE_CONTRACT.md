@@ -3,9 +3,13 @@
 **2026-10-02 mode update:** [The three-mode guide](TRADING_MODES.md) describes Testnet trading, learned mainnet paper, and the separately authorized small mainnet trial. Earlier V3.10-only restrictions below describe the original automatic Champion roadmap. This manual trial does not declare those economic gates passed. No Testnet-paper mode is supported.
 
 
-Current learner applicability reviewed 2026-10-01 at `9fff54c`. The
+Current learner applicability reviewed 2026-10-05. The
 [learned-Testnet contract](LEARNED_TESTNET_CONTRACT.md) permits experimental
 Testnet proposals from LIVE features; Testnet outcomes remain operational only.
+Learned LIVE-paper outcomes may feed only the bounded paper-feedback layer, while
+the separately authorized bounded LIVE-trade route does not silently become paper
+or research training evidence. Current operator syntax for all profiles is in
+[ALL_MODES_COMMANDS.md](ALL_MODES_COMMANDS.md).
 
 Status: V3.9 implemented lineage contract; V3.9 economic proof remains open.
 

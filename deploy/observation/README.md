@@ -5,7 +5,7 @@
 
 For a complete new installation, use the [beginner guide](../../docs/TWO_VPS_BEGINNER_GUIDE.md).
 For the 1 CPU / 1 GB learner, also read [tiny mode](../../docs/SMALL_VPS_LEARNER.md).
-Reviewed against learner release `9fff54c` on 2026-10-01.
+Reviewed 2026-10-05 against the current three-mode Observation service installer.
 
 The base boot-managed role has two responsibilities:
 
@@ -20,10 +20,14 @@ SQLite is embedded; there is no separate database daemon. Research uses a bounde
 disposable workspace, commits compact permanent memory, removes successful scratch
 work and prunes raw evidence only behind the qualified dependency watermark.
 
-The separate `nbot-observation-testnet-control.service` is needed for learned
-Testnet operation. It defaults to learned selection and can be explicitly enabled
-for reboot persistence. Mechanical selection is an explicit runtime test option.
-LIVE/PAPER control is optional and remains an operational canary.
+Profile control services are separate from the shared base collector/research jobs:
+
+- `nbot-observation-testnet-control.service` — learned Testnet control (mechanical is an explicit test option);
+- `nbot-observation-live-paper-control.service` — learned/operational LIVE-paper control;
+- `nbot-observation-live-trade-control.service` — bounded LIVE-trade recommendation control.
+
+Only the selected Execution mode should be active. See
+[all-mode commands](../../docs/ALL_MODES_COMMANDS.md).
 
 ## Preview generated units without installing or starting
 
@@ -64,10 +68,37 @@ lock. Existing installations require a controlled handover, consistent backups
 and review of immutable research-generation contracts. Never delete state to
 make an upgrade pass.
 
-For deliberate LIVE/PAPER use, the installer also provides
-`--enable-live-paper-control` and `--start-live-paper-control`. These do not
-grant Research or Paper Champion authority.
+The installer exposes explicit flags for every profile control:
+
+~~~bash
+# Testnet
+--enable-testnet-control --start-testnet-control
+
+# LIVE paper
+--enable-live-paper-control --start-live-paper-control
+
+# bounded LIVE trade
+--enable-live-trade-control --start-live-trade-control
+~~~
+
+These flags only enable/start Observation control units. They do not arm
+Execution, enable entries, grant Research/Paper Champion authority, or approve
+real-money trading.
 
 The Observation services are boot-managed. The current Testnet cluster launcher
 starts Execution as a managed local process; after a trader reboot, follow the
 beginner guide's checked recovery/start sequence.
+
+
+## Check profile control services
+
+~~~bash
+systemctl is-active nbot-observation-testnet-control.service
+systemctl is-active nbot-observation-live-paper-control.service
+systemctl is-active nbot-observation-live-trade-control.service
+systemctl is-active nbot-observation-live.service
+systemctl is-active nbot-research-epoch.timer
+~~~
+
+Use the selected mode's control service; do not treat three installed unit files
+as permission to run three Execution modes.

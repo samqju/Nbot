@@ -1,11 +1,14 @@
 # Three trading modes: simple setup and switching guide
 
+For a compact validated command matrix, see
+[ALL_MODES_COMMANDS.md](ALL_MODES_COMMANDS.md).
+
 See also [the shadow simulation guide](SHADOW_TRADING.md): up to ten additional, separate simulated positions; the main account still permits only one position.
 
 Paper feedback update: [30-day auto-learning experiment](PAPER_AUTO_LEARNING.md). Learned mainnet-paper now adapts setup rankings from its own settled paper trades. Testnet and real-money selection remain separate; economic proof is still unestablished.
 
 
-Updated 2026-10-02. This is a small, manually approved mainnet trial, not automatic
+Updated 2026-10-05. This is a small, manually approved mainnet trial, not automatic
 Research/Paper Champion approval or a promise of profit.
 
 | Mode name in commands | Prices | Orders |
@@ -211,8 +214,19 @@ They do not start any service or change the existing Testnet permissions.
 Start with Testnet, then learned paper. Successful simulated operation does not
 prove that a strategy will earn money.
 
-**Testnet trading:** use the beginner guide's arm, cluster start and entries
-enable commands. No real keys are used.
+**Testnet trading:**
+
+~~~bash
+cd "$HOME/Nbot"
+./nbotctl arm testnet-trade
+./nbotctl cluster doctor testnet-trade
+./nbotctl cluster start testnet-trade
+./nbotctl cluster status testnet-trade
+./nbotctl entries enable testnet-trade
+~~~
+
+No real keys are used. Arming creates the explicit Testnet session boundary; it
+does not bypass model or risk readiness.
 
 **Learned mainnet paper:**
 
@@ -252,25 +266,41 @@ economic validation, but excludes rejected models. It is not Champion approval.
 
 ## 6. Pause, stop, disarm and change modes
 
-To pause **new entries**, for example in mainnet mode:
+Pause **new entries** with the command for the selected profile:
 
 ~~~bash
+./nbotctl entries disable testnet-trade
+./nbotctl entries disable live-paper
 ./nbotctl entries disable live-trade
-./nbotctl cluster status live-trade
 ~~~
 
 An existing position continues to be managed. Disabling entries does not close it.
-Wait for status to show no open position, no entry in progress and no pending
-outcome. Then:
+Check the matching profile, and wait for no open position, no entry in progress,
+no pending outcome and no recovery-critical state:
 
 ~~~bash
+./nbotctl cluster status testnet-trade
+./nbotctl cluster status live-paper
+./nbotctl cluster status live-trade
+~~~
+
+Then stop only the selected profile:
+
+~~~bash
+./nbotctl cluster stop testnet-trade
+./nbotctl cluster stop live-paper
 ./nbotctl cluster stop live-trade
+~~~
+
+Testnet and LIVE-trade sessions can then be deliberately disarmed:
+
+~~~bash
+./nbotctl disarm testnet-trade
 ./nbotctl disarm live-trade
 ~~~
 
-For Testnet, replace live-trade with testnet-trade. For paper, use live-paper
-for disable/status/stop and omit disarm. When switching away from a paper
-installation that was previously enabled at boot, after it safely stops run:
+LIVE paper has no arm/disarm state. When switching away from a paper installation
+that was previously enabled at boot, after it safely stops run:
 
 ~~~bash
 sudo systemctl disable nbot-execution-live-paper.service
@@ -285,12 +315,26 @@ guard, pending-outcome or state files to bypass a refusal.
 Every learned paper/mainnet worker restart blocks new entries until you enable
 them again. Session usage is persisted; restarting does not reset it.
 
-If a mainnet worker crashes, use this on Trading to restart the same mode:
+If a Testnet or LIVE-trading managed process crashes, use the local recovery
+path for that same profile:
 
 ~~~bash
 cd "$HOME/Nbot"
+./nbotctl start testnet-trade
+./nbotctl status
+./nbotctl health testnet-trade
+
 ./nbotctl start live-trade
 ./nbotctl status
+./nbotctl health live-trade
+~~~
+
+The installed LIVE-paper worker is systemd-managed, so use its installed unit:
+
+~~~bash
+sudo systemctl start nbot-execution-live-paper.service
+./nbotctl status
+./nbotctl health live-paper
 ~~~
 
 The worker reconciles exchange state before considering any entry. If saved

@@ -3,13 +3,15 @@
 **2026-10-02 mode update:** [The three-mode guide](TRADING_MODES.md) describes Testnet trading, learned mainnet paper, and the separately authorized small mainnet trial. Earlier V3.10-only restrictions below describe the original automatic Champion roadmap. This manual trial does not declare those economic gates passed. No Testnet-paper mode is supported.
 
 
-Applicability reviewed 2026-10-01 at `9fff54c`: the capital-safety invariants
-below remain required. The final V3.1 section records that original phase only.
-Current Testnet supports learned experimental recommendations; LIVE/PAPER has an
-operational canary; LIVE real trading remains blocked. These additions do not
-weaken one-position, protection, recovery, risk or outcome-acknowledgement rules.
-See [current operations](OPERATIONS.md) and the
-[learned-Testnet contract](LEARNED_TESTNET_CONTRACT.md).
+Applicability reviewed 2026-10-05: the capital-safety invariants below remain
+required. The final V3.1 section records that original phase only. Current
+Testnet supports learned experimental recommendations; LIVE paper supports the
+separate paper routes; and a bounded `live-trade` route exists only behind
+explicit real-money authorization. That manual trial does not satisfy or replace
+the frozen automatic Research/Paper Champion gates. These additions do not weaken
+one-position, protection, recovery, risk or outcome-acknowledgement rules.
+See [current operations](OPERATIONS.md), [all-mode commands](ALL_MODES_COMMANDS.md)
+and the [learned-Testnet contract](LEARNED_TESTNET_CONTRACT.md).
 
 Status: V3.1 implementation contract.
 
@@ -36,4 +38,4 @@ The canonical requirements remain `NBOT_V3_ROADMAP.md`. The V3.1 codebase implem
 
 The V3.1 runtime is intentionally narrow. `testnet-trade` can start only after explicit arming and authenticated Testnet preflight, and it starts with new entries disabled. V3.2 adds the explicit synthetic/manual mechanical-canary proposal path.
 
-`live-paper` does not start until its independent LIVE public market source exists. `live-trade` is forbidden until V3.10. Neither limitation weakens management of a Testnet position already known to the V3.1 runtime.
+`live-paper` does not start until its independent LIVE public market source exists. In the historical V3.1 contract, `live-trade` was forbidden until V3.10. The current bounded explicit-trial addendum is a later exception and does not rewrite that historical phase. Neither limitation weakens management of a Testnet position already known to the V3.1 runtime.

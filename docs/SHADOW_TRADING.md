@@ -1,5 +1,9 @@
 # One main position plus ten shadow simulations
 
+Shadow simulation exists alongside learned `live-paper` and learned
+`live-trade`; `testnet-trade` has no shadow engine. For current commands for
+all three modes, see [ALL_MODES_COMMANDS.md](ALL_MODES_COMMANDS.md).
+
 The main account still allows **one position**. Alongside it, Learning can reserve
 up to **10 shadow slots**. A slot is either waiting for its entry candle or holding
 a simulated position. There is at most one shadow slot per named candidate.
@@ -205,6 +209,7 @@ Check the selected control service's journal:
 
 ~~~bash
 sudo journalctl -u nbot-observation-live-paper-control.service -n 100 --no-pager
+sudo journalctl -u nbot-observation-live-trade-control.service -n 100 --no-pager
 ~~~
 
 For real mainnet control, substitute nbot-observation-live-trade-control.service.

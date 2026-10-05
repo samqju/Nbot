@@ -3,12 +3,14 @@
 **2026-10-02 mode update:** [The three-mode guide](TRADING_MODES.md) describes Testnet trading, learned mainnet paper, and the separately authorized small mainnet trial. Earlier V3.10-only restrictions below describe the original automatic Champion roadmap. This manual trial does not declare those economic gates passed. No Testnet-paper mode is supported.
 
 
-## Documentation review addendum - 2026-10-01
+## Documentation review addendum - 2026-10-05
 
-- [x] Review all 18 existing tracked Markdown documents against learner release
-  `9fff54c`; add the [documentation index](DOCUMENTATION_INDEX.md).
-- [x] Align current learned-Testnet, evaluation timing, small-VPS configuration,
-  rejection-report and authority descriptions; label historical phase evidence.
+- [x] Review the complete tracked Markdown documentation tree against the current
+  V3.9 three-mode CLI; maintain the [documentation index](DOCUMENTATION_INDEX.md).
+- [x] Add [all-mode operator commands](ALL_MODES_COMMANDS.md) and align active
+  guides for `testnet-trade`, `live-paper`, and bounded `live-trade`.
+- [x] Align current learner/evaluation timing, small-VPS configuration,
+  paper-feedback V4 reporting and authority descriptions; label historical phase evidence.
 - [ ] Deploy matching releases on both intended VPSs and verify authenticated
   Testnet operation/recovery. A documentation commit does not close this item.
 - [ ] Measure actual 1 CPU / 1 GB collection/training capacity over time.

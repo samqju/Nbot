@@ -1,11 +1,13 @@
 # NBOT V3.9 Research Governance Contract
 
-Current applicability (2026-10-01, learner `9fff54c`): the eligibility gates
-below are preserved. The current learner/evaluator has its own `v39:context-v4:`
+Current applicability (2026-10-05): the eligibility gates below are preserved. The current learner/evaluator has its own `v39:context-v4:`
 namespace; historical evaluations must not be relabeled or mixed into new-family
 proof. Its setup filter is not a probability model and does not replace the
 frozen market-regime companion. See [current lineage](EVIDENCE_LINEAGE_CONTRACT.md)
 and [explicit promotion](V3_9_RESEARCH_CHAMPION_PROMOTION_CONTRACT.md).
+The bounded operator-authorized `live-trade` trial is separate from this
+automatic Champion-governance path and does not satisfy these gates. Current
+mode commands are documented in [ALL_MODES_COMMANDS.md](ALL_MODES_COMMANDS.md).
 
 **Contract version:** `V39_RESEARCH_CHAMPION_ELIGIBILITY_V1`
 **Registry version:** `V39_MODEL_REGISTRY_V1`
