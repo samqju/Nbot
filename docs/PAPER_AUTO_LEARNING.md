@@ -36,12 +36,15 @@ when Execution refuses one. Continuous operation does not mean continuous entrie
    Duplicate deliveries count once. Invalid, mismatched and overlapping-position
    records are excluded, with reasons retained.
 5. At subsequent market events, update a small setup-ranking model using only
-   results that were closed AND received before that event.
+   results that were closed AND received before the recommendation decision.
 6. Store the model and its training cutoff. Save predictions before later trades,
    so the report cannot credit hindsight as a successful prediction.
 
-The observation supervisor performs this work, not the HTTP request handler or
-the trading position-management loop. Even when the base model is temporarily
+The observation supervisor trains the feedback model. The flat-side proposal
+request gate also ingests a bounded batch of already-acknowledged outcomes and
+checks loss pauses, so a close arriving between supervisor refreshes cannot
+immediately bypass a pause. A remaining receipt backlog blocks new proposals
+until caught up. This work never runs on the open-position management loop. Even when the base model is temporarily
 unavailable, received paper outcomes can be archived by the supervisor.
 
 ## Resources and bounds
@@ -50,15 +53,18 @@ Use standard mode on the planned 4 CPU / 8-12 GB Learning VPS; see the
 [candidate library setup](CANDIDATE_LIBRARY.md). The tiny profile remains available
 for 1 CPU / 1 GB testing with fewer collected coins.
 The feedback layer imports at most 256 receipts per pass and trains on at most
-2,048 recent completed trades. It makes no new exchange requests.
+2,048 recent main outcomes plus at most 2,048 recent shadow records. It makes no new exchange requests.
 
 It uses a 30-day rolling window with a 14-day recency half-life. Trades in the
-same 4-hour-5-minute time bucket contribute one group average. At least eight
-buckets AND eight effective recency-weighted buckets are required for adjustment.
+same 4-hour-5-minute time bucket contribute one group average per source.
+Main outcomes have weight 1; all shadow outcomes in that group/bucket together
+have weight 0.25. Downranking needs at least four buckets, three effective
+recency-weighted buckets, and a negative result beyond the caution margin.
+Increasing preference additionally needs at least eight buckets.
 Buckets reduce repetition; they do not prove statistical independence.
 
 With insufficient evidence the weight is 1.0, meaning unchanged.
-Supported weights range from 0.25 to 1.5. A negative base prediction never becomes
+Outcome weights range from 0.25 to 1.5. A separate entry-practicality factor ranges from 0.7 to 1; an active loss pause sets the final factor to zero. A negative base prediction never becomes
 an entry because of feedback. Weak setups are downranked rather than permanently
 removed, allowing later evidence to change their preference.
 
@@ -66,9 +72,9 @@ Learning clips individual results to -3R/+3R to limit outlier influence.
 The report retains UNCLIPPED actual paper profit/loss and R: bad losses do not
 disappear. The caution margin is a heuristic, not a calibrated probability.
 
-A development benchmark of the feedback component at 2,048 stored samples took
+A benchmark of the earlier main-only feedback component at 2,048 stored samples took
 0.377 seconds and used 31.84 MB peak process memory on the small Trading VPS.
-This is an observed component measurement, not total bot usage or a capacity guarantee.
+This historical measurement does not benchmark the expanded shadow-feedback implementation.
 
 The existing collector and research jobs remain the main resource users.
 Do not run extra collectors or parallel training jobs on the tiny VPS.
@@ -222,5 +228,44 @@ reason, compatible-model availability, shadow positions open/pending, completed
 and excluded results, and last opportunity/result timestamps in UTC. Counts across
 releases show historical activity; net simulated PnL is reported for the current
 release only. Cancelled/unscorable results are not counted as completed scored
-trades. Shadow results do not currently train the main model. The main paper
+trades. Valid shadow outcomes now train the paper ranking layer at reduced weight. The main paper
 position and its results remain separate (/position, /recent, /pnl).
+
+### Feedback, loss pauses and entry cancellations (October 2026)
+
+The experimental paper ranking layer now uses two labelled evidence sources:
+main paper outcomes and valid completed paper-shadow outcomes. It does not
+retrain the base research labels or enable real-money trading. Within each
+candidate/direction/context and 4-hour-5-minute block, main outcomes contribute
+weight 1 and all parallel shadow outcomes together contribute weight 0.25.
+This limits, but does not eliminate, correlation. Old shadow records without
+saved market context contribute only to the broad candidate/direction group.
+New simulations save their decision-time context; no hindsight context is invented.
+
+Feedback from older releases is reused only when Git history proves that the
+fill, risk, attribution, shared configuration and outcome contracts match.
+Original release IDs and digests remain intact. Shadow cost/risk configuration
+and candidate catalog must also match. Missing history, incompatible contracts,
+future receipts, invalid records and unknown candidates are excluded.
+
+After three consecutive losing main paper trades in the same coin and direction
+within six hours, that coin/direction is paused until one hour after the latest
+loss. A different setup label cannot bypass this pause. A non-losing trade breaks
+the streak. The pause is rebuilt from durable verified outcomes after restart,
+does not close a position, and cannot create another position. Shadow results
+do not trigger this main-account loss pause.
+
+Shadow entries still wait for a forward candle and must pass the original price
+drift limit. We did not loosen that limit or fabricate missed fills. New results
+record entry delay and drift. Cancelled entries do not train the profit model.
+After at least eight distinct entry attempts spanning three time blocks,
+repeated drift cancellations can reduce that candidate/direction's preference
+by up to 30%, as a separate entry-practicality penalty. Missing-data and
+main-candidate-reservation cancellations are excluded from that calculation.
+
+Use /learning to see evidence counts, the latest decision time, choices before
+and after feedback, outcome and entry-practicality adjustments, and loss pauses.
+The database also retains a per-event paper_feedback_checks record, including
+no-trade decisions. Comparing two choices is an audit of behaviour, not proof
+that the changed choice will be more profitable. Use /pnl and /recent to judge
+the main paper account; shadow balances remain separate.

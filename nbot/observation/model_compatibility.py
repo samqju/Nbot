@@ -20,7 +20,12 @@ def compatible_training_release(repo_root: Path, trained_sha: str, running_sha: 
              "requirements*", "pyproject.toml", "poetry.lock", "uv.lock",
              "setup.py", "setup.cfg", "Pipfile", "Pipfile.lock",
              ":(exclude)nbot/observation/learned_recommendation.py",
-             ":(exclude)nbot/observation/model_compatibility.py"]
+             ":(exclude)nbot/observation/recommendation.py",
+             ":(exclude)nbot/observation/model_compatibility.py",
+             ":(exclude)nbot/observation/paper_feedback.py",
+             ":(exclude)nbot/observation/feedback_evidence.py",
+             ":(exclude)nbot/observation/paper_learning_report.py",
+             ":(exclude)nbot/observation/shadow.py"]
     try:
         ancestor = subprocess.run(["git", "merge-base", "--is-ancestor", trained_sha, running_sha],
             cwd=repo_root, capture_output=True, timeout=3)

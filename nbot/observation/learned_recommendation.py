@@ -22,7 +22,7 @@ from .features import CanonicalFeatureStore, CANONICAL_FEATURE_VERSION
 from .recommendation import RecommendationSnapshot
 from .selection import FEATURE_VECTOR_NAMES, SELECTION_CONFIG, _feature_vector, _ridge_score, _digest
 from .signals import ResearchSignalStore
-from .context_learning import SELECTOR_VERSION, adjustment
+from .context_learning import SELECTOR_VERSION, adjustment, describe
 from .paper_feedback import PaperFeedback
 from .shadow import ShadowBook, ShadowConfig
 from .model_compatibility import compatible_training_release
@@ -218,6 +218,9 @@ class LearnedTestnetSource:
             return self._not_ready("LEARNING_WAIT_FOR_COMPATIBLE_MODEL", now_ms)
         saved = self._saved(event_ms)
         if saved is not None:
+            if self.paper_feedback and saved.proposal and self.paper_feedback.cooldown(
+                    saved.proposal.symbol, saved.proposal.side, cutoff_ms=now_ms):
+                return self._not_ready("PAPER_REPEATED_LOSS_COOLDOWN", now_ms)
             # A newly rejected/replaced model cannot leave its old proposal live.
             if saved.proposal and saved.proposal.model_digest != artifact["model_digest"]:
                 return self._not_ready("LEARNED_EVENT_MODEL_CHANGED_WAIT_NEXT_EVENT", now_ms)
@@ -237,7 +240,7 @@ class LearnedTestnetSource:
                   and math.isfinite(float(r[2]))}
         if not quotes:
             return self._not_ready("LEARNED_WAIT_FOR_MATCHING_TESTNET_EVENT" if self.profile.name == "testnet-trade" else "LEARNED_WAIT_FOR_MATCHING_LIVE_EVENT", now_ms)
-        feedback_model = self.paper_feedback.snapshot(cutoff_ms=event_ms) if self.paper_feedback else None
+        feedback_model = self.paper_feedback.snapshot(cutoff_ms=now_ms) if self.paper_feedback else None
         candidates = []
         btc_available = {}
         for feature in self.features.compute_event_rows(event_ms, computed_at_ms=now_ms, register_definition=False):
@@ -277,7 +280,8 @@ class LearnedTestnetSource:
                 rules = matches(rule_vector, candidate_side, bars) or [FALLBACK]
                 for rule in rules:
                     adjusted, detail = self.paper_feedback.adjust(
-                        feedback_model, candidate_vector, candidate_side, base_score, candidate=rule)
+                        feedback_model, candidate_vector, candidate_side, base_score, candidate=rule,
+                        symbol=candidate_symbol, now_ms=now_ms)
                     detail.update(matched_candidates=[item["id"] for item in rules],
                                   catalog_digest=CATALOG_DIGEST, history_digest=bars_digest)
                     ranked.append((adjusted, candidate_symbol, candidate_side, candidate_vector, base_score, detail))
@@ -286,23 +290,41 @@ class LearnedTestnetSource:
                 ranked, key=lambda r: (-r[0], r[1], r[2],
                     tie_key(event_ms, r[1], r[2], r[5]["candidate"]["id"])))[0]
             feedback_detail["matched_candidate_count"] = len(ranked)
+            baseline_candidate = min(
+                (r for r in ranked if (r[1],r[2])==(baseline[1],baseline[2])),
+                key=lambda r: tie_key(event_ms,r[1],r[2],r[5]["candidate"]["id"]))
+            self.paper_feedback.record_check(event_ms, now_ms, {
+                "main_samples": feedback_model["sample_count"],
+                "shadow_samples": feedback_model["shadow_sample_count"],
+                "cooldown_choices_blocked": sum(r[5]["status"]=="REPEATED_LOSS_COOLDOWN" for r in ranked),
+                "outcome_choices_adjusted": sum(r[5]["outcome_factor"]!=1 for r in ranked),
+                "entry_choices_adjusted": sum(r[5]["entry_feasibility_factor"]!=1 for r in ranked),
+                "baseline": {"symbol":baseline[1],"side":baseline[2],
+                             "candidate":baseline_candidate[5]["candidate"]["id"],"score":baseline[0]},
+                "selected": {"symbol":symbol,"side":side,"candidate":feedback_detail["candidate"]["id"],
+                             "score":score,"factor":feedback_detail["factor"],"reason":feedback_detail["status"]},
+                "choice_changed": (symbol,side,feedback_detail["candidate"]["id"]) !=
+                    (baseline[1],baseline[2],baseline_candidate[5]["candidate"]["id"]),
+                "no_trade": score<=0,
+                "active_cooldowns": feedback_model.get("cooldowns",{})})
             feedback_detail.update(
                 base_score=base_score, adjusted_score=score,
-                ranking_changed=(symbol, side) != (baseline[1], baseline[2]),
+                ranking_changed=(symbol, side, feedback_detail["candidate"]["id"]) !=
+                    (baseline[1], baseline[2], baseline_candidate[5]["candidate"]["id"]),
                 baseline_symbol=baseline[1], baseline_side=baseline[2], baseline_score=baseline[0])
         else:
             score, symbol, side, vector = baseline
             base_score = score
         shadow_opportunities = []
         main_candidate = None
-        if self.shadow and shadow_history_ready and score > 0:
+        if self.shadow and shadow_history_ready and baseline[0] > 0:
             try:
                 for candidate_score, candidate_symbol, candidate_side, candidate_vector in candidates:
                     if candidate_score <= 0:
                         continue
                     rule_vector = dict(candidate_vector, candidate_btc_available=float(btc_available[candidate_symbol]))
                     rules = matches(rule_vector, candidate_side, histories.get(candidate_symbol, []))
-                    if (candidate_symbol, candidate_side) == (symbol, side):
+                    if score > 0 and (candidate_symbol, candidate_side) == (symbol, side):
                         main_candidate = (feedback_detail["candidate"]["id"] if feedback_detail else
                             min((rule["id"] for rule in rules),
                                 key=lambda name: tie_key(event_ms,symbol,side,name), default=None))
@@ -312,13 +334,20 @@ class LearnedTestnetSource:
                             "candidate_id": rule["id"], "symbol": candidate_symbol, "side": candidate_side,
                             "score": candidate_score, "bid": float(quotes[candidate_symbol][1]),
                             "ask": float(quotes[candidate_symbol][2]), "model_digest": artifact["model_digest"],
-                            "history_digest": bars_digest})
+                            "history_digest": bars_digest,
+                            "decision_context": describe(candidate_vector)["context"]})
             except Exception as exc:
                 self.shadow_error = type(exc).__name__ + ":" + str(exc)[:180]
                 logging.getLogger(__name__).exception("SHADOW_CANDIDATES_FAILED")
                 shadow_opportunities = []
         if score <= 0:
-            return self._freeze(event_ms, RecommendationSnapshot("READY", "LEARNED_NO_POSITIVE_OPPORTUNITY", None, now_ms))
+            reason = ("PAPER_REPEATED_LOSS_COOLDOWN" if feedback_detail and
+                      feedback_detail["status"]=="REPEATED_LOSS_COOLDOWN" else "LEARNED_NO_POSITIVE_OPPORTUNITY")
+            snapshot = self._freeze(event_ms, RecommendationSnapshot("READY", reason, None, now_ms))
+            if self.shadow and shadow_opportunities:
+                self._shadow_call("offer", event_ms=event_ms, now_ms=now_ms,
+                                  opportunities=shadow_opportunities)
+            return snapshot
         _, bid, ask, quote_ms = quotes[symbol]
         raw_model = {k: v for k, v in artifact["model"].items() if k != "context_calibration"}
         setup_explanation = adjustment(artifact["model"]["context_calibration"], vector,

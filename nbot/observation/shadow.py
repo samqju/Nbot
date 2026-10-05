@@ -104,7 +104,9 @@ def advance_bar(state, bar):
     if p["status"]=="PENDING":
         entry=o*(1+sign*cost)
         reference=(p["bid"]+p["ask"])/2
-        if abs(entry-reference)/reference*100>cfg["max_reference_drift_pct"]:
+        p["entry_drift_pct"] = abs(entry-reference)/reference*100
+        p["entry_wait_ms"] = t-p.get("decision_ms",t)
+        if p["entry_drift_pct"]>cfg["max_reference_drift_pct"]:
             p["closed_ms"]=t
             return p,"ENTRY_DRIFT_REJECTED"
         quantity=cfg["notional_usd"]/entry
@@ -293,7 +295,7 @@ class ShadowBook:
 
 def shadow_report(database,*,release_sha):
     lines=["# Shadow candidate report","",
-           "Simulated only. No exchange order authority. Shadow results do not train the main learner.",
+           "Simulated only. No exchange order authority. Valid paper shadows can adjust paper ranking at reduced weight.",
            "Up to 10 global pending/open slots. Candle-based fills are not equivalent to live tick fills.",
            "Fees, fixed slippage and decision-time spread included; funding/liquidity are not modelled.",""]
     if not database.path.exists(): return "\n".join(lines+["No shadow history yet."])+"\n"

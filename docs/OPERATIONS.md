@@ -668,3 +668,7 @@ The report must continue to state `economic_claim=false` and `NO_RESEARCH_CHAMPI
 See [PAPER_AUTO_LEARNING.md](PAPER_AUTO_LEARNING.md#restarts-updates-and-recommendation-timing)
 for safe model reuse after operational updates, actual check intervals and the
 shadow activity fields shown by /learning.
+
+The paper feedback changes and their limits are documented in
+[PAPER_AUTO_LEARNING.md](PAPER_AUTO_LEARNING.md#feedback-loss-pauses-and-entry-cancellations-october-2026).
+No new env settings are required. Existing main-position limits and real-money activation gates remain unchanged.

@@ -1,6 +1,6 @@
 # NBOT V3
 
-**Shadow experiment update:** [One main position plus up to 10 shadow simulations](docs/SHADOW_TRADING.md) in learned mainnet-paper and mainnet-trading. Shadow results remain separate and do not train the main ranking model.
+**Shadow experiment update:** [One main position plus up to 10 shadow simulations](docs/SHADOW_TRADING.md) in learned mainnet-paper and mainnet-trading. Shadow results stay separately labelled; valid paper shadows can now adjust paper ranking at reduced weight.
 
 **2026-10-03 candidate expansion:** [24-candidate paper learner and larger-VPS setup](docs/CANDIDATE_LIBRARY.md). Learned paper selection now tests 24 versioned rules with separate completed-trade attribution. Use the standard profile for 4 CPU / 8-12 GB RAM.
 

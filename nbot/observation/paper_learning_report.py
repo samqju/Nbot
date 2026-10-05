@@ -80,7 +80,9 @@ def paper_learning_report(database, *, release_sha, now_ms):
         lines += [f"| {candidate['id']} | {candidate['family']} | {len(items)} | {sum(s['net_usd'] for s in items):.4f} |"]
     if model:
         lines += ["", "## Current setup weights", "", f"Snapshot: {model['model_id']}",
-                  f"Training trades in last 30 days: {model['sample_count']}",
+                  f"Compatible main paper outcomes used: {model['sample_count']}",
+                  f"Compatible shadow outcomes used at reduced weight: {model.get('shadow_sample_count',0)}",
+                  f"Active loss pauses at this snapshot: {len(model.get('cooldowns',{}))}",
                   f"Training cap reached: {model['sample_cap_reached']}",
                   "1.0 = unchanged; below 1.0 = downranked; above 1.0 = increased preference.",
                   "Time buckets reduce repeated-trade influence; they do not guarantee independence.",
@@ -90,7 +92,7 @@ def paper_learning_report(database, *, release_sha, now_ms):
             label = key.replace("|", " / ")
             lines += [f"| {label} | {group['trades']} | {group['buckets']} | {group['effective_buckets']:.1f} | {group['factor']:.3f} |"]
         if not any(g["supported"] for g in model["groups"].values()):
-            lines += ["Insufficient supported setup evidence: paper feedback has not changed rankings."]
+            lines += ["Insufficient supported outcome evidence; separate loss pauses or entry-practicality penalties may still apply."]
     lines += ["", "## Review notes", "",
               "Check growing trade counts, supported weight changes, prediction error, weekly PnL and drawdown.",
               "Only executed trades have execution outcomes. Unchosen opportunities are not labelled wins or losses.",

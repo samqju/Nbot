@@ -224,7 +224,20 @@ def _activity_summary(database_path: Path, profile: str, release_sha: str) -> di
             COALESCE(SUM(CASE WHEN eligible=1 THEN json_extract(result_json,'$.net_usd') ELSE 0 END),0)
             FROM shadow_results WHERE profile=? AND release_sha=?""", (profile,release_sha)).fetchone()
         latest = conn.execute("SELECT MAX(event_ms) FROM shadow_batches WHERE profile=?", (profile,)).fetchone()[0]
-        return {"status": "Recorded", "open": sum(p.get("status")=="OPEN" for p in states),
+        reasons = dict(conn.execute("""SELECT json_extract(result_json,'$.reason'),COUNT(*)
+            FROM shadow_results WHERE profile=? AND eligible=0 GROUP BY 1""",(profile,)))
+        drift = conn.execute("""SELECT AVG(json_extract(result_json,'$.entry_drift_pct')),
+            AVG(json_extract(result_json,'$.entry_wait_ms'))/1000.0 FROM shadow_results
+            WHERE profile=? AND eligible=0 AND json_extract(result_json,'$.reason')='ENTRY_DRIFT_REJECTED'""",
+            (profile,)).fetchone()
+        feedback={}
+        if profile=="live-paper" and conn.execute("SELECT 1 FROM sqlite_master WHERE name='paper_feedback_checks'").fetchone():
+            row=conn.execute("SELECT decision_ms,detail_json FROM paper_feedback_checks ORDER BY decision_ms DESC LIMIT 1").fetchone()
+            if row:
+                feedback=dict(json.loads(row[1]), decision_ms=row[0])
+        return {"status": "Recorded", "feedback": feedback, "cancellation_reasons": reasons,
+                "mean_cancelled_drift_pct": round(drift[0],3) if drift[0] is not None else None,
+                "mean_cancelled_wait_seconds": round(drift[1],1) if drift[1] is not None else None, "open": sum(p.get("status")=="OPEN" for p in states),
                 "pending": sum(p.get("status")=="PENDING" for p in states),
                 "completed": counts[1], "excluded": counts[0]-counts[1],
                 "latest_result_ms": counts[2], "latest_opportunity_ms": latest,
@@ -255,7 +268,34 @@ def _activity_text(data: Mapping[str, Any]) -> str:
         f"net {_e(activity.get('current_net_usd'))} simulated USD\n"
         f"Last shadow opportunity: {_e(when(activity.get('latest_opportunity_ms')))}\n"
         f"Last shadow result: {_e(when(activity.get('latest_result_ms')))}\n"
-        "Shadow results are separate simulations; they do not currently train the main model.\n\n"
+        f"Entry drift cancellations: {_e(activity.get('cancellation_reasons',{}).get('ENTRY_DRIFT_REJECTED',0))}\n"
+        f"Measured cancelled-entry drift: {_e(activity.get('mean_cancelled_drift_pct'))}% / "
+        f"wait {_e(activity.get('mean_cancelled_wait_seconds'))} seconds\n"
+        "Valid shadow results affect paper ranking at 25% weight per time block.\n"
+        "Cancelled/missing-data entries never count as trading losses.\n\n"
+        + _feedback_text(activity.get("feedback", {}))
+    )
+
+
+def _feedback_text(data: Mapping[str, Any]) -> str:
+    if not data:
+        return "Learning effect: waiting for the next assessed market event.\n\n"
+    selected=data.get("selected",{})
+    before=data.get("baseline",{})
+    now=int(time.time()*1000)
+    pauses=[key for key,value in data.get("active_cooldowns",{}).items() if value.get("until_ms",0)>now]
+    return (
+        f"Last learning decision: {_e(time.strftime('%Y-%m-%d %H:%M UTC',time.gmtime(data.get('decision_ms',0)/1000)))}\n"
+        f"Feedback used: {_e(data.get('main_samples'))} main / {_e(data.get('shadow_samples'))} shadow outcomes\n"
+        f"Choice changed by feedback: {_e(data.get('choice_changed'))}\n"
+        f"Before: {_e(before.get('symbol'))} {_e(before.get('side'))} / {_e(before.get('candidate'))}\n"
+        f"After: {_e(selected.get('symbol'))} {_e(selected.get('side'))} / {_e(selected.get('candidate'))}"
+        f" (score factor {_e(selected.get('factor'))})\n"
+        f"Decision: {_e('NO TRADE' if data.get('no_trade') else selected.get('reason'))}\n"
+        f"Choices adjusted: outcomes {_e(data.get('outcome_choices_adjusted'))}, "
+        f"entry practicality {_e(data.get('entry_choices_adjusted'))}\n"
+        f"Choices blocked by loss pause: {_e(data.get('cooldown_choices_blocked'))}\n"
+        f"Active loss pauses: {_e(', '.join(pauses) or 'none')}\n\n"
     )
 
 

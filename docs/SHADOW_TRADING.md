@@ -179,15 +179,14 @@ that limited table. Active positions are not counted as realized profit.
 
 Main paper results remain in paper-learning-report. Shadow data is stored only
 in dedicated shadow_* tables in the LIVE Observation database, never submitted
-as an ExecutionOutcome and never ingested by the actual-paper feedback learner.
+as an ExecutionOutcome. Eligible shadow records are read separately by paper feedback at reduced weight.
 
 ## What these experiments teach us
 
 They collect forward evidence about opportunities the main account could not
-take. In THIS release they do not change main-paper or real-money ranking weights.
-We first need to compare the simulator with the main paper account and inspect
-costs, gaps, stop ambiguity and correlated trades before authorizing any training
-integration. No performance improvement is claimed merely because more trades ran.
+take. Valid completed paper shadows now influence the paper ranking layer at
+reduced weight. They do not change real-money ranking. Costs, gaps, stop ambiguity
+and correlation still limit this evidence; more simulations do not prove improvement.
 
 Ten candidates trading the same rally are correlated, not ten independent proofs.
 Compare later periods and adverse conditions; do not select a lucky winner after
@@ -247,5 +246,44 @@ reason, compatible-model availability, shadow positions open/pending, completed
 and excluded results, and last opportunity/result timestamps in UTC. Counts across
 releases show historical activity; net simulated PnL is reported for the current
 release only. Cancelled/unscorable results are not counted as completed scored
-trades. Shadow results do not currently train the main model. The main paper
+trades. Valid shadow outcomes now train the paper ranking layer at reduced weight. The main paper
 position and its results remain separate (/position, /recent, /pnl).
+
+### Feedback, loss pauses and entry cancellations (October 2026)
+
+The experimental paper ranking layer now uses two labelled evidence sources:
+main paper outcomes and valid completed paper-shadow outcomes. It does not
+retrain the base research labels or enable real-money trading. Within each
+candidate/direction/context and 4-hour-5-minute block, main outcomes contribute
+weight 1 and all parallel shadow outcomes together contribute weight 0.25.
+This limits, but does not eliminate, correlation. Old shadow records without
+saved market context contribute only to the broad candidate/direction group.
+New simulations save their decision-time context; no hindsight context is invented.
+
+Feedback from older releases is reused only when Git history proves that the
+fill, risk, attribution, shared configuration and outcome contracts match.
+Original release IDs and digests remain intact. Shadow cost/risk configuration
+and candidate catalog must also match. Missing history, incompatible contracts,
+future receipts, invalid records and unknown candidates are excluded.
+
+After three consecutive losing main paper trades in the same coin and direction
+within six hours, that coin/direction is paused until one hour after the latest
+loss. A different setup label cannot bypass this pause. A non-losing trade breaks
+the streak. The pause is rebuilt from durable verified outcomes after restart,
+does not close a position, and cannot create another position. Shadow results
+do not trigger this main-account loss pause.
+
+Shadow entries still wait for a forward candle and must pass the original price
+drift limit. We did not loosen that limit or fabricate missed fills. New results
+record entry delay and drift. Cancelled entries do not train the profit model.
+After at least eight distinct entry attempts spanning three time blocks,
+repeated drift cancellations can reduce that candidate/direction's preference
+by up to 30%, as a separate entry-practicality penalty. Missing-data and
+main-candidate-reservation cancellations are excluded from that calculation.
+
+Use /learning to see evidence counts, the latest decision time, choices before
+and after feedback, outcome and entry-practicality adjustments, and loss pauses.
+The database also retains a per-event paper_feedback_checks record, including
+no-trade decisions. Comparing two choices is an audit of behaviour, not proof
+that the changed choice will be more profitable. Use /pnl and /recent to judge
+the main paper account; shadow balances remain separate.

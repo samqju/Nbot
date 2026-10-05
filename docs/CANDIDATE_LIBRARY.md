@@ -91,14 +91,17 @@ disabled entries, position limits or any Execution refusal.
 For each selected candidate, results are grouped by market context and LONG/SHORT.
 The learner uses that group when sufficiently supported, otherwise that candidate's
 broader same-direction group. It does not borrow an unrelated candidate's wins.
-Weights are bounded from 0.25 to 1.5 and need at least eight time buckets AND eight
-effective recency-weighted buckets. Until then, weight remains 1.0.
+Outcome factors range from 0.25 to 1.5. Downranking needs four time buckets,
+three effective buckets and a negative result beyond a caution margin; upweighting
+also needs eight buckets. Otherwise the outcome factor stays 1.0. Main paper
+outcomes have weight 1 and shadow outcomes together have weight 0.25 per group/time
+bucket. Entry-practicality penalties and repeated-loss pauses are separate.
 
 Among overlapping rules with exactly equal scores, a deterministic event-specific
 tie breaker spreads attribution. Restarting the same event gives the same choice.
 This is not a balanced allocation or a guarantee that every rule will get trades.
 
-Only actual completed paper positions receive profit/loss labels. Unchosen rules
+Only completed main paper positions and valid completed shadow fills receive their respective profit/loss labels. Unsimulated rules
 have unknown execution results. Selection bias remains: these records do not
 prove how each candidate would have performed on every opportunity. There is no
 parallel baseline account or automatic statistical proof of a winning strategy.

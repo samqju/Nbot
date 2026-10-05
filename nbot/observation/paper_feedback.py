@@ -9,19 +9,23 @@ import hashlib
 import json
 import math
 import statistics
+import os
+from dataclasses import asdict
 from collections import defaultdict
 
 from nbot.communication.authorities import LIVE_PAPER_LEARNED_AUTHORITY
 from nbot.communication.contracts import ExecutionOutcome, ExecutionProposal
 from nbot.communication.validation import payload_digest
 from .context_learning import describe
-from .candidate_setups import BY_ID, FALLBACK
+from .candidate_setups import BY_ID, FALLBACK, CATALOG_DIGEST
+from .feedback_evidence import compatible_evidence_release, loss_cooldowns, shadow_sample
 
-VERSION = "PAPER_EXECUTION_FEEDBACK_V2_CANDIDATES"
+VERSION = "PAPER_EXECUTION_FEEDBACK_V3_SHADOW"
+ACCEPTED_VERSIONS = {VERSION, "PAPER_EXECUTION_FEEDBACK_V2_CANDIDATES"}
 DAY_MS = 86_400_000
 WINDOW_MS = 30 * DAY_MS
 BUCKET_MS = 49 * 300_000
-MIN_BUCKETS = 8
+MIN_BUCKETS = 4
 MAX_SAMPLES = 2048
 BATCH = 256
 SCHEMA = """
@@ -35,6 +39,11 @@ CREATE INDEX IF NOT EXISTS paper_feedback_window
 ON paper_feedback_samples(release_sha, available_ms, closed_ms);
 CREATE TABLE IF NOT EXISTS paper_feedback_rejections (
     outcome_id TEXT PRIMARY KEY, reason TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS paper_feedback_recent ON paper_feedback_samples(closed_ms);
+CREATE TABLE IF NOT EXISTS paper_feedback_checks (
+ release_sha TEXT NOT NULL, event_ms INTEGER NOT NULL, decision_ms INTEGER NOT NULL,
+ detail_json TEXT NOT NULL, PRIMARY KEY(release_sha,event_ms)
 );
 CREATE TABLE IF NOT EXISTS paper_feedback_progress (
     singleton INTEGER PRIMARY KEY CHECK(singleton=1), last_rowid INTEGER NOT NULL
@@ -82,6 +91,12 @@ class PaperFeedback:
         if database.config.market_environment != "LIVE":
             raise ValueError("PAPER_FEEDBACK_LIVE_DATABASE_REQUIRED")
         self.database, self.release_sha = database, release_sha
+        self._compatible_releases = {}
+        from .shadow import ShadowConfig
+        self._shadow_config = asdict(ShadowConfig(**{
+            field: float(os.environ["NBOT_SHADOW_"+field.upper()])
+            for field in ShadowConfig.__dataclass_fields__
+            if "NBOT_SHADOW_"+field.upper() in os.environ}))
         with database.connection() as conn:
             conn.executescript(SCHEMA)
 
@@ -118,7 +133,7 @@ class PaperFeedback:
                     if (outcome.profile != "live-paper" or outcome.execution_mode != "PAPER"
                             or proposal.profile != "live-paper"
                             or proposal.entry_authority != LIVE_PAPER_LEARNED_AUTHORITY
-                            or tag.get("version") != VERSION):
+                            or tag.get("version") not in ACCEPTED_VERSIONS):
                         raise ValueError("NOT_THIS_PAPER_EXPERIMENT")
                     if (outcome.proposal_id != proposal.proposal_id
                             or outcome.proposal_source_digest != proposal.source_digest
@@ -171,19 +186,89 @@ class PaperFeedback:
                 cursor = int(rowid)
             conn.execute("INSERT OR REPLACE INTO paper_feedback_progress VALUES (1,?)", (cursor,))
 
+    def _compatible(self, release):
+        if release not in self._compatible_releases:
+            self._compatible_releases[release] = compatible_evidence_release(release, self.release_sha)
+        return self._compatible_releases[release]
+
+    def _main_samples(self, cutoff_ms):
+        with self.database.connection() as conn:
+            rows = conn.execute("""SELECT release_sha,sample_json,sample_digest FROM paper_feedback_samples
+                WHERE available_ms<? AND closed_ms>=? ORDER BY closed_ms DESC,outcome_id DESC LIMIT ?""",
+                (cutoff_ms, cutoff_ms-WINDOW_MS, MAX_SAMPLES+1)).fetchall()
+        samples = [dict(_verified(raw, digest), source="MAIN_PAPER", weight=1.)
+                   for release, raw, digest in rows[:MAX_SAMPLES] if self._compatible(release)]
+        return samples, len(rows)>MAX_SAMPLES
+
+    def cooldown(self, symbol, side, *, cutoff_ms):
+        samples, _ = self._main_samples(cutoff_ms)
+        return loss_cooldowns(samples, cutoff_ms).get(symbol+"|"+side)
+
+    def entry_block_reason(self, symbol, side, *, now_ms):
+        # A close ACK can arrive between supervisor refreshes. The flat-side
+        # request gate consumes those receipts before serving another proposal.
+        # Include receipts already committed in this same millisecond.
+        self.ingest(cutoff_ms=now_ms+1)
+        with self.database.connection() as conn:
+            row=conn.execute("SELECT last_rowid FROM paper_feedback_progress WHERE singleton=1").fetchone()
+            cursor=row[0] if row else 0
+            if conn.execute("""SELECT 1 FROM received_execution_outcomes
+                    WHERE rowid>? AND received_at_ms<=? LIMIT 1""",(cursor,now_ms)).fetchone():
+                return "PAPER_FEEDBACK_CATCHING_UP"
+        if self.cooldown(symbol,side,cutoff_ms=now_ms+1):
+            return "PAPER_REPEATED_LOSS_COOLDOWN"
+        return None
+
+    def _shadow_samples(self, cutoff_ms):
+        from .shadow import verified
+        with self.database.connection() as conn:
+            if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='shadow_results'").fetchone():
+                return [], {}, []
+            conn.execute("CREATE INDEX IF NOT EXISTS shadow_feedback_recent ON shadow_results(profile,closed_ms)")
+            rows=conn.execute("""SELECT release_sha,result_json,digest FROM shadow_results
+                WHERE profile='live-paper' AND closed_ms>=? AND closed_ms<?
+                ORDER BY closed_ms DESC,id DESC LIMIT 2049""",
+                (cutoff_ms-WINDOW_MS,cutoff_ms)).fetchall()
+        samples, feasibility, identities = [], defaultdict(dict), []
+        for release, raw, check in rows[:2048]:
+            if not self._compatible(release):
+                continue
+            p=verified(raw,check)
+            if (p.get("candidate_id") not in BY_ID or p.get("profile")!="live-paper"
+                    or p.get("authority")!="SHADOW_ONLY_NO_EXECUTION"
+                    or p.get("catalog_digest")!=CATALOG_DIGEST
+                    or p.get("config")!=self._shadow_config
+                    or not isinstance(p.get("available_ms"),int)
+                    or p["available_ms"]>=cutoff_ms):
+                continue
+            sample=shadow_sample(p,cutoff_ms=cutoff_ms,catalog_digest=CATALOG_DIGEST)
+            if sample:
+                samples.append(sample)
+            # Feasibility is its own metric, never a fabricated trade outcome.
+            if sample or p.get("reason")=="ENTRY_DRIFT_REJECTED":
+                key=p["candidate_id"]+"|"+p["side"]
+                event=int(p["event_ms"])
+                feasibility[key][event]=bool(sample)
+                identities.append((p["id"],check))
+        groups={}
+        for key, events in feasibility.items():
+            attempted=len(events); filled=sum(events.values())
+            blocks=len({event//BUCKET_MS for event in events})
+            factor=1.
+            if attempted>=8 and blocks>=3:
+                factor=max(.7,1-.3*(1-filled/attempted))
+            groups[key]={"attempts":attempted,"filled":filled,"drift_cancelled":attempted-filled,
+                         "blocks":blocks,"factor":factor}
+        return samples, groups, identities
+
     def snapshot(self, *, cutoff_ms):
         self.ingest(cutoff_ms=cutoff_ms)
-        with self.database.connection() as conn:
-            rows = conn.execute("""
-                SELECT sample_json,sample_digest FROM paper_feedback_samples
-                WHERE release_sha=? AND available_ms<? AND closed_ms>=?
-                ORDER BY closed_ms DESC,outcome_id DESC LIMIT ?
-                """, (self.release_sha, cutoff_ms, cutoff_ms-WINDOW_MS, MAX_SAMPLES+1)).fetchall()
-        capped = len(rows) > MAX_SAMPLES
-        samples = [_verified(*row) for row in rows[:MAX_SAMPLES]]
+        main_samples, capped = self._main_samples(cutoff_ms)
+        shadow_samples, feasibility, feasibility_identity = self._shadow_samples(cutoff_ms)
+        samples = main_samples + shadow_samples
         # Stable identity across refreshes and restarts; age is updated daily.
         identity = {"version": VERSION, "release_sha": self.release_sha,
-                    "day": cutoff_ms // DAY_MS, "samples": sorted((s["outcome_id"], payload_digest(s)) for s in samples)}
+                    "day": cutoff_ms // DAY_MS, "feasibility": sorted(feasibility_identity), "samples": sorted((s["outcome_id"], payload_digest(s)) for s in samples)}
         model_id = hashlib.sha256(_json(identity).encode()).hexdigest()
         with self.database.connection() as conn:
             saved = conn.execute("SELECT model_json,model_digest FROM paper_feedback_models WHERE model_id=?",
@@ -201,27 +286,36 @@ class PaperFeedback:
         for key, cells in sorted(buckets.items()):
             values, weights = [], []
             for _bucket, items in sorted(cells.items()):
-                values.append(statistics.fmean(s["learning_r"] for s in items))
-                age = max(0, cutoff_ms-max(s["closed_ms"] for s in items))
-                weights.append(2 ** (-age / (14*DAY_MS)))
+                main=[s["learning_r"] for s in items if s["source"]=="MAIN_PAPER"]
+                shadow=[s["learning_r"] for s in items if s["source"]=="SHADOW"]
+                # Ten simultaneous shadow trades never become ten independent observations.
+                mass=(1. if main else 0.)+(.25 if shadow else 0.)
+                value=((statistics.fmean(main) if main else 0.)
+                       +(.25*statistics.fmean(shadow) if shadow else 0.))/mass
+                values.append(value)
+                age = max(0, cutoff_ms-max(s["available_ms"] for s in items))
+                weights.append(mass * 2 ** (-age / (14*DAY_MS)))
             total = sum(weights)
             effective = total*total / sum(w*w for w in weights)
             mean = sum(w*v for w,v in zip(weights, values)) / total
             variance = sum(w*(v-mean)**2 for w,v in zip(weights,values)) / total
-            margin = 2*math.sqrt(max(variance, .25)/effective)
-            supported = len(values) >= MIN_BUCKETS and effective >= MIN_BUCKETS
+            margin = 2*math.sqrt(max(variance, .25)/max(1., min(effective,total)))
+            supported = len(values) >= MIN_BUCKETS and effective >= MIN_BUCKETS-1
             factor = 1.
             if supported:
                 if mean + margin < 0:
                     factor = max(.25, 1 + (mean+margin)/2)
-                elif mean - margin > 0:
+                elif len(values)>=8 and mean - margin > 0:
                     factor = min(1.5, 1 + (mean-margin)/4)
             groups[key] = {"buckets": len(values), "effective_buckets": effective,
                            "trades": sum(len(items) for items in cells.values()),
+                           "evidence_mass": total,
                            "mean_clipped_r": mean, "caution_margin": margin,
                            "supported": supported, "factor": factor}
         value = {"version": VERSION, "model_id": model_id, "release_sha": self.release_sha,
-                 "cutoff_ms": cutoff_ms, "sample_count": len(samples), "window_days": 30,
+                 "cutoff_ms": cutoff_ms, "sample_count": len(main_samples), "window_days": 30,
+                  "shadow_sample_count": len(shadow_samples), "shadow_weight": .25,
+                  "feasibility": feasibility, "cooldowns": loss_cooldowns(main_samples,cutoff_ms),
                  "sample_cap_reached": capped, "groups": groups,
                  "cost_basis": "PAPER_AFTER_SIMULATED_FEES_NO_FUNDING"}
         with self.database.connection() as conn:
@@ -232,7 +326,7 @@ class PaperFeedback:
         return _verified(*saved)
 
     @staticmethod
-    def adjust(model, vector, side, base_score, candidate=None):
+    def adjust(model, vector, side, base_score, candidate=None, symbol=None, now_ms=None):
         info = describe(vector)
         result = {"version": VERSION, "release_sha": model["release_sha"],
                   "model_id": model["model_id"], "trained_before_ms": model["cutoff_ms"],
@@ -246,6 +340,17 @@ class PaperFeedback:
                 result.update(factor=group["factor"], predicted_paper_r=group["mean_clipped_r"],
                               support_buckets=group["buckets"], group=key, status="PAPER_FEEDBACK_APPLIED")
                 break
+        result["evidence_sources"] = {"main_paper": model.get("sample_count",0),
+                                      "shadow": model.get("shadow_sample_count",0)}
+        result["outcome_factor"] = result["factor"]
+        feasibility=model.get("feasibility",{}).get((candidate or {}).get("id","")+"|"+side,{})
+        result["entry_feasibility_factor"] = feasibility.get("factor",1.)
+        result["factor"] *= result["entry_feasibility_factor"]
+        cooldown=model.get("cooldowns",{}).get(str(symbol)+"|"+side)
+        if cooldown and cooldown["until_ms"]>(now_ms if now_ms is not None else model["cutoff_ms"]):
+            result.update(factor=0.,status="REPEATED_LOSS_COOLDOWN",cooldown_until_ms=cooldown["until_ms"])
+        elif result["entry_feasibility_factor"]<1:
+            result["status"]="ENTRY_FEASIBILITY_PENALTY" if result["outcome_factor"]==1 else "OUTCOME_AND_ENTRY_FEEDBACK"
         # Feedback never turns a negative research score into a paper entry.
         return (base_score * result["factor"] if base_score > 0 else base_score), result
 
@@ -253,3 +358,8 @@ class PaperFeedback:
         with self.database.connection() as conn:
             conn.execute("INSERT OR IGNORE INTO paper_feedback_decisions VALUES (?,?,?,?,?)",
                          (proposal_id, self.release_sha, decision_ms, _json(detail), payload_digest(detail)))
+
+    def record_check(self, event_ms, decision_ms, detail):
+        with self.database.connection() as conn:
+            conn.execute("INSERT OR IGNORE INTO paper_feedback_checks VALUES(?,?,?,?)",
+                         (self.release_sha,event_ms,decision_ms,_json(detail)))

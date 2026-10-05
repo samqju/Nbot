@@ -64,7 +64,7 @@ class ShadowVisibilityTests(unittest.TestCase):
             self.assertEqual((result["completed"],result["excluded"]),(2,1))
             self.assertEqual(result["current_completed"],1)
             self.assertEqual(result["current_net_usd"],-2)
-            self.assertIn("separate simulations",_activity_text({"shadow_activity":result}))
+            self.assertIn("25% weight",_activity_text({"shadow_activity":result}))
 
     def test_missing_database_not_created(self):
         with tempfile.TemporaryDirectory() as td:

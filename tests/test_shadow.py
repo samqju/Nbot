@@ -232,7 +232,7 @@ class ShadowBookTests(unittest.TestCase):
         t=self.active()[0]["next_bar_ms"]; self.candle(t)
         self.book.advance(now_ms=t+301000)
         text=shadow_report(self.db,release_sha=SHA)
-        self.assertIn("do not train the main learner",text)
+        self.assertIn("adjust paper ranking at reduced weight",text)
         self.assertIn("Alongside live-trade",text)
         self.assertIn("Global reserved slots: 0 / 10",text)
         self.assertEqual(len(self.results()),10)

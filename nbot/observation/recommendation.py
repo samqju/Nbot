@@ -843,6 +843,13 @@ class ObservationControlTarget:
             )
             self._record_request_response(request, response, received_at_ms=now)
             return response
+        feedback=getattr(self.recommendations.learned_source, "paper_feedback", None)
+        if feedback is not None and self.profile.name=="live-paper":
+            block=feedback.entry_block_reason(proposal.symbol, proposal.side, now_ms=now)
+            if block:
+                response=TradeResponse.no_trade(request_id=request.request_id, responded_at_ms=now, reason=block)
+                self._record_request_response(request,response,received_at_ms=now)
+                return response
         self._serve_proposal(proposal, now)
         response = TradeResponse.proposal_response(
             request_id=request.request_id,
