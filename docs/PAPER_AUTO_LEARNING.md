@@ -63,6 +63,12 @@ recency-weighted buckets, and a negative result beyond the caution margin.
 Increasing preference additionally needs at least eight buckets.
 Buckets reduce repetition; they do not prove statistical independence.
 
+Before a supported group's result can change ranking, its clipped mean R is
+shrunk toward a neutral 0R prior with four evidence-mass units. This does not
+invent winning or losing trades. It deliberately makes small samples move ranking
+less aggressively; the influence of the neutral prior fades as independent
+evidence mass grows. The report shows both raw and shrunk means.
+
 With insufficient evidence the weight is 1.0, meaning unchanged.
 Outcome weights range from 0.25 to 1.5. A separate entry-practicality factor ranges from 0.7 to 1; an active loss pause sets the final factor to zero. A negative base prediction never becomes
 an entry because of feedback. Weak setups are downranked rather than permanently
@@ -130,6 +136,8 @@ cat logs/paper-learning-report.md
 The first report explains market-data models and research rejection reasons.
 The second shows:
 
+- a frozen-base decision audit: what the original model/rule ranking would have chosen
+  before paper feedback versus what the adaptive ranking selected;
 - completed eligible paper trades and elapsed days since the first recommendation;
 - weekly paper PnL, win counts and closed-trade drawdown;
 - completed trades and paper profit/loss for each of the 24 candidates, plus MODEL_ONLY;
@@ -143,9 +151,11 @@ The error uses clipped paper R, matching the learner's target. Lower error is
 better, but it does not itself prove profitable selection. Weekly PnL is not a
 controlled before/after experiment: market conditions may have changed.
 
-The original top choice is logged but is not traded in a second account.
-There is no claimed profit result for unchosen alternatives or a parallel frozen
-baseline. That would require a separate, carefully matched simulation study.
+The original top choice is logged for every comparable decision and summarized
+against the adaptive choice. This is a causal selection audit, not invented PnL.
+An unchosen alternative is never labelled as a win or loss. A true counterfactual
+profit comparison still requires a separately matched forward simulation that
+actually follows the frozen choice.
 
 ## After 30 days
 
