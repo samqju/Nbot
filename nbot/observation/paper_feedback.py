@@ -20,12 +20,15 @@ from .context_learning import describe
 from .candidate_setups import BY_ID, FALLBACK, CATALOG_DIGEST
 from .feedback_evidence import compatible_evidence_release, loss_cooldowns, shadow_sample
 
-VERSION = "PAPER_EXECUTION_FEEDBACK_V3_SHADOW"
-ACCEPTED_VERSIONS = {VERSION, "PAPER_EXECUTION_FEEDBACK_V2_CANDIDATES"}
+VERSION = "PAPER_EXECUTION_FEEDBACK_V4_SHRINKAGE"
+ACCEPTED_VERSIONS = {VERSION, "PAPER_EXECUTION_FEEDBACK_V3_SHADOW", "PAPER_EXECUTION_FEEDBACK_V2_CANDIDATES"}
 DAY_MS = 86_400_000
 WINDOW_MS = 30 * DAY_MS
 BUCKET_MS = 49 * 300_000
 MIN_BUCKETS = 4
+# Neutral prior mass prevents a handful of noisy buckets from causing large ranking moves.
+# This is deliberately lightweight for the 1 CPU / 1 GB learner.
+PRIOR_EVIDENCE_MASS = 4.0
 MAX_SAMPLES = 2048
 BATCH = 256
 SCHEMA = """
@@ -297,8 +300,13 @@ class PaperFeedback:
                 weights.append(mass * 2 ** (-age / (14*DAY_MS)))
             total = sum(weights)
             effective = total*total / sum(w*w for w in weights)
-            mean = sum(w*v for w,v in zip(weights, values)) / total
-            variance = sum(w*(v-mean)**2 for w,v in zip(weights,values)) / total
+            raw_mean = sum(w*v for w,v in zip(weights, values)) / total
+            # Empirical-Bayes-style shrinkage toward a neutral 0R prior.  The prior
+            # contributes no fabricated wins/losses; it only limits how far sparse
+            # evidence can move ranking before more independent buckets arrive.
+            shrinkage = total / (total + PRIOR_EVIDENCE_MASS)
+            mean = raw_mean * shrinkage
+            variance = sum(w*(v-raw_mean)**2 for w,v in zip(weights,values)) / total
             margin = 2*math.sqrt(max(variance, .25)/max(1., min(effective,total)))
             supported = len(values) >= MIN_BUCKETS and effective >= MIN_BUCKETS-1
             factor = 1.
@@ -310,7 +318,10 @@ class PaperFeedback:
             groups[key] = {"buckets": len(values), "effective_buckets": effective,
                            "trades": sum(len(items) for items in cells.values()),
                            "evidence_mass": total,
-                           "mean_clipped_r": mean, "caution_margin": margin,
+                           "raw_mean_clipped_r": raw_mean,
+                           "mean_clipped_r": mean, "shrinkage_factor": shrinkage,
+                           "prior_evidence_mass": PRIOR_EVIDENCE_MASS,
+                           "caution_margin": margin,
                            "supported": supported, "factor": factor}
         value = {"version": VERSION, "model_id": model_id, "release_sha": self.release_sha,
                  "cutoff_ms": cutoff_ms, "sample_count": len(main_samples), "window_days": 30,
