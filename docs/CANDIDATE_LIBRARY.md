@@ -1,5 +1,9 @@
 # The 24-candidate paper learner
 
+The 24-candidate feedback experiment is specific to learned `live-paper`.
+For current operator commands across Testnet, LIVE paper and bounded LIVE trade,
+see [ALL_MODES_COMMANDS.md](ALL_MODES_COMMANDS.md).
+
 See also [the shadow simulation guide](SHADOW_TRADING.md): up to ten additional, separate simulated positions; the main account still permits only one position.
 
 For the planned 4 CPU / 8-12 GB Learning VPS, use the **standard** resource
@@ -95,7 +99,9 @@ Outcome factors range from 0.25 to 1.5. Downranking needs four time buckets,
 three effective buckets and a negative result beyond a caution margin; upweighting
 also needs eight buckets. Otherwise the outcome factor stays 1.0. Main paper
 outcomes have weight 1 and shadow outcomes together have weight 0.25 per group/time
-bucket. Entry-practicality penalties and repeated-loss pauses are separate.
+bucket. Before a supported mean can move ranking, this branch shrinks it toward
+neutral using four evidence-mass units; the neutral influence fades as evidence
+grows. Entry-practicality penalties and repeated-loss pauses are separate.
 
 Among overlapping rules with exactly equal scores, a deterministic event-specific
 tie breaker spreads attribution. Restarting the same event gives the same choice.
@@ -103,8 +109,10 @@ This is not a balanced allocation or a guarantee that every rule will get trades
 
 Only completed main paper positions and valid completed shadow fills receive their respective profit/loss labels. Unsimulated rules
 have unknown execution results. Selection bias remains: these records do not
-prove how each candidate would have performed on every opportunity. There is no
-parallel baseline account or automatic statistical proof of a winning strategy.
+prove how each candidate would have performed on every opportunity. There is no second traded baseline account or automatic statistical proof of a
+winning strategy. The report does retain the frozen pre-feedback choice beside
+the adaptive choice as a causal decision audit; unchosen alternatives receive no
+invented PnL.
 
 More rules divide the available evidence. With one open position, 30 days may
 leave many candidates untested or inconclusive. Trying many rules also increases
