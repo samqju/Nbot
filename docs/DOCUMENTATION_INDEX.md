@@ -1,5 +1,14 @@
 # Documentation index and current bot behavior
 
+**2026-10-05 command audit:** [All-mode operator commands](ALL_MODES_COMMANDS.md)
+is the canonical current syntax reference for `testnet-trade`, `live-paper`,
+and `live-trade`. Historical phase documents keep their original command scope.
+
+**2026-10-05 paper-feedback V4 research branch:** supported paper-feedback means
+are shrunk toward neutral before ranking changes, and reporting records the
+frozen pre-feedback choice beside the adaptive choice without assigning invented
+PnL to an unchosen alternative.
+
 **Shadow experiment update:** [One main position plus up to 10 shadow simulations](SHADOW_TRADING.md) in learned mainnet-paper and mainnet-trading. Shadow results stay separately labelled; valid paper shadows can now adjust paper ranking at reduced weight.
 
 **2026-10-03 candidate expansion:** [24-candidate paper learner and larger-VPS setup](CANDIDATE_LIBRARY.md). Learned paper selection now tests 24 versioned rules with separate completed-trade attribution. Use the standard profile for 4 CPU / 8-12 GB RAM.
@@ -10,9 +19,8 @@ Paper feedback update: [30-day auto-learning experiment](PAPER_AUTO_LEARNING.md)
 **2026-10-02 mode update:** [The three-mode guide](TRADING_MODES.md) describes Testnet trading, learned mainnet paper, and the separately authorized small mainnet trial. Earlier V3.10-only restrictions below describe the original automatic Champion roadmap. This manual trial does not declare those economic gates passed. No Testnet-paper mode is supported.
 
 
-Reviewed: **2026-10-01**, against learner code
-[9fff54c](https://github.com/samqju/Nbot/commit/9fff54c3889e26c21dd217d439783af4803993d6).
-This review covers all **18 existing tracked Markdown files**, plus this new index.
+Reviewed: **2026-10-05** against the current V3.9 three-mode CLI and documentation tree.
+The review covers every tracked Markdown file in the current V3 repository, including the Observation service README.
 Documentation publication does not install code or prove that the services are running.
 A follow-up adds the [environment-file field guide](ENVIRONMENT_SETUP.md) and
 explicit Testnet template, plus the safe disarm procedure.
@@ -21,10 +29,14 @@ explicit Testnet template, plus the safe disarm procedure.
 
 1. [Beginner two-VPS guide](TWO_VPS_BEGINNER_GUIDE.md): create both servers,
    install the same release, connect them, and start Testnet safely.
-2. [1 CPU / 1 GB learner guide](SMALL_VPS_LEARNER.md): use tiny mode, understand
+2. [Three-mode guide](TRADING_MODES.md): configure and switch among Testnet,
+   LIVE paper, and the separately authorized bounded LIVE-trading trial.
+3. [All-mode command reference](ALL_MODES_COMMANDS.md): exact current operator
+   syntax for all three profiles.
+4. [1 CPU / 1 GB learner guide](SMALL_VPS_LEARNER.md): use tiny mode, understand
    what learning can do, inspect rejected models and monitor resources.
-3. [Short Testnet setup](LEARNED_TESTNET_SETUP.md): a shorter reference once you
-   understand the complete installation.
+5. [Short Testnet setup](LEARNED_TESTNET_SETUP.md): a concise Testnet-specific
+   reference; it links back to the all-mode command matrix for other profiles.
 
 For private-file creation and every placeholder, use the
 [environment-file setup guide](ENVIRONMENT_SETUP.md).
@@ -78,8 +90,10 @@ therefore not a forecast of actual trade profits.
 
 Testnet may use a non-rejected model before its research evaluation finishes.
 This does not promote a Research Champion or Paper Champion. LIVE/PAPER remains
-an operational canary unless separately granted qualifying authority. Real-money
-trading remains blocked behind the V3.10 requirements.
+an operational canary unless separately granted qualifying authority. Automatic Research/Paper-Champion approval remains blocked behind the frozen
+V3.9/V3.10 economic gates. Separately, the code exposes a bounded, explicitly
+operator-authorized `live-trade` trial; that route is not Champion approval and
+does not establish profitability.
 
 Fresh research generations cannot recreate the old date-specific market-regime
 calibration; `UNAVAILABLE_HISTORICAL_CALIBRATION` does not mean that audit passed.
@@ -95,6 +109,7 @@ the intended release and preserve test evidence.
 | Document | How to use it now |
 |---|---|
 | [Repository README](../README.md) | Current overview and entry point |
+| [All-mode commands](ALL_MODES_COMMANDS.md) | Canonical current commands for testnet-trade, live-paper and live-trade |
 | [Beginner installation](TWO_VPS_BEGINNER_GUIDE.md) | Primary step-by-step operator instructions |
 | [Small-VPS learner](SMALL_VPS_LEARNER.md) | Tiny profile, learner limits, reports, verification scope |
 | [Short Testnet setup](LEARNED_TESTNET_SETUP.md) | Current concise deployment and checks |
