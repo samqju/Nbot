@@ -1,5 +1,9 @@
 # NBOT V3
 
+**2026-10-05 three-mode command audit:** use [the all-mode operator command reference](docs/ALL_MODES_COMMANDS.md) for validated `testnet-trade`, `live-paper`, and `live-trade` syntax. Current guides distinguish these active commands from historical phase examples.
+
+**2026-10-05 paper-feedback V4 research branch:** supported paper-feedback means are conservatively shrunk toward neutral before changing ranking, and the paper report now audits frozen pre-feedback choices versus adaptive choices without inventing counterfactual PnL.
+
 **Shadow experiment update:** [One main position plus up to 10 shadow simulations](docs/SHADOW_TRADING.md) in learned mainnet-paper and mainnet-trading. Shadow results stay separately labelled; valid paper shadows can now adjust paper ranking at reduced weight.
 
 **2026-10-03 candidate expansion:** [24-candidate paper learner and larger-VPS setup](docs/CANDIDATE_LIBRARY.md). Learned paper selection now tests 24 versioned rules with separate completed-trade attribution. Use the standard profile for 4 CPU / 8-12 GB RAM.
@@ -7,8 +11,7 @@
 Paper feedback update: [30-day auto-learning experiment](docs/PAPER_AUTO_LEARNING.md). Learned mainnet-paper now adapts setup rankings from its own settled paper trades. Testnet and real-money selection remain separate; economic proof is still unestablished.
 
 
-Learner documentation reviewed 2026-10-01 against learner release
-[9fff54c](https://github.com/samqju/Nbot/commit/9fff54c3889e26c21dd217d439783af4803993d6).
+Current learner/operator documentation reviewed 2026-10-05 against the V3.9 three-mode CLI and this research branch.
 Use the [documentation index and current behavior summary](docs/DOCUMENTATION_INDEX.md)
 to distinguish setup instructions, frozen contracts, and historical evidence.
 Three-mode execution and its setup guide were updated 2026-10-02.
@@ -29,7 +32,10 @@ New to servers? Follow the [beginner two-VPS installation guide](docs/TWO_VPS_BE
 For private settings and placeholders, see the [environment-file guide](docs/ENVIRONMENT_SETUP.md).
 
 It covers creating both servers, connecting them securely, starting learned
-Testnet trading, daily checks, restarts, backups, and updates.
+Testnet trading, daily checks, restarts, backups, and updates. After the initial
+Testnet path is understood, use the [three-mode guide](docs/TRADING_MODES.md) and
+[all-mode command reference](docs/ALL_MODES_COMMANDS.md) for LIVE paper or the
+separately authorized bounded LIVE-trading trial.
 
 ## Small VPS learning upgrade
 
@@ -93,15 +99,21 @@ OBSERVATION
 - `live-paper`
 - `live-trade`
 
-Execution checks:
+Execution read-only checks for every mode:
 
 ```bash
-./nbotctl doctor live-paper
-./nbotctl doctor testnet-trade
 ./nbotctl status
+./nbotctl doctor testnet-trade
+./nbotctl doctor live-paper
+./nbotctl doctor live-trade
 ./run_execution.py --profile testnet-trade --self-check
+./run_execution.py --profile live-paper --self-check
+./run_execution.py --profile live-trade --self-check
 python3 -m unittest discover -s tests -p 'test_*.py'
 ```
+
+For start/enable/pause/stop/recovery commands for all three profiles, use
+[docs/ALL_MODES_COMMANDS.md](docs/ALL_MODES_COMMANDS.md).
 
 Do **not** arm `testnet-trade` merely to make `doctor` pass. Follow the current
 learned-Testnet setup and explicitly enable entries only when ready to test.
