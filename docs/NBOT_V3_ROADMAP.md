@@ -3,7 +3,7 @@
 **2026-10-02 mode update:** [The three-mode guide](TRADING_MODES.md) describes Testnet trading, learned mainnet paper, and the separately authorized small mainnet trial. Earlier V3.10-only restrictions below describe the original automatic Champion roadmap. This manual trial does not declare those economic gates passed. No Testnet-paper mode is supported.
 
 
-## Current implementation addendum - 2026-10-01
+## Current implementation addendum - 2026-10-05
 
 This roadmap contains the original 2026-08-18 plan, dated acceptance records,
 and future goals. Its final "starting status" is the adoption-time snapshot,
@@ -16,7 +16,9 @@ For a new server use the [beginner guide](TWO_VPS_BEGINNER_GUIDE.md), plus the
 [1 CPU / 1 GB guide](SMALL_VPS_LEARNER.md); historical root-directory examples
 are illustrative, not a requirement to run as root.
 
-The current learned-Testnet implementation is reviewed at `9fff54c`:
+The current implementation includes learned Testnet, learned LIVE paper and a
+separately operator-authorized bounded LIVE-trade route. Current operational
+syntax is in [ALL_MODES_COMMANDS.md](ALL_MODES_COMMANDS.md):
 
 - Testnet defaults to an explicitly experimental LIVE-trained model, with
   mechanical canary selection still explicit. This is separate from Research
@@ -37,8 +39,9 @@ The current learned-Testnet implementation is reviewed at `9fff54c`:
   `UNAVAILABLE_HISTORICAL_CALIBRATION` is not a passed research audit.
 - Research targets remain simulated four-hour ATR-based R; execution uses its
   own risk and exit lifecycle. Prediction is a ranking proxy, not actual P&L.
-- Research promotion, Paper Champion proof and V3.10 real-capital gates remain
-  separate. Code/tests/documentation do not close those evidence requirements.
+- Research promotion, Paper Champion proof and the original automatic V3.10
+  real-capital gates remain separate. The bounded manual `live-trade` trial is
+  a later explicit exception; it does not close or replace those evidence gates.
 
 This addendum describes implemented changes; it does not alter frozen promotion
 thresholds, rewrite dated test results, or claim deployment on both VPSs.
