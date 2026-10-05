@@ -1,5 +1,10 @@
 # A 30-day paper auto-learning experiment
 
+This experiment applies only to learned `live-paper` feedback. The base learner
+and operator tooling also support `testnet-trade` and the separately authorized
+bounded `live-trade` route; see
+[ALL_MODES_COMMANDS.md](ALL_MODES_COMMANDS.md) for their current commands.
+
 See also [the shadow simulation guide](SHADOW_TRADING.md): up to ten additional, separate simulated positions; the main account still permits only one position.
 
 This update adds feedback from completed mainnet PAPER trades to the existing
@@ -88,6 +93,30 @@ Use the [small-VPS guide](SMALL_VPS_LEARNER.md) for resource limits.
 If journals report memory-limit failures, missing collection or training jobs
 that cannot keep up, upgrade capacity before judging the learning.
 A faster VPS cannot create missing trade evidence or make a strategy profitable.
+
+## Mode boundary
+
+The paper-feedback weights in this document are not silently shared into Testnet
+or real-money ranking. Operator syntax remains mode-specific:
+
+~~~bash
+# Testnet
+./nbotctl arm testnet-trade
+./nbotctl cluster start testnet-trade
+./nbotctl entries enable testnet-trade
+
+# Learned paper
+./nbotctl cluster start live-paper
+./nbotctl entries enable live-paper
+
+# Bounded LIVE trade
+./nbotctl arm live-trade --confirm-real-money
+./nbotctl cluster start live-trade
+./nbotctl entries enable live-trade
+~~~
+
+Only one Execution profile may run at a time. These examples show command
+equivalence, not permission to skip the setup/safety steps in the mode guide.
 
 ## Start the experiment
 
