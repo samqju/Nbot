@@ -14,11 +14,10 @@ data, train its existing model, recommend trades, and manage one Testnet positio
 at a time. This does not mean the strategy is profitable or every roadmap phase
 has passed. A new installation needs time to learn.
 
-Checked against the code at commit
-[9fff54c](https://github.com/samqju/Nbot/commit/9fff54c3889e26c21dd217d439783af4803993d6).
-Documentation consistency review: 2026-10-01. This identifies the reviewed code,
-not the code automatically installed on your servers.
-Updated October 1, 2026. Commands assume **Ubuntu Server 24.04 LTS**, a normal
+Documentation consistency review: 2026-10-05 against the current V3.9
+three-mode CLI and this research branch. This describes reviewed repository
+behavior, not the code automatically installed on your servers.
+Updated October 5, 2026. Commands assume **Ubuntu Server 24.04 LTS**, a normal
 login named **ubuntu**, SSH on port **22**, and the bot at **/home/ubuntu/Nbot**.
 
 > Already have a running bot? Do not overwrite its folder, keys, or databases
