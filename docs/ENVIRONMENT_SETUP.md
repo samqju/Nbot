@@ -1,5 +1,9 @@
 # Private environment files: fresh-VPS guide
 
+For validated operator syntax after configuration, see
+[ALL_MODES_COMMANDS.md](ALL_MODES_COMMANDS.md). This page covers private settings
+for all three profiles; it does not itself authorize trading.
+
 An environment file is a small settings file containing lines such as
 `NAME=value`. A template contains field names and safe defaults, not your secrets.
 The private copy contains your actual values and stays on your VPS.
@@ -19,6 +23,7 @@ its private-file steps; it is not an alternative service-start procedure.
 | Trading | execution-testnet.env | [execution-testnet.env.example](../config/examples/execution-testnet.env.example) | Yes for Testnet orders |
 | Both | control-link.env | [control-link.env.example](../config/examples/control-link.env.example) | Yes for the server connection |
 | Trading | execution-live-paper.env | [execution-live-paper.env.example](../config/examples/execution-live-paper.env.example) | Only for separate LIVE/PAPER operator setup |
+| Trading | execution-live.env | [execution-live.env.example](../config/examples/execution-live.env.example) | Only for a separately approved bounded LIVE-trade trial |
 | Learning | observation-live.env | [observation.env.example](../config/examples/observation.env.example) | Optional outbound Telegram notifications |
 
 The old `execution.env.example` name now points to the specific templates.
@@ -122,6 +127,25 @@ to keep its notifications distinct from the Execution command bot.
 The paper template also contains `LIVE_PUBLIC_REST_TIMEOUT_SECONDS=3` and
 `LIVE_PUBLIC_MAX_CLOCK_SKEW_MS=5000`. Keep these defaults initially; they govern
 public-market request timeouts and clock checks, not real-order permission.
+
+## Read-only profile validation
+
+After the relevant private files exist, the Execution VPS can validate each
+profile without starting or enabling entries:
+
+~~~bash
+cd "$HOME/Nbot"
+./nbotctl doctor testnet-trade
+./nbotctl doctor live-paper
+./nbotctl doctor live-trade
+./run_execution.py --profile testnet-trade --self-check
+./run_execution.py --profile live-paper --self-check
+./run_execution.py --profile live-trade --self-check
+~~~
+
+A LIVE-trade check may correctly report that explicit real-money authorization is
+missing until that separate trial is deliberately armed. Do not arm merely to
+make a read-only diagnostic look green.
 
 ## File format and checks
 
