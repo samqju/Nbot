@@ -4,6 +4,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 import sqlite3
 import statistics
+import json
 from .paper_feedback import DAY_MS, VERSION, _verified
 from .candidate_setups import REGISTRY, FALLBACK
 
@@ -49,7 +50,7 @@ def paper_learning_report(database, *, release_sha, now_ms):
     checks = []
     for row in check_rows[:10000]:
         try:
-            value = __import__("json").loads(row[0])
+            value = json.loads(row[0])
             if isinstance(value, dict):
                 checks.append(value)
         except (TypeError, ValueError):
