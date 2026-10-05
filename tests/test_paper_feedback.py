@@ -166,6 +166,11 @@ class PaperFeedbackTests(unittest.TestCase):
     def test_report_is_read_only_and_does_not_claim_profitability(self):
         self.populate()
         self.feedback.snapshot(cutoff_ms=NOW)
+        # setUp() refreshes a real recommendation and may already freeze a check
+        # for this event. Clear only the synthetic test database's check rows so
+        # this test can insert one deliberate changed-choice audit record.
+        with self.db.connection() as conn:
+            conn.execute("DELETE FROM paper_feedback_checks")
         self.feedback.record_check(NOW-300000, NOW-299000, {
             "baseline": {"symbol": "BTCUSDT", "side": "LONG", "candidate": "MODEL_ONLY", "score": 1.0},
             "selected": {"symbol": "ETHUSDT", "side": "LONG", "candidate": "MODEL_ONLY", "score": 0.8,
