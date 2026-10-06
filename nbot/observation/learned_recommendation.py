@@ -438,11 +438,25 @@ class LearnedTestnetSource:
         raw_model = {k: v for k, v in artifact["model"].items() if k != "context_calibration"}
         setup_explanation = adjustment(artifact["model"]["context_calibration"], vector,
                                       _ridge_score(raw_model, json.dumps(vector)))
+        selected_ml = (feedback_detail or {}).get("selective_ml") if feedback_detail is not None else None
+        if selected_ml is None and ml_runtime is not None:
+            chosen_ml = next((item[5] for item in candidates
+                              if (item[1], item[2]) == (symbol, side)), None)
+            if chosen_ml is not None:
+                selected_ml = dict(chosen_ml)
+                selected_ml["fill_probability"] = ml_runtime.fill_probability(
+                    score=chosen_ml["ensemble_mean_r"], bid=float(bid), ask=float(ask),
+                    side=side, candidate_id=None, context=describe(vector)["context"],
+                    decision_ms=now_ms)
+                selected_ml["pre_feedback_gate"] = ml_gate_reason
+        expected_net_r = selected_ml["ensemble_mean_r"] if selected_ml is not None else base_score
         generated = min(captured_ms, int(quote_ms))
         source_inputs = {"live_event": event_ms, "vector": vector,
                          "model": artifact["model_digest"], "testnet_quote": quotes[symbol]}
         if feedback_detail is not None:
             source_inputs["paper_feedback"] = feedback_detail
+        if selected_ml is not None:
+            source_inputs["selective_ml"] = selected_ml
         source_digest = payload_digest(source_inputs)
         proposal = ExecutionProposal.create(
             proposal_id="PROP-" + hashlib.sha256(f"{self.authority}:{event_ms}".encode()).hexdigest()[:40],
@@ -453,16 +467,20 @@ class LearnedTestnetSource:
             data_generation_id=f"LEARNED-{self.profile.name.upper()}-{event_ms}", feature_version=CANONICAL_FEATURE_VERSION,
             selector_version=artifact["selector_version"], entry_authority=self.authority,
             exit_policy_version="INTEGER_R_STEP_CONTROL", reference_price=(float(bid) + float(ask)) / 2,
-            selection_score=score, selection_rank=1, expected_after_cost_net_r=base_score,
+            selection_score=score, selection_rank=1, expected_after_cost_net_r=expected_net_r,
             source_digest=source_digest, model_digest=artifact["model_digest"],
             experiment_context={"authority_class": self.authority, "economic_claim": False,
                 "research_evidence": False, "training_environment": "LIVE", "inference_environment": "LIVE",
                 "execution_environment": self.profile.market_environment, "model_version": artifact["model_version"],
                 "training_cutoff_event_ms": artifact["training_cutoff_event_ms"],
                 "live_market_event_ms": event_ms, "reference_quote_environment": self.profile.market_environment,
-                "selection_method": "CONTEXT_CALIBRATED_RIDGE", "setup_explanation": setup_explanation,
-                "prediction_target": "SIMULATED_ATR_R_4H_NOT_EXECUTION_PNL",
+                "selection_method": ("SELECTIVE_ML_V1_RIDGE_LIGHTGBM_V4"
+                                     if selected_ml is not None else "CONTEXT_CALIBRATED_RIDGE"),
+                "setup_explanation": setup_explanation,
+                "prediction_target": (SELECTIVE_ML_TARGET if selected_ml is not None
+                                      else "SIMULATED_ATR_R_4H_NOT_EXECUTION_PNL"),
                 "candidate_count": len(candidates),
+                **({"selective_ml": selected_ml} if selected_ml is not None else {}),
                 **({"shadow_main_candidate": main_candidate} if self.shadow else {}),
                 **({"paper_feedback": feedback_detail} if feedback_detail else {})},
         )
