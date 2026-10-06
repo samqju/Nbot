@@ -28,7 +28,10 @@ from .shadow import ShadowBook, ShadowConfig
 from .model_compatibility import compatible_training_release
 from .candidate_setups import load_histories, matches, FALLBACK, CATALOG_DIGEST, history_digest, tie_key
 from .research_memory import ResearchMemoryStore
-from .selective_ml import SelectiveMLManager, SelectiveMLRuntime, TARGET as SELECTIVE_ML_TARGET
+from .selective_ml import (
+    LOWER_SCORE_WEIGHT, MEAN_SCORE_WEIGHT, SelectiveMLManager, SelectiveMLRuntime,
+    TARGET as SELECTIVE_ML_TARGET,
+)
 
 
 SIGNAL_INPUTS = (
@@ -279,7 +282,9 @@ class LearnedTestnetSource:
                 if ml_runtime is not None:
                     ml_mean, ml_lower = ml_runtime.score(vector)
                     ensemble_mean = 0.25 * ridge_score + 0.75 * ml_mean
-                    selection_base = min(ensemble_mean, ml_lower)
+                    selection_base = (
+                        MEAN_SCORE_WEIGHT * ensemble_mean + LOWER_SCORE_WEIGHT * ml_lower
+                    )
                     ml_detail = {
                         "artifact_key": ml_record["artifact_key"],
                         "artifact_digest": ml_record["artifact_digest"],
