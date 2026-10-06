@@ -46,12 +46,12 @@ ENGINEERED_FEATURE_NAMES = (
 )
 STRUCTURE_FEATURE_NAMES = (
     *tuple(f"setup__{name}" for name in SETUPS),
-    *tuple(f"context__{name}" for name in CONTEXTS),
+    *tuple(f"context__{name.replace(':', '_')}" for name in CONTEXTS),
 )
 ML_FEATURE_NAMES = tuple(FEATURE_VECTOR_NAMES) + ENGINEERED_FEATURE_NAMES + STRUCTURE_FEATURE_NAMES
 ENTRY_FEATURE_NAMES = (
     "score", "spread_pct", "side_sign", "seconds_to_next_bar",
-    *tuple(f"context__{name}" for name in CONTEXTS),
+    *tuple(f"context__{name.replace(':', '_')}" for name in CONTEXTS),
     *tuple(f"candidate__{name}" for name in BY_ID),
 )
 
@@ -126,7 +126,7 @@ def entry_vector(*, score: float, bid: float, ask: float, side: str,
         "seconds_to_next_bar": max(0.0, min(300.0, seconds_to_next)),
     }
     for name in CONTEXTS:
-        result[f"context__{name}"] = 1.0 if context == name else 0.0
+        result[f"context__{name.replace(':', '_')}"] = 1.0 if context == name else 0.0
     for name in BY_ID:
         result[f"candidate__{name}"] = 1.0 if candidate_id == name else 0.0
     if tuple(result) != ENTRY_FEATURE_NAMES:
