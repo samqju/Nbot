@@ -50,7 +50,7 @@ class SelectiveMLTests(unittest.TestCase):
         )
         self.assertEqual(tuple(result), ENTRY_FEATURE_NAMES)
         self.assertEqual(result["candidate__TREND_PULLBACK_V1"], 1.0)
-        self.assertEqual(result["context__ALIGNED:NORMAL"], 1.0)
+        self.assertEqual(result["context__ALIGNED_NORMAL"], 1.0)
         self.assertGreater(result["spread_pct"], 0)
 
     def test_small_vps_defaults_are_bounded(self):
