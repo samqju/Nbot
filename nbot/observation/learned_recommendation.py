@@ -27,6 +27,8 @@ from .paper_feedback import PaperFeedback
 from .shadow import ShadowBook, ShadowConfig
 from .model_compatibility import compatible_training_release
 from .candidate_setups import load_histories, matches, FALLBACK, CATALOG_DIGEST, history_digest, tie_key
+from .research_memory import ResearchMemoryStore
+from .selective_ml import SelectiveMLManager, SelectiveMLRuntime, TARGET as SELECTIVE_ML_TARGET
 
 
 SIGNAL_INPUTS = (
@@ -64,6 +66,15 @@ class LearnedTestnetSource:
         self.release_sha = release_sha
         self._release_compatibility = {}
         self.paper_feedback = PaperFeedback(self.live, release_sha=release_sha) if profile_name == "live-paper" else None
+        ml_enabled = os.environ.get("NBOT_SELECTIVE_ML", "1")
+        if ml_enabled not in {"0", "1"}:
+            raise ValueError("NBOT_SELECTIVE_ML_INVALID")
+        self.selective_ml = (
+            SelectiveMLManager(ResearchMemoryStore(self.memory_path), self.live, release_sha=release_sha)
+            if profile_name == "live-paper" and ml_enabled == "1" else None
+        )
+        self._selective_ml_runtime = None
+        self._selective_ml_artifact_digest = None
         shadow_enabled = os.environ.get("NBOT_SHADOW_ENABLED", "1")
         if shadow_enabled not in {"0", "1"}:
             raise ValueError("NBOT_SHADOW_ENABLED_INVALID")
