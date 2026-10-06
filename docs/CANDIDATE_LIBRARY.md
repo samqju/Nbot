@@ -7,20 +7,25 @@ see [ALL_MODES_COMMANDS.md](ALL_MODES_COMMANDS.md).
 See also [the shadow simulation guide](SHADOW_TRADING.md): up to ten additional, separate simulated positions; the main account still permits only one position.
 
 For the planned 4 CPU / 8-12 GB Learning VPS, use the **standard** resource
-profile. The bot now checks 24 named trade candidates in learned mainnet-paper
+profile. The bot checks 24 named trade candidates in learned mainnet-paper
 mode. A candidate is a rule describing an opportunity, not a promise of profit.
+With [Selective ML V1](SELECTIVE_ML.md), these rules remain interpretable
+feedback/shadow labels; they no longer define the full nonlinear decision
+capability of learned paper.
 
 ## In simple English
 
-1. Collect completed market candles and train the existing price model.
-2. Check which of the 24 rules match each coin and direction.
-3. Score the opportunity with the existing model. Adjust its ranking using
-   completed paper trades previously assigned to that particular rule.
-4. Recommend just one opportunity. Trading still permits at most one open position
+1. Collect completed market candles and build causal symbol/side research labels.
+2. Train Ridge plus the bounded Selective ML model when its dependency/evidence gates are satisfied.
+3. Check which of the 24 rules match each coin and direction; use them for V4
+   attribution, shadow experiments and interpretability around the ML ranking.
+4. Apply confidence, best-versus-second-best and entry-feasibility gates. The
+   result may be NO TRADE.
+5. Recommend at most one opportunity. Trading still permits at most one open position
    and applies the existing risk, entry, stop and exit rules.
-5. Save the chosen rule, all overlapping matches for that coin/direction,
+6. Save the chosen rule, all overlapping matches for that coin/direction,
    candle-history digest, library digest, model and original prediction.
-6. When that paper trade closes, teach only the chosen rule from its result.
+7. When that paper trade closes, teach only the chosen rule from its result.
    Ten matching rules do not turn one winning trade into ten wins.
 
 There is one shared base prediction model plus separate rule/context feedback
