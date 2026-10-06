@@ -252,6 +252,14 @@ class LearnedTestnetSource:
         if not quotes:
             return self._not_ready("LEARNED_WAIT_FOR_MATCHING_TESTNET_EVENT" if self.profile.name == "testnet-trade" else "LEARNED_WAIT_FOR_MATCHING_LIVE_EVENT", now_ms)
         feedback_model = self.paper_feedback.snapshot(cutoff_ms=now_ms) if self.paper_feedback else None
+        ml_record = self.selective_ml.latest_for_event(event_ms) if self.selective_ml else None
+        ml_runtime = None
+        if ml_record is not None:
+            if self._selective_ml_artifact_digest != ml_record["artifact_digest"]:
+                self._selective_ml_runtime = SelectiveMLRuntime(ml_record["payload"])
+                self._selective_ml_artifact_digest = ml_record["artifact_digest"]
+            ml_runtime = self._selective_ml_runtime
+
         candidates = []
         btc_available = {}
         for feature in self.features.compute_event_rows(event_ms, computed_at_ms=now_ms, register_definition=False):
@@ -263,13 +271,40 @@ class LearnedTestnetSource:
             signals = {r["signal_version"]: r for r in signals}
             for side in ("LONG", "SHORT"):
                 vector = _feature_vector(feature, signals, side)
-                score = _ridge_score(artifact["model"], json.dumps(vector, allow_nan=False))
-                if not math.isfinite(score):
+                ridge_score = _ridge_score(artifact["model"], json.dumps(vector, allow_nan=False))
+                if not math.isfinite(ridge_score):
                     raise ValueError("LEARNED_SCORE_NOT_FINITE")
-                candidates.append((score, feature["symbol"], side, vector))
+                selection_base = ridge_score
+                ml_detail = None
+                if ml_runtime is not None:
+                    ml_mean, ml_lower = ml_runtime.score(vector)
+                    ensemble_mean = 0.25 * ridge_score + 0.75 * ml_mean
+                    selection_base = min(ensemble_mean, ml_lower)
+                    ml_detail = {
+                        "artifact_key": ml_record["artifact_key"],
+                        "artifact_digest": ml_record["artifact_digest"],
+                        "model_digest": ml_record["payload"]["model_digest"],
+                        "ridge_score": ridge_score,
+                        "ml_mean_r": ml_mean,
+                        "ml_lower_r": ml_lower,
+                        "ensemble_mean_r": ensemble_mean,
+                        "conservative_score_r": selection_base,
+                    }
+                candidates.append((selection_base, feature["symbol"], side, vector, ridge_score, ml_detail))
         if not candidates:
             return self._not_ready("LEARNING_WAIT_FOR_FULL_FEATURE_HISTORY", now_ms)
-        baseline = sorted(candidates, key=lambda r: (-r[0], r[1], r[2]))[0]
+
+        ridge_baseline = sorted(candidates, key=lambda r: (-r[4], r[1], r[2]))[0]
+        selection_order = sorted(candidates, key=lambda r: (-r[0], r[1], r[2]))
+        selection_baseline = selection_order[0]
+        ml_gate_reason = None
+        if ml_runtime is not None:
+            ml_cfg = self.selective_ml.config
+            if selection_baseline[0] < ml_cfg.min_lower_r:
+                ml_gate_reason = "LEARNED_ML_ABSTAIN_LOW_CONFIDENCE"
+            elif len(selection_order) > 1 and selection_baseline[0] - selection_order[1][0] < ml_cfg.min_edge_gap_r:
+                ml_gate_reason = "LEARNED_ML_ABSTAIN_EDGE_TOO_SMALL"
+
         feedback_detail = None
         histories = {}
         shadow_history_ready = True
@@ -282,55 +317,87 @@ class LearnedTestnetSource:
                 shadow_history_ready = False
                 self.shadow_error = type(exc).__name__ + ":" + str(exc)[:180]
                 logging.getLogger(__name__).exception("SHADOW_HISTORY_FAILED")
+
         if feedback_model is not None:
             ranked = []
-            for base_score, candidate_symbol, candidate_side, candidate_vector in candidates:
+            for selection_base, candidate_symbol, candidate_side, candidate_vector, ridge_score, ml_detail in candidates:
                 bars = histories.get(candidate_symbol, [])
                 bars_digest = history_digest(bars)
                 rule_vector = dict(candidate_vector, candidate_btc_available=float(btc_available[candidate_symbol]))
                 rules = matches(rule_vector, candidate_side, bars) or [FALLBACK]
                 for rule in rules:
                     adjusted, detail = self.paper_feedback.adjust(
-                        feedback_model, candidate_vector, candidate_side, base_score, candidate=rule,
+                        feedback_model, candidate_vector, candidate_side, selection_base, candidate=rule,
                         symbol=candidate_symbol, now_ms=now_ms)
                     detail.update(matched_candidates=[item["id"] for item in rules],
                                   catalog_digest=CATALOG_DIGEST, history_digest=bars_digest)
-                    ranked.append((adjusted, candidate_symbol, candidate_side, candidate_vector, base_score, detail))
+                    if ml_detail is not None:
+                        bid, ask = float(quotes[candidate_symbol][1]), float(quotes[candidate_symbol][2])
+                        fill_probability = ml_runtime.fill_probability(
+                            score=ml_detail["ensemble_mean_r"], bid=bid, ask=ask,
+                            side=candidate_side, candidate_id=rule["id"],
+                            context=describe(candidate_vector)["context"], decision_ms=now_ms)
+                        detail["selective_ml"] = {
+                            **ml_detail,
+                            "fill_probability": fill_probability,
+                            "min_fill_probability": self.selective_ml.config.min_fill_probability,
+                            "pre_feedback_gate": ml_gate_reason,
+                        }
+                        if fill_probability < self.selective_ml.config.min_fill_probability:
+                            adjusted = 0.0
+                            detail["status"] = "ML_ENTRY_FEASIBILITY_REJECT"
+                        elif adjusted > 0:
+                            adjusted *= fill_probability
+                    ranked.append((adjusted, candidate_symbol, candidate_side,
+                                   candidate_vector, selection_base, ridge_score, detail))
             # Equal scores use reproducible event-specific attribution, not permanent alphabetical preference.
-            score, symbol, side, vector, base_score, feedback_detail = sorted(
+            score, symbol, side, vector, base_score, ridge_score, feedback_detail = sorted(
                 ranked, key=lambda r: (-r[0], r[1], r[2],
-                    tie_key(event_ms, r[1], r[2], r[5]["candidate"]["id"])))[0]
+                    tie_key(event_ms, r[1], r[2], r[6]["candidate"]["id"])))[0]
+            if ml_gate_reason is not None:
+                score = 0.0
             feedback_detail["matched_candidate_count"] = len(ranked)
             baseline_candidate = min(
-                (r for r in ranked if (r[1],r[2])==(baseline[1],baseline[2])),
-                key=lambda r: tie_key(event_ms,r[1],r[2],r[5]["candidate"]["id"]))
+                (r for r in ranked if (r[1], r[2]) == (ridge_baseline[1], ridge_baseline[2])),
+                key=lambda r: tie_key(event_ms, r[1], r[2], r[6]["candidate"]["id"]))
             self.paper_feedback.record_check(event_ms, now_ms, {
                 "main_samples": feedback_model["sample_count"],
                 "shadow_samples": feedback_model["shadow_sample_count"],
-                "cooldown_choices_blocked": sum(r[5]["status"]=="REPEATED_LOSS_COOLDOWN" for r in ranked),
-                "outcome_choices_adjusted": sum(r[5]["outcome_factor"]!=1 for r in ranked),
-                "entry_choices_adjusted": sum(r[5]["entry_feasibility_factor"]!=1 for r in ranked),
-                "baseline": {"symbol":baseline[1],"side":baseline[2],
-                             "candidate":baseline_candidate[5]["candidate"]["id"],"score":baseline[0]},
+                "cooldown_choices_blocked": sum(r[6]["status"]=="REPEATED_LOSS_COOLDOWN" for r in ranked),
+                "outcome_choices_adjusted": sum(r[6]["outcome_factor"]!=1 for r in ranked),
+                "entry_choices_adjusted": sum(r[6]["entry_feasibility_factor"]!=1 for r in ranked),
+                "baseline": {"symbol":ridge_baseline[1],"side":ridge_baseline[2],
+                             "candidate":baseline_candidate[6]["candidate"]["id"],"score":ridge_baseline[4]},
                 "selected": {"symbol":symbol,"side":side,"candidate":feedback_detail["candidate"]["id"],
                              "score":score,"factor":feedback_detail["factor"],"reason":feedback_detail["status"]},
                 "choice_changed": (symbol,side,feedback_detail["candidate"]["id"]) !=
-                    (baseline[1],baseline[2],baseline_candidate[5]["candidate"]["id"]),
+                    (ridge_baseline[1],ridge_baseline[2],baseline_candidate[6]["candidate"]["id"]),
                 "no_trade": score<=0,
+                "selective_ml_active": ml_runtime is not None,
+                "selective_ml_gate": ml_gate_reason,
                 "active_cooldowns": feedback_model.get("cooldowns",{})})
             feedback_detail.update(
                 base_score=base_score, adjusted_score=score,
                 ranking_changed=(symbol, side, feedback_detail["candidate"]["id"]) !=
-                    (baseline[1], baseline[2], baseline_candidate[5]["candidate"]["id"]),
-                baseline_symbol=baseline[1], baseline_side=baseline[2], baseline_score=baseline[0])
+                    (ridge_baseline[1], ridge_baseline[2], baseline_candidate[6]["candidate"]["id"]),
+                baseline_symbol=ridge_baseline[1], baseline_side=ridge_baseline[2],
+                baseline_score=ridge_baseline[4])
         else:
-            score, symbol, side, vector = baseline
+            score, symbol, side, vector, ridge_score, ml_detail = selection_baseline
             base_score = score
+            if ml_detail is not None:
+                fill_probability = ml_runtime.fill_probability(
+                    score=ml_detail["ensemble_mean_r"], bid=float(quotes[symbol][1]),
+                    ask=float(quotes[symbol][2]), side=side, candidate_id=None,
+                    context=describe(vector)["context"], decision_ms=now_ms)
+                if ml_gate_reason is not None or fill_probability < self.selective_ml.config.min_fill_probability:
+                    score = 0.0
+
         shadow_opportunities = []
         main_candidate = None
-        if self.shadow and shadow_history_ready and baseline[0] > 0:
+        if self.shadow and shadow_history_ready and any(item[0] > 0 for item in candidates):
             try:
-                for candidate_score, candidate_symbol, candidate_side, candidate_vector in candidates:
+                for candidate_score, candidate_symbol, candidate_side, candidate_vector, candidate_ridge, candidate_ml in candidates:
                     if candidate_score <= 0:
                         continue
                     rule_vector = dict(candidate_vector, candidate_btc_available=float(btc_available[candidate_symbol]))
@@ -346,14 +413,22 @@ class LearnedTestnetSource:
                             "score": candidate_score, "bid": float(quotes[candidate_symbol][1]),
                             "ask": float(quotes[candidate_symbol][2]), "model_digest": artifact["model_digest"],
                             "history_digest": bars_digest,
-                            "decision_context": describe(candidate_vector)["context"]})
+                            "decision_context": describe(candidate_vector)["context"],
+                            **({"selective_ml": candidate_ml} if candidate_ml else {})})
             except Exception as exc:
                 self.shadow_error = type(exc).__name__ + ":" + str(exc)[:180]
                 logging.getLogger(__name__).exception("SHADOW_CANDIDATES_FAILED")
                 shadow_opportunities = []
+
         if score <= 0:
-            reason = ("PAPER_REPEATED_LOSS_COOLDOWN" if feedback_detail and
-                      feedback_detail["status"]=="REPEATED_LOSS_COOLDOWN" else "LEARNED_NO_POSITIVE_OPPORTUNITY")
+            if feedback_detail and feedback_detail["status"] == "REPEATED_LOSS_COOLDOWN":
+                reason = "PAPER_REPEATED_LOSS_COOLDOWN"
+            elif feedback_detail and feedback_detail["status"] == "ML_ENTRY_FEASIBILITY_REJECT":
+                reason = "LEARNED_ML_ENTRY_UNLIKELY"
+            elif ml_gate_reason is not None:
+                reason = ml_gate_reason
+            else:
+                reason = "LEARNED_NO_POSITIVE_OPPORTUNITY"
             snapshot = self._freeze(event_ms, RecommendationSnapshot("READY", reason, None, now_ms))
             if self.shadow and shadow_opportunities:
                 self._shadow_call("offer", event_ms=event_ms, now_ms=now_ms,
