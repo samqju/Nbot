@@ -21,6 +21,7 @@ import time
 from typing import Any
 
 from .candidate_setups import BY_ID
+from .context_learning import SETUPS, describe
 from .research_memory import ResearchMemoryStore
 from .selection import FEATURE_VECTOR_NAMES
 
@@ -29,6 +30,8 @@ FEATURE_SCHEMA = "SELECTIVE_ML_FEATURES_V1"
 ARTIFACT_PREFIX = "selective-ml:v1:model:"
 TARGET = "CONTROL_POLICY_AFTER_COST_NET_R_NOT_EXECUTION_PNL"
 LOWER_QUANTILE = 0.25
+MEAN_SCORE_WEIGHT = 0.70
+LOWER_SCORE_WEIGHT = 0.30
 CONTEXTS = tuple(
     f"{alignment}:{volatility}"
     for alignment in ("ALIGNED", "MIXED", "OPPOSED")
@@ -41,7 +44,11 @@ ENGINEERED_FEATURE_NAMES = (
     "vol_ratio_1h_4h", "breadth_gap", "relative_strength_centered",
     "trend_vol_interaction", "liquidity_vol_interaction", "signal_alignment_sum",
 )
-ML_FEATURE_NAMES = tuple(FEATURE_VECTOR_NAMES) + ENGINEERED_FEATURE_NAMES
+STRUCTURE_FEATURE_NAMES = (
+    *tuple(f"setup::{name}" for name in SETUPS),
+    *tuple(f"context::{name}" for name in CONTEXTS),
+)
+ML_FEATURE_NAMES = tuple(FEATURE_VECTOR_NAMES) + ENGINEERED_FEATURE_NAMES + STRUCTURE_FEATURE_NAMES
 ENTRY_FEATURE_NAMES = (
     "score", "spread_pct", "side_sign", "seconds_to_next_bar",
     *tuple(f"context::{name}" for name in CONTEXTS),
@@ -92,7 +99,12 @@ def augment_vector(vector: dict[str, Any]) -> dict[str, float]:
         "liquidity_vol_interaction": base["liquidity_percentile"] * base["volatility_percentile"],
         "signal_alignment_sum": base["csm_alignment"] + base["tsmom_alignment"] + base["intraday_alignment"],
     }
-    result = {**base, **engineered}
+    info = describe(base)
+    structure = {
+        **{f"setup::{name}": 1.0 if info["setup"] == name else 0.0 for name in SETUPS},
+        **{f"context::{name}": 1.0 if info["context"] == name else 0.0 for name in CONTEXTS},
+    }
+    result = {**base, **engineered, **structure}
     if tuple(result) != ML_FEATURE_NAMES:
         raise ValueError("SELECTIVE_ML_FEATURE_SCHEMA_MISMATCH")
     if not all(math.isfinite(v) for v in result.values()):
@@ -136,9 +148,9 @@ class SelectiveMLConfig:
     max_depth: int = 4
     min_data_in_leaf: int = 80
     threads: int = 1
-    min_lower_r: float = 0.05
-    min_edge_gap_r: float = 0.03
-    min_fill_probability: float = 0.55
+    min_lower_r: float = 0.08
+    min_edge_gap_r: float = 0.05
+    min_fill_probability: float = 0.60
     entry_min_samples: int = 100
     entry_min_each_class: int = 20
 
@@ -245,7 +257,8 @@ def _train_booster(lgb, train_x, train_y, train_w, valid_x, valid_y, valid_w,
                    *, cfg: SelectiveMLConfig, objective: str, alpha: float | None = None):
     params: dict[str, Any] = {
         "objective": objective,
-        "metric": "l1" if objective != "binary" else "binary_logloss",
+        "metric": ("quantile" if objective == "quantile" else
+                   "binary_logloss" if objective == "binary" else "l1"),
         "learning_rate": cfg.learning_rate,
         "num_leaves": cfg.num_leaves,
         "max_depth": cfg.max_depth,
@@ -514,6 +527,7 @@ class SelectiveMLManager:
             "all_events": len(groups), "all_rows": int(len(full_y)),
             "validation_mae_r": validation_mae, "zero_baseline_mae_r": zero_mae,
             "lower_quantile": LOWER_QUANTILE, "lower_quantile_coverage": coverage,
+            "mean_score_weight": MEAN_SCORE_WEIGHT, "lower_score_weight": LOWER_SCORE_WEIGHT,
             "eligible": eligible,
             "eligibility_rule": "CHRONOLOGICAL_VALIDATION_MAE_LT_ALWAYS_ZERO_MAE",
             "selection_gate": {
