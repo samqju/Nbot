@@ -49,8 +49,8 @@ class SelectiveMLTests(unittest.TestCase):
             decision_ms=1_800_100,
         )
         self.assertEqual(tuple(result), ENTRY_FEATURE_NAMES)
-        self.assertEqual(result["candidate::TREND_PULLBACK_V1"], 1.0)
-        self.assertEqual(result["context::ALIGNED:NORMAL"], 1.0)
+        self.assertEqual(result["candidate__TREND_PULLBACK_V1"], 1.0)
+        self.assertEqual(result["context__ALIGNED:NORMAL"], 1.0)
         self.assertGreater(result["spread_pct"], 0)
 
     def test_small_vps_defaults_are_bounded(self):
@@ -66,6 +66,78 @@ class SelectiveMLTests(unittest.TestCase):
             SelectiveMLConfig(threads=8).validate()
         with self.assertRaises(ValueError):
             SelectiveMLConfig(max_depth=20).validate()
+
+
+    @unittest.skipUnless(importlib.util.find_spec("lightgbm"), "LightGBM optional dependency not installed")
+    def test_train_serialize_and_score_small_model(self):
+        import json
+        from nbot.observation.selective_ml import SelectiveMLManager, SelectiveMLRuntime
+
+        class FakeMemory:
+            def __init__(self, events):
+                self.events = events
+                self.saved = []
+
+            def iter_training_rows(self):
+                for event_ms, rows in self.events:
+                    for row in rows:
+                        yield event_ms, row
+
+            def history_base(self):
+                return {"through_event_ms": self.events[-1][0]}
+
+            def list_artifacts(self, *, prefix=""):
+                return [item for item in self.saved if item["artifact_key"].startswith(prefix)]
+
+            def persist_artifact(self, key, payload, *, recorded_at_ms=None):
+                record = {
+                    "artifact_key": key,
+                    "payload": payload,
+                    "artifact_digest": "d" * 64,
+                    "recorded_at_ms": int(recorded_at_ms or 1),
+                }
+                self.saved.append(record)
+                return record
+
+        events = []
+        start = 1_700_000_000_000
+        for event_index in range(60):
+            rows = []
+            for row_index in range(8):
+                vector = self.base_vector()
+                signal = ((event_index * 3 + row_index) % 21 - 10) / 200.0
+                vector["ret_4h_side"] = signal
+                vector["ret_1h_side"] = signal / 2
+                vector["ret_15m_side"] = -signal / 5
+                vector["ret_1h_percentile_side"] = max(0.0, min(1.0, 0.5 + signal * 5))
+                rows.append({
+                    "feature_vector_json": json.dumps(vector, sort_keys=True),
+                    "target_net_r": signal * 12.0,
+                })
+            events.append((start + event_index * 300_000, rows))
+
+        cfg = SelectiveMLConfig(
+            max_events=100,
+            max_rows=10_000,
+            min_train_events=40,
+            min_validation_events=10,
+            num_boost_round=40,
+            early_stopping_rounds=5,
+            learning_rate=0.08,
+            num_leaves=7,
+            max_depth=3,
+            min_data_in_leaf=10,
+            threads=1,
+        )
+        memory = FakeMemory(events)
+        manager = SelectiveMLManager(memory, None, release_sha="a" * 40, config=cfg)
+        result = manager.train()
+        self.assertEqual(result["status"], "TRAINED")
+        self.assertEqual(len(memory.saved), 1)
+        runtime = SelectiveMLRuntime(memory.saved[0]["payload"])
+        mean, lower = runtime.score(self.base_vector())
+        self.assertTrue(math.isfinite(mean))
+        self.assertTrue(math.isfinite(lower))
 
     @unittest.skipUnless(importlib.util.find_spec("lightgbm"), "LightGBM optional dependency not installed")
     def test_lightgbm_dependency_imports(self):
