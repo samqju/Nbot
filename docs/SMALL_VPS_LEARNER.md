@@ -5,7 +5,7 @@ The tiny Observation learner can serve the current three-mode architecture:
 `live-trade` route. Only one Execution mode should run at a time. See
 [ALL_MODES_COMMANDS.md](ALL_MODES_COMMANDS.md) for operator syntax.
 
-Paper feedback update: [30-day auto-learning experiment](PAPER_AUTO_LEARNING.md). Learned mainnet-paper now adapts setup rankings from its own settled paper trades. Testnet and real-money selection remain separate; economic proof is still unestablished.
+Paper feedback update: [30-day auto-learning experiment](PAPER_AUTO_LEARNING.md). Learned mainnet-paper adapts setup rankings from settled paper trades. [Selective ML V1](SELECTIVE_ML.md) adds bounded nonlinear ranking and abstention on the Learning VPS. Testnet and real-money selection remain separate; economic proof is still unestablished.
 
 
 Reviewed 2026-10-05 against the current V3.9 tiny-service and three-mode operator behavior. See the
@@ -17,7 +17,27 @@ invent strategy code, or guarantee profits. Real-money order permission is uncha
 
 ## What is new
 
-The existing price model is now checked against recent evidence for five setups:
+Learned `live-paper` can now use Selective ML V1 when an eligible exact-release
+artifact exists. The small-VPS defaults use one LightGBM thread, at most 600
+recent compact-memory events / 60,000 rows, shallow trees and early stopping.
+Each five-minute market event receives total training weight 1 regardless of
+how many symbol/side rows it contains. The model must beat an always-zero
+chronological holdout baseline before it can influence paper selection.
+
+Install the optional Learning dependency after each fresh environment setup:
+
+```bash
+.venv/bin/python -m pip install -r requirements-ml.txt
+.venv/bin/python nbot_admin.py selective-ml-train
+.venv/bin/python nbot_admin.py selective-ml-status
+```
+
+The existing Ridge model is still retained as a benchmark and automatic
+fallback. A low conservative ML score, a weak best-versus-second-best edge, or
+poor learned entry-fill probability produces NO TRADE rather than forcing an
+entry.
+
+The existing price model is also checked against recent evidence for five setups:
 
 | Setup | What the bot measures |
 |---|---|
@@ -48,10 +68,11 @@ The caution margin is a heuristic based on sample variance, not a probability
 that a trade will win. Frozen models are evaluated on new data with the existing
 strict gates; those gates have not been relaxed to make rejection disappear.
 
-One material limitation remains: targets are four-hour, candle-based research
-simulations with ATR-based risk units. Execution uses its own fixed-dollar risk
-and position-management lifecycle. Thus a predicted research R is not a forecast
-of actual trade P&L. Proposal metadata and the report now state that distinction.
+One material limitation remains: the research target is a completed-bar
+simulation under the `INTEGER_R_STEP_CONTROL` control policy and research cost
+model. It mirrors Execution's integer-R stop idea but is not tick-equivalent
+actual Execution PnL. Actual paper outcomes and measured entry drift remain
+separate calibration evidence. Proposal metadata states that distinction.
 Execution outcomes remain mode-scoped. Testnet outcomes test the Testnet route;
 learned paper outcomes can feed the paper-only feedback layer; bounded LIVE-trade
 outcomes do not silently become paper-feedback labels. None of these alone proves

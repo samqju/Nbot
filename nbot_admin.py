@@ -120,6 +120,13 @@ def _challenger_cycle() -> ContinuousChallengerCycle:
     return ContinuousChallengerCycle(_memory(), release_sha=_release_sha())
 
 
+def _selective_ml():
+    from nbot.observation.selective_ml import SelectiveMLManager
+    if not _v384_active():
+        raise RuntimeError("SELECTIVE_ML_COMPACT_RESEARCH_MEMORY_REQUIRED")
+    return SelectiveMLManager(_memory(), _db(), release_sha=_release_sha())
+
+
 def _governance() -> ModelGovernanceRegistry:
     if not _v384_active():
         raise RuntimeError("NBOT_V392_COMPACT_RESEARCH_MEMORY_REQUIRED")
@@ -410,6 +417,14 @@ def cmd_challenger_status(_args: argparse.Namespace) -> int:
     return _emit(report)
 
 
+def cmd_selective_ml_train(args: argparse.Namespace) -> int:
+    return _emit(_selective_ml().train_if_needed(force=bool(args.force)))
+
+
+def cmd_selective_ml_status(_args: argparse.Namespace) -> int:
+    return _emit(_selective_ml().status())
+
+
 def cmd_shadow_report(args: argparse.Namespace) -> int:
     from nbot.observation.shadow import shadow_report
     from nbot.common.atomic_io import atomic_write_text
@@ -652,6 +667,16 @@ def cmd_research_epoch_run(args: argparse.Namespace) -> int:
                 report = processor.run_once()
                 if report.get("status") == "PASS":
                     report["challenger_transition_run"] = _run_epoch_challenger_transition()
+                    try:
+                        report["selective_ml"] = _selective_ml().train_if_needed()
+                    except Exception as ml_exc:
+                        # Selective ML is experimental and must never make the
+                        # durable base research epoch disappear or corrupt memory.
+                        research_log.exception("SELECTIVE_ML_TRAIN_FAILED")
+                        report["selective_ml"] = {
+                            "status": "ERROR",
+                            "error": type(ml_exc).__name__ + ":" + str(ml_exc)[:240],
+                        }
                     if args.prune_raw:
                         report["raw_prune"] = processor.prune_raw()
     except Exception as exc:
@@ -923,6 +948,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     challenger_status = sub.add_parser("challenger-status")
     challenger_status.set_defaults(func=cmd_challenger_status)
+
+    selective_ml_train = sub.add_parser(
+        "selective-ml-train",
+        help="train/update the bounded live-paper selective ML artifact",
+    )
+    selective_ml_train.add_argument("--force", action="store_true")
+    selective_ml_train.set_defaults(func=cmd_selective_ml_train)
+
+    selective_ml_status = sub.add_parser(
+        "selective-ml-status",
+        help="show selective ML dependency, artifact and validation status",
+    )
+    selective_ml_status.set_defaults(func=cmd_selective_ml_status)
 
     challenger_audit = sub.add_parser("challenger-audit")
     challenger_audit.set_defaults(func=cmd_challenger_audit)

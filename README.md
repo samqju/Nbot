@@ -1,5 +1,12 @@
 # NBOT V3
 
+**2026-10-06 Selective ML V1:** learned `live-paper` can now use a bounded
+[LightGBM selective learner](docs/SELECTIVE_ML.md) alongside Ridge, V4 paper
+feedback and shadow evidence. It predicts nonlinear after-cost research R,
+uses a lower-quantile confidence gate, learns entry feasibility from measured
+shadow fill/drift outcomes, and explicitly abstains when no opportunity clears
+the quality gates. Testnet and live-trade do not automatically inherit it.
+
 **2026-10-05 three-mode command audit:** use [the all-mode operator command reference](docs/ALL_MODES_COMMANDS.md) for validated `testnet-trade`, `live-paper`, and `live-trade` syntax. Current guides distinguish these active commands from historical phase examples.
 
 **2026-10-05 paper-feedback V4 research branch:** supported paper-feedback means are conservatively shrunk toward neutral before changing ranking, and the paper report now audits frozen pre-feedback choices versus adaptive choices without inventing counterfactual PnL.
@@ -40,8 +47,9 @@ separately authorized bounded LIVE-trading trial.
 ## Small VPS learning upgrade
 
 For a 1 CPU / 1 GB learning VPS, use the [small-VPS learner guide](docs/SMALL_VPS_LEARNER.md).
-The new version adds recent setup/market-condition calibration, explicit rejection
-explanations, and an opt-in 20-coin resource profile. It is an experimental
+Selective ML V1 keeps training to one CPU thread by default, caps its recent
+history, and stores immutable model artifacts in compact research memory. The
+older Ridge learner remains the fallback and benchmark. This is an experimental
 research-ranking system, not a proven profitable trader.
 
 ## Current phase
