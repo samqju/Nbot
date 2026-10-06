@@ -102,7 +102,7 @@ def augment_vector(vector: dict[str, Any]) -> dict[str, float]:
     info = describe(base)
     structure = {
         **{f"setup__{name}": 1.0 if info["setup"] == name else 0.0 for name in SETUPS},
-        **{f"context__{name}": 1.0 if info["context"] == name else 0.0 for name in CONTEXTS},
+        **{f"context__{name.replace(':', '_')}": 1.0 if info["context"] == name else 0.0 for name in CONTEXTS},
     }
     result = {**base, **engineered, **structure}
     if tuple(result) != ML_FEATURE_NAMES:
