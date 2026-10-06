@@ -28,9 +28,10 @@ The live-paper decision stack is:
 1. Causal research features plus deterministic engineered interaction features.
 2. Existing Ridge expected-R score retained as a stable benchmark.
 3. LightGBM mean after-cost control-policy R prediction.
-4. LightGBM lower-quantile R prediction used as a conservative uncertainty signal.
-5. Ridge/LightGBM ensemble mean, with the conservative score capped by the
-   lower-quantile prediction.
+4. LightGBM 25th-percentile R prediction used as a conservative uncertainty signal.
+5. Ridge/LightGBM ensemble mean, then a risk-adjusted score made from 70% ensemble
+   mean and 30% lower-quantile prediction. This avoids demanding an unrealistic
+   75%+ winning distribution while still penalizing weak downside estimates.
 6. Hard abstention gates:
    - conservative score must exceed the configured minimum;
    - the best symbol/side must be sufficiently better than second place.
@@ -114,7 +115,10 @@ Defaults are intentionally bounded for the existing small Observation VPS:
 - 160 boosting rounds before early stopping;
 - maximum tree depth 4;
 - at most 15 leaves;
-- minimum 80 rows per leaf.
+- minimum 80 rows per leaf;
+- minimum risk-adjusted score +0.08R;
+- minimum best-vs-second-best gap +0.05R;
+- minimum learned fill probability 0.60 when the fill model is available.
 
 The runtime dependency is isolated in `requirements-ml.txt`. The Execution VPS
 does not need LightGBM.
