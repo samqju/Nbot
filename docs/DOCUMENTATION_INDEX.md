@@ -1,5 +1,10 @@
 # Documentation index and current bot behavior
 
+**2026-10-06 Selective ML V1:** [Selective ML architecture and operations](SELECTIVE_ML.md)
+documents the bounded LightGBM mean-R, lower-quantile and entry-feasibility
+models used only by learned `live-paper`. Ridge remains a fallback/benchmark;
+Execution safety and real-money authority are unchanged.
+
 **2026-10-05 command audit:** [All-mode operator commands](ALL_MODES_COMMANDS.md)
 is the canonical current syntax reference for `testnet-trade`, `live-paper`,
 and `live-trade`. Historical phase documents keep their original command scope.
@@ -35,7 +40,9 @@ explicit Testnet template, plus the safe disarm procedure.
    syntax for all three profiles.
 4. [1 CPU / 1 GB learner guide](SMALL_VPS_LEARNER.md): use tiny mode, understand
    what learning can do, inspect rejected models and monitor resources.
-5. [Short Testnet setup](LEARNED_TESTNET_SETUP.md): a concise Testnet-specific
+5. [Selective ML V1](SELECTIVE_ML.md): nonlinear learned-paper ranking,
+   abstention gates, entry-feasibility learning and operator commands.
+6. [Short Testnet setup](LEARNED_TESTNET_SETUP.md): a concise Testnet-specific
    reference; it links back to the all-mode command matrix for other profiles.
 
 For private-file creation and every placeholder, use the
@@ -43,15 +50,18 @@ For private-file creation and every placeholder, use the
 
 ## What the bot currently does, in simple English
 
-The learning server collects real market prices. It waits to see what happened
-over the next four hours, then uses completed examples to train a numerical model.
-A second layer checks recent results for five fixed setup types: trend
-continuation, trend pullback, stretched reversal, volatility expansion and
-relative strength. It checks them against market direction and volatility.
+The learning server collects real market prices. It waits until future labels
+are causally mature, then stores compact symbol/side examples for each market
+event. Ridge remains the stable linear benchmark. In learned `live-paper`, an
+eligible Selective ML artifact can additionally learn nonlinear relationships
+from those same causal examples while giving every market event total training
+weight 1.
 
-That layer can reduce a score or reject an opportunity. It cannot boost the
-original prediction. If there are too few independent examples, it says so and
-falls back to broader setup evidence or the original model.
+The live-paper selector combines Ridge, nonlinear mean-R, a lower-quantile
+confidence estimate, V4 paper/shadow feedback and (when sufficiently sampled)
+a learned entry-feasibility probability. It can reject the entire event rather
+than choosing the least-bad coin. If no eligible ML artifact exists, it falls
+back to the existing Ridge + V4 behavior.
 
 The learning server can recommend one positive-ranked opportunity using fresh
 Testnet prices. The trading server independently checks permission, prices,
