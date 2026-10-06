@@ -7,17 +7,20 @@ bounded `live-trade` route; see
 
 See also [the shadow simulation guide](SHADOW_TRADING.md): up to ten additional, separate simulated positions; the main account still permits only one position.
 
-This update adds feedback from completed mainnet PAPER trades to the existing
+This experiment combines completed mainnet PAPER feedback with the existing
 market-data learner. It keeps the one-position limit, sizing, stops and exits.
-No new packages, neural network, GPU or language-model API is required.
+Selective ML V1 optionally adds the CPU-only `lightgbm` dependency on the
+Learning VPS; no GPU or language-model API is required. Execution does not
+install that dependency.
 
 ## What it learns
 
-The paper selector now checks [24 named candidates](CANDIDATE_LIBRARY.md), with
-one selected candidate receiving each completed trade outcome. The base research
-learner still studies price features and five measurable setup families:
-trend continuation, pullback, stretched reversal, volatility expansion and relative
-strength. These are limited proxies for market structure, not every chart pattern.
+The paper selector still records [24 named candidates](CANDIDATE_LIBRARY.md),
+with one selected candidate receiving each completed trade outcome. When an
+eligible [Selective ML V1](SELECTIVE_ML.md) artifact exists, nonlinear ranking
+is learned from the causal all-symbol/all-side research examples first; the
+candidate library then remains an interpretable V4 feedback and shadow layer.
+Ridge remains the fallback/benchmark.
 
 The new paper learner asks: when this setup, market direction, volatility and
 LONG/SHORT direction were actually traded by our paper engine, what happened?
