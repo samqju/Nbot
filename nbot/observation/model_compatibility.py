@@ -13,10 +13,12 @@ def compatible_training_release(repo_root: Path, trained_sha: str, running_sha: 
         return False
     if trained_sha == running_sha:
         return True
-    # Training, feature definitions, data contracts, shared utilities and
-    # dependency manifests must be identical. The inference consumer and this
-    # compatibility checker do not define persisted model coefficients/features.
-    paths = ["nbot/observation", "nbot/common", "nbot/config", "nbot_admin.py",
+    # Training, feature definitions, data contracts, shared utilities and the
+    # base runtime dependency manifests must be identical. Admin orchestration
+    # and downstream inference consumers do not define persisted Ridge
+    # coefficients/features, so adding Selective ML must not strand an already
+    # valid frozen Ridge challenger.
+    paths = ["nbot/observation", "nbot/common", "nbot/config",
              "requirements*", "pyproject.toml", "poetry.lock", "uv.lock",
              "setup.py", "setup.cfg", "Pipfile", "Pipfile.lock",
              ":(exclude)nbot/observation/learned_recommendation.py",
@@ -25,7 +27,9 @@ def compatible_training_release(repo_root: Path, trained_sha: str, running_sha: 
              ":(exclude)nbot/observation/paper_feedback.py",
              ":(exclude)nbot/observation/feedback_evidence.py",
              ":(exclude)nbot/observation/paper_learning_report.py",
-             ":(exclude)nbot/observation/shadow.py"]
+             ":(exclude)nbot/observation/shadow.py",
+             ":(exclude)nbot/observation/selective_ml.py",
+             ":(exclude)requirements-ml.txt"]
     try:
         ancestor = subprocess.run(["git", "merge-base", "--is-ancestor", trained_sha, running_sha],
             cwd=repo_root, capture_output=True, timeout=3)
