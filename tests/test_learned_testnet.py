@@ -13,7 +13,7 @@ from nbot.communication.integration import _validate_health
 from nbot.communication.client import ObservationClientError
 from nbot.config.profiles import get_profile
 from nbot.observation.challengers import ContinuousChallengerCycle, CHALLENGER_PREFIX, MODEL_PREFIX, EVALUATION_PREFIX
-from nbot.observation.learned_recommendation import LearnedTestnetSource, testnet_recommendation_source
+from nbot.observation.learned_recommendation import LearnedTestnetSource, _execution_compatible_quotes, testnet_recommendation_source
 from nbot.observation.recommendation import ObservationControlTarget
 from nbot.observation.selection import RidgeSufficientStatistics, _digest
 from tests import test_v391_continuous_challengers as training_fixture
@@ -153,6 +153,18 @@ class LearnedTestnetTests(unittest.TestCase):
         result = self.target.refresh_recommendation()
         self.assertIsNone(result.proposal)
         self.assertIn("MATCHING_TESTNET_EVENT", result.reason)
+
+    def test_execution_incompatible_symbols_are_filtered_before_ranking(self):
+        rows = [
+            ("龙虾USDT", 200.0, 200.2, NOW),
+            ("btcusdt", 100.0, 100.2, NOW),
+        ]
+        quotes = _execution_compatible_quotes(
+            rows, close_ms=NOW - 1, now_ms=NOW, ttl_ms=30_000
+        )
+        self.assertNotIn("龙虾USDT", quotes)
+        self.assertEqual(tuple(quotes), ("BTCUSDT",))
+        self.assertEqual(quotes["BTCUSDT"][0], "BTCUSDT")
 
     def test_incomplete_feature_history_waits(self):
         with self.live.connection() as conn:
