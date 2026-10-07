@@ -12,7 +12,7 @@ import sqlite3
 
 from nbot.communication.authorities import TESTNET_LEARNED_AUTHORITY, LIVE_PAPER_LEARNED_AUTHORITY, LIVE_LEARNED_AUTHORITY
 from nbot.communication.contracts import ExecutionProposal
-from nbot.communication.validation import payload_digest
+from nbot.communication.validation import payload_digest, symbol as protocol_symbol
 from nbot.config.profiles import get_profile
 from .causal_ridge import LABEL_HORIZON_MS, STATISTICS_VERSION
 from .challengers import CHALLENGER_PREFIX, MODEL_PREFIX, EVALUATION_PREFIX, EVALUATOR_VERSION
@@ -38,6 +38,26 @@ SIGNAL_INPUTS = (
     "event_open_ms", "symbol", "feature_version", "ret_1h_percentile",
     "ret_4h_percentile", "ret_4h", "realized_vol_4h", "breadth_positive_1h", "ret_1h",
 )
+
+
+def _execution_compatible_quotes(rows, *, close_ms: int, now_ms: int, ttl_ms: int):
+    """Keep only fresh quotes whose symbols can cross the Execution protocol."""
+    quotes = {}
+    for row in rows:
+        try:
+            normalized_symbol = protocol_symbol(row[0])
+        except ValueError:
+            continue
+        if (
+            close_ms <= int(row[3]) <= now_ms
+            and now_ms - int(row[3]) <= ttl_ms
+            and 0 < float(row[1]) <= float(row[2])
+            and math.isfinite(float(row[2]))
+        ):
+            quotes[normalized_symbol] = (
+                normalized_symbol, row[1], row[2], row[3]
+            )
+    return quotes
 
 
 class LearnedTestnetSource:
@@ -249,9 +269,9 @@ class LearnedTestnetSource:
                 JOIN event_provenance p USING(event_open_ms)
                 WHERE s.event_open_ms=? AND e.status='COMPLETE'
                 AND p.evidence_mode='LIVE_POINT_IN_TIME' AND p.context_complete=1""", (event_ms,)).fetchall()
-        quotes = {r[0]: r for r in quotes if close_ms <= int(r[3]) <= now_ms
-                  and now_ms - int(r[3]) <= ttl_ms and 0 < float(r[1]) <= float(r[2])
-                  and math.isfinite(float(r[2]))}
+        quotes = _execution_compatible_quotes(
+            quotes, close_ms=close_ms, now_ms=now_ms, ttl_ms=ttl_ms
+        )
         if not quotes:
             return self._not_ready("LEARNED_WAIT_FOR_MATCHING_TESTNET_EVENT" if self.profile.name == "testnet-trade" else "LEARNED_WAIT_FOR_MATCHING_LIVE_EVENT", now_ms)
         feedback_model = self.paper_feedback.snapshot(cutoff_ms=now_ms) if self.paper_feedback else None
