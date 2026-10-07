@@ -20,14 +20,26 @@ class CompatibilityTests(unittest.TestCase):
             git("init")
             git("config","user.name","Test");git("config","user.email","test@example.invalid")
             p=r/"nbot/observation/features.py";p.parent.mkdir(parents=True);p.write_text("features = 1")
+            admin=r/"nbot_admin.py";admin.write_text("admin = 1")
+            requirements=r/"requirements.txt";requirements.write_text("base-dependency==1\n")
             git("add",".");git("commit","-m","train");trained=git("rev-parse","HEAD")
+
             q=r/"nbot/operator/status.py";q.parent.mkdir(parents=True);q.write_text("labels = 1")
-            git("add",".");git("commit","-m","ui");ui=git("rev-parse","HEAD")
-            self.assertTrue(compatible_training_release(r,trained,ui))
+            ml=r/"nbot/observation/selective_ml.py";ml.write_text("consumer = 1")
+            admin.write_text("admin = 2")
+            (r/"requirements-ml.txt").write_text("lightgbm==4.7.0\n")
+            git("add",".");git("commit","-m","selective ml consumer");consumer=git("rev-parse","HEAD")
+            self.assertTrue(compatible_training_release(r,trained,consumer))
+
+            requirements.write_text("base-dependency==2\n")
+            git("add",".");git("commit","-m","base requirements")
+            self.assertFalse(compatible_training_release(r,trained,git("rev-parse","HEAD")))
+
+            git("reset","--hard",consumer)
             p.write_text("features = 2");git("add",".");git("commit","-m","features")
             self.assertFalse(compatible_training_release(r,trained,git("rev-parse","HEAD")))
-            self.assertFalse(compatible_training_release(r,"0"*40,ui))
-            self.assertFalse(compatible_training_release(r,"--bad",ui))
+            self.assertFalse(compatible_training_release(r,"0"*40,consumer))
+            self.assertFalse(compatible_training_release(r,"--bad",consumer))
 
     def test_reusable_model_still_obeys_rejection_and_real_money_release_gate(self):
         f=LearnedTestnetTests();f.setUp()
