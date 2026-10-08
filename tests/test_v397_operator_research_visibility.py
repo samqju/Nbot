@@ -349,9 +349,9 @@ class V397OperatorResearchVisibilityTests(unittest.TestCase):
         self.assertIn("conservative 0.0470 R", body)
         self.assertIn("confidence FAIL", body)
         self.assertIn("ML runner-up: ETHUSDT LONG", body)
-        self.assertIn("Practical candidate: ADAUSDT LONG / MULTITIMEFRAME_TREND_V1", body)
+        self.assertIn("Post-gate representative: ADAUSDT LONG / MULTITIMEFRAME_TREND_V1", body)
         self.assertIn("Next-bar entry feasibility: 42.0%", body)
-        self.assertIn("need &gt;= 60.0%", body)
+        self.assertIn("need >= 60.0%", body)
         self.assertIn("Primary blocker: LEARNED_ML_ABSTAIN_LOW_CONFIDENCE", body)
 
     def test_execution_learning_command_is_display_only_even_while_open(self):
