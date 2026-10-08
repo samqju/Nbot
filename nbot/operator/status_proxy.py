@@ -312,7 +312,7 @@ def _feedback_text(data: Mapping[str, Any]) -> str:
             f"ML runner-up: {_e(raw_ml.get('runner_up_symbol'))} {_e(raw_ml.get('runner_up_side'))} | "
             f"{_e(r(raw_ml.get('runner_up_conservative_score_r')))} | gap {_e(r(raw_ml.get('edge_gap_r')))} "
             f"(need >= {_e(r(raw_ml.get('min_edge_gap_r')))}) | edge {_e(gate(raw_ml.get('edge_pass')))}\n"
-            f"Practical candidate: {_e(selected.get('symbol'))} {_e(selected.get('side'))} / {_e(selected.get('candidate'))} | "
+            f"Post-gate representative: {_e(selected.get('symbol'))} {_e(selected.get('side'))} / {_e(selected.get('candidate'))} | "
             f"pre-entry {_e(r(selected.get('pre_entry_score_r')))} | post-entry {_e(r(selected.get('post_entry_score_r')))}\n"
             f"Next-bar entry feasibility: {_e(pct(selected.get('next_bar_entry_probability')))} "
             f"(need >= {_e(pct(selected.get('min_next_bar_entry_probability')))}) | "
