@@ -40,9 +40,6 @@ class LearnedPaperTests(unittest.TestCase):
             def score(self, _vector):
                 return 0.05, 0.01
 
-            def fill_probability(self, **_kwargs):
-                return 0.42
-
         record = {
             "artifact_digest": "d" * 64,
             "artifact_key": "selective-ml:test",
@@ -61,10 +58,9 @@ class LearnedPaperTests(unittest.TestCase):
         self.assertTrue(detail["selective_ml_active"])
         self.assertEqual(detail["raw_ml_winner"]["symbol"], "BTCUSDT")
         self.assertIn("conservative_score_r", detail["raw_ml_winner"])
-        self.assertEqual(detail["selected"]["next_bar_entry_probability"], 0.42)
-        self.assertEqual(detail["selected"]["min_next_bar_entry_probability"], 0.60)
-        self.assertIn("pre_entry_score_r", detail["selected"])
-        self.assertIn("post_entry_score_r", detail["selected"])
+        self.assertEqual(detail["selected"]["entry_gate_mode"], "EXECUTION_REALTIME_ONLY")
+        self.assertIn("post_feedback_score_r", detail["selected"])
+        self.assertNotIn("next_bar_entry_probability", detail["selected"])
 
     def test_restart_reuses_frozen_paper_decision(self):
         first = self.target.refresh_recommendation()
