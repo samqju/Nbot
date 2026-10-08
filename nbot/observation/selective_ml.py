@@ -8,6 +8,11 @@ The primary target remains the existing research control-policy net R.  That
 control policy mirrors Execution's integer-R stop progression, but it is still a
 bar-based research simulation rather than actual execution PnL.  Actual paper
 outcomes remain a separate calibration source.
+
+V2 deliberately does not learn an entry-fill gate from the next 5-minute bar.
+Next-bar drift is a research signal-decay diagnostic only. Entry acceptance is
+owned by Execution and uses current executable quotes, spread, reference drift,
+proposal freshness and post-fill slippage.
 """
 from __future__ import annotations
 
@@ -20,14 +25,13 @@ import os
 import time
 from typing import Any
 
-from .candidate_setups import BY_ID
 from .context_learning import SETUPS, describe
 from .research_memory import ResearchMemoryStore
 from .selection import FEATURE_VECTOR_NAMES
 
-VERSION = "SELECTIVE_ML_V1"
-FEATURE_SCHEMA = "SELECTIVE_ML_FEATURES_V1"
-ARTIFACT_PREFIX = "selective-ml:v1:model:"
+VERSION = "SELECTIVE_ML_V2"
+FEATURE_SCHEMA = "SELECTIVE_ML_FEATURES_V2"
+ARTIFACT_PREFIX = "selective-ml:v2:model:"
 TARGET = "CONTROL_POLICY_AFTER_COST_NET_R_NOT_EXECUTION_PNL"
 LOWER_QUANTILE = 0.25
 MEAN_SCORE_WEIGHT = 0.70
@@ -49,13 +53,6 @@ STRUCTURE_FEATURE_NAMES = (
     *tuple(f"context__{name.replace(':', '_')}" for name in CONTEXTS),
 )
 ML_FEATURE_NAMES = tuple(FEATURE_VECTOR_NAMES) + ENGINEERED_FEATURE_NAMES + STRUCTURE_FEATURE_NAMES
-ENTRY_FEATURE_NAMES = (
-    "score", "spread_pct", "side_sign", "seconds_to_next_bar",
-    *tuple(f"context__{name.replace(':', '_')}" for name in CONTEXTS),
-    *tuple(f"candidate__{name}" for name in BY_ID),
-)
-
-
 def _canonical(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
@@ -112,28 +109,6 @@ def augment_vector(vector: dict[str, Any]) -> dict[str, float]:
     return result
 
 
-def entry_vector(*, score: float, bid: float, ask: float, side: str,
-                 candidate_id: str | None, context: str | None, decision_ms: int) -> dict[str, float]:
-    if side not in {"LONG", "SHORT"} or not 0 < bid <= ask:
-        raise ValueError("SELECTIVE_ML_ENTRY_INPUT_INVALID")
-    mid = (bid + ask) / 2.0
-    spread_pct = (ask - bid) / mid * 100.0
-    seconds_to_next = (((decision_ms // 300_000) + 1) * 300_000 - decision_ms) / 1000.0
-    result = {
-        "score": _finite(score),
-        "spread_pct": spread_pct,
-        "side_sign": 1.0 if side == "LONG" else -1.0,
-        "seconds_to_next_bar": max(0.0, min(300.0, seconds_to_next)),
-    }
-    for name in CONTEXTS:
-        result[f"context__{name.replace(':', '_')}"] = 1.0 if context == name else 0.0
-    for name in BY_ID:
-        result[f"candidate__{name}"] = 1.0 if candidate_id == name else 0.0
-    if tuple(result) != ENTRY_FEATURE_NAMES:
-        raise ValueError("SELECTIVE_ML_ENTRY_SCHEMA_MISMATCH")
-    return result
-
-
 @dataclass(frozen=True)
 class SelectiveMLConfig:
     max_events: int = 600
@@ -150,9 +125,6 @@ class SelectiveMLConfig:
     threads: int = 1
     min_lower_r: float = 0.08
     min_edge_gap_r: float = 0.05
-    min_fill_probability: float = 0.60
-    entry_min_samples: int = 100
-    entry_min_each_class: int = 20
 
     @classmethod
     def from_environment(cls) -> "SelectiveMLConfig":
@@ -164,7 +136,6 @@ class SelectiveMLConfig:
         }
         floating = {
             "min_lower_r": "NBOT_ML_MIN_LOWER_R", "min_edge_gap_r": "NBOT_ML_MIN_EDGE_GAP_R",
-            "min_fill_probability": "NBOT_ML_MIN_FILL_PROB",
         }
         for field, env in integer.items():
             if env in os.environ:
@@ -187,7 +158,7 @@ class SelectiveMLConfig:
             raise ValueError("SELECTIVE_ML_COMPLEXITY_INVALID")
         if not (10 <= self.min_data_in_leaf <= 5000 and 1 <= self.threads <= 4):
             raise ValueError("SELECTIVE_ML_RESOURCE_LIMIT_INVALID")
-        if not (0 <= self.min_lower_r <= 1 and 0 <= self.min_edge_gap_r <= 1 and 0.5 <= self.min_fill_probability <= 0.99):
+        if not (0 <= self.min_lower_r <= 1 and 0 <= self.min_edge_gap_r <= 1):
             raise ValueError("SELECTIVE_ML_GATE_INVALID")
 
 
@@ -286,39 +257,6 @@ def _train_booster(lgb, train_x, train_y, train_w, valid_x, valid_y, valid_w,
     )
 
 
-def _entry_training_rows(database, cfg: SelectiveMLConfig):
-    if database is None or not database.path.is_file():
-        return []
-    from .shadow import verified
-    with database.connection() as conn:
-        if conn.execute("SELECT 1 FROM sqlite_master WHERE name='shadow_results'").fetchone() is None:
-            return []
-        rows = conn.execute(
-            "SELECT result_json,digest FROM shadow_results WHERE profile='live-paper' "
-            "ORDER BY closed_ms DESC LIMIT 5000"
-        ).fetchall()
-    result = []
-    for raw, check in rows:
-        try:
-            value = verified(raw, check)
-            reason = value.get("reason")
-            if bool(value.get("eligible")):
-                label = 1.0
-            elif reason == "ENTRY_DRIFT_REJECTED":
-                label = 0.0
-            else:
-                continue
-            vec = entry_vector(
-                score=float(value.get("score", 0.0)), bid=float(value["bid"]), ask=float(value["ask"]),
-                side=value["side"], candidate_id=value.get("candidate_id"), context=value.get("decision_context"),
-                decision_ms=int(value.get("decision_ms", value.get("event_ms", 0))),
-            )
-            result.append((vec, label))
-        except (KeyError, TypeError, ValueError, OverflowError):
-            continue
-    return list(reversed(result))
-
-
 class SelectiveMLRuntime:
     def __init__(self, payload: dict[str, Any]):
         lgb, np = _ml_imports()
@@ -328,7 +266,6 @@ class SelectiveMLRuntime:
         self._np = np
         self.mean = lgb.Booster(model_str=str(payload["mean_model"]))
         self.lower = lgb.Booster(model_str=str(payload["lower_model"]))
-        self.entry = lgb.Booster(model_str=str(payload["entry_model"])) if payload.get("entry_model") else None
 
     def score(self, vector: dict[str, Any]) -> tuple[float, float]:
         values = augment_vector(vector)
@@ -338,20 +275,6 @@ class SelectiveMLRuntime:
         if not all(math.isfinite(v) for v in (mean, lower)):
             raise ValueError("SELECTIVE_ML_PREDICTION_NONFINITE")
         return mean, lower
-
-    def fill_probability(self, *, score: float, bid: float, ask: float, side: str,
-                         candidate_id: str | None, context: str | None, decision_ms: int) -> float:
-        if self.entry is None:
-            return 1.0
-        vector = entry_vector(
-            score=score, bid=bid, ask=ask, side=side, candidate_id=candidate_id,
-            context=context, decision_ms=decision_ms,
-        )
-        row = self._np.asarray([[vector[name] for name in ENTRY_FEATURE_NAMES]], dtype="float32")
-        value = float(self.entry.predict(row)[0])
-        if not math.isfinite(value):
-            raise ValueError("SELECTIVE_ML_FILL_NONFINITE")
-        return max(0.0, min(1.0, value))
 
 
 class SelectiveMLManager:
@@ -406,7 +329,7 @@ class SelectiveMLManager:
                 **{k: latest["payload"].get(k) for k in (
                     "training_cutoff_event_ms", "trained_at_ms", "training_events", "training_rows",
                     "validation_events", "validation_rows", "validation_mae_r", "zero_baseline_mae_r",
-                    "lower_quantile_coverage", "eligible", "entry_samples", "entry_positive", "entry_negative",
+                    "lower_quantile_coverage", "eligible", "entry_gate_mode",
                 )},
             },
             "config": asdict(self.config),
@@ -474,42 +397,6 @@ class SelectiveMLManager:
             full_ds, num_boost_round=lower_round,
         )
 
-        entry_model = None
-        entry_rows = _entry_training_rows(self.database, self.config)
-        positives = sum(label > 0.5 for _, label in entry_rows)
-        negatives = len(entry_rows) - positives
-        if (len(entry_rows) >= self.config.entry_min_samples
-                and positives >= self.config.entry_min_each_class
-                and negatives >= self.config.entry_min_each_class):
-            entry_x = np.asarray(
-                [[vec[name] for name in ENTRY_FEATURE_NAMES] for vec, _ in entry_rows], dtype="float32"
-            )
-            entry_y = np.asarray([label for _, label in entry_rows], dtype="float32")
-            split_entry = max(1, int(len(entry_y) * 0.8))
-            split_entry = min(split_entry, len(entry_y) - 1)
-            train_e = lgb.Dataset(
-                entry_x[:split_entry], label=entry_y[:split_entry],
-                feature_name=list(ENTRY_FEATURE_NAMES), free_raw_data=False,
-            )
-            valid_e = lgb.Dataset(
-                entry_x[split_entry:], label=entry_y[split_entry:], reference=train_e,
-                feature_name=list(ENTRY_FEATURE_NAMES), free_raw_data=False,
-            )
-            entry_params = {
-                **common, "objective": "binary", "metric": "binary_logloss",
-                "min_data_in_leaf": max(10, min(self.config.min_data_in_leaf, 40)),
-            }
-            entry_booster = lgb.train(
-                entry_params, train_e, num_boost_round=min(120, self.config.num_boost_round),
-                valid_sets=[valid_e], callbacks=[lgb.early_stopping(15, verbose=False)],
-            )
-            rounds = max(20, int(getattr(entry_booster, "best_iteration", 0) or 80))
-            full_entry = lgb.Dataset(
-                entry_x, label=entry_y, feature_name=list(ENTRY_FEATURE_NAMES), free_raw_data=False
-            )
-            entry_final = lgb.train(entry_params, full_entry, num_boost_round=rounds)
-            entry_model = entry_final.model_to_string()
-
         importance = mean_final.feature_importance(importance_type="gain")
         top = sorted(
             zip(ML_FEATURE_NAMES, [float(v) for v in importance]),
@@ -519,7 +406,7 @@ class SelectiveMLManager:
         trained_at = int(time.time() * 1000)
         payload = {
             "version": VERSION, "feature_schema": FEATURE_SCHEMA, "feature_names": list(ML_FEATURE_NAMES),
-            "entry_feature_names": list(ENTRY_FEATURE_NAMES), "release_sha": self.release_sha,
+            "release_sha": self.release_sha,
             "authority": "RESEARCH_ONLY_MODEL_LIVE_PAPER_SELECTION_ONLY", "target": TARGET,
             "training_cutoff_event_ms": cutoff, "trained_at_ms": trained_at,
             "training_events": len(train_groups), "training_rows": int(len(train_y)),
@@ -533,14 +420,14 @@ class SelectiveMLManager:
             "selection_gate": {
                 "min_lower_r": self.config.min_lower_r,
                 "min_edge_gap_r": self.config.min_edge_gap_r,
-                "min_fill_probability": self.config.min_fill_probability,
             },
+            "entry_gate_mode": "EXECUTION_REALTIME_ONLY",
             "mean_model": mean_final.model_to_string(), "lower_model": lower_final.model_to_string(),
-            "entry_model": entry_model, "entry_samples": len(entry_rows),
-            "entry_positive": positives, "entry_negative": negatives,
             "feature_importance_gain_top20": top,
             "config": asdict(self.config),
-            "note": "Internal holdout is diagnostic; no profitability claim. Future live-paper evidence remains required.",
+            "note": ("Internal holdout is diagnostic; no profitability claim. "
+                     "Next-bar drift is research-only. Entry acceptance is decided from "
+                     "Execution-owned realtime quote/spread/reference-drift/slippage checks."),
         }
         payload["model_digest"] = _digest({k: v for k, v in payload.items() if k != "model_digest"})
         key = f"{ARTIFACT_PREFIX}{cutoff}:{self.release_sha[:12]}:{payload['model_digest'][:12]}"
@@ -551,6 +438,5 @@ class SelectiveMLManager:
             "eligible": eligible, "training_events": len(train_groups), "validation_events": len(valid_groups),
             "training_rows": int(len(train_y)), "validation_rows": int(len(valid_y)),
             "validation_mae_r": validation_mae, "zero_baseline_mae_r": zero_mae,
-            "lower_quantile_coverage": coverage, "entry_samples": len(entry_rows),
-            "entry_positive": positives, "entry_negative": negatives,
+            "lower_quantile_coverage": coverage, "entry_gate_mode": "EXECUTION_REALTIME_ONLY",
         }

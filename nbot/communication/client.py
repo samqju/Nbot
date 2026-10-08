@@ -24,7 +24,7 @@ from nbot.common.atomic_io import atomic_write_json
 from nbot.execution.entry import EntryProposal
 
 from .auth import bearer_header, validate_control_token
-from .authorities import LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY
+from .authorities import LIVE_PAPER_LEARNED_AUTHORITY, LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY
 from .contracts import (
     ExecutionOutcome,
     ExecutionProposal,
@@ -634,44 +634,32 @@ class RemoteObservationClient:
         closed = int(body["closed_timestamp_ms"])
         operational = self.receipts.entry_context(proposal_id)
         context = dict(proposal.experiment_context or {})
-        if proposal.entry_authority == LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY:
-            if operational is None:
-                raise ObservationClientError("LIVE_PAPER_OPERATIONAL_ENTRY_CONTEXT_MISSING")
+        if proposal.entry_authority in {
+            LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
+            LIVE_PAPER_LEARNED_AUTHORITY,
+        }:
             reference = float(proposal.reference_price)
-            receive_mid = float(operational["mid"])
             fill_price = float(body["entry_price"])
-            expected_quote_entry = float(
-                operational["ask"] if proposal.side == "LONG" else operational["bid"]
-            )
-            if not math.isclose(
-                float(operational["expected_entry_price"]), expected_quote_entry,
-                rel_tol=1e-12, abs_tol=1e-12,
-            ):
-                raise ObservationClientError("LIVE_PAPER_OPERATIONAL_EXPECTED_ENTRY_MISMATCH")
             if proposal.side == "LONG":
-                receive_deterioration = (receive_mid - reference) / reference * 100.0
                 fill_deterioration = (fill_price - reference) / reference * 100.0
-                fill_vs_quote = (fill_price - float(operational["expected_entry_price"])) / float(operational["expected_entry_price"]) * 100.0
             else:
-                receive_deterioration = (reference - receive_mid) / reference * 100.0
                 fill_deterioration = (reference - fill_price) / reference * 100.0
-                fill_vs_quote = (float(operational["expected_entry_price"]) - fill_price) / float(operational["expected_entry_price"]) * 100.0
             delivered_at_ms = int(time.time() * 1000)
-            context["execution_operational"] = {
+            entry_context = {
+                "mode": "REALTIME_MARKET_ENTRY",
                 "proposal_received_at_ms": int(receipt["recorded_at_ms"]),
-                "proposal_receive_latency_ms": max(0, int(receipt["recorded_at_ms"]) - int(proposal.generated_at_ms)),
-                "execution_quote_observed_at_ms": int(operational["observed_at_ms"]),
-                "execution_quote_timestamp_ms": int(operational["quote_timestamp_ms"]),
-                "execution_bid": float(operational["bid"]),
-                "execution_ask": float(operational["ask"]),
-                "execution_mid": receive_mid,
-                "execution_spread_pct": float(operational["spread_pct"]),
-                "execution_expected_entry_price": float(operational["expected_entry_price"]),
-                "reference_to_execution_mid_deterioration_pct": receive_deterioration,
+                "proposal_receive_latency_ms": max(
+                    0, int(receipt["recorded_at_ms"]) - int(proposal.generated_at_ms)
+                ),
+                "entry_timestamp_ms": entered,
+                "proposal_to_fill_latency_ms": max(
+                    0, entered - int(proposal.generated_at_ms)
+                ),
                 "reference_to_actual_fill_deterioration_pct": fill_deterioration,
-                "execution_quote_to_actual_fill_deterioration_pct": fill_vs_quote,
                 "outcome_delivery_started_at_ms": delivered_at_ms,
-                "outcome_delivery_latency_ms": max(0, delivered_at_ms - int(body["closed_timestamp_ms"])),
+                "outcome_delivery_latency_ms": max(
+                    0, delivered_at_ms - int(body["closed_timestamp_ms"])
+                ),
                 "expected_after_cost_net_r": proposal.expected_after_cost_net_r,
                 "actual_paper_r": float(body["r_multiple"]),
                 "economic_delta_r": (
@@ -680,6 +668,42 @@ class RemoteObservationClient:
                     else float(body["r_multiple"]) - float(proposal.expected_after_cost_net_r)
                 ),
             }
+            if proposal.entry_authority == LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY:
+                if operational is None:
+                    raise ObservationClientError("LIVE_PAPER_OPERATIONAL_ENTRY_CONTEXT_MISSING")
+                receive_mid = float(operational["mid"])
+                expected_quote_entry = float(
+                    operational["ask"] if proposal.side == "LONG" else operational["bid"]
+                )
+                if not math.isclose(
+                    float(operational["expected_entry_price"]), expected_quote_entry,
+                    rel_tol=1e-12, abs_tol=1e-12,
+                ):
+                    raise ObservationClientError("LIVE_PAPER_OPERATIONAL_EXPECTED_ENTRY_MISMATCH")
+                if proposal.side == "LONG":
+                    receive_deterioration = (receive_mid - reference) / reference * 100.0
+                    fill_vs_quote = (
+                        fill_price - float(operational["expected_entry_price"])
+                    ) / float(operational["expected_entry_price"]) * 100.0
+                else:
+                    receive_deterioration = (reference - receive_mid) / reference * 100.0
+                    fill_vs_quote = (
+                        float(operational["expected_entry_price"]) - fill_price
+                    ) / float(operational["expected_entry_price"]) * 100.0
+                entry_context.update({
+                    "execution_quote_observed_at_ms": int(operational["observed_at_ms"]),
+                    "execution_quote_timestamp_ms": int(operational["quote_timestamp_ms"]),
+                    "execution_bid": float(operational["bid"]),
+                    "execution_ask": float(operational["ask"]),
+                    "execution_mid": receive_mid,
+                    "execution_spread_pct": float(operational["spread_pct"]),
+                    "execution_expected_entry_price": float(operational["expected_entry_price"]),
+                    "reference_to_execution_mid_deterioration_pct": receive_deterioration,
+                    "execution_quote_to_actual_fill_deterioration_pct": fill_vs_quote,
+                })
+                # Preserve the existing operational-canary key for old readers.
+                context["execution_operational"] = dict(entry_context)
+            context["execution_entry"] = entry_context
 
         return ExecutionOutcome.create(
             outcome_id=outcome_id,

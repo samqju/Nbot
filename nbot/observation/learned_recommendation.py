@@ -352,6 +352,7 @@ class LearnedTestnetSource:
                 "min_edge_gap_r": ml_cfg.min_edge_gap_r,
                 "edge_pass": edge_gap is None or edge_gap >= ml_cfg.min_edge_gap_r,
                 "gate_reason": ml_gate_reason,
+                "entry_gate_mode": "EXECUTION_REALTIME_ONLY",
             }
 
         feedback_detail = None
@@ -380,25 +381,13 @@ class LearnedTestnetSource:
                         symbol=candidate_symbol, now_ms=now_ms)
                     detail.update(matched_candidates=[item["id"] for item in rules],
                                   catalog_digest=CATALOG_DIGEST, history_digest=bars_digest)
-                    detail["pre_entry_score_r"] = adjusted
+                    detail["post_feedback_score_r"] = adjusted
                     if ml_detail is not None:
-                        bid, ask = float(quotes[candidate_symbol][1]), float(quotes[candidate_symbol][2])
-                        fill_probability = ml_runtime.fill_probability(
-                            score=ml_detail["ensemble_mean_r"], bid=bid, ask=ask,
-                            side=candidate_side, candidate_id=rule["id"],
-                            context=describe(candidate_vector)["context"], decision_ms=now_ms)
                         detail["selective_ml"] = {
                             **ml_detail,
-                            "fill_probability": fill_probability,
-                            "min_fill_probability": self.selective_ml.config.min_fill_probability,
                             "pre_feedback_gate": ml_gate_reason,
+                            "entry_gate_mode": "EXECUTION_REALTIME_ONLY",
                         }
-                        if fill_probability < self.selective_ml.config.min_fill_probability:
-                            adjusted = 0.0
-                            detail["status"] = "ML_ENTRY_FEASIBILITY_REJECT"
-                        elif adjusted > 0:
-                            adjusted *= fill_probability
-                    detail["post_entry_score_r"] = adjusted
                     ranked.append((adjusted, candidate_symbol, candidate_side,
                                    candidate_vector, selection_base, ridge_score, detail))
             # Preserve the established deterministic practical-ranking order.
@@ -426,16 +415,10 @@ class LearnedTestnetSource:
                     "candidate": feedback_detail["candidate"]["id"],
                     "score": score, "factor": feedback_detail["factor"],
                     "reason": feedback_detail["status"],
-                    "pre_entry_score_r": feedback_detail.get("pre_entry_score_r"),
-                    "post_entry_score_r": feedback_detail.get("post_entry_score_r"),
+                    "post_feedback_score_r": feedback_detail.get("post_feedback_score_r"),
                     "outcome_factor": feedback_detail.get("outcome_factor"),
-                    "entry_practicality_factor": feedback_detail.get("entry_feasibility_factor"),
-                    "next_bar_entry_probability": (
-                        (feedback_detail.get("selective_ml") or {}).get("fill_probability")
-                    ),
-                    "min_next_bar_entry_probability": (
-                        (feedback_detail.get("selective_ml") or {}).get("min_fill_probability")
-                    ),
+                    "entry_gate_mode": "EXECUTION_REALTIME_ONLY",
+                    "next_bar_signal_decay": feedback_detail.get("next_bar_signal_decay", {}),
                 },
                 "choice_changed": (symbol,side,feedback_detail["candidate"]["id"]) !=
                     (ridge_baseline[1],ridge_baseline[2],baseline_candidate[6]["candidate"]["id"]),
@@ -452,13 +435,8 @@ class LearnedTestnetSource:
         else:
             score, symbol, side, vector, ridge_score, ml_detail = selection_baseline
             base_score = score
-            if ml_detail is not None:
-                fill_probability = ml_runtime.fill_probability(
-                    score=ml_detail["ensemble_mean_r"], bid=float(quotes[symbol][1]),
-                    ask=float(quotes[symbol][2]), side=side, candidate_id=None,
-                    context=describe(vector)["context"], decision_ms=now_ms)
-                if ml_gate_reason is not None or fill_probability < self.selective_ml.config.min_fill_probability:
-                    score = 0.0
+            if ml_gate_reason is not None:
+                score = 0.0
 
         shadow_opportunities = []
         main_candidate = None
@@ -490,8 +468,6 @@ class LearnedTestnetSource:
         if score <= 0:
             if feedback_detail and feedback_detail["status"] == "REPEATED_LOSS_COOLDOWN":
                 reason = "PAPER_REPEATED_LOSS_COOLDOWN"
-            elif feedback_detail and feedback_detail["status"] == "ML_ENTRY_FEASIBILITY_REJECT":
-                reason = "LEARNED_ML_ENTRY_UNLIKELY"
             elif ml_gate_reason is not None:
                 reason = ml_gate_reason
             else:
@@ -511,11 +487,8 @@ class LearnedTestnetSource:
                               if (item[1], item[2]) == (symbol, side)), None)
             if chosen_ml is not None:
                 selected_ml = dict(chosen_ml)
-                selected_ml["fill_probability"] = ml_runtime.fill_probability(
-                    score=chosen_ml["ensemble_mean_r"], bid=float(bid), ask=float(ask),
-                    side=side, candidate_id=None, context=describe(vector)["context"],
-                    decision_ms=now_ms)
                 selected_ml["pre_feedback_gate"] = ml_gate_reason
+                selected_ml["entry_gate_mode"] = "EXECUTION_REALTIME_ONLY"
         expected_net_r = selected_ml["ensemble_mean_r"] if selected_ml is not None else base_score
         generated = min(captured_ms, int(quote_ms))
         source_inputs = {"live_event": event_ms, "vector": vector,
@@ -541,7 +514,7 @@ class LearnedTestnetSource:
                 "execution_environment": self.profile.market_environment, "model_version": artifact["model_version"],
                 "training_cutoff_event_ms": artifact["training_cutoff_event_ms"],
                 "live_market_event_ms": event_ms, "reference_quote_environment": self.profile.market_environment,
-                "selection_method": ("SELECTIVE_ML_V1_RIDGE_LIGHTGBM_V4"
+                "selection_method": ("SELECTIVE_ML_V2_RIDGE_LIGHTGBM_REALTIME_ENTRY"
                                      if selected_ml is not None else "CONTEXT_CALIBRATED_RIDGE"),
                 "setup_explanation": setup_explanation,
                 "prediction_target": (SELECTIVE_ML_TARGET if selected_ml is not None

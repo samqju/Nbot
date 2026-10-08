@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from nbot.communication.authorities import LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY
+from nbot.communication.authorities import LIVE_PAPER_LEARNED_AUTHORITY, LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY
 from nbot.communication.client import ObservationClientError, RemoteObservationClient
 from nbot.communication.contracts import ExecutionProposal
 from nbot.communication.integration import (
@@ -47,6 +47,37 @@ def wire_proposal(*, side: str = "LONG") -> ExecutionProposal:
             "research_evidence": False,
             "economic_claim": False,
             "research_champion": None,
+        },
+    )
+
+
+def learned_wire_proposal(*, side: str = "LONG") -> ExecutionProposal:
+    return ExecutionProposal.create(
+        proposal_id="PROP-V387-LEARNED",
+        generated_at_ms=NOW,
+        expires_at_ms=NOW + 30_000,
+        profile="live-paper",
+        market_environment="LIVE",
+        evidence_lineage="LIVE_PAPER_OPERATIONAL",
+        symbol="BTCUSDT",
+        side=side,
+        market_event_id="ME-1799999700000",
+        data_generation_id="LEARNED-LIVE-PAPER-1799999700000",
+        feature_version="CANONICAL_FEATURES_TEST",
+        selector_version="SELECTIVE_ML_V2_RIDGE_LIGHTGBM_REALTIME_ENTRY",
+        entry_authority=LIVE_PAPER_LEARNED_AUTHORITY,
+        exit_policy_version="INTEGER_R_STEP_CONTROL",
+        reference_price=100.0,
+        selection_score=0.5,
+        selection_rank=1,
+        expected_after_cost_net_r=0.2,
+        source_digest="c" * 64,
+        model_digest="d" * 64,
+        experiment_context={
+            "authority_class": LIVE_PAPER_LEARNED_AUTHORITY,
+            "research_evidence": False,
+            "economic_claim": False,
+            "entry_gate_mode": "EXECUTION_REALTIME_ONLY",
         },
     )
 
@@ -229,6 +260,40 @@ class V387LivePaperOperationalCanaryTests(unittest.TestCase):
             self.assertIsNone(operational["expected_after_cost_net_r"])
             self.assertIsNone(operational["economic_delta_r"])
             self.assertEqual(operational["actual_paper_r"], 0.075)
+
+    def test_learned_paper_outcome_records_realtime_entry_without_next_bar_context(self):
+        with tempfile.TemporaryDirectory() as td:
+            client = RemoteObservationClient(
+                base_url="http://127.0.0.1:18765",
+                profile="live-paper",
+                auth_token=TOKEN,
+                receipt_directory=Path(td) / "receipts",
+                execution_release_sha=SHA,
+            )
+            proposal = learned_wire_proposal()
+            client.receipts.record(
+                request_id="REQ-V387-LEARNED",
+                proposal=proposal,
+                recorded_at_ms=NOW + 400,
+            )
+            payload = self._outcome_payload()
+            payload.update({
+                "proposal_id": proposal.proposal_id,
+                "entry_authority": LIVE_PAPER_LEARNED_AUTHORITY,
+            })
+            outcome = client._wire_outcome(
+                outcome_id="OUT-V387-LEARNED",
+                payload={**payload, "outcome_id": "OUT-V387-LEARNED"},
+            )
+            entry = outcome.experiment_context["execution_entry"]
+            self.assertEqual(entry["mode"], "REALTIME_MARKET_ENTRY")
+            self.assertEqual(entry["proposal_receive_latency_ms"], 400)
+            self.assertEqual(entry["proposal_to_fill_latency_ms"], 1000)
+            self.assertAlmostEqual(entry["reference_to_actual_fill_deterioration_pct"], 0.25)
+            self.assertEqual(entry["expected_after_cost_net_r"], 0.2)
+            self.assertEqual(entry["actual_paper_r"], 0.075)
+            self.assertAlmostEqual(entry["economic_delta_r"], -0.125)
+            self.assertNotIn("execution_operational", outcome.experiment_context)
 
     def test_runtime_source_consumes_one_entry_permission_and_keeps_private_writes_false(self):
         text = (Path(__file__).resolve().parents[1] / "run_execution.py").read_text()

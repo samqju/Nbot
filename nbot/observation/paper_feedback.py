@@ -20,8 +20,13 @@ from .context_learning import describe
 from .candidate_setups import BY_ID, FALLBACK, CATALOG_DIGEST
 from .feedback_evidence import compatible_evidence_release, loss_cooldowns, shadow_sample
 
-VERSION = "PAPER_EXECUTION_FEEDBACK_V4_SHRINKAGE"
-ACCEPTED_VERSIONS = {VERSION, "PAPER_EXECUTION_FEEDBACK_V3_SHADOW", "PAPER_EXECUTION_FEEDBACK_V2_CANDIDATES"}
+VERSION = "PAPER_EXECUTION_FEEDBACK_V5_REALTIME_ENTRY"
+ACCEPTED_VERSIONS = {
+    VERSION,
+    "PAPER_EXECUTION_FEEDBACK_V4_SHRINKAGE",
+    "PAPER_EXECUTION_FEEDBACK_V3_SHADOW",
+    "PAPER_EXECUTION_FEEDBACK_V2_CANDIDATES",
+}
 DAY_MS = 86_400_000
 WINDOW_MS = 30 * DAY_MS
 BUCKET_MS = 49 * 300_000
@@ -247,7 +252,8 @@ class PaperFeedback:
             sample=shadow_sample(p,cutoff_ms=cutoff_ms,catalog_digest=CATALOG_DIGEST)
             if sample:
                 samples.append(sample)
-            # Feasibility is its own metric, never a fabricated trade outcome.
+            # Next-bar drift is retained only as a signal-decay diagnostic.
+            # It must not penalize immediate market-order entry ranking.
             if sample or p.get("reason")=="ENTRY_DRIFT_REJECTED":
                 key=p["candidate_id"]+"|"+p["side"]
                 event=int(p["event_ms"])
@@ -267,11 +273,12 @@ class PaperFeedback:
     def snapshot(self, *, cutoff_ms):
         self.ingest(cutoff_ms=cutoff_ms)
         main_samples, capped = self._main_samples(cutoff_ms)
-        shadow_samples, feasibility, feasibility_identity = self._shadow_samples(cutoff_ms)
+        shadow_samples, signal_decay, signal_decay_identity = self._shadow_samples(cutoff_ms)
         samples = main_samples + shadow_samples
         # Stable identity across refreshes and restarts; age is updated daily.
         identity = {"version": VERSION, "release_sha": self.release_sha,
-                    "day": cutoff_ms // DAY_MS, "feasibility": sorted(feasibility_identity), "samples": sorted((s["outcome_id"], payload_digest(s)) for s in samples)}
+                    "day": cutoff_ms // DAY_MS, "next_bar_signal_decay": sorted(signal_decay_identity),
+                    "samples": sorted((s["outcome_id"], payload_digest(s)) for s in samples)}
         model_id = hashlib.sha256(_json(identity).encode()).hexdigest()
         with self.database.connection() as conn:
             saved = conn.execute("SELECT model_json,model_digest FROM paper_feedback_models WHERE model_id=?",
@@ -326,7 +333,9 @@ class PaperFeedback:
         value = {"version": VERSION, "model_id": model_id, "release_sha": self.release_sha,
                  "cutoff_ms": cutoff_ms, "sample_count": len(main_samples), "window_days": 30,
                   "shadow_sample_count": len(shadow_samples), "shadow_weight": .25,
-                  "feasibility": feasibility, "cooldowns": loss_cooldowns(main_samples,cutoff_ms),
+                  "next_bar_signal_decay": signal_decay,
+                  "entry_gate_mode": "EXECUTION_REALTIME_ONLY",
+                  "cooldowns": loss_cooldowns(main_samples,cutoff_ms),
                  "sample_cap_reached": capped, "groups": groups,
                  "cost_basis": "PAPER_AFTER_SIMULATED_FEES_NO_FUNDING"}
         with self.database.connection() as conn:
@@ -354,14 +363,16 @@ class PaperFeedback:
         result["evidence_sources"] = {"main_paper": model.get("sample_count",0),
                                       "shadow": model.get("shadow_sample_count",0)}
         result["outcome_factor"] = result["factor"]
-        feasibility=model.get("feasibility",{}).get((candidate or {}).get("id","")+"|"+side,{})
-        result["entry_feasibility_factor"] = feasibility.get("factor",1.)
-        result["factor"] *= result["entry_feasibility_factor"]
+        # Legacy field remains neutral so old operator/report consumers do not
+        # mistake next-bar drift for immediate market-order feasibility.
+        result["entry_feasibility_factor"] = 1.0
+        result["entry_gate_mode"] = "EXECUTION_REALTIME_ONLY"
+        result["next_bar_signal_decay"] = model.get("next_bar_signal_decay",{}).get(
+            (candidate or {}).get("id","")+"|"+side, {}
+        )
         cooldown=model.get("cooldowns",{}).get(str(symbol)+"|"+side)
         if cooldown and cooldown["until_ms"]>(now_ms if now_ms is not None else model["cutoff_ms"]):
             result.update(factor=0.,status="REPEATED_LOSS_COOLDOWN",cooldown_until_ms=cooldown["until_ms"])
-        elif result["entry_feasibility_factor"]<1:
-            result["status"]="ENTRY_FEASIBILITY_PENALTY" if result["outcome_factor"]==1 else "OUTCOME_AND_ENTRY_FEEDBACK"
         # Feedback never turns a negative research score into a paper entry.
         return (base_score * result["factor"] if base_score > 0 else base_score), result
 

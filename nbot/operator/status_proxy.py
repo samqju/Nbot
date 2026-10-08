@@ -268,11 +268,11 @@ def _activity_text(data: Mapping[str, Any]) -> str:
         f"net {_e(activity.get('current_net_usd'))} simulated USD\n"
         f"Last shadow opportunity: {_e(when(activity.get('latest_opportunity_ms')))}\n"
         f"Last shadow result: {_e(when(activity.get('latest_result_ms')))}\n"
-        f"Entry drift cancellations: {_e(activity.get('cancellation_reasons',{}).get('ENTRY_DRIFT_REJECTED',0))}\n"
-        f"Measured cancelled-entry drift: {_e(activity.get('mean_cancelled_drift_pct'))}% / "
+        f"Next-bar drift research cancellations: {_e(activity.get('cancellation_reasons',{}).get('ENTRY_DRIFT_REJECTED',0))}\n"
+        f"Measured next-bar drift: {_e(activity.get('mean_cancelled_drift_pct'))}% / "
         f"wait {_e(activity.get('mean_cancelled_wait_seconds'))} seconds\n"
-        "Valid shadow results affect paper ranking at 25% weight per time block.\n"
-        "Cancelled/missing-data entries never count as trading losses.\n\n"
+        "Valid shadow trade outcomes affect paper outcome calibration at 25% weight per time block.\n"
+        "Next-bar drift is research-only and does not gate or penalize immediate entries.\n\n"
         + _feedback_text(activity.get("feedback", {}))
     )
 
@@ -296,10 +296,12 @@ def _feedback_text(data: Mapping[str, Any]) -> str:
         return "PASS" if value is True else "FAIL" if value is False else "N/A"
 
     if raw_ml:
-        primary = raw_ml.get("gate_reason") or (
-            "LEARNED_ML_ENTRY_UNLIKELY"
-            if selected.get("reason") == "ML_ENTRY_FEASIBILITY_REJECT" else
-            selected.get("reason")
+        primary = raw_ml.get("gate_reason") or selected.get("reason")
+        decay = selected.get("next_bar_signal_decay")
+        decay = decay if isinstance(decay, Mapping) else {}
+        decay_text = (
+            f"{_e(decay.get('filled'))}/{_e(decay.get('attempts'))} survived old next-bar drift test"
+            if decay else "no candidate-specific sample"
         )
         return (
             f"Last learning decision: {_e(time.strftime('%Y-%m-%d %H:%M UTC',time.gmtime(data.get('decision_ms',0)/1000)))}\n"
@@ -312,14 +314,12 @@ def _feedback_text(data: Mapping[str, Any]) -> str:
             f"ML runner-up: {_e(raw_ml.get('runner_up_symbol'))} {_e(raw_ml.get('runner_up_side'))} | "
             f"{_e(r(raw_ml.get('runner_up_conservative_score_r')))} | gap {_e(r(raw_ml.get('edge_gap_r')))} "
             f"(need >= {_e(r(raw_ml.get('min_edge_gap_r')))}) | edge {_e(gate(raw_ml.get('edge_pass')))}\n"
-            f"Post-gate representative: {_e(selected.get('symbol'))} {_e(selected.get('side'))} / {_e(selected.get('candidate'))} | "
-            f"pre-entry {_e(r(selected.get('pre_entry_score_r')))} | post-entry {_e(r(selected.get('post_entry_score_r')))}\n"
-            f"Next-bar entry feasibility: {_e(pct(selected.get('next_bar_entry_probability')))} "
-            f"(need >= {_e(pct(selected.get('min_next_bar_entry_probability')))}) | "
-            f"{_e('PASS' if selected.get('next_bar_entry_probability') is not None and selected.get('min_next_bar_entry_probability') is not None and float(selected.get('next_bar_entry_probability')) >= float(selected.get('min_next_bar_entry_probability')) else 'FAIL')}\n"
-            f"Paper factors: outcome {_e(selected.get('outcome_factor'))} | entry practicality {_e(selected.get('entry_practicality_factor'))}\n"
+            f"Post-feedback candidate: {_e(selected.get('symbol'))} {_e(selected.get('side'))} / {_e(selected.get('candidate'))} | "
+            f"score {_e(r(selected.get('post_feedback_score_r')))} | outcome factor {_e(selected.get('outcome_factor'))}\n"
+            "Entry gate: REALTIME AT EXECUTION (fresh quote, spread, reference drift, fill/slippage safety).\n"
+            f"Next-bar drift research only: {decay_text}; it does not affect selection or entry.\n"
             f"Final score: {_e(r(selected.get('score')))} | Decision: {_e('NO TRADE' if data.get('no_trade') else 'TRADE ALLOWED')}\n"
-            f"Primary blocker: {_e(primary or 'NONE')} | practical reason: {_e(selected.get('reason') or 'NONE')}\n"
+            f"Primary blocker: {_e(primary or 'NONE')} | feedback status: {_e(selected.get('reason') or 'NONE')}\n"
             f"Choices blocked by loss pause: {_e(data.get('cooldown_choices_blocked'))} | "
             f"Active loss pauses: {_e(', '.join(pauses) or 'none')}\n\n"
         )
