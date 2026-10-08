@@ -323,12 +323,36 @@ class LearnedTestnetSource:
         selection_order = sorted(candidates, key=lambda r: (-r[0], r[1], r[2]))
         selection_baseline = selection_order[0]
         ml_gate_reason = None
+        ml_selection_audit = None
         if ml_runtime is not None:
             ml_cfg = self.selective_ml.config
+            runner_up = selection_order[1] if len(selection_order) > 1 else None
+            edge_gap = (
+                selection_baseline[0] - runner_up[0] if runner_up is not None else None
+            )
             if selection_baseline[0] < ml_cfg.min_lower_r:
                 ml_gate_reason = "LEARNED_ML_ABSTAIN_LOW_CONFIDENCE"
-            elif len(selection_order) > 1 and selection_baseline[0] - selection_order[1][0] < ml_cfg.min_edge_gap_r:
+            elif edge_gap is not None and edge_gap < ml_cfg.min_edge_gap_r:
                 ml_gate_reason = "LEARNED_ML_ABSTAIN_EDGE_TOO_SMALL"
+            winner_ml = selection_baseline[5] or {}
+            ml_selection_audit = {
+                "symbol": selection_baseline[1],
+                "side": selection_baseline[2],
+                "ridge_score_r": winner_ml.get("ridge_score", selection_baseline[4]),
+                "ml_mean_r": winner_ml.get("ml_mean_r"),
+                "ml_lower_r": winner_ml.get("ml_lower_r"),
+                "ensemble_mean_r": winner_ml.get("ensemble_mean_r"),
+                "conservative_score_r": selection_baseline[0],
+                "min_confidence_r": ml_cfg.min_lower_r,
+                "confidence_pass": selection_baseline[0] >= ml_cfg.min_lower_r,
+                "runner_up_symbol": runner_up[1] if runner_up is not None else None,
+                "runner_up_side": runner_up[2] if runner_up is not None else None,
+                "runner_up_conservative_score_r": runner_up[0] if runner_up is not None else None,
+                "edge_gap_r": edge_gap,
+                "min_edge_gap_r": ml_cfg.min_edge_gap_r,
+                "edge_pass": edge_gap is None or edge_gap >= ml_cfg.min_edge_gap_r,
+                "gate_reason": ml_gate_reason,
+            }
 
         feedback_detail = None
         histories = {}
@@ -356,6 +380,7 @@ class LearnedTestnetSource:
                         symbol=candidate_symbol, now_ms=now_ms)
                     detail.update(matched_candidates=[item["id"] for item in rules],
                                   catalog_digest=CATALOG_DIGEST, history_digest=bars_digest)
+                    detail["pre_entry_score_r"] = adjusted
                     if ml_detail is not None:
                         bid, ask = float(quotes[candidate_symbol][1]), float(quotes[candidate_symbol][2])
                         fill_probability = ml_runtime.fill_probability(
@@ -373,9 +398,11 @@ class LearnedTestnetSource:
                             detail["status"] = "ML_ENTRY_FEASIBILITY_REJECT"
                         elif adjusted > 0:
                             adjusted *= fill_probability
+                    detail["post_entry_score_r"] = adjusted
                     ranked.append((adjusted, candidate_symbol, candidate_side,
                                    candidate_vector, selection_base, ridge_score, detail))
-            # Equal scores use reproducible event-specific attribution, not permanent alphabetical preference.
+            # Preserve the established deterministic practical-ranking order.
+            # The raw Selective-ML winner is recorded separately for diagnostics.
             score, symbol, side, vector, base_score, ridge_score, feedback_detail = sorted(
                 ranked, key=lambda r: (-r[0], r[1], r[2],
                     tie_key(event_ms, r[1], r[2], r[6]["candidate"]["id"])))[0]
@@ -393,8 +420,23 @@ class LearnedTestnetSource:
                 "entry_choices_adjusted": sum(r[6]["entry_feasibility_factor"]!=1 for r in ranked),
                 "baseline": {"symbol":ridge_baseline[1],"side":ridge_baseline[2],
                              "candidate":baseline_candidate[6]["candidate"]["id"],"score":ridge_baseline[4]},
-                "selected": {"symbol":symbol,"side":side,"candidate":feedback_detail["candidate"]["id"],
-                             "score":score,"factor":feedback_detail["factor"],"reason":feedback_detail["status"]},
+                "raw_ml_winner": ml_selection_audit,
+                "selected": {
+                    "symbol": symbol, "side": side,
+                    "candidate": feedback_detail["candidate"]["id"],
+                    "score": score, "factor": feedback_detail["factor"],
+                    "reason": feedback_detail["status"],
+                    "pre_entry_score_r": feedback_detail.get("pre_entry_score_r"),
+                    "post_entry_score_r": feedback_detail.get("post_entry_score_r"),
+                    "outcome_factor": feedback_detail.get("outcome_factor"),
+                    "entry_practicality_factor": feedback_detail.get("entry_feasibility_factor"),
+                    "next_bar_entry_probability": (
+                        (feedback_detail.get("selective_ml") or {}).get("fill_probability")
+                    ),
+                    "min_next_bar_entry_probability": (
+                        (feedback_detail.get("selective_ml") or {}).get("min_fill_probability")
+                    ),
+                },
                 "choice_changed": (symbol,side,feedback_detail["candidate"]["id"]) !=
                     (ridge_baseline[1],ridge_baseline[2],baseline_candidate[6]["candidate"]["id"]),
                 "no_trade": score<=0,

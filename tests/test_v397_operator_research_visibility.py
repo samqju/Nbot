@@ -12,7 +12,7 @@ from unittest.mock import patch
 from nbot.communication.client import RemoteObservationClient
 from nbot.communication.server import ObservationControlServer
 from nbot.operator.execution import EXECUTION_TELEGRAM_COMMANDS, ExecutionOperatorSurface
-from nbot.operator.status_proxy import ObservationReadOnlyStatusProvider
+from nbot.operator.status_proxy import ObservationReadOnlyStatusProvider, _feedback_text
 from nbot.operator.telegram import TelegramClient, TelegramConfig
 from tests.test_v386_operator_observability import FakeWorker
 
@@ -302,6 +302,57 @@ class V397OperatorResearchVisibilityTests(unittest.TestCase):
         self.assertIn("PASS windows: 1", body)
         self.assertIn("REJECT windows: 1", body)
         self.assertIn("Future evidence: 4/40", body)
+
+    def test_learning_feedback_shows_raw_ml_and_entry_gate_diagnostics(self):
+        body = _feedback_text({
+            "decision_ms": 1_791_350_000_000,
+            "main_samples": 102,
+            "shadow_samples": 367,
+            "baseline": {
+                "symbol": "SANDUSDT", "side": "SHORT",
+                "candidate": "RELATIVE_STRENGTH_V1", "score": 0.61586,
+            },
+            "raw_ml_winner": {
+                "symbol": "BTCUSDT", "side": "SHORT",
+                "ridge_score_r": 0.31,
+                "ml_mean_r": 0.08,
+                "ml_lower_r": -0.01,
+                "ensemble_mean_r": 0.14,
+                "conservative_score_r": 0.047,
+                "min_confidence_r": 0.08,
+                "confidence_pass": False,
+                "runner_up_symbol": "ETHUSDT",
+                "runner_up_side": "LONG",
+                "runner_up_conservative_score_r": 0.031,
+                "edge_gap_r": 0.016,
+                "min_edge_gap_r": 0.05,
+                "edge_pass": False,
+                "gate_reason": "LEARNED_ML_ABSTAIN_LOW_CONFIDENCE",
+            },
+            "selected": {
+                "symbol": "ADAUSDT", "side": "LONG",
+                "candidate": "MULTITIMEFRAME_TREND_V1",
+                "pre_entry_score_r": 0.018,
+                "post_entry_score_r": 0.0,
+                "score": 0.0,
+                "reason": "ML_ENTRY_FEASIBILITY_REJECT",
+                "outcome_factor": 1.0,
+                "entry_practicality_factor": 0.76,
+                "next_bar_entry_probability": 0.42,
+                "min_next_bar_entry_probability": 0.60,
+            },
+            "no_trade": True,
+            "cooldown_choices_blocked": 0,
+            "active_cooldowns": {},
+        })
+        self.assertIn("Raw ML winner: BTCUSDT SHORT", body)
+        self.assertIn("conservative 0.0470 R", body)
+        self.assertIn("confidence FAIL", body)
+        self.assertIn("ML runner-up: ETHUSDT LONG", body)
+        self.assertIn("Post-gate representative: ADAUSDT LONG / MULTITIMEFRAME_TREND_V1", body)
+        self.assertIn("Next-bar entry feasibility: 42.0%", body)
+        self.assertIn("need >= 60.0%", body)
+        self.assertIn("Primary blocker: LEARNED_ML_ABSTAIN_LOW_CONFIDENCE", body)
 
     def test_execution_learning_command_is_display_only_even_while_open(self):
         with tempfile.TemporaryDirectory() as td:

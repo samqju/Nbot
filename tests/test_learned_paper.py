@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest.mock import patch
 from nbot.communication.authorities import LIVE_PAPER_LEARNED_AUTHORITY
@@ -33,6 +34,37 @@ class LearnedPaperTests(unittest.TestCase):
         self.assertEqual(paper.proposal.experiment_context["reference_quote_environment"], "LIVE")
         self.assertFalse(paper.proposal.experiment_context["research_evidence"])
         _validate_health(health=self.target.health_snapshot(), profile_name="live-paper", release_sha=SHA)
+
+    def test_selective_ml_check_persists_raw_winner_and_entry_diagnostics(self):
+        class FakeRuntime:
+            def score(self, _vector):
+                return 0.05, 0.01
+
+            def fill_probability(self, **_kwargs):
+                return 0.42
+
+        record = {
+            "artifact_digest": "d" * 64,
+            "artifact_key": "selective-ml:test",
+            "payload": {"model_digest": "m" * 64},
+        }
+        with patch.object(self.source.selective_ml, "latest_for_event", return_value=record), \
+             patch("nbot.observation.learned_recommendation.SelectiveMLRuntime", return_value=FakeRuntime()):
+            result = self.target.refresh_recommendation()
+
+        self.assertIsNone(result.proposal)
+        with self.fixture.live.connection() as conn:
+            raw = conn.execute(
+                "SELECT detail_json FROM paper_feedback_checks ORDER BY decision_ms DESC LIMIT 1"
+            ).fetchone()[0]
+        detail = json.loads(raw)
+        self.assertTrue(detail["selective_ml_active"])
+        self.assertEqual(detail["raw_ml_winner"]["symbol"], "BTCUSDT")
+        self.assertIn("conservative_score_r", detail["raw_ml_winner"])
+        self.assertEqual(detail["selected"]["next_bar_entry_probability"], 0.42)
+        self.assertEqual(detail["selected"]["min_next_bar_entry_probability"], 0.60)
+        self.assertIn("pre_entry_score_r", detail["selected"])
+        self.assertIn("post_entry_score_r", detail["selected"])
 
     def test_restart_reuses_frozen_paper_decision(self):
         first = self.target.refresh_recommendation()
