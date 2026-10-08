@@ -40,16 +40,6 @@ SIGNAL_INPUTS = (
 )
 
 
-def _practical_rank_key(event_ms: int, row):
-    """Rank post-feedback candidates without permanent alphabetical tie preference."""
-    return (
-        -row[0],
-        tie_key(event_ms, row[1], row[2], row[6]["candidate"]["id"]),
-        row[1],
-        row[2],
-    )
-
-
 def _execution_compatible_quotes(rows, *, close_ms: int, now_ms: int, ttl_ms: int):
     """Keep only fresh quotes whose symbols can cross the Execution protocol."""
     quotes = {}
@@ -411,9 +401,11 @@ class LearnedTestnetSource:
                     detail["post_entry_score_r"] = adjusted
                     ranked.append((adjusted, candidate_symbol, candidate_side,
                                    candidate_vector, selection_base, ridge_score, detail))
-            # Equal post-gate scores use event-specific attribution before lexical fallback.
+            # Preserve the established deterministic practical-ranking order.
+            # The raw Selective-ML winner is recorded separately for diagnostics.
             score, symbol, side, vector, base_score, ridge_score, feedback_detail = sorted(
-                ranked, key=lambda r: _practical_rank_key(event_ms, r))[0]
+                ranked, key=lambda r: (-r[0], r[1], r[2],
+                    tie_key(event_ms, r[1], r[2], r[6]["candidate"]["id"])))[0]
             if ml_gate_reason is not None:
                 score = 0.0
             feedback_detail["matched_candidate_count"] = len(ranked)
