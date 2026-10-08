@@ -332,14 +332,12 @@ class V397OperatorResearchVisibilityTests(unittest.TestCase):
             "selected": {
                 "symbol": "ADAUSDT", "side": "LONG",
                 "candidate": "MULTITIMEFRAME_TREND_V1",
-                "pre_entry_score_r": 0.018,
-                "post_entry_score_r": 0.0,
+                "post_feedback_score_r": 0.018,
                 "score": 0.0,
-                "reason": "ML_ENTRY_FEASIBILITY_REJECT",
+                "reason": "PAPER_FEEDBACK_APPLIED",
                 "outcome_factor": 1.0,
-                "entry_practicality_factor": 0.76,
-                "next_bar_entry_probability": 0.42,
-                "min_next_bar_entry_probability": 0.60,
+                "entry_gate_mode": "EXECUTION_REALTIME_ONLY",
+                "next_bar_signal_decay": {"attempts": 10, "filled": 4, "drift_cancelled": 6},
             },
             "no_trade": True,
             "cooldown_choices_blocked": 0,
@@ -349,9 +347,10 @@ class V397OperatorResearchVisibilityTests(unittest.TestCase):
         self.assertIn("conservative 0.0470 R", body)
         self.assertIn("confidence FAIL", body)
         self.assertIn("ML runner-up: ETHUSDT LONG", body)
-        self.assertIn("Post-gate representative: ADAUSDT LONG / MULTITIMEFRAME_TREND_V1", body)
-        self.assertIn("Next-bar entry feasibility: 42.0%", body)
-        self.assertIn("need >= 60.0%", body)
+        self.assertIn("Post-feedback candidate: ADAUSDT LONG / MULTITIMEFRAME_TREND_V1", body)
+        self.assertIn("Entry gate: REALTIME AT EXECUTION", body)
+        self.assertIn("Next-bar drift research only: 4/10 survived", body)
+        self.assertIn("it does not affect selection or entry", body)
         self.assertIn("Primary blocker: LEARNED_ML_ABSTAIN_LOW_CONFIDENCE", body)
 
     def test_execution_learning_command_is_display_only_even_while_open(self):
