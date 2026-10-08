@@ -1,6 +1,6 @@
-# Selective ML V1
+# Selective ML V2
 
-Selective ML V1 is the nonlinear, abstention-first learner for learned `live-paper`.
+Selective ML V2 is the nonlinear, abstention-first learner for learned `live-paper`.
 It does **not** grant exchange authority, change Execution risk limits, arm real money,
 or claim profitability.
 
@@ -35,10 +35,16 @@ The live-paper decision stack is:
 6. Hard abstention gates:
    - conservative score must exceed the configured minimum;
    - the best symbol/side must be sufficiently better than second place.
-7. Existing V4 paper/shadow candidate feedback.
-8. A separate LightGBM entry-feasibility model, when enough historical shadow
-   fills and drift rejections exist.
-9. Existing deterministic Execution risk/order/position checks.
+7. Existing paper/shadow outcome feedback and loss cooldowns.
+8. Realtime Execution entry checks using the current executable quote:
+   proposal freshness, quote freshness, spread, reference-price drift, margin,
+   protective-stop feasibility and a final quote/drift recheck.
+9. Market entry followed by post-fill notional, slippage, stop-identity and
+   risk validation.
+
+The old V1 binary "fill probability" gate is removed. It was trained from the
+next five-minute candle and therefore measured delayed next-bar drift, not
+whether an immediate market order could be entered safely.
 
 The bot is allowed to produce **NO TRADE**. It is never required to choose the
 least-bad opportunity.
@@ -76,18 +82,31 @@ live-paper outcomes remain separate calibration evidence.
 
 This distinction is intentionally stored in every ML-backed proposal.
 
-## Entry-feasibility learning
+## Realtime entry feasibility
 
-The existing shadow database already records filled simulations and
-`ENTRY_DRIFT_REJECTED` outcomes. Selective ML uses those records to train a
-separate binary entry model when there are enough examples of both classes.
+Entry feasibility is owned by Execution, not by a five-minute prediction model.
 
-Inputs include the opportunity score, spread, side, decision timing, market
-context and candidate identity. Cancelled/missing-data shadow records other than
-measured drift rejection are not relabelled as trading losses.
+After Observation has passed the ML confidence and edge gates and produced a
+fresh proposal, Execution checks current market truth immediately before the
+market-order-capable call. The current safety policy checks quote age, spread,
+proposal/reference drift, account margin and protective-stop feasibility, then
+takes a final quote and repeats the freshness/drift checks. After a proven fill,
+post-fill notional, slippage and risk limits remain fail-closed.
 
-When the learned fill probability is below the configured threshold, the
-live-paper recommendation abstains.
+This aligns the gate with the actual live-paper execution path. A fast-moving
+asset is not rejected merely because the *next five-minute candle* opens far
+from the decision price. It can still be rejected if it moves too far during
+the real decision-to-execution interval.
+
+Shadow `ENTRY_DRIFT_REJECTED` records are retained as **next-bar signal-decay
+research telemetry**. They do not train a binary fill model and do not lower
+paper ranking. This preserves the historical evidence without confusing
+five-minute signal decay with immediate market-order feasibility.
+
+Learned live-paper outcomes also retain execution-entry telemetry such as
+proposal-to-fill latency and reference-to-fill deterioration. That evidence can
+support a future calibrated execution-quality model after enough unbiased
+examples exist; V2 does not manufacture such a probability from sparse data.
 
 ## Model eligibility
 
@@ -103,7 +122,7 @@ time. Ordinary Ridge/challenger research continues independently.
 
 If no eligible Selective ML artifact is available, learned paper falls back to
 the existing Ridge + V4 path. Testnet and live-trade do not automatically use
-Selective ML V1.
+Selective ML V2.
 
 ## Small-VPS defaults
 
@@ -117,8 +136,10 @@ Defaults are intentionally bounded for the existing small Observation VPS:
 - at most 15 leaves;
 - minimum 80 rows per leaf;
 - minimum risk-adjusted score +0.08R;
-- minimum best-vs-second-best gap +0.05R;
-- minimum learned fill probability 0.60 when the fill model is available.
+- minimum best-vs-second-best gap +0.05R.
+
+There is no learned fill-probability threshold in V2. Execution's existing
+realtime safety limits remain authoritative.
 
 The runtime dependency is isolated in `requirements-ml.txt`. The Execution VPS
 does not need LightGBM.
@@ -172,7 +193,6 @@ Optional bounded tuning variables:
 - `NBOT_ML_THREADS` (1 to 4)
 - `NBOT_ML_MIN_LOWER_R`
 - `NBOT_ML_MIN_EDGE_GAP_R`
-- `NBOT_ML_MIN_FILL_PROB`
 
 Do not loosen gates merely to increase trade count. A quieter bot can be correct.
 
@@ -185,7 +205,7 @@ not need a larger server.
 
 ## Safety boundaries
 
-Selective ML V1 cannot:
+Selective ML V2 cannot:
 
 - change maximum account risk or leverage;
 - bypass one-position or daily-risk controls;
