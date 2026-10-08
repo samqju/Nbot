@@ -282,8 +282,48 @@ def _feedback_text(data: Mapping[str, Any]) -> str:
         return "Learning effect: waiting for the next assessed market event.\n\n"
     selected=data.get("selected",{})
     before=data.get("baseline",{})
+    raw_ml=data.get("raw_ml_winner") if isinstance(data.get("raw_ml_winner"), Mapping) else {}
     now=int(time.time()*1000)
     pauses=[key for key,value in data.get("active_cooldowns",{}).items() if value.get("until_ms",0)>now]
+
+    def r(value):
+        return "N/A" if value is None else f"{float(value):.4f} R"
+
+    def pct(value):
+        return "N/A" if value is None else f"{100*float(value):.1f}%"
+
+    def gate(value):
+        return "PASS" if value is True else "FAIL" if value is False else "N/A"
+
+    if raw_ml:
+        primary = raw_ml.get("gate_reason") or (
+            "LEARNED_ML_ENTRY_UNLIKELY"
+            if selected.get("reason") == "ML_ENTRY_FEASIBILITY_REJECT" else
+            selected.get("reason")
+        )
+        return (
+            f"Last learning decision: {_e(time.strftime('%Y-%m-%d %H:%M UTC',time.gmtime(data.get('decision_ms',0)/1000)))}\n"
+            f"Feedback used: {_e(data.get('main_samples'))} main / {_e(data.get('shadow_samples'))} shadow outcomes\n"
+            f"Ridge winner: {_e(before.get('symbol'))} {_e(before.get('side'))} / {_e(before.get('candidate'))} | {_e(r(before.get('score')))}\n"
+            f"Raw ML winner: {_e(raw_ml.get('symbol'))} {_e(raw_ml.get('side'))} | conservative {_e(r(raw_ml.get('conservative_score_r')))} "
+            f"(need >= {_e(r(raw_ml.get('min_confidence_r')))}) | confidence {_e(gate(raw_ml.get('confidence_pass')))}\n"
+            f"ML components: ridge {_e(r(raw_ml.get('ridge_score_r')))} | mean {_e(r(raw_ml.get('ml_mean_r')))} | "
+            f"lower {_e(r(raw_ml.get('ml_lower_r')))} | ensemble {_e(r(raw_ml.get('ensemble_mean_r')))}\n"
+            f"ML runner-up: {_e(raw_ml.get('runner_up_symbol'))} {_e(raw_ml.get('runner_up_side'))} | "
+            f"{_e(r(raw_ml.get('runner_up_conservative_score_r')))} | gap {_e(r(raw_ml.get('edge_gap_r')))} "
+            f"(need >= {_e(r(raw_ml.get('min_edge_gap_r')))}) | edge {_e(gate(raw_ml.get('edge_pass')))}\n"
+            f"Practical candidate: {_e(selected.get('symbol'))} {_e(selected.get('side'))} / {_e(selected.get('candidate'))} | "
+            f"pre-entry {_e(r(selected.get('pre_entry_score_r')))} | post-entry {_e(r(selected.get('post_entry_score_r')))}\n"
+            f"Next-bar entry feasibility: {_e(pct(selected.get('next_bar_entry_probability')))} "
+            f"(need >= {_e(pct(selected.get('min_next_bar_entry_probability')))}) | "
+            f"{_e('PASS' if selected.get('next_bar_entry_probability') is not None and selected.get('min_next_bar_entry_probability') is not None and float(selected.get('next_bar_entry_probability')) >= float(selected.get('min_next_bar_entry_probability')) else 'FAIL')}\n"
+            f"Paper factors: outcome {_e(selected.get('outcome_factor'))} | entry practicality {_e(selected.get('entry_practicality_factor'))}\n"
+            f"Final score: {_e(r(selected.get('score')))} | Decision: {_e('NO TRADE' if data.get('no_trade') else 'TRADE ALLOWED')}\n"
+            f"Primary blocker: {_e(primary or 'NONE')} | practical reason: {_e(selected.get('reason') or 'NONE')}\n"
+            f"Choices blocked by loss pause: {_e(data.get('cooldown_choices_blocked'))} | "
+            f"Active loss pauses: {_e(', '.join(pauses) or 'none')}\n\n"
+        )
+
     return (
         f"Last learning decision: {_e(time.strftime('%Y-%m-%d %H:%M UTC',time.gmtime(data.get('decision_ms',0)/1000)))}\n"
         f"Feedback used: {_e(data.get('main_samples'))} main / {_e(data.get('shadow_samples'))} shadow outcomes\n"
