@@ -13,7 +13,7 @@ from nbot.communication.integration import _validate_health
 from nbot.communication.client import ObservationClientError
 from nbot.config.profiles import get_profile
 from nbot.observation.challengers import ContinuousChallengerCycle, CHALLENGER_PREFIX, MODEL_PREFIX, EVALUATION_PREFIX
-from nbot.observation.learned_recommendation import LearnedTestnetSource, _execution_compatible_quotes, testnet_recommendation_source
+from nbot.observation.learned_recommendation import LearnedTestnetSource, _execution_compatible_quotes, _practical_rank_key, testnet_recommendation_source
 from nbot.observation.recommendation import ObservationControlTarget
 from nbot.observation.selection import RidgeSufficientStatistics, _digest
 from tests import test_v391_continuous_challengers as training_fixture
@@ -165,6 +165,21 @@ class LearnedTestnetTests(unittest.TestCase):
         self.assertNotIn("龙虾USDT", quotes)
         self.assertEqual(tuple(quotes), ("BTCUSDT",))
         self.assertEqual(quotes["BTCUSDT"][0], "BTCUSDT")
+
+    def test_practical_zero_score_ties_use_event_tie_before_symbol_name(self):
+        def row(symbol, tie_candidate):
+            return (0.0, symbol, "LONG", {}, 0.1, 0.1,
+                    {"candidate": {"id": tie_candidate}})
+        alpha = row("ADAUSDT", "ALPHA")
+        later = row("ZZZUSDT", "BETA")
+        with mock.patch(
+            "nbot.observation.learned_recommendation.tie_key",
+            side_effect=lambda _event, _symbol, _side, candidate: 0 if candidate == "BETA" else 1,
+        ):
+            self.assertLess(
+                _practical_rank_key(NOW, later),
+                _practical_rank_key(NOW, alpha),
+            )
 
     def test_incomplete_feature_history_waits(self):
         with self.live.connection() as conn:
