@@ -4,11 +4,9 @@ import unittest
 
 from nbot.observation.selection import FEATURE_VECTOR_NAMES
 from nbot.observation.selective_ml import (
-    ENTRY_FEATURE_NAMES,
     ML_FEATURE_NAMES,
     SelectiveMLConfig,
     augment_vector,
-    entry_vector,
 )
 
 
@@ -42,16 +40,11 @@ class SelectiveMLTests(unittest.TestCase):
         self.assertAlmostEqual(result["ret_4h_atr"], 3.0)
         self.assertGreater(result["pullback_15m_vs_4h"], 0)
 
-    def test_entry_feature_schema_has_candidate_and_context(self):
-        result = entry_vector(
-            score=0.5, bid=100.0, ask=100.1, side="LONG",
-            candidate_id="TREND_PULLBACK_V1", context="ALIGNED:NORMAL",
-            decision_ms=1_800_100,
-        )
-        self.assertEqual(tuple(result), ENTRY_FEATURE_NAMES)
-        self.assertEqual(result["candidate__TREND_PULLBACK_V1"], 1.0)
-        self.assertEqual(result["context__ALIGNED_NORMAL"], 1.0)
-        self.assertGreater(result["spread_pct"], 0)
+    def test_config_has_no_next_bar_entry_probability_gate(self):
+        cfg = SelectiveMLConfig()
+        self.assertFalse(hasattr(cfg, "min_fill_probability"))
+        self.assertFalse(hasattr(cfg, "entry_min_samples"))
+        self.assertFalse(hasattr(cfg, "entry_min_each_class"))
 
     def test_small_vps_defaults_are_bounded(self):
         cfg = SelectiveMLConfig()
@@ -133,7 +126,10 @@ class SelectiveMLTests(unittest.TestCase):
         manager = SelectiveMLManager(memory, None, release_sha="a" * 40, config=cfg)
         result = manager.train()
         self.assertEqual(result["status"], "TRAINED")
+        self.assertEqual(result["entry_gate_mode"], "EXECUTION_REALTIME_ONLY")
         self.assertEqual(len(memory.saved), 1)
+        self.assertEqual(memory.saved[0]["payload"]["entry_gate_mode"], "EXECUTION_REALTIME_ONLY")
+        self.assertNotIn("entry_model", memory.saved[0]["payload"])
         runtime = SelectiveMLRuntime(memory.saved[0]["payload"])
         mean, lower = runtime.score(self.base_vector())
         self.assertTrue(math.isfinite(mean))
