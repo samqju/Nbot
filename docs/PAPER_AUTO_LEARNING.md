@@ -9,7 +9,7 @@ See also [the shadow simulation guide](SHADOW_TRADING.md): up to ten additional,
 
 This experiment combines completed mainnet PAPER feedback with the existing
 market-data learner. It keeps the one-position limit, sizing, stops and exits.
-Selective ML V1 optionally adds the CPU-only `lightgbm` dependency on the
+Selective ML V2 optionally adds the CPU-only `lightgbm` dependency on the
 Learning VPS; no GPU or language-model API is required. Execution does not
 install that dependency.
 
@@ -17,7 +17,7 @@ install that dependency.
 
 The paper selector still records [24 named candidates](CANDIDATE_LIBRARY.md),
 with one selected candidate receiving each completed trade outcome. When an
-eligible [Selective ML V1](SELECTIVE_ML.md) artifact exists, nonlinear ranking
+eligible [Selective ML V2](SELECTIVE_ML.md) artifact exists, nonlinear ranking
 is learned from the causal all-symbol/all-side research examples first; the
 candidate library then remains an interpretable V4 feedback and shadow layer.
 Ridge remains the fallback/benchmark.
@@ -78,9 +78,16 @@ less aggressively; the influence of the neutral prior fades as independent
 evidence mass grows. The report shows both raw and shrunk means.
 
 With insufficient evidence the weight is 1.0, meaning unchanged.
-Outcome weights range from 0.25 to 1.5. A separate entry-practicality factor ranges from 0.7 to 1; an active loss pause sets the final factor to zero. A negative base prediction never becomes
-an entry because of feedback. Weak setups are downranked rather than permanently
-removed, allowing later evidence to change their preference.
+Outcome weights range from 0.25 to 1.5. An active loss pause sets the final
+factor to zero. A negative base prediction never becomes an entry because of
+feedback. Weak setups are downranked rather than permanently removed, allowing
+later evidence to change their preference.
+
+Entry practicality is no longer inferred from the next five-minute candle.
+Immediate entry acceptance is decided by Execution from its current quote,
+spread, proposal/reference drift and post-fill safety checks. Historical
+next-bar drift remains visible as signal-decay research telemetry but contributes
+no ranking penalty.
 
 Learning clips individual results to -3R/+3R to limit outlier influence.
 The report retains UNCLIPPED actual paper profit/loss and R: bad losses do not
@@ -297,16 +304,18 @@ the streak. The pause is rebuilt from durable verified outcomes after restart,
 does not close a position, and cannot create another position. Shadow results
 do not trigger this main-account loss pause.
 
-Shadow entries still wait for a forward candle and must pass the original price
-drift limit. We did not loosen that limit or fabricate missed fills. New results
-record entry delay and drift. Cancelled entries do not train the profit model.
-After at least eight distinct entry attempts spanning three time blocks,
-repeated drift cancellations can reduce that candidate/direction's preference
-by up to 30%, as a separate entry-practicality penalty. Missing-data and
-main-candidate-reservation cancellations are excluded from that calculation.
+Shadow entries still wait for a forward candle and retain the original price
+drift rule so historical shadow-account semantics are not silently rewritten.
+Those drift cancellations are now classified as **next-bar signal-decay
+research only**. They do not train the profit model, do not reduce candidate
+preference and do not decide whether an immediate market entry is feasible.
+Missing-data and main-candidate-reservation cancellations remain excluded from
+trade-outcome learning.
 
-Use /learning to see evidence counts, the latest decision time, choices before
-and after feedback, outcome and entry-practicality adjustments, and loss pauses.
+Use /learning to see evidence counts, the Ridge winner, true raw ML winner,
+ML confidence/edge gates, post-feedback candidate, the explicit
+`REALTIME AT EXECUTION` entry-gate mode, next-bar signal-decay telemetry and
+loss pauses.
 The database also retains a per-event paper_feedback_checks record, including
 no-trade decisions. Comparing two choices is an audit of behaviour, not proof
 that the changed choice will be more profitable. Use /pnl and /recent to judge
