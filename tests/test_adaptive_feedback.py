@@ -50,13 +50,17 @@ class AdaptiveFeedbackTests(unittest.TestCase):
         m=self.fb.snapshot(cutoff_ms=NOW)
         self.assertTrue(all(g["buckets"]==1 and not g["supported"] and g["factor"]==1 for g in m["groups"].values()))
 
-    def test_cancellations_only_affect_entry_feasibility_not_profit(self):
+    def test_next_bar_drift_is_research_only_and_never_penalizes_entry(self):
         for i in range(12):self.shadow(entered=NOW-(5-i//3)*BUCKET_MS+i%3*300000,reason="ENTRY_DRIFT_REJECTED",rr=999)
         m=self.fb.snapshot(cutoff_ms=NOW)
         self.assertEqual(m["shadow_sample_count"],0);self.assertEqual(m["groups"],{})
         score,d=self.fb.adjust(m,{},"LONG",2,candidate=self.candidate)
-        self.assertLess(score,2);self.assertGreaterEqual(d["factor"],.7)
-        self.assertEqual(d["status"],"ENTRY_FEASIBILITY_PENALTY")
+        self.assertEqual(score,2)
+        self.assertEqual(d["factor"],1)
+        self.assertEqual(d["entry_feasibility_factor"],1)
+        self.assertEqual(d["entry_gate_mode"],"EXECUTION_REALTIME_ONLY")
+        self.assertEqual(d["next_bar_signal_decay"]["drift_cancelled"],12)
+        self.assertEqual(d["status"],"INSUFFICIENT_PAPER_EVIDENCE")
 
     def test_missing_data_future_receipt_wrong_config_and_real_profile_excluded(self):
         self.shadow(reason="DATA_GAP_UNSCORABLE")
