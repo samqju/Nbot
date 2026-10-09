@@ -22,6 +22,8 @@ jobs:
           python-version: "3.12"
       - name: Install Learning ML dependencies
         run: python -m pip install --disable-pip-version-check -r requirements-ml.txt
+      - name: Install V3 WebSocket transport dependency
+        run: python -m pip install --disable-pip-version-check -r requirements-wss.txt
       - name: Prepare clean Execution-role test host
         run: printf 'EXECUTION\n' > .nbot-role
       - name: Run full regression suite

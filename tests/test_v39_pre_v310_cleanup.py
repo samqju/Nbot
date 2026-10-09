@@ -10,7 +10,7 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 class V39PreV310CleanupTests(unittest.TestCase):
-    def test_nbotctl_reports_v39_economic_wait_without_claiming_v310(self):
+    def test_nbotctl_reports_current_economic_wait_without_numbered_phase_claim(self):
         result = subprocess.run(
             [str(REPO / "nbotctl"), "status"],
             cwd=REPO,
@@ -20,26 +20,26 @@ class V39PreV310CleanupTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
-        self.assertEqual(payload["phase"], "V3.9")
+        self.assertEqual(payload["phase"], "V3")
         self.assertEqual(
             payload["phase_status"],
-            "V3.9_IMPLEMENTATION_COMPLETE_ECONOMIC_WAIT",
+            "CURRENT_RESEARCH_BUILD_ECONOMIC_WAIT",
         )
         self.assertEqual(payload["phase_gate_status"], "ECONOMIC_WAIT")
-        self.assertEqual(payload["next_phase"], "V3.10")
+        self.assertEqual(payload["next_phase"], "EVIDENCE_GATED_PROMOTION")
         self.assertEqual(
             payload["deferred_acceptance"],
-            ["RESEARCH_CHAMPION", "PAPER_CHAMPION", "V3.9_ECONOMIC_PROOF"],
+            ["RESEARCH_CHAMPION", "PAPER_CHAMPION", "ECONOMIC_PROOF"],
         )
 
-    def test_current_docs_are_v39_truthful_and_history_remains(self):
+    def test_current_docs_are_version_neutral_and_history_remains(self):
         readme = (REPO / "README.md").read_text(encoding="utf-8")
         operations = (REPO / "docs/OPERATIONS.md").read_text(encoding="utf-8")
-        self.assertIn("V3.9 — continuous challenger learning", readme)
-        self.assertIn("V3.9 economic proof:** **NOT PASSED", readme)
+        self.assertIn("Current V3 research state", readme)
+        self.assertIn("Economic proof:** **NOT PASSED", readme)
         self.assertIn("V3.7 is historically **OPERATIONALLY PROVEN**", readme)
         self.assertIn(
-            "V3.9 IMPLEMENTATION COMPLETE / ECONOMIC EVIDENCE ACCUMULATING",
+            "NBOT V3 RESEARCH BUILD / ECONOMIC EVIDENCE ACCUMULATING",
             operations,
         )
         self.assertIn("V3.7-A Normal LONG is physically proven", operations)

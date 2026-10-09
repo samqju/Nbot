@@ -21,10 +21,10 @@ PnL to an unchosen alternative.
 Paper feedback update: [30-day auto-learning experiment](PAPER_AUTO_LEARNING.md). Learned mainnet-paper now adapts setup rankings from its own settled paper trades. Testnet and real-money selection remain separate; economic proof is still unestablished.
 
 
-**2026-10-02 mode update:** [The three-mode guide](TRADING_MODES.md) describes Testnet trading, learned mainnet paper, and the separately authorized small mainnet trial. Earlier V3.10-only restrictions below describe the original automatic Champion roadmap. This manual trial does not declare those economic gates passed. No Testnet-paper mode is supported.
+**2026-10-02 mode update:** [The three-mode guide](TRADING_MODES.md) describes Testnet trading, learned mainnet paper, and the separately authorized small mainnet trial. Earlier numbered-phase restrictions below describe the original automatic Champion roadmap. This manual trial does not declare those economic gates passed. No Testnet-paper mode is supported.
 
 
-Reviewed: **2026-10-05** against the current V3.9 three-mode CLI and documentation tree.
+Reviewed: **2026-10-09** against the current NBOT V3 three-mode CLI and documentation tree.
 The review covers every tracked Markdown file in the current V3 repository, including the Observation service README.
 Documentation publication does not install code or prove that the services are running.
 A follow-up adds the [environment-file field guide](ENVIRONMENT_SETUP.md) and
@@ -101,7 +101,7 @@ therefore not a forecast of actual trade profits.
 Testnet may use a non-rejected model before its research evaluation finishes.
 This does not promote a Research Champion or Paper Champion. LIVE/PAPER remains
 an operational canary unless separately granted qualifying authority. Automatic Research/Paper-Champion approval remains blocked behind the frozen
-V3.9/V3.10 economic gates. Separately, the code exposes a bounded, explicitly
+the historical numbered-phase economic gates. Separately, the code exposes a bounded, explicitly
 operator-authorized `live-trade` trial; that route is not Champion approval and
 does not establish profitability.
 
@@ -135,7 +135,7 @@ the intended release and preserve test evidence.
 | [Paper Champion gate](V3_9_PAPER_CHAMPION_GATE_CONTRACT.md) | Frozen sustained-paper requirements, not a completion claim |
 | [Research promotion](V3_9_RESEARCH_CHAMPION_PROMOTION_CONTRACT.md) | Explicit first promotion after genuine eligibility |
 | [Seven safety fixes](SEVEN_SAFETY_FIXES.md) | Historical changes/test record and migration cautions |
-| [Pre-V3.10 gaps](PRE_V310_GAP_LEDGER.md) | Outstanding deployment, operational and evidence requirements |
+| [Historical operator gap ledger](PRE_V310_GAP_LEDGER.md) | Preserved numbered-phase deployment, operational and evidence requirements; not the current version label |
 | [V3 roadmap](NBOT_V3_ROADMAP.md) | Current addendum, original architecture, historical phases and future goals |
 
 V1/V2 roadmaps and source snapshots are historical Git references, not additional

@@ -13,7 +13,7 @@ checklist. See the [documentation index](DOCUMENTATION_INDEX.md).
 
 ## Current operating boundary
 
-Current checkpoint: `V3.9 IMPLEMENTATION COMPLETE / ECONOMIC EVIDENCE ACCUMULATING`.
+Current checkpoint: `NBOT V3 RESEARCH BUILD / ECONOMIC EVIDENCE ACCUMULATING`.
 
 The intended deployment architecture is the two-VPS split below. Check runtime
 status to establish which services and releases are actually installed:
@@ -21,7 +21,7 @@ status to establish which services and releases are actually installed:
 - **Observation VPS** — LIVE/Testnet evidence, compact research memory, continuous challenger learning, governance, recommendation/control service; no Binance order authority.
 - **Execution VPS** — independent market/account truth, proposal validation, risk, orders where the profile permits them, stops, OPEN management, reconciliation, emergency action and durable outcomes.
 
-Current authority state must be read from runtime status and never inferred from phase completion. Until a Research Champion is explicitly eligible and promoted under the frozen V3.9 boundary:
+Current authority state must be read from runtime status and never inferred from phase completion. Until a Research Champion is explicitly eligible and promoted under the frozen research-governance boundary:
 
 - Research Champion = `NONE`;
 - Paper Champion = `NONE`;
@@ -104,11 +104,11 @@ On Observation:
 
 Do not run `research-epoch-run` or `challenger-cycle` merely to force evidence. Natural market maturity owns the research clock.
 
-### Pre-V3.10 operator-tooling debt
+### Operator-tooling status
 
-The remaining operator-tooling gaps are tracked in `docs/PRE_V310_GAP_LEDGER.md`. Observation database integrity and local/control-link protocol compatibility are part of `nbotctl doctor`. The remote compatibility probe is an operator/pre-start diagnostic only; Execution worker startup deliberately excludes that network dependency so an existing OPEN position can still reconcile/manage during Observation loss. The V3.9 pre-V3.10 cluster orchestration surface is implemented as an Execution-side operator tool and remains outside all worker/reconciliation hot paths.
+The historical operator-tooling gap ledger is retained in `docs/PRE_V310_GAP_LEDGER.md` for audit history. Observation database integrity and local/control-link protocol compatibility are part of `nbotctl doctor`. The remote compatibility probe is an operator/pre-start diagnostic only; Execution worker startup deliberately excludes that network dependency so an existing OPEN position can still reconcile/manage during Observation loss. The current cluster orchestration surface is implemented as an Execution-side operator tool and remains outside all worker/reconciliation hot paths.
 
-### Pre-V3.10 cluster orchestration
+### Current cluster orchestration
 
 The **Execution VPS is the cluster control point** for the current two-VPS deployment. This is deliberate: Execution already owns the installed, strict-host-key-checked SSH tunnel identity used to reach Observation. Cluster tooling derives the SSH target, identity-file path, service user and pinned loopback forward from the installed `nbot-control-tunnel-<profile>.service`; it does not introduce a second hostname/key configuration and does not copy private keys into Git.
 
