@@ -8,6 +8,7 @@ from .decision_ledger import FrozenDecision
 from .redesign_runtime import V3ResearchRuntime
 from .research_replay import ReplayHypothesis
 from .watch_planner import WatchCandidate, WatchPlan, plan_two_tier_watch
+from .wss_market import StreamShard, plan_combined_streams
 
 
 class TwoTierV3ResearchRuntime(V3ResearchRuntime):
@@ -40,6 +41,18 @@ class TwoTierV3ResearchRuntime(V3ResearchRuntime):
         )
         self._plan = plan
         return plan
+
+
+    def high_res_stream_shards(self, *, max_streams_per_connection: int = 180) -> tuple[StreamShard, ...]:
+        """Build WSS subscriptions only for the currently admitted high-res symbols."""
+        if self._plan is None:
+            return ()
+        if not self._plan.high_res_symbols:
+            return ()
+        return plan_combined_streams(
+            self._plan.high_res_symbols,
+            max_streams_per_connection=max_streams_per_connection,
+        )
 
     def submit(self, decision: FrozenDecision, hypothesis: ReplayHypothesis, *, extras=None) -> None:
         if self._plan is None:
