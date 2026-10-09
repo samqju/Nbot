@@ -320,3 +320,20 @@ class LiveIntegrationSurfaceTests(unittest.TestCase):
         root=Path(__file__).resolve().parents[1]
         text=(root/"requirements.txt").read_text(encoding="utf-8")
         self.assertIn("websockets==17.2",text.splitlines())
+
+
+class TwoTierCurrentReleaseModelTests(unittest.TestCase):
+    def test_live_scanner_has_separate_current_release_snapshot_path(self):
+        root=Path(__file__).resolve().parents[1]
+        text=(root/"nbot/observation/live_two_tier.py").read_text(encoding="utf-8")
+        self.assertIn('TWO_TIER_MODEL_PREFIX = "two_tier:ridge_snapshot:"',text)
+        self.assertIn('"BROAD_COUNTERFACTUAL_RESEARCH_ONLY"',text)
+        self.assertIn('"automatic_promotion": False',text)
+        self.assertIn('"execution_authority": "NONE"',text)
+        self.assertIn('"MODEL_FROZEN_WAIT_NEXT_EVENT"',text)
+
+    def test_challenger_exposes_freeze_without_forcing_cycle(self):
+        root=Path(__file__).resolve().parents[1]
+        text=(root/"nbot/observation/challengers.py").read_text(encoding="utf-8")
+        self.assertIn("def ridge_model_artifact(self)",text)
+        self.assertIn("model_artifact = self.ridge_model_artifact()",text)
