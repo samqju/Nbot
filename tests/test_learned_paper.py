@@ -3,6 +3,8 @@ import unittest
 from unittest.mock import patch
 from nbot.communication.authorities import LIVE_PAPER_LEARNED_AUTHORITY
 from nbot.communication.integration import _validate_health
+from nbot.exchange.contracts import Quote
+from nbot.exchange.binance_stream import QuoteUpdate
 from nbot.config.profiles import get_profile
 from nbot.observation.learned_recommendation import LearnedTestnetSource
 from nbot.observation.recommendation import ObservationControlTarget
@@ -108,6 +110,12 @@ class LearnedPaperRuntimeTests(unittest.TestCase):
                 stop["handler"] = handler
             def sleep(_seconds):
                 stop["handler"](None, None)
+            if open_position:
+                def next_quote(*_args, **_kwargs):
+                    stop["handler"](None, None)
+                    quote = Quote("BTCUSDT", 100.0, 100.1, 1_800_000_000_000)
+                    return QuoteUpdate(1, quote, quote.timestamp_ms)
+                exchange.wait_quote.side_effect = next_quote
             with patch.object(runtime, "build_live_paper_exchange", return_value=(exchange, market)), \
                  patch.object(runtime, "build_integrated_control_client", return_value=client), \
                  patch.object(runtime, "build_execution_worker", return_value=worker) as builder, \
@@ -131,7 +139,7 @@ class LearnedPaperRuntimeTests(unittest.TestCase):
 
     def test_open_management_has_no_observation_dependency(self):
         exchange, client, worker = self.run_once(open_position=True)
-        exchange.quote.assert_called_once_with("BTCUSDT")
+        exchange.wait_quote.assert_called_once()
         worker.process_open_quote.assert_called_once()
         client.health.assert_not_called()
         client.request_proposal.assert_not_called()
