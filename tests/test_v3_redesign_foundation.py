@@ -262,6 +262,17 @@ class TwoTierWatchTests(unittest.TestCase):
             self.assertEqual(rt.replays.active_count,0)
             self.assertEqual(rt.ledger.counts()["unresolved"],1)
 
+    def test_high_res_streams_only_cover_admitted_symbols(self):
+        with tempfile.TemporaryDirectory() as td:
+            rt=TwoTierV3ResearchRuntime(Path(td)/"research.db",broad_target=100,high_res_cap=20)
+            broad=[f"S{i:03d}USDT" for i in range(100)]
+            rt.refresh_watch_plan(broad_symbols=broad,candidates=self.candidates(100))
+            shards=rt.high_res_stream_shards()
+            self.assertTrue(shards)
+            subscribed={symbol for shard in shards for symbol in shard.symbols}
+            self.assertEqual(subscribed,set(rt.watch_plan.high_res_symbols))
+            self.assertEqual(sum(len(shard.streams) for shard in shards),40)
+
     def test_multiple_decisions_same_symbol_use_one_active_symbol(self):
         book=ResearchReplayBook()
         for i in range(7):
