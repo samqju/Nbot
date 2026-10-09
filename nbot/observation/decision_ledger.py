@@ -10,7 +10,7 @@ The simulation mirrors the current LIVE/PAPER risk geometry:
 - $1,000 notional and $10 configured risk by default;
 - adverse entry/exit slippage proxy of 2 bps;
 - 5 bps taker fee per side;
-- initial stop built from the pre-fill executable price;
+- initial stop rebuilt around the simulated fill, matching Execution;
 - INTEGER_R_STEP_CONTROL trailing stop around the simulated fill;
 - stop crossing is checked before favorable progress on every aggTrade.
 """
@@ -205,7 +205,10 @@ class DecisionOutcomeLedger:
         fill = executable * (1.0 + adverse_entry if side == "LONG" else 1.0 - adverse_entry)
         quantity = self.config.notional_usd / executable
         per_r_price = self.config.risk_usd / quantity
-        initial_stop = executable - per_r_price if side == "LONG" else executable + per_r_price
+        # Execution rebuilds the protective stop around the actual fill after
+        # entry. Mirror that geometry here instead of leaving the stop anchored
+        # to the pre-fill executable quote.
+        initial_stop = fill - per_r_price if side == "LONG" else fill + per_r_price
         initial_stop_r = self._signed_r(side, initial_stop, fill, per_r_price)
         candidates = sorted({str(x) for x in candidate_ids if str(x)})
         frozen = {
