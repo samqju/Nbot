@@ -1,8 +1,4 @@
-"""Async Binance combined-stream transport with reconnect and bounded backpressure.
-
-The default connector imports the optional `websockets` package lazily. Tests can
-inject a connector without adding network dependencies to the existing V2 path.
-"""
+"""Async Binance combined-stream transport with reconnect and bounded backpressure."""
 from __future__ import annotations
 
 import asyncio
@@ -91,8 +87,7 @@ class CombinedStreamRunner:
         attempt = 0
         try:
             while not self._stop:
-                self._ws = None
-            self.state.mark_disconnected(self.symbols)
+                self.state.mark_disconnected(self.symbols)
                 try:
                     cm = await self.connect_factory(self.url)
                     async with cm as ws:
@@ -116,12 +111,14 @@ class CombinedStreamRunner:
                 except Exception:
                     self._ws = None
                     self.state.mark_disconnected(self.symbols)
-                    await asyncio.sleep(reconnect_delay_seconds(attempt, jitter=0))
-                    attempt = min(attempt + 1, 16)
+                    if not self._stop:
+                        await asyncio.sleep(reconnect_delay_seconds(attempt, jitter=0))
+                        attempt = min(attempt + 1, 16)
         finally:
             consumer.cancel()
             try:
                 await consumer
             except asyncio.CancelledError:
                 pass
+            self._ws = None
             self.state.mark_disconnected(self.symbols)
