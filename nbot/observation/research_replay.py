@@ -80,3 +80,11 @@ class ResearchReplayBook:
     @property
     def active_count(self) -> int:
         return len(self._active)
+
+    @property
+    def active_symbols(self) -> tuple[str, ...]:
+        """Symbols that must remain on the high-resolution feed until maturity."""
+        return tuple(sorted(symbol for symbol, ids in self._by_symbol.items() if ids))
+
+    def active_decisions_for_symbol(self, symbol: str) -> int:
+        return len(self._by_symbol.get(symbol, ()))
