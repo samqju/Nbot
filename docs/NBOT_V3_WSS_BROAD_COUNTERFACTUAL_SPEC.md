@@ -116,3 +116,20 @@ Still required before any deployment or merge approval:
 4. REST-vs-WSS shadow transport comparison must be performed with no execution-authority change.
 5. Existing V2/legacy 5m label parity must be demonstrated against historical fixtures at scale.
 6. Paper-first rollout and explicit operator approval remain mandatory. Real-money authority stays disabled until independently authorized.
+
+
+## Two-tier research resource design — 100 broad / 20 high-resolution
+
+To control VPS resource use without losing learning quality, V3 now separates cheap broad scanning from expensive chronological path capture.
+
+- **Broad scan target: 100 symbols.** These are selected from liquid, eligible USDT perpetuals and evaluated on the existing completed-5m research cycle. The underlying evidence system may still support larger benchmark universes, but the default V3 redesign target is 100 for this tier until load evidence justifies more.
+- **High-resolution cap: 20 symbols.** Only admitted symbols receive continuous detailed `bookTicker` + `aggTrade` subscriptions for precise counterfactual chronology.
+- **No minute-by-minute rotation.** A symbol with any active high-resolution hypothesis is sticky and remains subscribed until all active hypotheses on that symbol mature. Rotating it out early would create missing path evidence.
+- **One symbol stream serves many hypotheses.** Multiple overlapping LONG/SHORT decisions for BTCUSDT, for example, all reuse the same BTCUSDT market stream; the cap applies to symbols, not hypothetical trades.
+- **Dynamic admission when slots free.** New high-resolution symbols enter only when capacity exists. The planner does not need to force all 20 slots when fewer useful candidates exist.
+- **Balanced learning-value selection.** Free slots are reserved across strong/approved candidates, Ridge/ML disagreements, near-threshold decisions, setup/volatility diversity, and deterministic controls; unused category quota is backfilled by the best remaining candidates.
+- **Active-path integrity beats ranking churn.** Existing active symbols are retained even if a newer symbol receives a higher score.
+- **Capacity misses are explicit.** Decisions outside the high-resolution pool are still frozen in the ledger, but they are marked `HIGH_RES_NOT_ADMITTED` rather than pretending a precise aggTrade path was observed.
+- **Transport follows the plan.** The integrated two-tier runtime generates WSS subscription shards only for the admitted high-resolution symbols. With the default cap, at most 40 detailed streams are requested (bookTicker + aggTrade for each of 20 symbols).
+
+This architecture is intended to provide broad opportunity coverage while bounding the expensive continuous event-processing load.
