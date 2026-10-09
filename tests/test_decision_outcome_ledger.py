@@ -16,7 +16,7 @@ class DecisionOutcomeLedgerTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         ledger = DecisionOutcomeLedger(Path(tmp.name) / "ledger.db")
         base = dict(
-            release_sha="a"*40, event_ms=1_000_000, decision_ms=1_300_000,
+            release_sha="a"*40, profile="live-paper", event_ms=1_000_000, decision_ms=1_300_000,
             symbol="BTCUSDT", bid=99.99, ask=100.0,
             feature_vector={"x": 1.0}, candidate_ids=["MODEL_ONLY"],
             scores={"conservative_score_r": -0.1}, rank=1, model_digest=None,
