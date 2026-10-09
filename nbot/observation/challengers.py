@@ -174,7 +174,7 @@ class ContinuousChallengerCycle:
     def definition_hash(self) -> str:
         return _digest(self.definition())
 
-    def _ridge_model_artifact(self) -> dict[str, Any]:
+    def ridge_model_artifact(self) -> dict[str, Any]:
         history = self.memory.history_base()
         row = history.get("ridge_state_row")
         if row is None:
@@ -240,8 +240,14 @@ class ContinuousChallengerCycle:
         }
         return artifact
 
+    # Backward-compatible private alias for older tests/callers. New research
+    # consumers should use ridge_model_artifact(); this does not create or
+    # promote a challenger by itself.
+    def _ridge_model_artifact(self) -> dict[str, Any]:
+        return self.ridge_model_artifact()
+
     def _train(self) -> dict[str, Any]:
-        model_artifact = self._ridge_model_artifact()
+        model_artifact = self.ridge_model_artifact()
         model_version = str(model_artifact["model_version"])
         cutoff = int(model_artifact["training_cutoff_event_ms"])
         model_record = self.memory.persist_artifact(
