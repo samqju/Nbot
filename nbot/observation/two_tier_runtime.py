@@ -54,6 +54,38 @@ class TwoTierV3ResearchRuntime(V3ResearchRuntime):
             max_streams_per_connection=max_streams_per_connection,
         )
 
+    def record_without_replay(self, decision: FrozenDecision, *, reason: str, extras=None) -> None:
+        """Freeze a decision that cannot receive precise high-resolution replay."""
+        self.ledger.record_decision(
+            decision,
+            extras={**dict(extras or {}), "high_res_admitted": False, "watch_reason": reason},
+        )
+        self.ledger.record_unresolved(
+            decision.decision_id,
+            decision.policy_id,
+            decision.decision_time_ms,
+            reason,
+            {"symbol": decision.symbol},
+        )
+
+    def activate(self, decision: FrozenDecision, hypothesis: ReplayHypothesis, *, extras=None) -> None:
+        """Freeze and activate one admitted hypothesis without creating order authority."""
+        if self._plan is None:
+            raise ValueError("TWO_TIER_WATCH_PLAN_REQUIRED")
+        if hypothesis.symbol not in set(self._plan.high_res_symbols):
+            raise ValueError("TWO_TIER_SYMBOL_NOT_ADMITTED")
+        if decision.decision_id != hypothesis.decision_id:
+            raise ValueError("V3_DECISION_REPLAY_ID_MISMATCH")
+        self.ledger.record_decision(
+            decision,
+            extras={
+                **dict(extras or {}),
+                "high_res_admitted": True,
+                "watch_reason": self._plan.reasons.get(hypothesis.symbol, "UNKNOWN"),
+            },
+        )
+        self.replays.add(hypothesis)
+
     def submit(self, decision: FrozenDecision, hypothesis: ReplayHypothesis, *, extras=None) -> None:
         if self._plan is None:
             raise ValueError("TWO_TIER_WATCH_PLAN_REQUIRED")
