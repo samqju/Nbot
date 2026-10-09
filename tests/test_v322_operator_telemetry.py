@@ -327,7 +327,7 @@ class V322OperatorTelemetryTests(unittest.TestCase):
         self.assertIn("health.last_position_manage_ms", text)
         self.assertIn("health.max_position_manage_ms", text)
 
-    def test_nbotctl_reports_current_v39_economic_wait_status(self):
+    def test_nbotctl_reports_current_economic_wait_status(self):
         repo = Path(__file__).resolve().parents[1]
         result = subprocess.run(
             [str(repo / "nbotctl"), "status"],
@@ -338,12 +338,12 @@ class V322OperatorTelemetryTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
-        self.assertEqual(payload["phase"], "V3.9")
-        self.assertEqual(payload["active_execution_phase"], "V3.9")
-        self.assertEqual(payload["phase_status"], "V3.9_IMPLEMENTATION_COMPLETE_ECONOMIC_WAIT")
+        self.assertEqual(payload["phase"], "V3")
+        self.assertEqual(payload["active_execution_phase"], "V3")
+        self.assertEqual(payload["phase_status"], "CURRENT_RESEARCH_BUILD_ECONOMIC_WAIT")
         self.assertEqual(payload["phase_gate_status"], "ECONOMIC_WAIT")
-        self.assertEqual(payload["next_phase"], "V3.10")
-        self.assertEqual(payload["deferred_acceptance"], ["RESEARCH_CHAMPION", "PAPER_CHAMPION", "V3.9_ECONOMIC_PROOF"])
+        self.assertEqual(payload["next_phase"], "EVIDENCE_GATED_PROMOTION")
+        self.assertEqual(payload["deferred_acceptance"], ["RESEARCH_CHAMPION", "PAPER_CHAMPION", "ECONOMIC_PROOF"])
 
 
 if __name__ == "__main__":
