@@ -1,11 +1,12 @@
 """Capital-uncapped research-only counterfactual book.
 
 Unlike legacy shadow accounts this book deliberately does not reserve balance or
-consume paper position slots. Every sampled candidate may mature independently.
+consume paper position slots. Trade events are stored once per symbol and shared
+by every overlapping hypothesis for that symbol.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from .chronological_replay import TradeEvent
 from .counterfactual import PolicyOutcome, ReplayCosts, TrailPolicy, replay_policy
@@ -26,52 +27,75 @@ class ReplayHypothesis:
     costs: ReplayCosts = ReplayCosts()
 
 
-@dataclass
-class _Active:
-    hypothesis: ReplayHypothesis
-    events: list[TradeEvent] = field(default_factory=list)
-
-
 class ResearchReplayBook:
-    """Overlapping long/short hypotheses without capital or slot limits."""
+    """Overlapping hypotheses backed by one chronological event buffer per symbol."""
 
     def __init__(self) -> None:
-        self._active: dict[str, _Active] = {}
+        self._active: dict[str, ReplayHypothesis] = {}
         self._by_symbol: dict[str, set[str]] = {}
+        self._events: dict[str, list[TradeEvent]] = {}
         self._results: dict[str, PolicyOutcome] = {}
 
     def add(self, hypothesis: ReplayHypothesis) -> None:
         if hypothesis.decision_id in self._active or hypothesis.decision_id in self._results:
             raise ValueError("REPLAY_DECISION_ALREADY_EXISTS")
-        self._active[hypothesis.decision_id] = _Active(hypothesis)
+        self._active[hypothesis.decision_id] = hypothesis
         self._by_symbol.setdefault(hypothesis.symbol, set()).add(hypothesis.decision_id)
+        self._events.setdefault(hypothesis.symbol, [])
 
     def ingest(self, event: TradeEvent) -> None:
-        for decision_id in tuple(self._by_symbol.get(event.symbol, ())):
-            active = self._active[decision_id]
-            h = active.hypothesis
-            if event.trade_time_ms >= h.entry_time_ms:
-                active.events.append(event)
+        if event.symbol not in self._by_symbol or not self._by_symbol[event.symbol]:
+            return
+        rows = self._events.setdefault(event.symbol, [])
+        if rows:
+            previous = rows[-1]
+            if event.trade_id == previous.trade_id:
+                return
+            if event.trade_id < previous.trade_id or event.trade_time_ms < previous.trade_time_ms:
+                # replay_policy will fail closed on chronology; keep evidence once.
+                rows.append(event)
+                return
+        rows.append(event)
+
+    def _events_for(self, hypothesis: ReplayHypothesis) -> list[TradeEvent]:
+        end_ms = hypothesis.entry_time_ms + hypothesis.horizon_ms
+        return [
+            event for event in self._events.get(hypothesis.symbol, ())
+            if hypothesis.entry_time_ms <= event.trade_time_ms <= end_ms
+        ]
+
+    def _prune_symbol(self, symbol: str) -> None:
+        ids = self._by_symbol.get(symbol, set())
+        if not ids:
+            self._events.pop(symbol, None)
+            self._by_symbol.pop(symbol, None)
+            return
+        earliest = min(self._active[decision_id].entry_time_ms for decision_id in ids)
+        rows = self._events.get(symbol, [])
+        if rows:
+            self._events[symbol] = [event for event in rows if event.trade_time_ms >= earliest]
 
     def mature(self, decision_id: str, *, now_ms: int, force: bool = False) -> PolicyOutcome | None:
-        active = self._active.get(decision_id)
-        if active is None:
+        h = self._active.get(decision_id)
+        if h is None:
             return self._results.get(decision_id)
-        h = active.hypothesis
         if not force and now_ms < h.entry_time_ms + h.horizon_ms:
             return None
-        result = replay_policy(active.events, symbol=h.symbol, side=h.side, entry_price=h.entry_price,
-                               one_r_price=h.one_r_price, entry_time_ms=h.entry_time_ms, policy=h.policy,
-                               costs=h.costs, horizon_ms=h.horizon_ms)
+        result = replay_policy(
+            self._events_for(h), symbol=h.symbol, side=h.side, entry_price=h.entry_price,
+            one_r_price=h.one_r_price, entry_time_ms=h.entry_time_ms, policy=h.policy,
+            costs=h.costs, horizon_ms=h.horizon_ms,
+        )
         self._results[decision_id] = result
         del self._active[decision_id]
         self._by_symbol[h.symbol].discard(decision_id)
+        self._prune_symbol(h.symbol)
         return result
 
     def mature_due(self, *, now_ms: int) -> dict[str, PolicyOutcome]:
         matured = {}
-        for decision_id, active in tuple(self._active.items()):
-            if now_ms >= active.hypothesis.entry_time_ms + active.hypothesis.horizon_ms:
+        for decision_id, hypothesis in tuple(self._active.items()):
+            if now_ms >= hypothesis.entry_time_ms + hypothesis.horizon_ms:
                 outcome = self.mature(decision_id, now_ms=now_ms)
                 if outcome is not None:
                     matured[decision_id] = outcome
@@ -83,8 +107,12 @@ class ResearchReplayBook:
 
     @property
     def active_symbols(self) -> tuple[str, ...]:
-        """Symbols that must remain on the high-resolution feed until maturity."""
         return tuple(sorted(symbol for symbol, ids in self._by_symbol.items() if ids))
 
     def active_decisions_for_symbol(self, symbol: str) -> int:
         return len(self._by_symbol.get(symbol, ()))
+
+    def buffered_event_count(self, symbol: str | None = None) -> int:
+        if symbol is not None:
+            return len(self._events.get(symbol, ()))
+        return sum(len(rows) for rows in self._events.values())
