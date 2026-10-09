@@ -1,2 +1,2 @@
 # NBOT V3 pinned runtime dependencies.
-# This file remains empty while the active runtime requires only the Python standard library.
+websockets==17.2
