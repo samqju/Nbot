@@ -64,6 +64,13 @@ CREATE INDEX IF NOT EXISTS decision_hypotheses_event
 ON decision_hypotheses(event_ms,symbol,side);
 CREATE INDEX IF NOT EXISTS decision_hypotheses_matured
 ON decision_hypotheses(status,matured_at_ms);
+CREATE TABLE IF NOT EXISTS decision_ledger_conflicts(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hypothesis_id TEXT NOT NULL,
+    observed_at_ms INTEGER NOT NULL,
+    existing_digest TEXT NOT NULL,
+    incoming_digest TEXT NOT NULL
+);
 """
 
 
@@ -243,8 +250,18 @@ class DecisionOutcomeLedger:
                 (hypothesis_id,),
             ).fetchone()
             if existing is not None:
-                if existing != (_json(frozen), _digest(frozen)):
-                    raise ValueError("DECISION_LEDGER_IMMUTABLE_DECISION_CONFLICT")
+                incoming_json, incoming_digest = _json(frozen), _digest(frozen)
+                if existing != (incoming_json, incoming_digest):
+                    # The first causal freeze always wins. A retry/restart may
+                    # recompute later wall-clock metadata, but research must not
+                    # rewrite what was first observed. Preserve the conflict as
+                    # diagnostics without affecting recommendation authority.
+                    conn.execute(
+                        "INSERT INTO decision_ledger_conflicts("
+                        "hypothesis_id,observed_at_ms,existing_digest,incoming_digest"
+                        ") VALUES(?,?,?,?)",
+                        (hypothesis_id, int(time.time() * 1000), str(existing[1]), incoming_digest),
+                    )
                 return hypothesis_id
             conn.execute(
                 "INSERT INTO decision_hypotheses VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -607,6 +624,9 @@ class DecisionOutcomeLedger:
             approved = int(conn.execute(
                 "SELECT COUNT(*) FROM decision_hypotheses WHERE decision='APPROVED'"
             ).fetchone()[0])
+            conflicts = int(conn.execute(
+                "SELECT COUNT(*) FROM decision_ledger_conflicts"
+            ).fetchone()[0])
             quality = conn.execute(
                 "SELECT result_json,result_digest FROM decision_hypotheses WHERE status='MATURED'"
             ).fetchall()
@@ -621,6 +641,7 @@ class DecisionOutcomeLedger:
             "open": int(counts.get("OPEN", 0)), "matured": int(counts.get("MATURED", 0)),
             "unscorable": int(counts.get("UNSCORABLE", 0)),
             "approved_hypotheses": approved, "rejected_hypotheses": rejected,
+            "immutable_retry_conflicts": conflicts,
             "aggtrade_resolved": resolved,
             "funding_complete": sum(
                 1 for raw, check in quality
