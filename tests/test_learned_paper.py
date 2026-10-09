@@ -4,7 +4,7 @@ from unittest.mock import patch
 from nbot.communication.authorities import LIVE_PAPER_LEARNED_AUTHORITY
 from nbot.communication.integration import _validate_health
 from nbot.config.profiles import get_profile
-from nbot.observation.learned_recommendation import LearnedTestnetSource
+from nbot.observation.learned_recommendation import LearnedTestnetSource, TWO_TIER_MODEL_PREFIX
 from nbot.observation.recommendation import ObservationControlTarget
 from tests import test_learned_testnet as fixture_module
 from tests.communication.test_v35_control_target import NOW, SHA
@@ -21,6 +21,36 @@ class LearnedPaperTests(unittest.TestCase):
         self.target = ObservationControlTarget(
             self.fixture.live, get_profile("live-paper"), release_sha=SHA,
             now_ms=lambda: NOW, learned_source=self.source)
+
+    def test_paper_falls_back_to_current_release_two_tier_snapshot(self):
+        memory = self.fixture.training.memory
+        base = memory.list_artifacts(prefix="model:")[0]["payload"]
+        cutoff = memory.history_base()["through_event_ms"]
+        snapshot = {
+            **base,
+            "artifact_type": "TWO_TIER_RIDGE_SNAPSHOT",
+            "purpose": "BROAD_COUNTERFACTUAL_RESEARCH_ONLY",
+            "automatic_promotion": False,
+            "execution_authority": "NONE",
+            "authority": "RESEARCH_ONLY_NO_EXECUTION",
+            "release_sha": SHA,
+            "training_cutoff_event_ms": cutoff,
+        }
+        memory.persist_artifact(f"{TWO_TIER_MODEL_PREFIX}{SHA}:{cutoff}", snapshot)
+        with patch.object(self.source, "_compatible_release", return_value=False):
+            result = self.target.refresh_recommendation()
+        self.assertEqual(result.status, "READY", result.reason)
+        self.assertIsNotNone(result.proposal)
+        self.assertEqual(result.proposal.entry_authority, LIVE_PAPER_LEARNED_AUTHORITY)
+
+    def test_live_trade_never_uses_two_tier_snapshot_fallback(self):
+        source = LearnedTestnetSource(
+            self.fixture.live, release_sha=SHA, profile_name="live-trade",
+            memory_path=self.fixture.source.memory_path)
+        with patch.object(source, "_compatible_release", return_value=False), \
+             patch.object(source, "_current_release_paper_snapshot",
+                          side_effect=AssertionError("paper fallback used by live-trade")):
+            self.assertIsNone(source._model(NOW))
 
     def test_paper_proposal_has_live_quotes_and_separate_authority(self):
         paper = self.target.refresh_recommendation()
