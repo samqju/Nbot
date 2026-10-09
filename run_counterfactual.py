@@ -80,7 +80,10 @@ def main() -> int:
                 buf.append(trade)
                 return
             if len(live_queue) >= live_queue_limit:
-                ledger.mark_stream_gap(at_ms=trade.trade_time_ms, symbol=trade.symbol)
+                # The global queue contains mixed symbols. Dropping any prefix
+                # can lose chronology for more than the event that noticed the
+                # overflow, so conservatively mark every open path unresolved.
+                ledger.mark_stream_gap(at_ms=trade.trade_time_ms)
                 del live_queue[: max(1, live_queue_limit // 2)]
             live_queue.append(trade)
 
