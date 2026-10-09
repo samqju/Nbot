@@ -210,7 +210,7 @@ class BroadResearchScanner:
             decision = FrozenDecision(
                 decision_id=decision_id,
                 event_id=f"LIVE5M:{event_open_ms}",
-                decision_time_ms=now_ms,
+                decision_time_ms=close_ms,
                 symbol=row["symbol"],
                 side=row["side"],
                 setup_id=row["setup_id"],
@@ -409,9 +409,38 @@ class LiveTwoTierResearchSupervisor:
         self.feed = ResearchWssFeed(self.runtime, event_sink=event_sink)
         self.status_path = Path("runtime/observation/live/two_tier_research_status.json")
         self.last_event_open_ms: int | None = None
+        if self.status_path.is_file():
+            try:
+                previous = json.loads(self.status_path.read_text(encoding="utf-8"))
+                if previous.get("release_sha") == self.release_sha:
+                    value = previous.get("last_event_open_ms")
+                    self.last_event_open_ms = None if value is None else int(value)
+            except (OSError, ValueError, json.JSONDecodeError):
+                pass
         self.last_error: str | None = None
         self.last_scan_candidates = 0
         self.last_matured = 0
+
+        # Precise WSS chronology is intentionally not reconstructed after a
+        # process restart. Any previously pending path therefore becomes
+        # explicitly unresolved instead of being resumed with missing ticks.
+        restarted_pending = 0
+        now_ms = int(time.time() * 1000)
+        for pending in self.runtime.ledger.pending_decisions():
+            decision_id = str(pending.get("decision_id") or "")
+            policy_id = str(pending.get("policy_id") or "")
+            if not decision_id or not policy_id:
+                continue
+            self.runtime.ledger.record_unresolved(
+                decision_id,
+                policy_id,
+                now_ms,
+                "PROCESS_RESTART_PATH_LOST",
+                {"release_sha": self.release_sha},
+            )
+            restarted_pending += 1
+        if restarted_pending:
+            self._emit("TWO_TIER_RESTART_UNRESOLVED", decisions=restarted_pending)
         self._write_status("INITIALIZED")
 
     def _emit(self, event: str, **fields: object) -> None:
@@ -501,26 +530,23 @@ class LiveTwoTierResearchSupervisor:
             admitted = set(plan.high_res_symbols)
             for candidate in candidates:
                 decision = candidate.decision
+                if self.runtime.ledger.has_terminal_research_outcome(
+                    decision.decision_id, decision.policy_id
+                ):
+                    continue
                 if chosen.get(decision.symbol) is candidate and decision.symbol in fresh_quotes:
                     quote = fresh_quotes[decision.symbol]
                     entry = quote.ask if decision.side == "LONG" else quote.bid
                     risk_frac = candidate.one_r_price / candidate.hypothesis_entry_price
-                    decision_time_ms = int(time.time() * 1000)
-                    decision = replace(
-                        decision,
-                        decision_time_ms=decision_time_ms,
-                        bid=quote.bid,
-                        ask=quote.ask,
-                        quote_source="WSS_BOOK",
-                        capacity_available=True,
-                    )
+                    entry_time_ms = int(time.time() * 1000)
+                    decision = replace(decision, capacity_available=True)
                     hypothesis = ReplayHypothesis(
                         decision.decision_id,
                         decision.symbol,
                         decision.side,
                         entry,
                         entry * risk_frac,
-                        decision_time_ms,
+                        entry_time_ms,
                         TrailPolicy.TICK_INTEGER_R,
                         horizon_ms=DEFAULT_HORIZON_MS,
                         costs=ReplayCosts(),
@@ -532,6 +558,9 @@ class LiveTwoTierResearchSupervisor:
                             "broad_target": self.runtime.broad_target,
                             "high_res_cap": self.runtime.high_res_cap,
                             "entry_source": "WSS_BOOK",
+                            "entry_time_ms": entry_time_ms,
+                            "entry_bid": quote.bid,
+                            "entry_ask": quote.ask,
                             "quote_receipt_time_ms": quote.receipt_time_ms,
                         },
                     )
