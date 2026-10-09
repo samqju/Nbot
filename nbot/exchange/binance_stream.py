@@ -63,6 +63,23 @@ class BinanceLiveStreamConfig:
             raise ValueError("LIVE_STREAM_NO_STREAMS_ENABLED")
 
 
+@dataclass(frozen=True, slots=True)
+class QuoteUpdate:
+    sequence: int
+    quote: Quote
+    received_at_ms: int
+
+
+def _default_ws_app_factory(url: str, **callbacks: Any):
+    try:
+        import websocket  # type: ignore
+    except Exception as exc:  # pragma: no cover - deployment dependency
+        raise BinanceLiveStreamError(
+            "LIVE_STREAM_DEPENDENCY_MISSING:install requirements.txt"
+        ) from exc
+    return websocket.WebSocketApp(url, **callbacks)
+
+
 class BinanceLiveWebSocketMarketData:
     """Threaded dynamic-subscription market stream.
 
