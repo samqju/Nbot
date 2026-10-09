@@ -116,6 +116,15 @@ class DecisionOutcomeLedgerTests(unittest.TestCase):
         )
         self.assertNotEqual(first, second)
 
+    def test_catchup_restarts_inclusive_of_last_trade_millisecond(self):
+        ledger, base = self.make()
+        ledger.record(
+            side="LONG", selected=False, decision="REJECTED",
+            blocker="LOW_CONFIDENCE", **base
+        )
+        ledger.on_agg_trade(trade("BTCUSDT", 100.1, 1_300_100, 10))
+        self.assertEqual(ledger.catchup_start_ms("BTCUSDT"), 1_300_100)
+
     def test_horizon_waits_for_gap_repair_before_maturing(self):
         ledger, base = self.make()
         ledger.record(
