@@ -319,6 +319,7 @@ class LearnedTestnetSource:
                 }
                 self.decision_ledger.record(
                     release_sha=self.release_sha,
+                    profile=self.profile.name,
                     event_ms=event_ms,
                     decision_ms=now_ms,
                     symbol=symbol,
