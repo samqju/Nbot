@@ -196,6 +196,19 @@ class DecisionLedger:
                          (decision_id, policy_id, int(recorded_at_ms), str(reason), _json(payload), digest))
         return digest
 
+    def has_terminal_research_outcome(self, decision_id: str, policy_id: str) -> bool:
+        self.initialize()
+        with self._connect() as conn:
+            matured = conn.execute(
+                "SELECT 1 FROM matured_outcomes WHERE decision_id=? AND policy_id=? AND actual_execution=0",
+                (decision_id, policy_id),
+            ).fetchone()
+            unresolved = conn.execute(
+                "SELECT 1 FROM unresolved_outcomes WHERE decision_id=? AND policy_id=?",
+                (decision_id, policy_id),
+            ).fetchone()
+        return matured is not None or unresolved is not None
+
     def pending_decisions(self) -> list[dict[str, Any]]:
         self.initialize()
         with self._connect() as conn:

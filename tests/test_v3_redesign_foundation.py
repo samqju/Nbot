@@ -65,6 +65,15 @@ class CounterfactualTests(unittest.TestCase):
         self.assertEqual(tick.gross_r,.5)
         self.assertEqual(bar.gross_r,-1)
 
+    def test_no_stop_path_resolves_at_horizon(self):
+        events=self.ev([100,100.2,100.4])
+        out=replay_policy(events,symbol="BTCUSDT",side="LONG",entry_price=100,one_r_price=1,
+                          entry_time_ms=1000,policy=TrailPolicy.TICK_INTEGER_R,
+                          costs=ReplayCosts(taker_fee_rate=0),horizon_ms=10_000)
+        self.assertEqual(out.exit_reason,"HORIZON")
+        self.assertAlmostEqual(out.gross_r,.4)
+        self.assertAlmostEqual(out.net_r,.4)
+
     def test_gap_unresolved(self):
         events=[TradeEvent("BTCUSDT",1,1000,100),TradeEvent("BTCUSDT",3,1001,99)]
         out=replay_policy(events,symbol="BTCUSDT",side="LONG",entry_price=100,one_r_price=1,
@@ -79,6 +88,7 @@ class CounterfactualTests(unittest.TestCase):
         self.assertEqual(book.active_count,25)
         for e in self.ev([100,99,101]):
             book.ingest(e)
+        self.assertEqual(book.buffered_event_count(),0)
         self.assertEqual(len(book.mature_due(now_ms=2000)),25)
 
 
@@ -220,6 +230,18 @@ class TwoTierWatchTests(unittest.TestCase):
         self.assertEqual(plan.high_res_symbols[:2],tuple(sorted(active)))
         self.assertEqual(plan.reasons["S090USDT"],"ACTIVE_HYPOTHESIS_STICKY")
 
+    def test_active_symbol_survives_broad_pool_rotation(self):
+        broad=[f"S{i:03d}USDT" for i in range(100)]
+        candidates=self.candidates(100)
+        plan=plan_two_tier_watch(
+            broad_symbols=broad,
+            candidates=candidates,
+            active_high_res_symbols=["LEGACYUSDT"],
+        )
+        self.assertIn("LEGACYUSDT",plan.high_res_symbols)
+        self.assertEqual(plan.reasons["LEGACYUSDT"],"ACTIVE_HYPOTHESIS_STICKY")
+        self.assertLessEqual(len(plan.high_res_symbols),20)
+
     def test_selection_preserves_learning_mix(self):
         broad=[f"S{i:03d}USDT" for i in range(100)]
         candidates=[]
@@ -283,3 +305,18 @@ class TwoTierWatchTests(unittest.TestCase):
         self.assertEqual(book.active_count,7)
         self.assertEqual(book.active_symbols,("BTCUSDT",))
         self.assertEqual(book.active_decisions_for_symbol("BTCUSDT"),7)
+
+
+class LiveIntegrationSurfaceTests(unittest.TestCase):
+    def test_live_observation_entrypoint_starts_two_tier_supervisor(self):
+        root=Path(__file__).resolve().parents[1]
+        text=(root/"run_observation.py").read_text(encoding="utf-8")
+        self.assertIn("LiveTwoTierResearchSupervisor",text)
+        self.assertIn("NBOT_TWO_TIER_RESEARCH",text)
+        self.assertNotIn("nbot.execution",text)
+        self.assertNotIn("nbot.exchange",text)
+
+    def test_websocket_is_normal_runtime_dependency(self):
+        root=Path(__file__).resolve().parents[1]
+        text=(root/"requirements.txt").read_text(encoding="utf-8")
+        self.assertIn("websockets==17.2",text.splitlines())

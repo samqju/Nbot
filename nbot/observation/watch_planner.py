@@ -128,9 +128,9 @@ def plan_two_tier_watch(
     active = tuple(sorted(set(str(s).upper() for s in active_high_res_symbols)))
     if len(active) > high_res_cap:
         raise ValueError("WATCH_PLAN_ACTIVE_SYMBOLS_EXCEED_CAP")
-    if any(symbol not in broad_set for symbol in active):
-        raise ValueError("WATCH_PLAN_ACTIVE_SYMBOL_OUTSIDE_BROAD_POOL")
-
+    # An already-active high-resolution path remains sticky even if the symbol
+    # falls out of the next broad top-N scan. Dropping it would corrupt the
+    # chronological outcome. It still consumes a high-res slot until maturity.
     best = {
         symbol: row
         for symbol, row in _best_by_symbol(candidates).items()

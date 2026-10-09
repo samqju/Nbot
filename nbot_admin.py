@@ -274,11 +274,39 @@ def cmd_learning_init(_args: argparse.Namespace) -> int:
     return _emit(foundation.status())
 
 
+def _two_tier_status() -> dict[str, Any]:
+    path = ROOT / "runtime/observation/live/two_tier_research_status.json"
+    if not path.is_file():
+        return {
+            "authority": "RESEARCH_ONLY_NO_EXECUTION",
+            "state": "NOT_RUNNING",
+            "status_file": str(path.relative_to(ROOT)),
+        }
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {
+            "authority": "RESEARCH_ONLY_NO_EXECUTION",
+            "state": "STATUS_UNREADABLE",
+            "error": f"{type(exc).__name__}:{exc}",
+        }
+    if value.get("authority") != "RESEARCH_ONLY_NO_EXECUTION":
+        return {
+            "authority": "RESEARCH_ONLY_NO_EXECUTION",
+            "state": "STATUS_AUTHORITY_INVALID",
+        }
+    return value
+
+
+def cmd_two_tier_status(_args: argparse.Namespace) -> int:
+    return _emit(_two_tier_status())
+
+
 def cmd_learning_status(_args: argparse.Namespace) -> int:
     if _v384_active():
         return _emit({
             "authority": "RESEARCH_ONLY_NO_EXECUTION",
-            "status": "V3_9_CONTINUOUS_CHALLENGER_LEARNING_ENABLED",
+            "status": "CONTINUOUS_CHALLENGER_LEARNING_ENABLED",
             "memory": _memory().status(),
             "champion": MemoryWalkForwardChampionEvaluator(_memory()).status(),
             "challengers": _challenger_cycle().status(),
@@ -286,6 +314,7 @@ def cmd_learning_status(_args: argparse.Namespace) -> int:
             "market_regimes": _market_regimes().status(),
             "research_champion_promotion": _research_champion_promotion().review(),
             "paper_champion": _paper_champion_gate().status(),
+            "two_tier_research": _two_tier_status(),
             "legacy_learning_foundation": _memory().artifact("learning_foundations"),
             "legacy_model_registry": _memory().artifact("model_registry"),
             "legacy_challenger_registry": _memory().artifact("challenger_registry"),
@@ -939,6 +968,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     learning_status = sub.add_parser("learning-status")
     learning_status.set_defaults(func=cmd_learning_status)
+
+    two_tier_status = sub.add_parser(
+        "two-tier-status",
+        help="show live 100/20 broad/high-resolution research runtime status",
+    )
+    two_tier_status.set_defaults(func=cmd_two_tier_status)
 
     challenger_cycle = sub.add_parser(
         "challenger-cycle",
