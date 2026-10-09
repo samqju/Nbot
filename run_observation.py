@@ -18,6 +18,7 @@ from nbot.communication.server import ObservationControlServer
 from nbot.observation.recommendation import ObservationControlTarget, RecommendationSupervisor
 from nbot.operator.status_proxy import ObservationReadOnlyStatusProvider
 from nbot.operator.telegram import TelegramClient, TelegramConfig, TelegramDispatcher
+from nbot.observation.live_two_tier import LiveTwoTierResearchSupervisor
 from nbot.observation import (
     BinanceUsdMPublicClient,
     EvidenceDatabase,
@@ -143,6 +144,7 @@ def main(argv: list[str] | None = None) -> int:
     telegram_dispatch = TelegramDispatcher(telegram, logger=collector_log)
     telegram_dispatch.start()
     last_alert: dict[str, float] = {}
+    two_tier_supervisor = None
 
     def event_sink(payload: Mapping[str, object]) -> None:
         _emit(payload)
@@ -159,6 +161,14 @@ def main(argv: list[str] | None = None) -> int:
                 "OBSERVATION COLLECTOR STOPPED",
                 f"Completed cycles: {payload.get('completed_cycles')}\nOrder authority: NONE",
             )
+        elif event == "CYCLE":
+            supervisor = two_tier_supervisor
+            if (
+                supervisor is not None
+                and payload.get("collection_status") in {"COMPLETE", "ALREADY_COMPLETE"}
+                and payload.get("event_open_ms") is not None
+            ):
+                supervisor.on_completed_cycle(event_open_ms=int(payload["event_open_ms"]))
         elif event == "TRANSIENT_ERROR":
             now = time.monotonic()
             if now - last_alert.get(event, float("-inf")) >= 300.0:
@@ -174,6 +184,16 @@ def main(argv: list[str] | None = None) -> int:
         environment=os.environ,
         event_sink=event_sink,
     )
+    two_tier_setting = str(os.environ.get("NBOT_TWO_TIER_RESEARCH", "1")).strip()
+    if two_tier_setting not in {"0", "1"}:
+        raise ValueError("NBOT_TWO_TIER_RESEARCH_INVALID")
+    if profile_name == "live-paper" and two_tier_setting == "1":
+        two_tier_supervisor = LiveTwoTierResearchSupervisor(
+            worker.database,
+            release_sha=_git_sha(root),
+            event_sink=event_sink,
+            enabled=True,
+        )
 
     def request_stop(_signum, _frame) -> None:
         worker.stop()
@@ -252,6 +272,8 @@ def main(argv: list[str] | None = None) -> int:
                 control_server.stop()
             if recommendation_supervisor is not None:
                 recommendation_supervisor.stop()
+            if two_tier_supervisor is not None:
+                two_tier_supervisor.stop()
             telegram_dispatch.stop()
     return 0
 
