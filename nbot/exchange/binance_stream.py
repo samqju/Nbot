@@ -15,6 +15,7 @@ import threading
 import time
 from typing import Any, Callable
 
+from nbot.common.market import AggTrade
 from nbot.exchange.binance_public import (
     BinanceLivePublicMarketConfig,
     BinanceLivePublicMarketData,
@@ -60,50 +61,6 @@ class BinanceLiveStreamConfig:
             raise ValueError("LIVE_STREAM_SYMBOL_LIMIT_INVALID")
         if not self.enable_book_ticker and not self.enable_agg_trade:
             raise ValueError("LIVE_STREAM_NO_STREAMS_ENABLED")
-
-
-@dataclass(frozen=True, slots=True)
-class AggTrade:
-    symbol: str
-    price: float
-    quantity: float
-    event_time_ms: int
-    trade_time_ms: int
-    aggregate_trade_id: int
-    first_trade_id: int
-    last_trade_id: int
-    buyer_is_maker: bool
-
-    def __post_init__(self) -> None:
-        if _SYMBOL_RE.fullmatch(self.symbol) is None:
-            raise ValueError("AGGTRADE_SYMBOL_INVALID")
-        for name, value in (("price", self.price), ("quantity", self.quantity)):
-            if isinstance(value, bool) or not math.isfinite(float(value)) or float(value) <= 0:
-                raise ValueError(f"AGGTRADE_{name.upper()}_INVALID")
-        for name, value in (
-            ("event_time_ms", self.event_time_ms), ("trade_time_ms", self.trade_time_ms),
-            ("aggregate_trade_id", self.aggregate_trade_id),
-            ("first_trade_id", self.first_trade_id), ("last_trade_id", self.last_trade_id),
-        ):
-            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-                raise ValueError(f"AGGTRADE_{name.upper()}_INVALID")
-
-
-@dataclass(frozen=True, slots=True)
-class QuoteUpdate:
-    sequence: int
-    quote: Quote
-    received_at_ms: int
-
-
-def _default_ws_app_factory(url: str, **callbacks: Any):
-    try:
-        import websocket  # type: ignore
-    except Exception as exc:  # pragma: no cover - deployment dependency
-        raise BinanceLiveStreamError(
-            "LIVE_STREAM_DEPENDENCY_MISSING:install requirements.txt"
-        ) from exc
-    return websocket.WebSocketApp(url, **callbacks)
 
 
 class BinanceLiveWebSocketMarketData:
