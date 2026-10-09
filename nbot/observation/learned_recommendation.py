@@ -18,6 +18,7 @@ from .causal_ridge import LABEL_HORIZON_MS, STATISTICS_VERSION
 from .challengers import CHALLENGER_PREFIX, MODEL_PREFIX, EVALUATION_PREFIX, EVALUATOR_VERSION
 from .config import observation_config_for_profile
 from .database import EvidenceDatabase
+from .decision_ledger import DecisionOutcomeLedger
 from .features import CanonicalFeatureStore, CANONICAL_FEATURE_VERSION
 from .recommendation import RecommendationSnapshot
 from .selection import FEATURE_VECTOR_NAMES, SELECTION_CONFIG, _feature_vector, _ridge_score, _digest
@@ -89,6 +90,15 @@ class LearnedTestnetSource:
         self.release_sha = release_sha
         self._release_compatibility = {}
         self.paper_feedback = PaperFeedback(self.live, release_sha=release_sha) if profile_name == "live-paper" else None
+        counterfactual_enabled = os.environ.get("NBOT_COUNTERFACTUAL_ENABLED", "1")
+        if counterfactual_enabled not in {"0", "1"}:
+            raise ValueError("NBOT_COUNTERFACTUAL_ENABLED_INVALID")
+        self.decision_ledger = (
+            DecisionOutcomeLedger(self.live.path.parent / "decision_outcomes.db")
+            if profile_name in {"live-paper", "live-trade"} and counterfactual_enabled == "1"
+            else None
+        )
+        self.decision_ledger_error = None
         ml_enabled = os.environ.get("NBOT_SELECTIVE_ML", "1")
         if ml_enabled not in {"0", "1"}:
             raise ValueError("NBOT_SELECTIVE_ML_INVALID")
@@ -229,6 +239,97 @@ class LearnedTestnetSource:
             self.shadow_error = type(exc).__name__ + ":" + str(exc)[:180]
             logging.getLogger(__name__).exception("SHADOW_SIMULATION_FAILED")
 
+    def _record_decision_universe(
+        self, *, event_ms: int, now_ms: int, quotes: dict, candidates: list,
+        histories: dict, ranked: list, selected_symbol: str, selected_side: str,
+        final_score: float, final_reason: str | None, raw_ml_gate: str | None,
+        model_digest: str,
+    ) -> None:
+        """Freeze every eligible symbol/side decision for high-resolution replay.
+
+        One hypothesis is stored per symbol/side/event even when multiple setup
+        rules match. The setup IDs remain attribution metadata. A research-ledger
+        failure is visible in diagnostics but can never alter recommendation or
+        order authority.
+        """
+        if self.decision_ledger is None:
+            return
+        try:
+            practical: dict[tuple[str, str], tuple[float, dict]] = {}
+            for row in ranked:
+                adjusted, symbol, side, _vector, _base, _ridge, detail = row
+                key = (symbol, side)
+                current = practical.get(key)
+                if current is None or adjusted > current[0]:
+                    practical[key] = (float(adjusted), detail)
+
+            unique = []
+            for selection_base, symbol, side, vector, ridge_score, ml_detail in candidates:
+                key = (symbol, side)
+                detail = practical.get(key)
+                practical_score = float(detail[0]) if detail is not None else float(selection_base)
+                setup_ids = (
+                    list(detail[1].get("matched_candidates", []))
+                    if detail is not None
+                    else [item["id"] for item in (matches(
+                        dict(vector, candidate_btc_available=float(vector.get("missing_ret_4h", 0) == 0)),
+                        side, histories.get(symbol, []),
+                    ) or [FALLBACK])]
+                )
+                unique.append((
+                    practical_score, symbol, side, vector, ridge_score,
+                    ml_detail or {}, setup_ids,
+                ))
+            ordered = sorted(unique, key=lambda item: (-item[0], item[1], item[2]))
+            for rank, (practical_score, symbol, side, vector, ridge_score, ml, setup_ids) in enumerate(ordered, start=1):
+                selected = (
+                    final_score > 0
+                    and symbol == selected_symbol
+                    and side == selected_side
+                )
+                if selected:
+                    blocker = None
+                elif rank == 1 and raw_ml_gate is not None:
+                    blocker = raw_ml_gate
+                elif symbol == selected_symbol and side == selected_side and final_score <= 0:
+                    blocker = final_reason or "LEARNED_REJECTED"
+                else:
+                    blocker = "LOWER_RANKED_OR_NOT_SELECTED"
+                quote = quotes[symbol]
+                scores = {
+                    "ridge_score_r": float(ml.get("ridge_score", ridge_score)),
+                    "ml_mean_r": ml.get("ml_mean_r"),
+                    "ml_lower_r": ml.get("ml_lower_r"),
+                    "ensemble_mean_r": ml.get("ensemble_mean_r"),
+                    "conservative_score_r": float(selection_base_for := next(
+                        item[0] for item in candidates
+                        if item[1] == symbol and item[2] == side
+                    )),
+                    "post_feedback_score_r": practical_score,
+                    "raw_ml_gate": raw_ml_gate if rank == 1 else None,
+                }
+                self.decision_ledger.record(
+                    release_sha=self.release_sha,
+                    event_ms=event_ms,
+                    decision_ms=now_ms,
+                    symbol=symbol,
+                    side=side,
+                    bid=float(quote[1]),
+                    ask=float(quote[2]),
+                    selected=selected,
+                    decision="APPROVED" if selected else "REJECTED",
+                    blocker=blocker,
+                    feature_vector=vector,
+                    candidate_ids=setup_ids,
+                    scores=scores,
+                    rank=rank,
+                    model_digest=model_digest,
+                )
+            self.decision_ledger_error = None
+        except Exception as exc:
+            self.decision_ledger_error = type(exc).__name__ + ":" + str(exc)[:180]
+            logging.getLogger(__name__).exception("DECISION_LEDGER_RECORD_FAILED")
+
     def refresh(self, *, now_ms: int, ttl_ms: int):
         if self.shadow:
             self._shadow_call("advance", now_ms=now_ms)
@@ -368,8 +469,8 @@ class LearnedTestnetSource:
                 self.shadow_error = type(exc).__name__ + ":" + str(exc)[:180]
                 logging.getLogger(__name__).exception("SHADOW_HISTORY_FAILED")
 
+        ranked = []
         if feedback_model is not None:
-            ranked = []
             for selection_base, candidate_symbol, candidate_side, candidate_vector, ridge_score, ml_detail in candidates:
                 bars = histories.get(candidate_symbol, [])
                 bars_digest = history_digest(bars)
@@ -467,11 +568,18 @@ class LearnedTestnetSource:
 
         if score <= 0:
             if feedback_detail and feedback_detail["status"] == "REPEATED_LOSS_COOLDOWN":
-                reason = "PAPER_REPEATED_LOSS_COOLDOWN"
+                final_reason = "PAPER_REPEATED_LOSS_COOLDOWN"
             elif ml_gate_reason is not None:
-                reason = ml_gate_reason
+                final_reason = ml_gate_reason
             else:
-                reason = "LEARNED_NO_POSITIVE_OPPORTUNITY"
+                final_reason = "LEARNED_NO_POSITIVE_OPPORTUNITY"
+            self._record_decision_universe(
+                event_ms=event_ms, now_ms=now_ms, quotes=quotes, candidates=candidates,
+                histories=histories, ranked=ranked, selected_symbol=symbol,
+                selected_side=side, final_score=score, final_reason=final_reason,
+                raw_ml_gate=ml_gate_reason, model_digest=artifact["model_digest"],
+            )
+            reason = final_reason
             snapshot = self._freeze(event_ms, RecommendationSnapshot("READY", reason, None, now_ms))
             if self.shadow and shadow_opportunities:
                 self._shadow_call("offer", event_ms=event_ms, now_ms=now_ms,
@@ -491,6 +599,12 @@ class LearnedTestnetSource:
                 selected_ml["entry_gate_mode"] = "EXECUTION_REALTIME_ONLY"
         expected_net_r = selected_ml["ensemble_mean_r"] if selected_ml is not None else base_score
         generated = min(captured_ms, int(quote_ms))
+        self._record_decision_universe(
+            event_ms=event_ms, now_ms=now_ms, quotes=quotes, candidates=candidates,
+            histories=histories, ranked=ranked, selected_symbol=symbol,
+            selected_side=side, final_score=score, final_reason=None,
+            raw_ml_gate=ml_gate_reason, model_digest=artifact["model_digest"],
+        )
         source_inputs = {"live_event": event_ms, "vector": vector,
                          "model": artifact["model_digest"], "testnet_quote": quotes[symbol]}
         if feedback_detail is not None:
