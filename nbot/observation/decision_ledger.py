@@ -697,12 +697,17 @@ class DecisionOutcomeLedger:
                 completed += 1
         return completed
 
-    def training_targets(self, *, through_event_ms: int | None = None) -> dict[tuple[int, str, str], dict[str, Any]]:
+    def training_targets(
+        self, *, profile: str = "live-paper", through_event_ms: int | None = None
+    ) -> dict[tuple[int, str, str], dict[str, Any]]:
+        profile = str(profile).strip().lower()
+        if profile not in {"live-paper", "live-trade"}:
+            raise ValueError("DECISION_LEDGER_PROFILE_INVALID")
         sql = (
             "SELECT event_ms,symbol,side,frozen_json,frozen_digest,result_json,result_digest "
-            "FROM decision_hypotheses WHERE status='MATURED'"
+            "FROM decision_hypotheses WHERE status='MATURED' AND profile=?"
         )
-        params: list[Any] = []
+        params: list[Any] = [profile]
         if through_event_ms is not None:
             sql += " AND event_ms<=?"
             params.append(int(through_event_ms))
@@ -728,8 +733,8 @@ class DecisionOutcomeLedger:
             }
         return output
 
-    def decision_policy_rows(self) -> list[dict[str, Any]]:
-        targets = self.training_targets()
+    def decision_policy_rows(self, *, profile: str = "live-paper") -> list[dict[str, Any]]:
+        targets = self.training_targets(profile=profile)
         return sorted(targets.values(), key=lambda r: (r["event_ms"], r["rank"], r["symbol"], r["side"]))
 
     def status(self) -> dict[str, Any]:
