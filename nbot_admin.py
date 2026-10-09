@@ -120,6 +120,11 @@ def _challenger_cycle() -> ContinuousChallengerCycle:
     return ContinuousChallengerCycle(_memory(), release_sha=_release_sha())
 
 
+def _decision_ledger():
+    from nbot.observation.decision_ledger import DecisionOutcomeLedger
+    return DecisionOutcomeLedger(ROOT / "data/observation/live/decision_outcomes.db")
+
+
 def _selective_ml():
     from nbot.observation.selective_ml_v3 import SelectiveMLManager
     if not _v384_active():
@@ -454,13 +459,25 @@ def cmd_paper_learning_report(args: argparse.Namespace) -> int:
 def cmd_learning_report(args: argparse.Namespace) -> int:
     from nbot.observation.learning_report import learning_report
     from nbot.common.atomic_io import atomic_write_text
-    text = learning_report(_memory())
+    text = learning_report(
+        _memory(), decision_ledger=_decision_ledger(),
+        selective_ml_status=_selective_ml().status(),
+    )
     if args.output:
         path = Path(args.output)
         path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_text(path, text, mode=0o600)
     print(text)
     return 0
+
+
+def cmd_decision_ledger_status(_args: argparse.Namespace) -> int:
+    return _emit(_decision_ledger().status())
+
+
+def cmd_decision_gate_status(_args: argparse.Namespace) -> int:
+    from nbot.observation.decision_policy import GatePolicyCalibrator
+    return _emit(GatePolicyCalibrator(_decision_ledger()).calibrate())
 
 
 def cmd_challenger_audit(_args: argparse.Namespace) -> int:
@@ -1054,6 +1071,18 @@ def build_parser() -> argparse.ArgumentParser:
     learning_report = sub.add_parser("learning-report", help="explain model progress and rejection reasons in plain English")
     learning_report.add_argument("--output", help="also save a private Markdown report")
     learning_report.set_defaults(func=cmd_learning_report)
+
+    decision_ledger_status = sub.add_parser(
+        "decision-ledger-status",
+        help="show high-resolution approved/rejected counterfactual outcome coverage",
+    )
+    decision_ledger_status.set_defaults(func=cmd_decision_ledger_status)
+
+    decision_gate_status = sub.add_parser(
+        "decision-gate-status",
+        help="evaluate causal confidence/edge gate calibration on resolved aggTrade outcomes",
+    )
+    decision_gate_status.set_defaults(func=cmd_decision_gate_status)
 
     memory_init = sub.add_parser("research-memory-init", help="initialize fresh permanent learning memory without deleting data")
     memory_init.set_defaults(func=cmd_research_memory_init)

@@ -5,7 +5,7 @@ from .challengers import CHALLENGER_PREFIX, EVALUATION_PREFIX, MODEL_PREFIX
 from .context_learning import explain_gates
 
 
-def learning_report(memory):
+def learning_report(memory, *, decision_ledger=None, selective_ml_status=None):
     challengers = memory.list_artifacts(prefix=CHALLENGER_PREFIX)
     evaluations = memory.list_artifacts(prefix=EVALUATION_PREFIX)
     lines = ["# Learning progress", "", "This is research and experimental Testnet learning, not proof of profitability.", "",
@@ -50,4 +50,35 @@ def learning_report(memory):
             lines.extend(f"- {item['check']}: {item['explanation']}" for item in failures)
             if not failures:
                 lines.append("All checks for this research window passed. This does not promote a live trading model.")
+    if decision_ledger is not None:
+        status = decision_ledger.status()
+        lines += [
+            "", "## High-resolution decision outcomes", "",
+            "These are counterfactual research outcomes, not actual paper/live execution P&L.",
+            "Five-minute OHLC remains useful for the base research learner, but Selective ML V3 does not use it as its outcome target.",
+            f"Open counterfactual hypotheses: {status['open']}",
+            f"Matured hypotheses: {status['matured']}",
+            f"AggTrade-resolved paths: {status['aggtrade_resolved']}",
+            f"Funding-complete outcomes: {status['funding_complete']}",
+            f"Rejected hypotheses: {status['rejected_hypotheses']}",
+            f"Missed profitable policy outcomes: {status['missed_profitable_policy_outcomes']}",
+            f"Avoided losses: {status['avoided_losses']}",
+            "Chronology source: Binance USD-M aggTrade WSS with REST used only to backfill gaps.",
+        ]
+    if selective_ml_status is not None:
+        latest = selective_ml_status.get("latest")
+        lines += ["", "## Selective ML high-resolution layer", "",
+                  f"Version: {selective_ml_status.get('version')}",
+                  f"Target: {selective_ml_status.get('target')}",
+                  f"Resolved high-resolution events: {selective_ml_status.get('resolved_high_resolution_events')}",
+                  f"Resolved high-resolution rows: {selective_ml_status.get('resolved_high_resolution_rows')}"]
+        if latest is None:
+            lines.append("V3 model: waiting for enough resolved high-resolution evidence; eligible V2 same-release fallback may continue.")
+        else:
+            lines += [f"V3 eligible: {latest.get('eligible')}",
+                      f"Validation MAE R: {latest.get('validation_mae_r')}",
+                      f"Zero-baseline MAE R: {latest.get('zero_baseline_mae_r')}"]
+            gate = latest.get("gate_policy") or {}
+            lines += [f"Decision-gate calibration qualified: {gate.get('qualified', False)}",
+                      f"Decision-gate recommendation: {gate.get('recommended_gate', gate.get('active_gate', 'unavailable'))}"]
     return "\n".join(lines) + "\n"
