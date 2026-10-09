@@ -58,13 +58,15 @@ class GatePolicyCalibrator:
                 continue
             try:
                 confidence, edge = float(confidence), float(edge)
+                decision_ms = int(row.get("decision_ms", row["event_ms"]))
                 target, exit_ms = float(row["target_net_r"]), int(row["exit_time_ms"])
             except (TypeError, ValueError):
                 continue
-            if not all(math.isfinite(v) for v in (confidence, edge, target)) or exit_ms <= int(row["event_ms"]):
+            if not all(math.isfinite(v) for v in (confidence, edge, target)) or exit_ms <= decision_ms:
                 continue
             seen.add(int(row["event_ms"]))
-            output.append({**row, "confidence_r": confidence, "edge_r": edge,
+            output.append({**row, "decision_ms": decision_ms,
+                           "confidence_r": confidence, "edge_r": edge,
                            "target_net_r": target, "exit_time_ms": exit_ms})
         return output
 
@@ -73,7 +75,8 @@ class GatePolicyCalibrator:
         total_r, accepted, wins, losses, skipped, busy_until = 0.0, 0, 0, 0, 0, -1
         for row in rows:
             event = int(row["event_ms"])
-            if event < busy_until:
+            decision_ms = int(row.get("decision_ms", event))
+            if decision_ms < busy_until:
                 skipped += 1
                 continue
             if float(row["confidence_r"]) + 1e-12 < confidence or float(row["edge_r"]) + 1e-12 < edge:
@@ -83,7 +86,7 @@ class GatePolicyCalibrator:
             wins += int(value > 0)
             losses += int(value < 0)
             total_r += value
-            busy_until = max(event + 1, int(row["exit_time_ms"]))
+            busy_until = max(decision_ms + 1, int(row["exit_time_ms"]))
         n = len(rows)
         return {"confidence_r": confidence, "edge_r": edge, "events": n,
                 "accepted": accepted, "wins": wins, "losses": losses,
