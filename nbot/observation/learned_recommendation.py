@@ -611,7 +611,9 @@ class LearnedTestnetSource:
             if chosen_ml is not None:
                 selected_ml = dict(chosen_ml)
                 selected_ml["pre_feedback_gate"] = ml_gate_reason
-                selected_ml["entry_gate_mode"] = "EXECUTION_REALTIME_ONLY"
+                selected_ml["entry_gate_mode"] = ml_record["payload"].get(
+                    "entry_gate_mode", "EXECUTION_REALTIME_ONLY"
+                )
         expected_net_r = selected_ml["ensemble_mean_r"] if selected_ml is not None else base_score
         generated = min(captured_ms, int(quote_ms))
         self._record_decision_universe(

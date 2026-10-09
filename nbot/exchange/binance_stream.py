@@ -427,5 +427,6 @@ class BinanceLiveWebSocketMarketData:
                     self._on_close(self._ws)
             if self._stop.is_set():
                 break
-            time.sleep(backoff)
+            if self._stop.wait(backoff):
+                break
             backoff = min(float(self.config.reconnect_max_seconds), backoff * 2.0)

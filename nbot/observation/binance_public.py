@@ -402,67 +402,45 @@ class BinanceUsdMPublicClient:
         if not symbol or start < 0 or end < start:
             raise ValueError("NBOT_OBSERVATION_AGGTRADE_RANGE_INVALID")
         output = {}
-        # Binance requires a window strictly shorter than one hour.
-        slice_ms = 60 * 60 * 1000 - 1
+        slice_ms = 60 * 60 * 1000 - 1  # Binance requires strictly less than 1h.
         cursor = start
         while cursor <= end:
             slice_end = min(end, cursor + slice_ms)
-            page_start = cursor
-            while page_start <= slice_end:
-                payload = self._get("/fapi/v1/aggTrades", {
-                    "symbol": symbol, "startTime": page_start,
-                    "endTime": slice_end, "limit": 1000,
-                })
-                rows = self._require_list(payload, "AGGTRADES")
-                if not rows:
-                    break
-                latest_time = page_start - 1
-                latest_id = -1
+            first = self._get("/fapi/v1/aggTrades", {
+                "symbol": symbol, "startTime": cursor, "endTime": slice_end, "limit": 1000,
+            })
+            rows = self._require_list(first, "AGGTRADES")
+            next_id = None
+            while rows:
+                stop_slice = False
                 for row in rows:
                     if not isinstance(row, dict):
                         raise BinancePublicMarketError("NBOT_OBSERVATION_AGGTRADE_PAYLOAD_INVALID")
                     try:
+                        when = int(row["T"])
+                        aid = int(row["a"])
                         trade = AggTrade(
                             symbol=symbol, price=float(row["p"]), quantity=float(row["q"]),
-                            event_time_ms=int(row["T"]), trade_time_ms=int(row["T"]),
-                            aggregate_trade_id=int(row["a"]), first_trade_id=int(row["f"]),
+                            event_time_ms=when, trade_time_ms=when,
+                            aggregate_trade_id=aid, first_trade_id=int(row["f"]),
                             last_trade_id=int(row["l"]), buyer_is_maker=bool(row["m"]),
                         )
                     except (KeyError, TypeError, ValueError) as exc:
                         raise BinancePublicMarketError("NBOT_OBSERVATION_AGGTRADE_PAYLOAD_INVALID") from exc
-                    if start <= trade.trade_time_ms <= end:
-                        output[trade.aggregate_trade_id] = trade
-                    latest_time = max(latest_time, trade.trade_time_ms)
-                    latest_id = max(latest_id, trade.aggregate_trade_id)
-                if len(rows) < 1000:
-                    break
-                # Time pagination can repeat rows sharing a millisecond. Continue
-                # by aggregate ID to avoid skipping dense timestamps.
-                follow = self._get("/fapi/v1/aggTrades", {
-                    "symbol": symbol, "fromId": latest_id + 1, "limit": 1000,
-                })
-                follow_rows = self._require_list(follow, "AGGTRADES")
-                progressed = False
-                for row in follow_rows:
-                    try:
-                        t = int(row["T"])
-                    except (KeyError, TypeError, ValueError) as exc:
-                        raise BinancePublicMarketError("NBOT_OBSERVATION_AGGTRADE_PAYLOAD_INVALID") from exc
-                    if t > slice_end:
+                    if when > slice_end:
+                        stop_slice = True
                         break
-                    trade = AggTrade(
-                        symbol=symbol, price=float(row["p"]), quantity=float(row["q"]),
-                        event_time_ms=t, trade_time_ms=t, aggregate_trade_id=int(row["a"]),
-                        first_trade_id=int(row["f"]), last_trade_id=int(row["l"]),
-                        buyer_is_maker=bool(row["m"]),
-                    )
-                    output[trade.aggregate_trade_id] = trade
-                    latest_time = max(latest_time, t)
-                    latest_id = max(latest_id, trade.aggregate_trade_id)
-                    progressed = True
-                if not progressed:
+                    if start <= when <= end:
+                        output[aid] = trade
+                    next_id = aid + 1
+                if stop_slice or len(rows) < 1000 or next_id is None:
                     break
-                page_start = latest_time + 1
+                # fromId pagination prevents loss when >1000 aggregate trades
+                # share timestamps inside the same sub-hour window.
+                page = self._get("/fapi/v1/aggTrades", {
+                    "symbol": symbol, "fromId": next_id, "limit": 1000,
+                })
+                rows = self._require_list(page, "AGGTRADES")
             cursor = slice_end + 1
         return tuple(sorted(output.values(), key=lambda t: (t.trade_time_ms, t.aggregate_trade_id)))
 
