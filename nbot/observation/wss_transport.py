@@ -46,7 +46,8 @@ async def default_connect(url: str):
 class CombinedStreamRunner:
     def __init__(self, *, url: str, state: WssMarketState, symbols: tuple[str, ...],
                  connect_factory: Callable[[str], Awaitable[Any]] | None = None,
-                 queue_size: int = 4096, rotate_seconds: int = 23 * 60 * 60) -> None:
+                 queue_size: int = 4096, rotate_seconds: int = 23 * 60 * 60,
+                 event_sink: Callable[[str, Any], None] | None = None) -> None:
         if queue_size <= 0 or not 60 <= rotate_seconds < 24 * 60 * 60:
             raise ValueError("WSS_RUNNER_CONFIG_INVALID")
         self.url = url
@@ -55,6 +56,7 @@ class CombinedStreamRunner:
         self.connect_factory = connect_factory or default_connect
         self.queue: asyncio.Queue[tuple[int, dict[str, Any]]] = asyncio.Queue(maxsize=queue_size)
         self.rotate_seconds = rotate_seconds
+        self.event_sink = event_sink
         self.dropped = 0
         self._stop = False
 
@@ -67,9 +69,13 @@ class CombinedStreamRunner:
             try:
                 event = payload.get("e")
                 if event == "bookTicker":
-                    self.state.ingest_book_ticker(payload, receipt_time_ms=receipt)
+                    parsed = self.state.ingest_book_ticker(payload, receipt_time_ms=receipt)
+                    if self.event_sink is not None:
+                        self.event_sink("bookTicker", parsed)
                 elif event == "aggTrade":
-                    self.state.ingest_agg_trade(payload, receipt_time_ms=receipt)
+                    parsed = self.state.ingest_agg_trade(payload, receipt_time_ms=receipt)
+                    if self.event_sink is not None:
+                        self.event_sink("aggTrade", parsed)
             finally:
                 self.queue.task_done()
 
