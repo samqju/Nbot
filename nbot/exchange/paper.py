@@ -140,6 +140,51 @@ class PaperExchange:
         )
         return quote
 
+    def wait_quote(
+        self,
+        symbol: str,
+        *,
+        after_sequence: int = 0,
+        timeout_seconds: float | None = None,
+    ):
+        """Wait for the next WSS quote and apply it to PAPER stop settlement."""
+        self._require_ready()
+        wait = getattr(self.market_data, "wait_quote", None)
+        if not callable(wait):
+            raise PaperExchangeError("PAPER_STREAM_WAIT_UNAVAILABLE")
+        update = wait(
+            symbol,
+            after_sequence=after_sequence,
+            timeout_seconds=timeout_seconds,
+        )
+        quote = update.quote
+        if quote.symbol != symbol:
+            raise PaperExchangeError("PAPER_QUOTE_SYMBOL_MISMATCH")
+        self.on_market_tick(
+            symbol=quote.symbol,
+            bid=quote.bid,
+            ask=quote.ask,
+            timestamp_ms=quote.timestamp_ms,
+        )
+        return update
+
+    def recovery_quote(self, symbol: str) -> Quote:
+        """Explicit REST recovery path for an already-open PAPER position."""
+        self._require_ready()
+        recover = getattr(self.market_data, "recovery_quote", None)
+        if not callable(recover):
+            raise PaperExchangeError("PAPER_RECOVERY_QUOTE_UNAVAILABLE")
+        quote = recover(symbol)
+        if quote.symbol != symbol:
+            raise PaperExchangeError("PAPER_QUOTE_SYMBOL_MISMATCH")
+        self.on_market_tick(
+            symbol=quote.symbol,
+            bid=quote.bid,
+            ask=quote.ask,
+            timestamp_ms=quote.timestamp_ms,
+        )
+        return quote
+
     def account_snapshot(self) -> AccountSnapshot:
         with self._lock:
             state = self._require_state()

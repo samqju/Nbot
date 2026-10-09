@@ -37,6 +37,12 @@ from nbot.exchange.binance_public import (
     BinanceLivePublicMarketData,
     BinanceLivePublicMarketError,
 )
+from nbot.exchange.binance_stream import (
+    BinanceLiveStreamConfig,
+    BinanceLiveStreamError,
+    BinanceLiveWebSocketMarketData,
+)
+from nbot.exchange.routed import MarketRoutedExchange
 from nbot.exchange.binance_testnet import (
     TESTNET_REST_BASE_URL,
     TESTNET_WS_BASE_URL,
@@ -236,12 +242,14 @@ def build_testnet_exchange(
     return BinanceTestnetExchange(cfg)
 
 
-def build_live_paper_exchange(
-    repo_root: Path,
+def build_live_stream(
     environment: Mapping[str, str],
-) -> tuple[PaperExchange, BinanceLivePublicMarketData]:
-    profile = get_profile("live-paper")
-    market = BinanceLivePublicMarketData(
+    *,
+    enable_book_ticker: bool = True,
+    enable_agg_trade: bool = False,
+) -> BinanceLiveWebSocketMarketData:
+    """Build pinned LIVE WSS with REST restricted to bootstrap/recovery."""
+    rest = BinanceLivePublicMarketData(
         BinanceLivePublicMarketConfig(
             request_timeout_seconds=_positive_float(
                 environment, "LIVE_PUBLIC_REST_TIMEOUT_SECONDS", 3.0
@@ -251,6 +259,30 @@ def build_live_paper_exchange(
             ),
         )
     )
+    return BinanceLiveWebSocketMarketData(
+        BinanceLiveStreamConfig(
+            first_event_timeout_seconds=_positive_float(
+                environment, "LIVE_PUBLIC_WS_FIRST_EVENT_TIMEOUT_SECONDS", 4.0
+            ),
+            max_quote_age_ms=_positive_int(
+                environment, "LIVE_PUBLIC_WS_MAX_QUOTE_AGE_MS", 2_000
+            ),
+            max_symbols=_positive_int(
+                environment, "LIVE_PUBLIC_WS_MAX_SYMBOLS", 200
+            ),
+            enable_book_ticker=enable_book_ticker,
+            enable_agg_trade=enable_agg_trade,
+        ),
+        rest_recovery=rest,
+    )
+
+
+def build_live_paper_exchange(
+    repo_root: Path,
+    environment: Mapping[str, str],
+) -> tuple[PaperExchange, BinanceLiveWebSocketMarketData]:
+    profile = get_profile("live-paper")
+    market = build_live_stream(environment, enable_book_ticker=True)
     exchange = PaperExchange(
         repo_root=repo_root,
         profile=profile,
@@ -258,6 +290,25 @@ def build_live_paper_exchange(
         config=PaperExchangeConfig(),
     )
     return exchange, market
+
+
+def _next_live_open_quote(exchange, symbol: str, sequence: int, timeout_seconds: float):
+    """WSS first; REST is explicit recovery only while capital is already open."""
+    wait = getattr(exchange, "wait_quote", None)
+    if callable(wait):
+        try:
+            update = wait(
+                symbol,
+                after_sequence=sequence,
+                timeout_seconds=timeout_seconds,
+            )
+            return update.sequence, update.quote, "WSS"
+        except BinanceLiveStreamError:
+            recover = getattr(exchange, "recovery_quote", None)
+            if not callable(recover):
+                raise
+            return sequence, recover(symbol), "REST_RECOVERY"
+    return sequence, exchange.quote(symbol), "LEGACY_POLL"
 
 
 def build_execution_worker(
@@ -401,15 +452,7 @@ def preflight_live_paper(
     symbol: str,
 ) -> int:
     profile = get_profile("live-paper")
-    config = BinanceLivePublicMarketConfig(
-        request_timeout_seconds=_positive_float(
-            environment, "LIVE_PUBLIC_REST_TIMEOUT_SECONDS", 3.0
-        ),
-        max_clock_skew_ms=_positive_int(
-            environment, "LIVE_PUBLIC_MAX_CLOCK_SKEW_MS", 5_000
-        ),
-    )
-    market = BinanceLivePublicMarketData(config)
+    market = build_live_stream(environment, enable_book_ticker=True)
     # Construction validates the ignored authenticated control-link config but
     # performs no remote control request.
     build_integrated_control_client(
@@ -429,7 +472,8 @@ def preflight_live_paper(
             "market_environment": profile.market_environment,
             "paper_capital": True,
             "binance_private_order_writes": False,
-            "public_base_url": config.base_url,
+            "public_transport": "BINANCE_WSS_PRIMARY",
+            "rest_role": "BOOTSTRAP_AND_OPEN_POSITION_RECOVERY_ONLY",
             "symbol": quote.symbol,
             "bid": quote.bid,
             "ask": quote.ask,
@@ -835,11 +879,13 @@ def run_learned_paper_runtime(*, repo_root: Path, environment: Mapping[str, str]
     profile = get_profile(profile_name)
     is_live = profile.name == "live-trade"
     risk_config = None
+    capital_exchange = None
     if is_live:
         cfg = LiveExchangeConfig.from_env(repo_root=repo_root, environ=environment)
         cfg.validate()
-        exchange = BinanceLiveExchange(cfg)
-        market = exchange
+        capital_exchange = BinanceLiveExchange(cfg)
+        market = build_live_stream(environment, enable_book_ticker=True)
+        exchange = MarketRoutedExchange(capital=capital_exchange, market=market)
         risk_config = RiskConfig(risk_per_trade_usd=cfg.risk_per_trade_usd,
                                  max_notional_usd=cfg.max_entry_notional_usd, leverage=cfg.leverage)
         authority = LIVE_LEARNED_AUTHORITY
@@ -857,11 +903,12 @@ def run_learned_paper_runtime(*, repo_root: Path, environment: Mapping[str, str]
     def local_entry_permission():
         if not is_live:
             return True
-        gate = exchange.guard.preflight()
+        assert capital_exchange is not None
+        gate = capital_exchange.guard.preflight()
         if not gate["armed"] or gate["session_entries"] >= gate["max_session_entries"]:
             return False
         try:
-            fields = exchange.guard._parse_arm(cfg.resolved_arm_file.read_text())
+            fields = capital_exchange.guard._parse_arm(cfg.resolved_arm_file.read_text())
             return fields.get("sha") == release_sha
         except (OSError, ValueError, RuntimeError):
             return False
@@ -903,39 +950,33 @@ def run_learned_paper_runtime(*, repo_root: Path, environment: Mapping[str, str]
                 f"profile={profile.name}\npid={os.getpid()}\nready_at={utc_iso()}\n"
                 f"mode={authority}\nbinance_private_order_writes={str(is_live).lower()}\n",
                 mode=0o600)
-            quote_failures = 0
-            next_quote_warning = 0.0
+            market_sequence = 0
+            market_symbol = None
+            recovery_uses = 0
             while not stop_requested:
                 local = worker.state.open_position
                 if local is not None:
-                    # Only the public quote read is retryable. Never swallow
-                    # position-management, persistence or real-order errors.
-                    try:
-                        quote = exchange.quote(local.symbol)
-                    except BinanceLivePublicMarketError as exc:
-                        if is_live:
-                            raise
-                        quote_failures += 1
-                        now = time.monotonic()
-                        if quote_failures == 1 or now >= next_quote_warning:
+                    if market_symbol != local.symbol:
+                        market_symbol, market_sequence = local.symbol, 0
+                    market_sequence, quote, quote_source = _next_live_open_quote(
+                        exchange,
+                        local.symbol,
+                        market_sequence,
+                        max(1.0, open_poll_seconds * 4.0),
+                    )
+                    if quote_source == "REST_RECOVERY":
+                        recovery_uses += 1
+                        if recovery_uses == 1 or recovery_uses % 30 == 0:
                             operator.system_log.warning(
-                                "PAPER_QUOTE_UNAVAILABLE symbol=%s failures=%s error=%s; "
-                                "position retained; waiting for fresh quote",
-                                local.symbol, quote_failures, exc)
-                            next_quote_warning = now + 60.0
-                        # Keep the worker and operator listener alive. No stale
-                        # tick reaches the paper exchange or trailing-stop logic.
-                        time.sleep(max(5.0, open_poll_seconds))
-                        continue
-                    if quote_failures:
-                        operator.system_log.info(
-                            "PAPER_QUOTE_RECOVERED symbol=%s rejected_quotes=%s",
-                            local.symbol, quote_failures)
-                        quote_failures = 0
+                                "WSS_QUOTE_RECOVERY_REST symbol=%s uses=%s",
+                                local.symbol, recovery_uses,
+                            )
+                    else:
+                        recovery_uses = 0
                     worker.process_open_quote(quote)
                     operator.sync()
-                    time.sleep(open_poll_seconds)
                     continue
+                market_symbol, market_sequence = None, 0
                 if operator_entries_blocked(repo_root, profile.name) or not local_entry_permission():
                     worker.disable_new_entries()
                 elif not worker.state.snapshot.entries_enabled:
@@ -955,7 +996,10 @@ def run_learned_paper_runtime(*, repo_root: Path, environment: Mapping[str, str]
             operator.stop()
             ready.unlink(missing_ok=True)
             _runtime_pid_path(repo_root, profile.name).unlink(missing_ok=True)
-            market.disconnect()
+            if is_live:
+                exchange.disconnect()
+            else:
+                market.disconnect()
 
 
 def run_live_paper_runtime(
@@ -1065,8 +1109,9 @@ def run_live_paper_runtime(
                         "canary_entry_budget": "ONE_FLAT_ATTEMPT_PER_EXPLICIT_OPERATOR_ENABLE",
                         "proposal_source": "REMOTE_CONTROL_LINK",
                         "outcome_transport": "REMOTE_CONTROL_ACK_WHILE_FLAT",
-                        "market_truth": "EXECUTION_OWN_BINANCE_LIVE_PUBLIC",
+                        "market_truth": "EXECUTION_OWN_BINANCE_WSS_PRIMARY",
                         "capital": "LOCAL_PAPER",
+                        "rest_role": "BOOTSTRAP_AND_OPEN_POSITION_RECOVERY_ONLY",
                         "binance_private_order_writes": False,
                     },
                     sort_keys=True,
@@ -1094,10 +1139,21 @@ def run_live_paper_runtime(
                     time.sleep(idle_poll_seconds)
                     continue
 
-                quote = exchange.quote(local.symbol)
+                if "_mechanical_market_sequence" not in locals() or _mechanical_market_symbol != local.symbol:
+                    _mechanical_market_symbol = local.symbol
+                    _mechanical_market_sequence = 0
+                _mechanical_market_sequence, quote, quote_source = _next_live_open_quote(
+                    exchange,
+                    local.symbol,
+                    _mechanical_market_sequence,
+                    max(1.0, open_poll_seconds * 4.0),
+                )
+                if quote_source == "REST_RECOVERY":
+                    operator.system_log.warning(
+                        "WSS_QUOTE_RECOVERY_REST symbol=%s", local.symbol
+                    )
                 worker.process_open_quote(quote)
                 operator.sync()
-                time.sleep(open_poll_seconds)
             return 0
         except Exception as exc:
             operator.runtime_error(exc)
