@@ -75,12 +75,12 @@ def main() -> int:
             if trade.symbol in buffering:
                 buf = buffers.setdefault(trade.symbol, [])
                 if len(buf) >= 20_000:
-                    ledger.mark_stream_gap(at_ms=trade.trade_time_ms)
+                    ledger.mark_stream_gap(at_ms=trade.trade_time_ms, symbol=trade.symbol)
                     del buf[:10_000]
                 buf.append(trade)
                 return
             if len(live_queue) >= live_queue_limit:
-                ledger.mark_stream_gap(at_ms=trade.trade_time_ms)
+                ledger.mark_stream_gap(at_ms=trade.trade_time_ms, symbol=trade.symbol)
                 del live_queue[: max(1, live_queue_limit // 2)]
             live_queue.append(trade)
 
