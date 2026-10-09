@@ -306,7 +306,11 @@ class DecisionOutcomeLedger:
         for decision_ms, raw, check in rows:
             state = self._verified(raw, check)
             last = state.get("last_trade_time_ms")
-            starts.append(int(decision_ms) if last is None else int(last) + 1)
+            # Start inclusively at the last persisted millisecond. Multiple
+            # aggregate trades can share one timestamp; aggregate-trade ID
+            # deduplication inside replay safely removes the already-committed
+            # event without losing later IDs from the same millisecond.
+            starts.append(int(decision_ms) if last is None else int(last))
         return min(starts) if starts else None
 
     def mark_stream_gap(self, *, at_ms: int, symbol: str | None = None) -> int:
