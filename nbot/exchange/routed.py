@@ -51,6 +51,11 @@ class MarketRoutedExchange:
         return self.capital.protective_stop_snapshot(symbol)
 
     def validate_protective_stop(self, symbol, side, stop_price):
+        validate = getattr(self.capital, "validate_protective_stop_against_quote", None)
+        if callable(validate):
+            return validate(symbol, side, stop_price, self.market.quote(symbol))
+        # Compatibility-only path for adapters without split validation. LIVE
+        # Binance implements the WSS-aware method above.
         return self.capital.validate_protective_stop(symbol, side, stop_price)
 
     def set_leverage(self, symbol, leverage):
