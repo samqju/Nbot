@@ -31,6 +31,7 @@ class DecisionOutcomeLedgerTests(unittest.TestCase):
         ledger.on_agg_trade(trade("BTCUSDT", 98.9, 1_300_100, 1))
         # Later rally must not resurrect a stopped counterfactual.
         ledger.on_agg_trade(trade("BTCUSDT", 104.0, 1_300_200, 2))
+        ledger.finalize_funding([])
         row = next(iter(ledger.training_targets().values()))
         self.assertLess(row["target_net_r"], -1.0)
         self.assertEqual(row["assessment"], "AVOIDED_LOSS")
@@ -43,6 +44,7 @@ class DecisionOutcomeLedgerTests(unittest.TestCase):
         ledger.on_agg_trade(trade("BTCUSDT", 103.2, 1_300_100, 1))
         # Stop is now +2R around the fill. Reversal crosses it.
         ledger.on_agg_trade(trade("BTCUSDT", 101.9, 1_300_200, 2))
+        ledger.finalize_funding([])
         row = next(iter(ledger.training_targets().values()))
         self.assertGreater(row["target_net_r"], 1.0)
         self.assertEqual(row["assessment"], "MISSED_PROFITABLE_POLICY_OUTCOME")
@@ -54,6 +56,7 @@ class DecisionOutcomeLedgerTests(unittest.TestCase):
         ledger.on_agg_trade(trade("BTCUSDT", 100.0, 1_300_100, 1))
         ledger.mark_stream_gap(at_ms=1_300_150)
         ledger.on_agg_trade(trade("BTCUSDT", 101.5, 1_300_200, 2))
+        ledger.finalize_funding([])
         self.assertEqual(ledger.training_targets(), {})
 
     def test_resolved_gap_can_be_used_after_backfill(self):
@@ -63,6 +66,7 @@ class DecisionOutcomeLedgerTests(unittest.TestCase):
         ledger.mark_stream_gap(at_ms=1_300_010)
         ledger.on_agg_trade(trade("BTCUSDT", 101.5, 1_300_100, 1), source="REST_BACKFILL")
         ledger.resolve_stream_gap("BTCUSDT")
+        ledger.finalize_funding([])
         targets = ledger.training_targets()
         self.assertEqual(len(targets), 1)
 
@@ -72,6 +76,7 @@ class DecisionOutcomeLedgerTests(unittest.TestCase):
                       blocker=None, **base)
         ledger.on_agg_trade(trade("BTCUSDT", 100.5, 1_300_100, 1))
         ledger.expire(now_ms=1_300_000 + 4*60*60*1000 + 1)
+        ledger.finalize_funding([])
         row = next(iter(ledger.training_targets().values()))
         self.assertEqual(row["assessment"], "APPROVED_COUNTERFACTUAL")
 

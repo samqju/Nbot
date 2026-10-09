@@ -481,11 +481,12 @@ class DecisionOutcomeLedger:
             "exit_reason": exit_reason, "exit_time_ms": int(exit_time_ms),
             "raw_crossing_price": raw_exit, "exit_price_after_slippage": exit_price,
             "gross_usd": gross_usd, "fee_usd": fee_usd,
-            "funding_cost_usd": None,
+            "funding_cost_usd": None, "funding_cost_frac": None,
+            "funding_complete": False,
             "cost_basis": "TAKER_FEES_AND_FIXED_SLIPPAGE_V1_FUNDING_PENDING",
             "net_usd_before_funding": net_usd,
             "gross_r": gross_r, "net_r_before_funding": net_r,
-            "target_net_r": net_r,
+            "target_net_r": None,
             "mfe_r": float(state["mfe_r"]), "mae_r": float(state["mae_r"]),
             "peak_r": float(state["peak_r"]), "final_stop_r": float(state["stop_r"]),
             "crossings": state["crossings"], "stop_trace": state["stop_trace"],
@@ -500,6 +501,65 @@ class DecisionOutcomeLedger:
             "result_json=?,result_digest=?,matured_at_ms=? WHERE hypothesis_id=?",
             (_json(state), _digest(state), _json(result), _digest(result), int(time.time() * 1000), hid),
         )
+
+    def finalize_funding(self, funding_events: Iterable[Any]) -> int:
+        """Complete cost accounting after stop/horizon using actual funding events.
+
+        The caller may pass FundingEvent objects or dict-like rows. An empty
+        iterable is a valid proof that no funding event occurred in the covered
+        interval; callers are responsible for querying a complete time range.
+        """
+        events_by_symbol: dict[str, list[tuple[int, float]]] = {}
+        for item in funding_events:
+            symbol = str(getattr(item, "symbol", item.get("symbol") if isinstance(item, dict) else "")).upper()
+            when = getattr(item, "funding_time_ms", item.get("funding_time_ms") if isinstance(item, dict) else None)
+            rate = getattr(item, "funding_rate", item.get("funding_rate") if isinstance(item, dict) else None)
+            if not symbol or when is None or rate is None:
+                raise ValueError("DECISION_LEDGER_FUNDING_EVENT_INVALID")
+            events_by_symbol.setdefault(symbol, []).append((int(when), float(rate)))
+
+        completed = 0
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            rows = conn.execute(
+                "SELECT hypothesis_id,decision_ms,symbol,side,frozen_json,frozen_digest,"
+                "state_json,state_digest,result_json,result_digest "
+                "FROM decision_hypotheses WHERE status='MATURED'"
+            ).fetchall()
+            for hid, decision_ms, symbol, side, frozen_raw, frozen_check, state_raw, state_check, result_raw, result_check in rows:
+                frozen = self._verified(frozen_raw, frozen_check)
+                state = self._verified(state_raw, state_check)
+                result = self._verified(result_raw, result_check)
+                if bool(result.get("funding_complete")):
+                    continue
+                exit_ms = int(result["exit_time_ms"])
+                rates = [
+                    rate for when, rate in events_by_symbol.get(str(symbol), [])
+                    if int(decision_ms) < when <= exit_ms
+                ]
+                funding_frac = sum(rates) if side == "LONG" else -sum(rates)
+                notional = float(state["entry_price"]) * float(state["quantity"])
+                funding_usd = funding_frac * notional
+                net_usd = float(result["net_usd_before_funding"]) - funding_usd
+                net_r = net_usd / self.config.risk_usd
+                result["funding_cost_frac"] = funding_frac
+                result["funding_cost_usd"] = funding_usd
+                result["funding_complete"] = True
+                result["cost_basis"] = "TAKER_FEES_FIXED_SLIPPAGE_AND_ACTUAL_FUNDING_V1"
+                result["net_usd"] = net_usd
+                result["target_net_r"] = net_r
+                if frozen["decision"] == "REJECTED":
+                    result["assessment"] = (
+                        "MISSED_PROFITABLE_POLICY_OUTCOME" if net_r > 0.05
+                        else "AVOIDED_LOSS" if net_r < -0.05
+                        else "REJECTED_FLAT"
+                    )
+                conn.execute(
+                    "UPDATE decision_hypotheses SET result_json=?,result_digest=? WHERE hypothesis_id=?",
+                    (_json(result), _digest(result), hid),
+                )
+                completed += 1
+        return completed
 
     def training_targets(self, *, through_event_ms: int | None = None) -> dict[tuple[int, str, str], dict[str, Any]]:
         sql = (
@@ -517,7 +577,7 @@ class DecisionOutcomeLedger:
         for event_ms, symbol, side, frozen_raw, frozen_check, result_raw, result_check in rows:
             frozen = self._verified(frozen_raw, frozen_check)
             result = self._verified(result_raw, result_check)
-            if result.get("path_quality") != "AGGTRADE_RESOLVED":
+            if result.get("path_quality") != "AGGTRADE_RESOLVED" or not bool(result.get("funding_complete")):
                 continue
             output[(int(event_ms), str(symbol), str(side))] = {
                 "event_ms": int(event_ms), "symbol": str(symbol), "side": str(side),
@@ -562,6 +622,10 @@ class DecisionOutcomeLedger:
             "unscorable": int(counts.get("UNSCORABLE", 0)),
             "approved_hypotheses": approved, "rejected_hypotheses": rejected,
             "aggtrade_resolved": resolved,
+            "funding_complete": sum(
+                1 for raw, check in quality
+                if bool(self._verified(raw, check).get("funding_complete"))
+            ),
             "missed_profitable_policy_outcomes": missed, "avoided_losses": avoided,
             "pending_symbols": len(self.pending_symbols()),
             "counterfactual_not_execution_pnl": True,

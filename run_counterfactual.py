@@ -41,6 +41,7 @@ def main() -> int:
     buffering: set[str] = set()
     buffers: dict[str, list[AggTrade]] = {}
     generation = 0
+    next_funding_sync = 0.0
 
     def on_trade(trade: AggTrade) -> None:
         with lock:
@@ -100,6 +101,14 @@ def main() -> int:
     try:
         while not stop.wait(1.0):
             ledger.expire()
+            now_mono = time.monotonic()
+            if now_mono >= next_funding_sync:
+                # Query a complete 5h window: every 4h hypothesis plus margin
+                # for scheduler jitter. Funding completion is required before a
+                # counterfactual can become an ML training target.
+                now_ms = int(time.time() * 1000)
+                ledger.finalize_funding(history.funding_history(now_ms - 5*60*60*1000, now_ms))
+                next_funding_sync = now_mono + 60.0
             pending = set(ledger.pending_symbols())
             with lock:
                 needs = sorted(pending.difference(ready).difference(buffering))
