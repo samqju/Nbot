@@ -309,13 +309,22 @@ class DecisionOutcomeLedger:
             starts.append(int(decision_ms) if last is None else int(last) + 1)
         return min(starts) if starts else None
 
-    def mark_stream_gap(self, *, at_ms: int) -> int:
+    def mark_stream_gap(self, *, at_ms: int, symbol: str | None = None) -> int:
         updated = 0
+        target = None if symbol is None else str(symbol).strip().upper()
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            rows = conn.execute(
-                "SELECT hypothesis_id,state_json,state_digest FROM decision_hypotheses WHERE status='OPEN'"
-            ).fetchall()
+            if target is None:
+                rows = conn.execute(
+                    "SELECT hypothesis_id,state_json,state_digest FROM decision_hypotheses "
+                    "WHERE status='OPEN'"
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT hypothesis_id,state_json,state_digest FROM decision_hypotheses "
+                    "WHERE status='OPEN' AND symbol=?",
+                    (target,),
+                ).fetchall()
             for hid, raw, check in rows:
                 state = self._verified(raw, check)
                 state["stream_gap_count"] = int(state["stream_gap_count"]) + 1
