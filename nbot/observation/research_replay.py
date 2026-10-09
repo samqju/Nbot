@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 import hashlib
 import json
 import math
+import threading
+from typing import Any
 
 from .chronological_replay import TradeEvent
 from .counterfactual import EvidenceQuality, PolicyOutcome, ReplayCosts, TrailPolicy, replay_policy
@@ -88,7 +90,7 @@ class _TickState:
 
     def outcome(self, *, now_ms: int) -> PolicyOutcome | None:
         h = self.hypothesis
-        if self.exit_price is None and now_ms < h.entry_time_ms + h.horizon_ms:
+        if self.exit_price is None and not self.gap_unresolved and now_ms < h.entry_time_ms + h.horizon_ms:
             return None
         digest = self.digest.hexdigest()
         if self.gap_unresolved or self.seen == 0:
@@ -127,43 +129,48 @@ class _BufferedState:
 
 
 class ResearchReplayBook:
-    """Overlapping hypotheses with streaming tick evaluation and bounded buffering."""
+    """Overlapping hypotheses with streaming tick evaluation and thread safety."""
 
     def __init__(self) -> None:
         self._active: dict[str, _TickState | _BufferedState] = {}
         self._by_symbol: dict[str, set[str]] = {}
         self._results: dict[str, PolicyOutcome] = {}
+        self._lock = threading.RLock()
 
     def add(self, hypothesis: ReplayHypothesis) -> None:
-        if hypothesis.decision_id in self._active or hypothesis.decision_id in self._results:
-            raise ValueError("REPLAY_DECISION_ALREADY_EXISTS")
-        state: _TickState | _BufferedState
-        if hypothesis.policy is TrailPolicy.TICK_INTEGER_R:
-            state = _TickState(hypothesis)
-        else:
-            state = _BufferedState(hypothesis)
-        self._active[hypothesis.decision_id] = state
-        self._by_symbol.setdefault(hypothesis.symbol, set()).add(hypothesis.decision_id)
+        with self._lock:
+            if hypothesis.decision_id in self._active or hypothesis.decision_id in self._results:
+                raise ValueError("REPLAY_DECISION_ALREADY_EXISTS")
+            state: _TickState | _BufferedState
+            if hypothesis.policy is TrailPolicy.TICK_INTEGER_R:
+                state = _TickState(hypothesis)
+            else:
+                state = _BufferedState(hypothesis)
+            self._active[hypothesis.decision_id] = state
+            self._by_symbol.setdefault(hypothesis.symbol, set()).add(hypothesis.decision_id)
 
     def ingest(self, event: TradeEvent) -> None:
-        for decision_id in tuple(self._by_symbol.get(event.symbol, ())):
-            state = self._active[decision_id]
-            if isinstance(state, _TickState):
-                state.ingest(event)
-            else:
-                h = state.hypothesis
-                if h.entry_time_ms <= event.trade_time_ms <= h.entry_time_ms + h.horizon_ms:
-                    # Bar-close policy is research comparison only. The live
-                    # high-resolution path uses the streaming tick state above.
-                    state.events.append(event)
+        with self._lock:
+            for decision_id in tuple(self._by_symbol.get(event.symbol, ())):
+                state = self._active[decision_id]
+                if isinstance(state, _TickState):
+                    state.ingest(event)
+                else:
+                    h = state.hypothesis
+                    if h.entry_time_ms <= event.trade_time_ms <= h.entry_time_ms + h.horizon_ms:
+                        state.events.append(event)
 
-    def mature(self, decision_id: str, *, now_ms: int, force: bool = False) -> PolicyOutcome | None:
+    def _mature_unlocked(
+        self, decision_id: str, *, now_ms: int, force: bool = False
+    ) -> PolicyOutcome | None:
         state = self._active.get(decision_id)
         if state is None:
             return self._results.get(decision_id)
         h = state.hypothesis
         if isinstance(state, _TickState):
-            outcome = state.outcome(now_ms=(h.entry_time_ms + h.horizon_ms if force else now_ms))
+            outcome = state.outcome(
+                now_ms=(h.entry_time_ms + h.horizon_ms if force else now_ms)
+            )
         else:
             if not force and now_ms < h.entry_time_ms + h.horizon_ms:
                 return None
@@ -181,36 +188,47 @@ class ResearchReplayBook:
             del self._by_symbol[h.symbol]
         return outcome
 
+    def mature(self, decision_id: str, *, now_ms: int, force: bool = False) -> PolicyOutcome | None:
+        with self._lock:
+            return self._mature_unlocked(decision_id, now_ms=now_ms, force=force)
+
     def mature_due(self, *, now_ms: int) -> dict[str, PolicyOutcome]:
-        matured = {}
-        for decision_id, state in tuple(self._active.items()):
-            h = state.hypothesis
-            early_exit = isinstance(state, _TickState) and (
-                state.exit_price is not None or state.gap_unresolved
-            )
-            if early_exit or now_ms >= h.entry_time_ms + h.horizon_ms:
-                outcome = self.mature(decision_id, now_ms=now_ms, force=early_exit)
-                if outcome is not None:
-                    matured[decision_id] = outcome
-        return matured
+        with self._lock:
+            matured = {}
+            for decision_id, state in tuple(self._active.items()):
+                h = state.hypothesis
+                early_exit = isinstance(state, _TickState) and (
+                    state.exit_price is not None or state.gap_unresolved
+                )
+                if early_exit or now_ms >= h.entry_time_ms + h.horizon_ms:
+                    outcome = self._mature_unlocked(
+                        decision_id, now_ms=now_ms, force=early_exit
+                    )
+                    if outcome is not None:
+                        matured[decision_id] = outcome
+            return matured
 
     @property
     def active_count(self) -> int:
-        return len(self._active)
+        with self._lock:
+            return len(self._active)
 
     @property
     def active_symbols(self) -> tuple[str, ...]:
-        return tuple(sorted(symbol for symbol, ids in self._by_symbol.items() if ids))
+        with self._lock:
+            return tuple(sorted(symbol for symbol, ids in self._by_symbol.items() if ids))
 
     def active_decisions_for_symbol(self, symbol: str) -> int:
-        return len(self._by_symbol.get(symbol, ()))
+        with self._lock:
+            return len(self._by_symbol.get(symbol, ()))
 
     def buffered_event_count(self, symbol: str | None = None) -> int:
-        states = self._active.values()
-        if symbol is not None:
-            states = (
-                state for state in states if state.hypothesis.symbol == symbol
+        with self._lock:
+            states = list(self._active.values())
+            if symbol is not None:
+                states = [
+                    state for state in states if state.hypothesis.symbol == symbol
+                ]
+            return sum(
+                len(state.events) for state in states if isinstance(state, _BufferedState)
             )
-        return sum(
-            len(state.events) for state in states if isinstance(state, _BufferedState)
-        )
