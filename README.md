@@ -18,7 +18,7 @@ the quality gates. Testnet and live-trade do not automatically inherit it.
 Paper feedback update: [30-day auto-learning experiment](docs/PAPER_AUTO_LEARNING.md). Learned mainnet-paper now adapts setup rankings from its own settled paper trades. Testnet and real-money selection remain separate; economic proof is still unestablished.
 
 
-Current learner/operator documentation reviewed 2026-10-05 against the V3.9 three-mode CLI and this research branch.
+Current learner/operator documentation reviewed 2026-10-09 against the current NBOT V3 three-mode CLI and WSS-first research branch.
 Use the [documentation index and current behavior summary](docs/DOCUMENTATION_INDEX.md)
 to distinguish setup instructions, frozen contracts, and historical evidence.
 Three-mode execution and its setup guide were updated 2026-10-02.
@@ -67,13 +67,13 @@ See [setup and operating instructions](docs/LEARNED_TESTNET_SETUP.md) and the
 [versioned contract](docs/LEARNED_TESTNET_CONTRACT.md). This addition does not
 enable real-money trading or claim economic validation.
 
-`V3.9 — continuous challenger learning / long-term Paper Champion evidence`
+**Current V3 research state — continuous challenger learning plus WSS-first broad counterfactual research**
 
 Current status is deliberately split:
 
-- **V3.9 implementation:** complete enough for continuous research operation, including compact 96-event research epochs, immutable challenger artifacts, rolling governance, market/operational regime evidence, the frozen Research Champion promotion boundary, and the frozen Paper Champion gate.
-- **V3.9 economic proof:** **NOT PASSED**. Do not infer a Research or Paper Champion from code completion; read runtime governance status. The experimental Testnet route does not require or create either champion.
-- **V3.10:** **BLOCKED** until genuine Research Champion then sustained LIVE/PAPER Paper Champion evidence satisfies the frozen gates.
+- **Implementation:** the continuous research/governance stack and the WSS-first broad counterfactual research foundation are implemented and regression-tested.
+- **Economic proof:** **NOT PASSED**. Do not infer a Research or Paper Champion from code completion; read runtime governance status. The experimental Testnet route does not require or create either champion.
+- Historical V3.9/V3.10 milestone names remain only in frozen audit/contract documents. They are not the current runtime version.
 
 Challenger cadence is epoch-driven. `nbot-research-epoch.timer` checks for maturity every 15 minutes, but a challenger opportunity is created only after a genuinely new 96-event epoch is durably committed. `WAIT_FOR_MATURE_EPOCH`, unhealthy/failing epochs, and replay of an already-consumed epoch do not create additional challengers. A committed epoch whose challenger transition fails retains a durable retryable transition.
 An opportunity may evaluate the existing frozen model and return `EVALUATE_WAIT`;
@@ -83,9 +83,9 @@ The Observation/Execution authority boundary remains unchanged: Observation owns
 
 ### Preserved operational history
 
-The earlier `V3.1 EXECUTION CORE` and subsequent V3.2–V3.8 operational milestones remain preserved as history. V3.7 is historically **OPERATIONALLY PROVEN**. Normal LONG, Normal SHORT, and the C–V fault campaign passed without weakening the canonical gate. V3.8 LIVE_PAPER operational canary work is also preserved as operational evidence. Those historical proofs do not imply V3.9 economic completion.
+The earlier `V3.1 EXECUTION CORE` and subsequent V3.2–V3.8 operational milestones remain preserved as history. V3.7 is historically **OPERATIONALLY PROVEN**. Normal LONG, Normal SHORT, and the C–V fault campaign passed without weakening the canonical gate. V3.8 LIVE_PAPER operational canary work is also preserved as operational evidence. Those historical proofs do not imply current economic validation.
 
-An explicit, bounded mainnet trial is now available after your own testing and confirmation. It is independent of the still-unpassed automatic V3.10 Champion gates. Follow [the three-mode setup guide](docs/TRADING_MODES.md); publication does not activate trading.
+An explicit, bounded mainnet trial is now available after your own testing and confirmation. It is independent of the still-unpassed automatic Champion gates. Follow [the three-mode setup guide](docs/TRADING_MODES.md); publication does not activate trading.
 
 ## Local role identity
 
