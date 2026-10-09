@@ -362,89 +362,156 @@ class DecisionOutcomeLedger:
         return updated
 
     def on_agg_trade(self, trade: AggTrade, *, source: str = "WSS") -> int:
+        """Compatibility wrapper for one event.
+
+        Realtime replay should prefer :meth:`on_agg_trades` so a burst of
+        Binance events is applied in one SQLite transaction per batch rather
+        than one transaction per market event.
+        """
+        return self.on_agg_trades((trade,), source=source)
+
+    def on_agg_trades(self, trades: Iterable[AggTrade], *, source: str = "WSS") -> int:
+        """Replay a chronological batch and persist each hypothesis at most once.
+
+        The Binance stream can produce many aggregate trades per second across a
+        wide universe. Doing a SQLite read/write transaction for every aggTrade
+        would make the research recorder itself the bottleneck and could block
+        the WebSocket receive thread. Batching preserves exact per-symbol event
+        order while reducing durable writes to one final state per affected
+        hypothesis (or one sealed result when a stop/horizon is reached).
+
+        Crash recovery remains causal: the last persisted aggregate-trade ID and
+        timestamp are a checkpoint, and the passive service REST-backfills from
+        that checkpoint before resuming WSS replay.
+        """
         if source not in {"WSS", "REST_BACKFILL"}:
             raise ValueError("DECISION_LEDGER_PATH_SOURCE_INVALID")
+        materialized = tuple(trades)
+        if not materialized:
+            return 0
+        grouped: dict[str, list[AggTrade]] = {}
+        for trade in materialized:
+            if not isinstance(trade, AggTrade):
+                raise TypeError("DECISION_LEDGER_AGGTRADE_INVALID")
+            grouped.setdefault(trade.symbol, []).append(trade)
+        for rows in grouped.values():
+            rows.sort(key=lambda item: (int(item.trade_time_ms), int(item.aggregate_trade_id)))
+
         touched = 0
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            rows = conn.execute(
-                "SELECT hypothesis_id,decision_ms,side,frozen_json,frozen_digest,state_json,state_digest "
-                "FROM decision_hypotheses WHERE status='OPEN' AND symbol=? AND decision_ms<=? ORDER BY decision_ms",
-                (trade.symbol, int(trade.trade_time_ms)),
-            ).fetchall()
-            for hid, decision_ms, side, frozen_raw, frozen_check, state_raw, state_check in rows:
-                frozen = self._verified(frozen_raw, frozen_check)
-                state = self._verified(state_raw, state_check)
-                last_id = state.get("last_agg_id")
-                last_time = state.get("last_trade_time_ms")
-                if last_id is not None and int(trade.aggregate_trade_id) <= int(last_id):
-                    continue
-                if last_time is not None and int(trade.trade_time_ms) < int(last_time):
-                    continue
-                horizon_end = int(decision_ms) + int(frozen["horizon_ms"])
-                if int(trade.trade_time_ms) > horizon_end:
-                    self._mature_in_tx(
-                        conn, hid, frozen, state,
-                        exit_price_raw=state.get("last_price"),
-                        exit_time_ms=horizon_end, exit_reason="HORIZON_4H",
-                    )
-                    touched += 1
-                    continue
-                price = float(trade.price)
-                fill = float(state["entry_price"])
-                per_r = float(state["per_r_price"])
-                current_r = self._signed_r(side, price, fill, per_r)
-                state["mae_r"] = min(float(state["mae_r"]), current_r, 0.0)
-                stop = float(state["stop_price"])
-                hit = price <= stop if side == "LONG" else price >= stop
-                if hit:
-                    state["last_price"] = price
-                    state["last_trade_time_ms"] = int(trade.trade_time_ms)
-                    state["last_agg_id"] = int(trade.aggregate_trade_id)
-                    state["trade_count"] = int(state["trade_count"]) + 1
-                    if source == "REST_BACKFILL":
-                        state["backfill_trade_count"] = int(state["backfill_trade_count"]) + 1
-                    self._mature_in_tx(
-                        conn, hid, frozen, state,
-                        exit_price_raw=price,
-                        exit_time_ms=int(trade.trade_time_ms),
-                        exit_reason="STOP",
-                    )
-                    touched += 1
-                    continue
+            for symbol in sorted(grouped):
+                symbol_trades = grouped[symbol]
+                max_time = int(symbol_trades[-1].trade_time_ms)
+                rows = conn.execute(
+                    "SELECT hypothesis_id,decision_ms,side,frozen_json,frozen_digest,"
+                    "state_json,state_digest FROM decision_hypotheses "
+                    "WHERE status='OPEN' AND symbol=? AND decision_ms<=? ORDER BY decision_ms",
+                    (symbol, max_time),
+                ).fetchall()
+                for hid, decision_ms, side, frozen_raw, frozen_check, state_raw, state_check in rows:
+                    frozen = self._verified(frozen_raw, frozen_check)
+                    state = self._verified(state_raw, state_check)
+                    last_id = state.get("last_agg_id")
+                    last_time = state.get("last_trade_time_ms")
+                    changed = False
+                    matured = False
+                    horizon_end = int(decision_ms) + int(frozen["horizon_ms"])
 
-                previous_peak = float(state["peak_r"])
-                peak = max(previous_peak, current_r, 0.0)
-                state["peak_r"] = peak
-                state["mfe_r"] = max(float(state["mfe_r"]), current_r, 0.0)
-                crossings = dict(state["crossings"])
-                for level in range(1, int(math.floor(peak + 1e-12)) + 1):
-                    key = f"+{level}R"
-                    crossings.setdefault(key, int(trade.trade_time_ms))
-                state["crossings"] = crossings
+                    for trade in symbol_trades:
+                        trade_time = int(trade.trade_time_ms)
+                        trade_id = int(trade.aggregate_trade_id)
+                        if trade_time < int(decision_ms):
+                            continue
+                        if last_id is not None and trade_id <= int(last_id):
+                            continue
+                        if last_time is not None and trade_time < int(last_time):
+                            continue
+                        if trade_time > horizon_end:
+                            if state.get("last_price") is not None:
+                                self._mature_in_tx(
+                                    conn, hid, frozen, state,
+                                    exit_price_raw=state["last_price"],
+                                    exit_time_ms=horizon_end,
+                                    exit_reason="HORIZON_4H",
+                                )
+                            else:
+                                result = {
+                                    "version": VERSION,
+                                    "status": "UNSCORABLE",
+                                    "reason": "NO_AGGTRADE_PATH",
+                                    "counterfactual_not_execution_pnl": True,
+                                    "path_quality": "UNRESOLVED",
+                                }
+                                conn.execute(
+                                    "UPDATE decision_hypotheses SET status='UNSCORABLE',"
+                                    "result_json=?,result_digest=?,matured_at_ms=? WHERE hypothesis_id=?",
+                                    (_json(result), _digest(result), int(time.time() * 1000), hid),
+                                )
+                            matured = True
+                            changed = True
+                            break
 
-                if peak >= 1.0:
-                    locked_r = float(math.floor(peak + 1e-12) - 1)
-                    target = self._price_for_r(side, locked_r, fill, per_r)
-                    tighter = target > stop + 1e-12 if side == "LONG" else target < stop - 1e-12
-                    if tighter:
-                        state["stop_price"] = target
-                        state["stop_r"] = locked_r
-                        trace = list(state["stop_trace"])
-                        trace.append([int(trade.trade_time_ms), locked_r, target, "INTEGER_R_STEP"])
-                        state["stop_trace"] = trace
+                        price = float(trade.price)
+                        fill = float(state["entry_price"])
+                        per_r = float(state["per_r_price"])
+                        current_r = self._signed_r(side, price, fill, per_r)
+                        state["mae_r"] = min(float(state["mae_r"]), current_r, 0.0)
+                        stop = float(state["stop_price"])
 
-                state["last_price"] = price
-                state["last_trade_time_ms"] = int(trade.trade_time_ms)
-                state["last_agg_id"] = int(trade.aggregate_trade_id)
-                state["trade_count"] = int(state["trade_count"]) + 1
-                if source == "REST_BACKFILL":
-                    state["backfill_trade_count"] = int(state["backfill_trade_count"]) + 1
-                conn.execute(
-                    "UPDATE decision_hypotheses SET state_json=?,state_digest=? WHERE hypothesis_id=?",
-                    (_json(state), _digest(state), hid),
-                )
-                touched += 1
+                        # Active protection wins before favorable progress at
+                        # this same chronological market event.
+                        hit = price <= stop if side == "LONG" else price >= stop
+                        state["last_price"] = price
+                        state["last_trade_time_ms"] = trade_time
+                        state["last_agg_id"] = trade_id
+                        state["trade_count"] = int(state["trade_count"]) + 1
+                        if source == "REST_BACKFILL":
+                            state["backfill_trade_count"] = int(state["backfill_trade_count"]) + 1
+                        changed = True
+                        last_id, last_time = trade_id, trade_time
+
+                        if hit:
+                            self._mature_in_tx(
+                                conn, hid, frozen, state,
+                                exit_price_raw=price,
+                                exit_time_ms=trade_time,
+                                exit_reason="STOP",
+                            )
+                            matured = True
+                            break
+
+                        peak = max(float(state["peak_r"]), current_r, 0.0)
+                        state["peak_r"] = peak
+                        state["mfe_r"] = max(float(state["mfe_r"]), current_r, 0.0)
+                        crossings = dict(state["crossings"])
+                        for level in range(1, int(math.floor(peak + 1e-12)) + 1):
+                            crossings.setdefault(f"+{level}R", trade_time)
+                        state["crossings"] = crossings
+
+                        if peak >= 1.0:
+                            locked_r = float(math.floor(peak + 1e-12) - 1)
+                            target = self._price_for_r(side, locked_r, fill, per_r)
+                            current_stop = float(state["stop_price"])
+                            tighter = (
+                                target > current_stop + 1e-12
+                                if side == "LONG"
+                                else target < current_stop - 1e-12
+                            )
+                            if tighter:
+                                state["stop_price"] = target
+                                state["stop_r"] = locked_r
+                                trace = list(state["stop_trace"])
+                                trace.append([trade_time, locked_r, target, "INTEGER_R_STEP"])
+                                state["stop_trace"] = trace
+
+                    if changed and not matured:
+                        conn.execute(
+                            "UPDATE decision_hypotheses SET state_json=?,state_digest=? "
+                            "WHERE hypothesis_id=?",
+                            (_json(state), _digest(state), hid),
+                        )
+                    touched += int(changed)
         return touched
 
     def expire(self, *, now_ms: int | None = None) -> int:
