@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS decision_ledger_meta(
 CREATE TABLE IF NOT EXISTS decision_hypotheses(
     hypothesis_id TEXT PRIMARY KEY,
     release_sha TEXT NOT NULL,
+    profile TEXT NOT NULL CHECK(profile IN ('live-paper','live-trade')),
     event_ms INTEGER NOT NULL,
     decision_ms INTEGER NOT NULL,
     symbol TEXT NOT NULL,
@@ -56,7 +57,7 @@ CREATE TABLE IF NOT EXISTS decision_hypotheses(
     result_json TEXT,
     result_digest TEXT,
     matured_at_ms INTEGER,
-    UNIQUE(release_sha,event_ms,symbol,side)
+    UNIQUE(release_sha,profile,event_ms,symbol,side)
 );
 CREATE INDEX IF NOT EXISTS decision_hypotheses_open_symbol
 ON decision_hypotheses(status,symbol,decision_ms);
@@ -163,8 +164,8 @@ class DecisionOutcomeLedger:
                 raise ValueError("DECISION_LEDGER_DEFINITION_MISMATCH")
 
     @staticmethod
-    def _hypothesis_id(release_sha: str, event_ms: int, symbol: str, side: str) -> str:
-        raw = f"{VERSION}|{release_sha}|{event_ms}|{symbol}|{side}".encode()
+    def _hypothesis_id(release_sha: str, profile: str, event_ms: int, symbol: str, side: str) -> str:
+        raw = f"{VERSION}|{release_sha}|{profile}|{event_ms}|{symbol}|{side}".encode()
         return "CF-" + hashlib.sha256(raw).hexdigest()[:48]
 
     @staticmethod
@@ -177,16 +178,19 @@ class DecisionOutcomeLedger:
         sign = 1.0 if side == "LONG" else -1.0
         return float(fill) + sign * float(r_value) * float(per_r_price)
 
-    def record(self, *, release_sha: str, event_ms: int, decision_ms: int,
+    def record(self, *, release_sha: str, profile: str, event_ms: int, decision_ms: int,
                symbol: str, side: str, bid: float, ask: float, selected: bool,
                decision: str, blocker: str | None, feature_vector: dict[str, Any],
                candidate_ids: Iterable[str], scores: dict[str, Any],
                rank: int, model_digest: str | None = None) -> str:
         release_sha = str(release_sha).strip().lower()
+        profile = str(profile).strip().lower()
         symbol = str(symbol).strip().upper()
         side = str(side).strip().upper()
         if len(release_sha) != 40 or any(c not in "0123456789abcdef" for c in release_sha):
             raise ValueError("DECISION_LEDGER_RELEASE_SHA_INVALID")
+        if profile not in {"live-paper", "live-trade"}:
+            raise ValueError("DECISION_LEDGER_PROFILE_INVALID")
         if side not in {"LONG", "SHORT"}:
             raise ValueError("DECISION_LEDGER_SIDE_INVALID")
         if decision not in {"APPROVED", "REJECTED"} or bool(selected) != (decision == "APPROVED"):
@@ -215,7 +219,7 @@ class DecisionOutcomeLedger:
             "version": VERSION, "authority": AUTHORITY,
             "counterfactual_not_execution_pnl": True,
             "event_ms": int(event_ms), "decision_ms": int(decision_ms),
-            "release_sha": release_sha, "symbol": symbol, "side": side,
+            "release_sha": release_sha, "profile": profile, "symbol": symbol, "side": side,
             "selected": bool(selected), "decision": decision, "blocker": blocker,
             "rank": rank, "candidate_ids": candidates,
             "feature_vector": feature_vector, "scores": scores,
@@ -245,7 +249,7 @@ class DecisionOutcomeLedger:
             "stream_gap_count": 0, "unresolved_gap_count": 0,
             "crossings": {}, "stop_trace": [[int(decision_ms), initial_stop_r, initial_stop, "INITIAL_RISK"]],
         }
-        hypothesis_id = self._hypothesis_id(release_sha, event_ms, symbol, side)
+        hypothesis_id = self._hypothesis_id(release_sha, profile, event_ms, symbol, side)
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             existing = conn.execute(
@@ -267,9 +271,9 @@ class DecisionOutcomeLedger:
                     )
                 return hypothesis_id
             conn.execute(
-                "INSERT INTO decision_hypotheses VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO decision_hypotheses VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
-                    hypothesis_id, release_sha, event_ms, decision_ms, symbol, side,
+                    hypothesis_id, release_sha, profile, event_ms, decision_ms, symbol, side,
                     int(selected), decision, blocker, self.config.horizon_ms,
                     _json(frozen), _digest(frozen), _json(state), _digest(state),
                     "OPEN", None, None, None,
