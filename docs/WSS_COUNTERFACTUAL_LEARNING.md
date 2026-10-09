@@ -57,6 +57,8 @@ client.
 - subscriptions are dynamic and bounded;
 - ping/pong, reconnect and resubscription are handled by the stream worker;
 - quote freshness is checked before a WSS quote is returned;
+- repeated pre-entry quote reads require a newer WSS sequence, so the final
+  pre-order recheck cannot silently reuse the first cached quote;
 - disconnects notify listeners so research paths can be marked incomplete until
   repaired.
 
@@ -89,6 +91,12 @@ instead of sleeping and polling REST. If WSS becomes unavailable, the position
 remains protected and a clearly labelled REST recovery quote may be used for
 already-open management. That recovery path is not an entry path.
 
+Authenticated order placement/capital reconciliation remains on the existing
+signed REST adapter in this branch. That is an intentional separate migration:
+the market-data latency problem is removed first without simultaneously changing
+the durable/ambiguous-order safety contract. A later authenticated WebSocket
+order transport can be reviewed independently.
+
 ## Why aggTrade is used for rejected-decision learning
 
 A five-minute candle can contain both a large favorable excursion and a stop
@@ -116,6 +124,9 @@ counterfactual assumptions.
 eligible event/symbol/side. Multiple setup IDs can be attached to the same
 hypothesis for attribution.
 
+Each frozen hypothesis is isolated by trading profile (`live-paper` versus
+`live-trade`) so the same market event cannot collide across authorities.
+
 Each frozen hypothesis records, among other fields:
 
 - event and decision timestamps;
@@ -127,7 +138,9 @@ Each frozen hypothesis records, among other fields:
 - matched candidate/setup IDs;
 - decision-time bid/ask;
 - model digest and feature vector;
-- fixed counterfactual entry/risk/cost assumptions.
+- fixed counterfactual entry/risk/cost assumptions, including a protective
+  stop rebuilt around the simulated fill just as Execution rebuilds protection
+  around the actual fill.
 
 The replay state tracks:
 
@@ -150,6 +163,13 @@ The current control rule is replayed sequentially:
 
 That chronology is intentionally different from a 5-minute OHLC assumption.
 
+The WebSocket receive callback never performs the normal SQLite replay workload.
+Events enter a bounded in-memory queue and are applied in chronological batches;
+each affected hypothesis is persisted at most once per batch. This avoids a
+transaction per aggTrade when 100+ symbols are active. Queue overflow is treated
+as an evidence gap, never as complete chronology, and triggers symbol-specific
+repair.
+
 ## Gap handling and evidence quality
 
 A WSS disconnect marks active hypotheses with an unresolved gap. The replay
@@ -164,7 +184,10 @@ service then:
 
 Only results with `AGGTRADE_RESOLVED` path quality and complete funding
 accounting become Selective ML V3 training targets. An unresolved chronology is
-kept for diagnostics but excluded from V3 training.
+kept for diagnostics but excluded from V3 training. Funding is not marked
+complete unless the query window proves the entire decision-to-exit interval;
+after downtime the service backfills from the earliest still-unproven matured
+decision rather than inventing zero funding.
 
 ## Funding and costs
 
@@ -276,6 +299,7 @@ Observation/replay:
 - `NBOT_OBSERVATION_UNIVERSE_SIZE`
 - `NBOT_OBSERVATION_CANDLE_WORKERS`
 - `NBOT_COUNTERFACTUAL_ENABLED`
+- `NBOT_COUNTERFACTUAL_WSS_QUEUE_MAX`
 - `LIVE_PUBLIC_WS_FIRST_EVENT_TIMEOUT_SECONDS`
 - `LIVE_PUBLIC_WS_MAX_QUOTE_AGE_MS`
 - `LIVE_PUBLIC_WS_MAX_SYMBOLS`
