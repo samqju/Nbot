@@ -346,6 +346,8 @@ def _format_learning(data: Mapping[str, Any]) -> str:
     governance = data.get("governance") if isinstance(data.get("governance"), Mapping) else {}
     eligibility = governance.get("research_champion_eligibility") if isinstance(governance.get("research_champion_eligibility"), Mapping) else {}
     research = data.get("research_champion_promotion") if isinstance(data.get("research_champion_promotion"), Mapping) else {}
+    two_tier = data.get("two_tier_research") if isinstance(data.get("two_tier_research"), Mapping) else {}
+    ledger = two_tier.get("ledger_counts") if isinstance(two_tier.get("ledger_counts"), Mapping) else {}
     states = governance.get("challenger_states") or []
     finalized = [row for row in states if isinstance(row, Mapping)
                  and row.get("state") != "ACTIVE_WAITING_FUTURE_EVIDENCE"]
@@ -360,6 +362,14 @@ def _format_learning(data: Mapping[str, Any]) -> str:
         f"Latest completed test: {_e(str(latest.get('state') or 'none yet').replace('_', ' ').lower())}\n"
         f"Research model selected: {_e(research.get('current_research_champion') or 'none yet')}\n"
         f"Review progress: {_e(str(eligibility.get('decision') or 'unknown').replace('_', ' ').lower())}\n\n"
+        f"100/20 research: {_e(str(two_tier.get('state') or 'not running').replace('_', ' ').lower())}\n"
+        f"Broad scan target: {_e(two_tier.get('broad_target'))}\n"
+        f"High-resolution symbols: {_e(len(two_tier.get('active_symbols') or []))}"
+        f" / {_e(two_tier.get('high_res_cap'))}\n"
+        f"Active high-resolution hypotheses: {_e(two_tier.get('active_hypotheses'))}\n"
+        f"Research outcomes matured: {_e(ledger.get('matured_research'))}\n"
+        f"Research decisions rejected/not admitted: {_e(ledger.get('rejected'))}"
+        f" / unresolved {_e(ledger.get('unresolved'))}\n\n"
         "The learner tests predictions against later market outcomes.\n"
         "Waiting means more evidence is needed. Rejected means a test did not pass.\n"
         "These counts alone do not prove improving trading profits.\n"
