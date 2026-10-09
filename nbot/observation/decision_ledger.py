@@ -721,7 +721,8 @@ class DecisionOutcomeLedger:
             if result.get("path_quality") != "AGGTRADE_RESOLVED" or not bool(result.get("funding_complete")):
                 continue
             output[(int(event_ms), str(symbol), str(side))] = {
-                "event_ms": int(event_ms), "symbol": str(symbol), "side": str(side),
+                "event_ms": int(event_ms), "decision_ms": int(frozen["decision_ms"]),
+                "symbol": str(symbol), "side": str(side),
                 "feature_vector": frozen["feature_vector"],
                 "scores": frozen["scores"], "rank": frozen["rank"],
                 "selected": frozen["selected"], "decision": frozen["decision"],
