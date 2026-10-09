@@ -83,7 +83,11 @@ def render_units(
         target = destination / unit_name
         rendered = _render(template.read_text(encoding="utf-8"), repo=repo, python=python, user=user)
         if resource_profile == "tiny" and "[Service]" in rendered:
-            research = unit_name in {"nbot-research-epoch.service", "nbot-challenger-cycle.service"}
+            research = unit_name in {
+                "nbot-research-epoch.service",
+                "nbot-challenger-cycle.service",
+                "nbot-counterfactual-replay.service",
+            }
             settings = "\nEnvironment=NBOT_OBSERVATION_RESOURCE_PROFILE=tiny\n"
             settings += "MemoryHigh=256M\nMemoryMax=384M\nCPUQuota=60%\n" if research else "MemoryHigh=96M\nMemoryMax=160M\n"
             rendered = rendered.replace("[Service]\n", "[Service]" + settings, 1)
