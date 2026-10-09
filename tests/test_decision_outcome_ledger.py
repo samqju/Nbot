@@ -116,6 +116,20 @@ class DecisionOutcomeLedgerTests(unittest.TestCase):
         )
         self.assertNotEqual(first, second)
 
+    def test_horizon_waits_for_gap_repair_before_maturing(self):
+        ledger, base = self.make()
+        ledger.record(
+            side="LONG", selected=False, decision="REJECTED",
+            blocker="LOW_CONFIDENCE", **base
+        )
+        ledger.on_agg_trade(trade("BTCUSDT", 100.5, 1_300_100, 1))
+        ledger.mark_stream_gap(at_ms=1_400_000, symbol="BTCUSDT")
+        horizon = 1_300_000 + 4 * 60 * 60 * 1000
+        self.assertEqual(ledger.expire(now_ms=horizon + 1), 0)
+        self.assertIn("BTCUSDT", ledger.pending_symbols())
+        ledger.resolve_stream_gap("BTCUSDT")
+        self.assertEqual(ledger.expire(now_ms=horizon + 1), 1)
+
     def test_horizon_close_seals_open_path(self):
         ledger, base = self.make()
         ledger.record(side="LONG", selected=True, decision="APPROVED",
