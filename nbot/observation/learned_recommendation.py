@@ -241,7 +241,8 @@ class LearnedTestnetSource:
 
     def _record_decision_universe(
         self, *, event_ms: int, now_ms: int, quotes: dict, candidates: list,
-        histories: dict, ranked: list, selected_symbol: str, selected_side: str,
+        histories: dict, ranked: list, btc_available: dict,
+        selected_symbol: str, selected_side: str,
         final_score: float, final_reason: str | None, raw_ml_gate: str | None,
         model_digest: str,
     ) -> None:
@@ -272,7 +273,7 @@ class LearnedTestnetSource:
                     list(detail[1].get("matched_candidates", []))
                     if detail is not None
                     else [item["id"] for item in (matches(
-                        dict(vector, candidate_btc_available=float(vector.get("missing_ret_4h", 0) == 0)),
+                        dict(vector, candidate_btc_available=float(btc_available.get(symbol, False))),
                         side, histories.get(symbol, []),
                     ) or [FALLBACK])]
                 )
@@ -280,7 +281,12 @@ class LearnedTestnetSource:
                     practical_score, symbol, side, vector, ridge_score,
                     ml_detail or {}, setup_ids,
                 ))
-            ordered = sorted(unique, key=lambda item: (-item[0], item[1], item[2]))
+            raw_scores = {(item[1], item[2]): float(item[0]) for item in candidates}
+            ordered = sorted(
+                unique,
+                key=lambda item: (-raw_scores[(item[1], item[2])], item[1], item[2]),
+            )
+            runner_raw = raw_scores[(ordered[1][1], ordered[1][2])] if len(ordered) > 1 else None
             for rank, (practical_score, symbol, side, vector, ridge_score, ml, setup_ids) in enumerate(ordered, start=1):
                 selected = (
                     final_score > 0
@@ -306,6 +312,11 @@ class LearnedTestnetSource:
                         if item[1] == symbol and item[2] == side
                     )),
                     "post_feedback_score_r": practical_score,
+                    "raw_rank": rank,
+                    "raw_edge_gap_r": (
+                        raw_scores[(symbol, side)] - runner_raw
+                        if rank == 1 and runner_raw is not None else None
+                    ),
                     "raw_ml_gate": raw_ml_gate if rank == 1 else None,
                 }
                 self.decision_ledger.record(
@@ -575,7 +586,8 @@ class LearnedTestnetSource:
                 final_reason = "LEARNED_NO_POSITIVE_OPPORTUNITY"
             self._record_decision_universe(
                 event_ms=event_ms, now_ms=now_ms, quotes=quotes, candidates=candidates,
-                histories=histories, ranked=ranked, selected_symbol=symbol,
+                histories=histories, ranked=ranked, btc_available=btc_available,
+                selected_symbol=symbol,
                 selected_side=side, final_score=score, final_reason=final_reason,
                 raw_ml_gate=ml_gate_reason, model_digest=artifact["model_digest"],
             )
