@@ -184,3 +184,80 @@ class DecisionAnalysisTests(unittest.TestCase):
         grid=compare_thresholds(rows)
         self.assertTrue(grid)
         self.assertTrue(all(row["authority"]=="RESEARCH_EVALUATION_ONLY_NO_AUTO_DEPLOY" for row in grid))
+
+
+from nbot.observation.watch_planner import WatchCandidate, plan_two_tier_watch
+from nbot.observation.two_tier_runtime import TwoTierV3ResearchRuntime
+
+
+class TwoTierWatchTests(unittest.TestCase):
+    def candidates(self, count=40):
+        rows=[]
+        for i in range(count):
+            rows.append(WatchCandidate(
+                symbol=f"S{i:03d}USDT",
+                conservative_score_r=.12 if i < 20 else (.08 if i < 30 else .02),
+                threshold_r=.08,
+                setup_id=f"setup{i%4}",
+                volatility_bucket=("HIGH","MID","LOW")[i%3],
+                ridge_score_r=.10 if i%7 else .02,
+                ml_score_r=.10,
+                approved=i < 8,
+            ))
+        return rows
+
+    def test_broad_100_and_high_res_20(self):
+        broad=[f"S{i:03d}USDT" for i in range(140)]
+        plan=plan_two_tier_watch(broad_symbols=broad,candidates=self.candidates(140))
+        self.assertEqual(len(plan.broad_symbols),100)
+        self.assertEqual(len(plan.high_res_symbols),20)
+
+    def test_active_symbols_are_sticky_and_share_stream(self):
+        broad=[f"S{i:03d}USDT" for i in range(100)]
+        active=["S090USDT","S091USDT"]
+        plan=plan_two_tier_watch(broad_symbols=broad,candidates=self.candidates(100),
+                                 active_high_res_symbols=active)
+        self.assertEqual(plan.high_res_symbols[:2],tuple(sorted(active)))
+        self.assertEqual(plan.reasons["S090USDT"],"ACTIVE_HYPOTHESIS_STICKY")
+
+    def test_selection_preserves_learning_mix(self):
+        broad=[f"S{i:03d}USDT" for i in range(100)]
+        plan=plan_two_tier_watch(broad_symbols=broad,candidates=self.candidates(100))
+        reasons=set(plan.reasons.values())
+        self.assertIn("STRONG_OR_APPROVED",reasons)
+        self.assertIn("RIDGE_ML_DISAGREEMENT",reasons)
+        self.assertIn("NEAR_THRESHOLD",reasons)
+        self.assertTrue("SETUP_DIVERSITY" in reasons or "VOLATILITY_DIVERSITY" in reasons)
+
+    def test_does_not_force_twenty_when_only_twelve_candidates_exist(self):
+        broad=[f"S{i:03d}USDT" for i in range(100)]
+        plan=plan_two_tier_watch(broad_symbols=broad,candidates=self.candidates(12))
+        self.assertEqual(len(plan.high_res_symbols),12)
+
+    def test_two_tier_runtime_refuses_precise_replay_outside_watch(self):
+        with tempfile.TemporaryDirectory() as td:
+            rt=TwoTierV3ResearchRuntime(Path(td)/"research.db",broad_target=100,high_res_cap=2)
+            broad=["BTCUSDT","ETHUSDT","SOLUSDT"]
+            candidates=[
+                WatchCandidate("BTCUSDT",.2,.08,"a",approved=True),
+                WatchCandidate("ETHUSDT",.1,.08,"b",approved=True),
+                WatchCandidate("SOLUSDT",.01,.08,"c"),
+            ]
+            plan=rt.refresh_watch_plan(broad_symbols=broad,candidates=candidates)
+            self.assertNotIn("SOLUSDT",plan.high_res_symbols)
+            d=FrozenDecision("sol-d","e2",1000,"SOLUSDT","LONG","c","abc","model","fd",
+                             .01,.01,.01,.01,3,.02,-.01,False,"BELOW_THRESHOLD",100,101,
+                             "WSS_BOOK","TICK_INTEGER_R_V1",1.0,True)
+            h=ReplayHypothesis("sol-d","SOLUSDT","LONG",100,1,1000,TrailPolicy.TICK_INTEGER_R)
+            rt.submit(d,h)
+            self.assertEqual(rt.replays.active_count,0)
+            self.assertEqual(rt.ledger.counts()["unresolved"],1)
+
+    def test_multiple_decisions_same_symbol_use_one_active_symbol(self):
+        book=ResearchReplayBook()
+        for i in range(7):
+            book.add(ReplayHypothesis(f"btc-{i}","BTCUSDT","LONG",100,1,1000,
+                                      TrailPolicy.TICK_INTEGER_R,horizon_ms=100))
+        self.assertEqual(book.active_count,7)
+        self.assertEqual(book.active_symbols,("BTCUSDT",))
+        self.assertEqual(book.active_decisions_for_symbol("BTCUSDT"),7)
