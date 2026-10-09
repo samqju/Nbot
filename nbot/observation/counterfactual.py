@@ -115,6 +115,15 @@ def replay_policy(events: Iterable[TradeEvent], *, symbol: str, side: str, entry
                 bar_peak = r
             else:
                 bar_peak = max(bar_peak, r)
+    if exit_price is None and seen:
+        # A mature counterfactual that never hit its stop exits at the last
+        # chronological trade at or before the fixed horizon. Without this,
+        # successful/no-stop paths were incorrectly left unresolved forever.
+        eligible = [e for e in rows if entry_time_ms <= e.trade_time_ms <= entry_time_ms + horizon_ms]
+        if eligible:
+            exit_time = eligible[-1].trade_time_ms
+            exit_price = eligible[-1].price
+            exit_reason = "HORIZON"
     gross_r = None if exit_price is None else direction * (exit_price - entry_price) / one_r_price
     if gross_r is None:
         net_r = None
