@@ -34,6 +34,8 @@ from .selective_ml import (
 )
 
 
+TWO_TIER_MODEL_PREFIX = "two_tier:ridge_snapshot:"
+
 SIGNAL_INPUTS = (
     "event_open_ms", "symbol", "feature_version", "ret_1h_percentile",
     "ret_4h_percentile", "ret_4h", "realized_vol_4h", "breadth_positive_1h", "ret_1h",
@@ -193,7 +195,59 @@ class LearnedTestnetSource:
                 if not all(math.isfinite(v) for v in values) or any(model["scales"][n] <= 0 for n in FEATURE_VECTOR_NAMES):
                     raise ValueError("LEARNED_MODEL_NUMERICAL_ERROR")
                 return artifact
+        if self.profile.name == "live-paper":
+            return self._current_release_paper_snapshot(event_ms)
         return None
+
+    def _current_release_paper_snapshot(self, event_ms):
+        memory = ResearchMemoryStore(self.memory_path)
+        history = memory.history_base()
+        cutoff = history.get("through_event_ms")
+        if cutoff is None:
+            return None
+        record = memory.artifact(
+            f"{TWO_TIER_MODEL_PREFIX}{self.release_sha}:{int(cutoff)}"
+        )
+        if record is None:
+            return None
+        artifact = record["payload"]
+        if artifact.get("artifact_type") != "TWO_TIER_RIDGE_SNAPSHOT":
+            raise ValueError("LEARNED_PAPER_SNAPSHOT_TYPE_INVALID")
+        if artifact.get("purpose") != "BROAD_COUNTERFACTUAL_RESEARCH_ONLY":
+            raise ValueError("LEARNED_PAPER_SNAPSHOT_PURPOSE_INVALID")
+        if artifact.get("automatic_promotion") is not False:
+            raise ValueError("LEARNED_PAPER_SNAPSHOT_PROMOTION_INVALID")
+        if artifact.get("execution_authority") != "NONE":
+            raise ValueError("LEARNED_PAPER_SNAPSHOT_EXECUTION_AUTHORITY_INVALID")
+        if artifact.get("authority") != "RESEARCH_ONLY_NO_EXECUTION":
+            raise ValueError("LEARNED_PAPER_SNAPSHOT_RESEARCH_AUTHORITY_INVALID")
+        if artifact.get("release_sha") != self.release_sha:
+            raise ValueError("LEARNED_PAPER_SNAPSHOT_RELEASE_MISMATCH")
+        if artifact.get("statistics_version") != STATISTICS_VERSION:
+            raise ValueError("LEARNED_PAPER_SNAPSHOT_STATISTICS_INVALID")
+        if artifact.get("selector_version") != SELECTOR_VERSION:
+            raise ValueError("LEARNED_PAPER_SNAPSHOT_SELECTOR_INVALID")
+        if artifact.get("feature_names") != list(FEATURE_VECTOR_NAMES):
+            raise ValueError("LEARNED_PAPER_SNAPSHOT_FEATURES_INVALID")
+        if int(artifact.get("training_cutoff_event_ms", -1)) != int(cutoff):
+            raise ValueError("LEARNED_PAPER_SNAPSHOT_CUTOFF_MISMATCH")
+        if int(artifact.get("model_available_at_ms", 2**63-1)) >= int(event_ms):
+            return None
+        if int(artifact["training_cutoff_event_ms"]) + LABEL_HORIZON_MS >= int(event_ms):
+            return None
+        if int(artifact.get("training_event_count", 0)) < SELECTION_CONFIG.min_train_events:
+            return None
+        model = artifact.get("model") or {}
+        if (
+            model.get("feature_names") != list(FEATURE_VECTOR_NAMES)
+            or model.get("selector_version") != SELECTOR_VERSION
+        ):
+            raise ValueError("LEARNED_PAPER_SNAPSHOT_MODEL_CONTRACT_INVALID")
+        if model.get("model_digest") != _digest({k: v for k, v in model.items() if k != "model_digest"}):
+            raise ValueError("LEARNED_PAPER_SNAPSHOT_MODEL_DIGEST_INVALID")
+        if artifact.get("model_digest") != model.get("model_digest"):
+            raise ValueError("LEARNED_PAPER_SNAPSHOT_MODEL_LINK_INVALID")
+        return artifact
 
     @staticmethod
     def _not_ready(reason, now):
