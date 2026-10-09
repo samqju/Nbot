@@ -6,6 +6,7 @@ from nbot.exchange.binance_stream import (
     BinanceLiveStreamConfig,
     BinanceLiveStreamError,
     BinanceLiveWebSocketMarketData,
+    QuoteUpdate,
 )
 
 
@@ -55,6 +56,23 @@ class BinanceStreamTests(unittest.TestCase):
         self.assertEqual(update.quote.bid, 100.0)
         self.assertEqual(update.quote.ask, 100.1)
         self.assertEqual(market._rest.recovery_calls, [])
+
+    def test_repeated_quote_calls_require_new_wss_sequence(self):
+        market = BinanceLiveWebSocketMarketData(
+            BinanceLiveStreamConfig(),
+            rest_recovery=_Rest(),
+            now_ms_fn=lambda: 2_000,
+        )
+        after = []
+        def wait(symbol, *, after_sequence=0, timeout_seconds=None):
+            after.append(after_sequence)
+            seq = len(after)
+            return QuoteUpdate(seq, Quote(symbol, 100.0, 100.1, 2_000), 2_000)
+        from nbot.exchange.contracts import Quote
+        market.wait_quote = wait
+        market.quote("BTCUSDT")
+        market.quote("BTCUSDT")
+        self.assertEqual(after, [0, 1])
 
     def test_stale_wss_quote_fails_instead_of_silent_rest_entry_fallback(self):
         clock = [10_000]
