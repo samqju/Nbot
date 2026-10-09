@@ -103,3 +103,41 @@ class UniverseCalibrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+from nbot.observation.sampling import SamplingCandidate, stratified_sample
+from nbot.observation.redesign_runtime import V3ResearchRuntime
+from nbot.observation.wss_transport import decode_combined_message
+
+
+class SamplingRuntimeTests(unittest.TestCase):
+    def test_stratified_sampling_includes_disagreement(self):
+        rows=[SamplingCandidate(f"d{i}","e",f"S{i}USDT","LONG","a" if i%2 else "b",.09,.08,
+                                ridge_score_r=.09 if i else .01,ml_score_r=.09,
+                                volatility_bucket="H" if i%3 else "L")
+              for i in range(12)]
+        selected=stratified_sample(rows,capacity=4,seed="x")
+        self.assertIn("d0",selected)
+        self.assertEqual(len(selected),4)
+        self.assertTrue(all(0<p<=1 for p in selected.values()))
+
+    def test_integrated_runtime_keeps_actual_separate(self):
+        with tempfile.TemporaryDirectory() as td:
+            rt=V3ResearchRuntime(Path(td)/"research_memory.db")
+            d=DecisionLedgerTests().decision()
+            h=ReplayHypothesis("d1","BTCUSDT","LONG",100,1,1000,TrailPolicy.TICK_INTEGER_R,
+                               horizon_ms=10,costs=ReplayCosts(taker_fee_rate=0))
+            rt.submit(d,h)
+            for e in [TradeEvent("BTCUSDT",0,1000,100),TradeEvent("BTCUSDT",1,1001,99)]:
+                rt.ingest_trade(e)
+            matured=rt.mature_due(now_ms=2000)
+            self.assertIn("d1",matured)
+            rt.record_actual_execution(MaturedOutcome(
+                "d1","ACTUAL_PAPER",2001,"ACTUAL_EXECUTION","STOP",-.8,0,-1,"x",True,"p1"))
+            self.assertEqual(rt.ledger.counts()["actual_execution"],1)
+            with self.assertRaises(RuntimeError):
+                rt.submit_order()
+
+    def test_combined_stream_decoder(self):
+        data=decode_combined_message('{"stream":"btcusdt@bookTicker","data":{"e":"bookTicker","s":"BTCUSDT"}}')
+        self.assertEqual(data["s"],"BTCUSDT")
