@@ -21,10 +21,12 @@ from typing import Any, Callable, Mapping
 from .chronological_replay import TradeEvent
 from .counterfactual import ReplayCosts, TrailPolicy
 from .decision_ledger import FrozenDecision
+from .context_learning import describe
 from .learned_recommendation import LearnedTestnetSource, SIGNAL_INPUTS, _execution_compatible_quotes
 from .selection import _feature_vector, _ridge_score
 from .selective_ml import LOWER_SCORE_WEIGHT, MEAN_SCORE_WEIGHT, SelectiveMLRuntime
 from .two_tier_runtime import TwoTierV3ResearchRuntime
+from .research_replay import ReplayHypothesis
 from .watch_planner import WatchCandidate
 from .wss_market import AggTrade, WssMarketState
 from .wss_transport import CombinedStreamRunner
@@ -168,19 +170,7 @@ class BroadResearchScanner:
                     conservative = MEAN_SCORE_WEIGHT * ensemble_mean + LOWER_SCORE_WEIGHT * ml_lower
                 if not math.isfinite(conservative):
                     continue
-                setup_id = str(vector.get("setup") or "MODEL_ONLY")
-                if setup_id == "MODEL_ONLY":
-                    # describe()-derived vectors expose their structure through the
-                    # existing feature fields; use a stable coarse family when no
-                    # explicit setup string exists.
-                    ret4 = float(vector.get("ret_4h_side", 0.0))
-                    ret15 = float(vector.get("ret_15m_side", 0.0))
-                    if ret4 > 0 and ret15 > 0:
-                        setup_id = "TREND"
-                    elif ret4 > 0 and ret15 < 0:
-                        setup_id = "PULLBACK"
-                    elif ret4 < 0 and ret15 > 0:
-                        setup_id = "REVERSAL"
+                setup_id = str(describe(vector).get("setup") or "MODEL_ONLY")
                 raw.append(
                     {
                         "symbol": symbol,
@@ -483,9 +473,7 @@ class LiveTwoTierResearchSupervisor:
             for candidate in candidates:
                 decision = candidate.decision
                 if chosen.get(decision.symbol) is candidate:
-                    hypothesis = __import__(
-                        "nbot.observation.research_replay", fromlist=["ReplayHypothesis"]
-                    ).ReplayHypothesis(
+                    hypothesis = ReplayHypothesis(
                         decision.decision_id,
                         decision.symbol,
                         decision.side,
