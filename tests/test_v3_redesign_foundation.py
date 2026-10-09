@@ -169,3 +169,18 @@ class RecoveryFallbackTests(unittest.TestCase):
                                    policy=TrailPolicy.BAR_CLOSE_INTEGER_R)
         self.assertEqual(outcome.gross_r,-1)
         self.assertFalse(outcome.ambiguous)
+
+
+from nbot.observation.decision_analysis import DecisionEvaluationRow, compare_thresholds, disagreement_report
+
+
+class DecisionAnalysisTests(unittest.TestCase):
+    def test_disagreement_and_threshold_reports_are_research_only(self):
+        rows=[DecisionEvaluationRow("e1",1,.10,.01,.01,-1,False),
+              DecisionEvaluationRow("e2",2,.01,.10,.10,.5,True),
+              DecisionEvaluationRow("e3",3,.12,.11,.11,.8,True)]
+        report=disagreement_report(rows)
+        self.assertEqual(report["disagreements"],2)
+        grid=compare_thresholds(rows)
+        self.assertTrue(grid)
+        self.assertTrue(all(row["authority"]=="RESEARCH_EVALUATION_ONLY_NO_AUTO_DEPLOY" for row in grid))
