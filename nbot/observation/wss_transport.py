@@ -59,9 +59,16 @@ class CombinedStreamRunner:
         self.event_sink = event_sink
         self.dropped = 0
         self._stop = False
+        self._ws = None
 
     async def stop(self) -> None:
         self._stop = True
+        ws = self._ws
+        if ws is not None:
+            try:
+                await ws.close()
+            except Exception:
+                pass
 
     async def _consume(self) -> None:
         while not self._stop:
@@ -84,10 +91,12 @@ class CombinedStreamRunner:
         attempt = 0
         try:
             while not self._stop:
-                self.state.mark_disconnected(self.symbols)
+                self._ws = None
+            self.state.mark_disconnected(self.symbols)
                 try:
                     cm = await self.connect_factory(self.url)
                     async with cm as ws:
+                        self._ws = ws
                         self.state.mark_connected(self.symbols)
                         attempt = 0
                         started = time.monotonic()
@@ -101,9 +110,11 @@ class CombinedStreamRunner:
                                 self.dropped += 1
                                 self.state.mark_disconnected(self.symbols)
                                 raise TransportError("WSS_BACKPRESSURE_OVERFLOW")
+                        self._ws = None
                 except asyncio.CancelledError:
                     raise
                 except Exception:
+                    self._ws = None
                     self.state.mark_disconnected(self.symbols)
                     await asyncio.sleep(reconnect_delay_seconds(attempt, jitter=0))
                     attempt = min(attempt + 1, 16)
