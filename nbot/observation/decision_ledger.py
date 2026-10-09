@@ -606,12 +606,33 @@ class DecisionOutcomeLedger:
             (_json(state), _digest(state), _json(result), _digest(result), int(time.time() * 1000), hid),
         )
 
-    def finalize_funding(self, funding_events: Iterable[Any]) -> int:
+    def funding_requirement_start_ms(self) -> int | None:
+        """Earliest decision whose matured result still needs funding proof."""
+        starts: list[int] = []
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT decision_ms,result_json,result_digest FROM decision_hypotheses "
+                "WHERE status='MATURED' ORDER BY decision_ms"
+            ).fetchall()
+        for decision_ms, raw, check in rows:
+            result = self._verified(raw, check)
+            if not bool(result.get("funding_complete")):
+                starts.append(int(decision_ms))
+        return min(starts) if starts else None
+
+    def finalize_funding(
+        self,
+        funding_events: Iterable[Any],
+        *,
+        coverage_start_ms: int | None = None,
+        coverage_end_ms: int | None = None,
+    ) -> int:
         """Complete cost accounting after stop/horizon using actual funding events.
 
-        The caller may pass FundingEvent objects or dict-like rows. An empty
-        iterable is a valid proof that no funding event occurred in the covered
-        interval; callers are responsible for querying a complete time range.
+        When coverage bounds are supplied, a result is finalized only if its
+        complete decision-to-exit interval is inside the proven query window.
+        This prevents a service restart from incorrectly treating missing old
+        funding history as a zero-funding interval.
         """
         events_by_symbol: dict[str, list[tuple[int, float]]] = {}
         for item in funding_events:
@@ -637,6 +658,10 @@ class DecisionOutcomeLedger:
                 if bool(result.get("funding_complete")):
                     continue
                 exit_ms = int(result["exit_time_ms"])
+                if coverage_start_ms is not None and int(decision_ms) < int(coverage_start_ms):
+                    continue
+                if coverage_end_ms is not None and exit_ms > int(coverage_end_ms):
+                    continue
                 rates = [
                     rate for when, rate in events_by_symbol.get(str(symbol), [])
                     if int(decision_ms) < when <= exit_ms
