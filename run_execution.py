@@ -953,17 +953,38 @@ def run_learned_paper_runtime(*, repo_root: Path, environment: Mapping[str, str]
             market_sequence = 0
             market_symbol = None
             recovery_uses = 0
+            market_failures = 0
+            next_market_warning = 0.0
             while not stop_requested:
                 local = worker.state.open_position
                 if local is not None:
                     if market_symbol != local.symbol:
                         market_symbol, market_sequence = local.symbol, 0
-                    market_sequence, quote, quote_source = _next_live_open_quote(
-                        exchange,
-                        local.symbol,
-                        market_sequence,
-                        max(1.0, open_poll_seconds * 4.0),
-                    )
+                    try:
+                        market_sequence, quote, quote_source = _next_live_open_quote(
+                            exchange,
+                            local.symbol,
+                            market_sequence,
+                            max(1.0, open_poll_seconds * 4.0),
+                        )
+                    except (BinanceLiveStreamError, BinanceLivePublicMarketError) as exc:
+                        market_failures += 1
+                        now = time.monotonic()
+                        if market_failures == 1 or now >= next_market_warning:
+                            operator.system_log.warning(
+                                "LIVE_MARKET_DATA_UNAVAILABLE symbol=%s failures=%s error=%s; "
+                                "position retained and protected; no stale quote applied",
+                                local.symbol, market_failures, exc,
+                            )
+                            next_market_warning = now + 60.0
+                        time.sleep(max(0.25, min(5.0, open_poll_seconds)))
+                        continue
+                    if market_failures:
+                        operator.system_log.info(
+                            "LIVE_MARKET_DATA_RECOVERED symbol=%s failures=%s",
+                            local.symbol, market_failures,
+                        )
+                        market_failures = 0
                     if quote_source == "REST_RECOVERY":
                         recovery_uses += 1
                         if recovery_uses == 1 or recovery_uses % 30 == 0:
@@ -1142,12 +1163,21 @@ def run_live_paper_runtime(
                 if "_mechanical_market_sequence" not in locals() or _mechanical_market_symbol != local.symbol:
                     _mechanical_market_symbol = local.symbol
                     _mechanical_market_sequence = 0
-                _mechanical_market_sequence, quote, quote_source = _next_live_open_quote(
-                    exchange,
-                    local.symbol,
-                    _mechanical_market_sequence,
-                    max(1.0, open_poll_seconds * 4.0),
-                )
+                try:
+                    _mechanical_market_sequence, quote, quote_source = _next_live_open_quote(
+                        exchange,
+                        local.symbol,
+                        _mechanical_market_sequence,
+                        max(1.0, open_poll_seconds * 4.0),
+                    )
+                except (BinanceLiveStreamError, BinanceLivePublicMarketError) as exc:
+                    operator.system_log.warning(
+                        "LIVE_MARKET_DATA_UNAVAILABLE symbol=%s error=%s; "
+                        "position retained; no stale quote applied",
+                        local.symbol, exc,
+                    )
+                    time.sleep(max(0.25, min(5.0, open_poll_seconds)))
+                    continue
                 if quote_source == "REST_RECOVERY":
                     operator.system_log.warning(
                         "WSS_QUOTE_RECOVERY_REST symbol=%s", local.symbol
