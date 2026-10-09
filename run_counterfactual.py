@@ -63,20 +63,34 @@ def main() -> int:
     ready: set[str] = set()
     buffering: set[str] = set()
     buffers: dict[str, list[AggTrade]] = {}
+    live_queue: list[AggTrade] = []
+    live_queue_limit = _positive_int("NBOT_COUNTERFACTUAL_WSS_QUEUE_MAX", 100_000)
     generation = 0
     next_funding_sync = 0.0
 
     def on_trade(trade: AggTrade) -> None:
+        # The WebSocket callback must remain non-blocking. SQLite and replay
+        # work run in the service loop in chronological batches.
         with lock:
             if trade.symbol in buffering:
                 buf = buffers.setdefault(trade.symbol, [])
                 if len(buf) >= 20_000:
-                    # Losing chronology is preferable to pretending the path is complete.
                     ledger.mark_stream_gap(at_ms=trade.trade_time_ms)
                     del buf[:10_000]
                 buf.append(trade)
                 return
-        ledger.on_agg_trade(trade, source="WSS")
+            if len(live_queue) >= live_queue_limit:
+                ledger.mark_stream_gap(at_ms=trade.trade_time_ms)
+                del live_queue[: max(1, live_queue_limit // 2)]
+            live_queue.append(trade)
+
+    def drain_live() -> int:
+        with lock:
+            if not live_queue:
+                return 0
+            batch = tuple(live_queue)
+            live_queue.clear()
+        return ledger.on_agg_trades(batch, source="WSS")
 
     def on_status(state: str, at_ms: int) -> None:
         nonlocal generation
@@ -96,11 +110,11 @@ def main() -> int:
             buffers.setdefault(symbol, [])
         stream.subscribe(symbol)
         cutoff = int(time.time() * 1000)
-        # Endpoint requires <1 hour per start/end range and returns max 1000.
-        # The client paginates within each slice and the 4h hypothesis horizon
-        # is comfortably inside Binance's documented 48h REST retention.
-        for trade in history.aggregate_trades(symbol, start, cutoff):
-            ledger.on_agg_trade(trade, source="REST_BACKFILL")
+        # Backfill is deliberately not the realtime hot path. Apply the
+        # chronology as one durable batch, then merge WSS events that arrived
+        # while REST repair was running.
+        backfill = history.aggregate_trades(symbol, start, cutoff)
+        ledger.on_agg_trades(backfill, source="REST_BACKFILL")
         with lock:
             queued = sorted(
                 buffers.pop(symbol, []),
@@ -108,8 +122,7 @@ def main() -> int:
             )
             buffering.discard(symbol)
             ready.add(symbol)
-        for trade in queued:
-            ledger.on_agg_trade(trade, source="WSS")
+        ledger.on_agg_trades(queued, source="WSS")
         ledger.resolve_stream_gap(symbol)
 
     stream.add_trade_listener(on_trade)
@@ -122,7 +135,8 @@ def main() -> int:
     signal.signal(signal.SIGINT, request_stop)
     stream.connect()
     try:
-        while not stop.wait(1.0):
+        while not stop.wait(0.10):
+            drain_live()
             ledger.expire()
             now_mono = time.monotonic()
             if now_mono >= next_funding_sync:
@@ -140,6 +154,9 @@ def main() -> int:
                     break
                 try:
                     catch_up(symbol)
+                    # Do not let already-ready symbols accumulate a large WSS
+                    # queue while another symbol is being backfilled.
+                    drain_live()
                 except Exception:
                     # Preserve the unresolved-gap marker. A later loop retries.
                     with lock:
@@ -149,7 +166,10 @@ def main() -> int:
                     time.sleep(1.0)
         return 0
     finally:
-        stream.disconnect()
+        try:
+            drain_live()
+        finally:
+            stream.disconnect()
 
 
 if __name__ == "__main__":
