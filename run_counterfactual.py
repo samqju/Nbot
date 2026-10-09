@@ -7,6 +7,7 @@ small chronology window between decision creation/reconnect and live WSS.
 """
 from __future__ import annotations
 
+import os
 import signal
 import threading
 import time
@@ -22,15 +23,37 @@ from nbot.observation.config import observation_config_for_profile
 from nbot.observation.decision_ledger import DecisionOutcomeLedger
 
 
+def _positive_float(key: str, default: float) -> float:
+    value = float(os.environ.get(key, default))
+    if value <= 0:
+        raise ValueError(f"{key}_INVALID")
+    return value
+
+
+def _positive_int(key: str, default: int) -> int:
+    value = int(os.environ.get(key, default))
+    if value <= 0:
+        raise ValueError(f"{key}_INVALID")
+    return value
+
+
 def main() -> int:
     root = Path(__file__).resolve().parent
     ledger = DecisionOutcomeLedger(root / "data/observation/live/decision_outcomes.db")
     profile = get_profile("live-paper")
-    rest = BinanceLivePublicMarketData(BinanceLivePublicMarketConfig())
+    rest = BinanceLivePublicMarketData(BinanceLivePublicMarketConfig(
+        request_timeout_seconds=_positive_float("LIVE_PUBLIC_REST_TIMEOUT_SECONDS", 3.0),
+        max_clock_skew_ms=_positive_int("LIVE_PUBLIC_MAX_CLOCK_SKEW_MS", 5_000),
+    ))
     stream = BinanceLiveWebSocketMarketData(
         BinanceLiveStreamConfig(
-            enable_book_ticker=False, enable_agg_trade=True, max_symbols=200,
-            max_quote_age_ms=5_000,
+            first_event_timeout_seconds=_positive_float(
+                "LIVE_PUBLIC_WS_FIRST_EVENT_TIMEOUT_SECONDS", 4.0
+            ),
+            max_quote_age_ms=_positive_int("LIVE_PUBLIC_WS_MAX_QUOTE_AGE_MS", 2_000),
+            max_symbols=_positive_int("LIVE_PUBLIC_WS_MAX_SYMBOLS", 200),
+            enable_book_ticker=False,
+            enable_agg_trade=True,
         ),
         rest_recovery=rest,
     )
