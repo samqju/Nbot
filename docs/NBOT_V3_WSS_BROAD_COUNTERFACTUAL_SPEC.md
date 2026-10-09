@@ -76,3 +76,43 @@ E. Explicit separate approval for deployment after the V2 cohort; paper-first ro
 ## Delivery tracking
 
 This document records the entire agreed scope. Branch creation and this specification do **not** constitute implementation or test completion. Implement and verify each module before requesting merge or deployment.
+
+
+## Implementation status — 2026-10-09
+
+The branch now contains an integrated **research-only** implementation foundation. This does not authorize deployment and does not change either running VPS.
+
+Implemented on this branch:
+- WSS-first market-state primitives for `bookTicker` and `aggTrade`, symbol-local ordering, duplicate/gap accounting, quote freshness, fail-closed executable-quote access, deterministic 100/200-symbol stream sharding, reconnect backoff, bounded queueing, ping-capable combined-stream transport, and proactive rotation.
+- Credential-free bounded REST `aggTrade` range recovery with strict continuity validation.
+- Separate point-in-time research and execution-eligible universe selection. Execution remains an explicit subset and is never expanded merely because research expands.
+- Append-only immutable decision ledger tables that capture approved and rejected decisions, sampling probability, model diagnostics, quote source, policy identity and immutable matured/unresolved outcomes. Actual execution outcomes are stored separately from research counterfactuals.
+- Capital-uncapped overlapping research replay, allowing many LONG/SHORT hypotheses for the same symbol without consuming paper balance or the legacy ten shadow slots.
+- Explicit `TICK_INTEGER_R_V1` and `BAR_CLOSE_INTEGER_R_V1` policies. They are evaluated as different learning targets rather than silently substituted.
+- After-cost counterfactual fields for taker fees, entry/exit slippage and funding proxy, plus MFE/MAE and source digests.
+- Evidence-quality classes for aggTrade-resolved, 1m-resolved, 5m-unambiguous, 5m-ambiguous and gap-unresolved outcomes. Coarse OHLC paths that cannot establish chronology are not promoted to precise labels.
+- Deterministic stratified candidate sampling that explicitly includes threshold-near cases, Ridge/ML disagreements, setup-family coverage, volatility coverage and stable controls, with inclusion probability recorded for downstream weighting.
+- Chronological calibration helpers, inverse-probability score bins, event-level correlation-aware policy summaries, Ridge-vs-ML disagreement reports and challenger threshold grids. All challenger evaluation is marked research-only with no auto-deployment.
+- An integrated `V3ResearchRuntime` that records decisions, consumes chronological trades, matures research outcomes into the ledger, preserves actual paper outcomes as a separate truth, and has no order method (attempted order submission fails closed).
+- A pinned V3 WSS dependency isolated in `requirements-wss.txt`; the existing Execution authority and production profiles are unchanged.
+
+Verification now present:
+- Opposite intrabar chronology fixtures.
+- Tick-policy versus completed-bar-policy divergence.
+- WSS stale/disconnected/gap fail-closed behavior.
+- 200-symbol combined-stream sharding.
+- Immutable decision identity and separate actual-vs-counterfactual outcomes.
+- Uncapped overlapping replay beyond the legacy ten-position shadow limit.
+- Bounded aggTrade recovery.
+- 5m ambiguity classification and bar-close resolvability.
+- Research/execution universe subset enforcement.
+- Chronological/event-weighted calibration and disagreement-policy reporting.
+- Integrated research runtime explicitly rejecting order submission.
+
+Still required before any deployment or merge approval:
+1. GitHub full regression must be green on the final head.
+2. Real-network WSS soak tests and reconnect/gap-repair exercises must be run separately from the active cohort.
+3. 20 -> 100 -> 200 symbol CPU, memory, messages/sec, queue depth, disk and p95/p99 lag benchmarks must be recorded on representative infrastructure.
+4. REST-vs-WSS shadow transport comparison must be performed with no execution-authority change.
+5. Existing V2/legacy 5m label parity must be demonstrated against historical fixtures at scale.
+6. Paper-first rollout and explicit operator approval remain mandatory. Real-money authority stays disabled until independently authorized.
