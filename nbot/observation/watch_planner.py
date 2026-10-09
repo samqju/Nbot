@@ -160,38 +160,78 @@ def plan_two_tier_watch(
             reasons[row.symbol] = reason
             remaining_slots -= 1
 
-    # Strong/approved opportunities first.
-    admit(
+    # Reserve a balanced mix instead of allowing the strongest-score bucket to
+    # consume every slot. Unused quota naturally flows to the final backfill.
+    initial_free = remaining_slots
+    strong_quota = max(1, round(initial_free * 0.50)) if initial_free else 0
+    disagreement_quota = max(1, round(initial_free * 0.20)) if initial_free >= 4 else 0
+    threshold_quota = max(1, round(initial_free * 0.15)) if initial_free >= 6 else 0
+    diversity_quota = max(1, round(initial_free * 0.10)) if initial_free >= 8 else 0
+    control_quota = max(1, initial_free - strong_quota - disagreement_quota - threshold_quota - diversity_quota) if initial_free else 0
+
+    def admit_limited(rows: list[WatchCandidate], reason: str, limit: int) -> None:
+        nonlocal remaining_slots
+        before = len(selected)
+        if limit <= 0:
+            return
+        admit(rows, reason)
+        overflow = len(selected) - before - limit
+        if overflow > 0:
+            # admit() is general-purpose; trim deterministic excess and restore slots.
+            removed = selected[-overflow:]
+            del selected[-overflow:]
+            for symbol in removed:
+                reasons.pop(symbol, None)
+            remaining_slots += overflow
+
+    admit_limited(
         [row for row in best.values() if row.approved or row.conservative_score_r >= row.threshold_r],
         "STRONG_OR_APPROVED",
+        strong_quota,
     )
+    admit_limited([row for row in best.values() if row.disagreement], "RIDGE_ML_DISAGREEMENT", disagreement_quota)
+    admit_limited([row for row in best.values() if row.near_threshold], "NEAR_THRESHOLD", threshold_quota)
 
-    # Learning-rich disagreements and threshold-edge cases.
-    admit([row for row in best.values() if row.disagreement], "RIDGE_ML_DISAGREEMENT")
-    admit([row for row in best.values() if row.near_threshold], "NEAR_THRESHOLD")
-
-    # Guarantee some setup and volatility diversity when slots remain.
+    diversity_used = 0
     seen_setups = {best[s].setup_id for s in selected if s in best}
     for setup_id in sorted({row.setup_id for row in best.values()} - seen_setups):
-        admit([row for row in best.values() if row.setup_id == setup_id], "SETUP_DIVERSITY")
-        if remaining_slots <= 0:
+        if diversity_used >= diversity_quota or remaining_slots <= 0:
             break
+        before = len(selected)
+        admit_limited([row for row in best.values() if row.setup_id == setup_id], "SETUP_DIVERSITY", 1)
+        diversity_used += len(selected) - before
 
     seen_vol = {best[s].volatility_bucket for s in selected if s in best}
     for bucket in sorted({row.volatility_bucket for row in best.values()} - seen_vol):
-        admit([row for row in best.values() if row.volatility_bucket == bucket], "VOLATILITY_DIVERSITY")
-        if remaining_slots <= 0:
+        if diversity_used >= diversity_quota or remaining_slots <= 0:
             break
+        before = len(selected)
+        admit_limited([row for row in best.values() if row.volatility_bucket == bucket], "VOLATILITY_DIVERSITY", 1)
+        diversity_used += len(selected) - before
 
-    # Fill any remaining capacity deterministically; no need to force 20 when
-    # there are fewer useful candidates.
     controls = [row for row in best.values() if row.symbol not in selected]
     controls.sort(key=lambda row: _stable(row.symbol, seed))
-    for row in controls:
+    for row in controls[: min(control_quota, remaining_slots)]:
+        selected.append(row.symbol)
+        reasons[row.symbol] = "DETERMINISTIC_CONTROL"
+        remaining_slots -= 1
+
+    # Backfill unused category quotas with the best remaining candidates. This
+    # keeps capacity useful without sacrificing the guaranteed mixture above.
+    backfill = [row for row in best.values() if row.symbol not in selected]
+    backfill.sort(
+        key=lambda row: (
+            not row.approved,
+            -row.conservative_score_r,
+            row.distance_to_threshold,
+            _stable(row.symbol, seed),
+        )
+    )
+    for row in backfill:
         if remaining_slots <= 0:
             break
         selected.append(row.symbol)
-        reasons[row.symbol] = "DETERMINISTIC_CONTROL"
+        reasons[row.symbol] = "BACKFILL"
         remaining_slots -= 1
 
     selected_tuple = tuple(selected)
