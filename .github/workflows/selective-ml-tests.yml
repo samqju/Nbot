@@ -20,8 +20,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install Learning ML dependencies
-        run: python -m pip install --disable-pip-version-check -r requirements-ml.txt
+      - name: Install runtime and Learning ML dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.txt
+          python -m pip install --disable-pip-version-check -r requirements-ml.txt
       - name: Prepare clean Execution-role test host
         run: printf 'EXECUTION\n' > .nbot-role
       - name: Run full regression suite

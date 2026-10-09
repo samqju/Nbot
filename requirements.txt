@@ -1,2 +1,4 @@
 # NBOT V3 pinned runtime dependencies.
-# This file remains empty while the active runtime requires only the Python standard library.
+# websocket-client supplies the WSS-first public market hot path. Execution and
+# Observation use no private credentials through this dependency.
+websocket-client==1.8.0
