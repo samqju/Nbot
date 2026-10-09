@@ -24,7 +24,7 @@ class LearnedPaperTests(unittest.TestCase):
 
     def test_paper_falls_back_to_current_release_two_tier_snapshot(self):
         memory = self.fixture.training.memory
-        base = memory.list_artifacts(prefix="model:")[0]["payload"]
+        base = memory.list_artifacts(prefix="v39:context-v4:model:")[0]["payload"]
         cutoff = memory.history_base()["through_event_ms"]
         snapshot = {
             **base,
