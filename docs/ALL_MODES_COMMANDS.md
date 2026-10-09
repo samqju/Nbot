@@ -1,6 +1,6 @@
 # All-mode operator command reference
 
-Reviewed 2026-10-05 against the current V3.9 `nbotctl` parser and three-mode
+Reviewed 2026-10-09 against the current NBOT V3 `nbotctl` parser and three-mode
 cluster unit map. This is an operator syntax reference, not economic approval.
 Run only one Execution mode at a time.
 
