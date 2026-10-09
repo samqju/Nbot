@@ -5,6 +5,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from nbot.communication.authorities import LIVE_LEARNED_AUTHORITY
+from nbot.exchange.contracts import Quote
+from nbot.exchange.binance_stream import QuoteUpdate
 import run_execution as runtime
 
 
@@ -12,7 +14,7 @@ class MainnetRuntimeTests(unittest.TestCase):
     def run_once(self, *, open_position=False, armed=False, enable=False, current_sha=True):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            exchange, client, worker, operator = [MagicMock() for _ in range(4)]
+            exchange, market, client, worker, operator = [MagicMock() for _ in range(5)]
             exchange.guard.preflight.return_value = {
                 "armed": armed, "session_entries": 0, "max_session_entries": 1}
             exchange.guard._parse_arm.return_value = {"sha": "a"*40 if current_sha else "b"*40}
@@ -28,7 +30,14 @@ class MainnetRuntimeTests(unittest.TestCase):
                 stop["handler"] = handler
             def sleep(_seconds):
                 stop["handler"](None, None)
+            if open_position:
+                def next_quote(*_args, **_kwargs):
+                    stop["handler"](None, None)
+                    quote = Quote("BTCUSDT", 100.0, 100.1, 1_800_000_000_000)
+                    return QuoteUpdate(1, quote, quote.timestamp_ms)
+                market.wait_quote.side_effect = next_quote
             with patch.object(runtime, "BinanceLiveExchange", return_value=exchange), \
+                 patch.object(runtime, "build_live_stream", return_value=market), \
                  patch.object(runtime.subprocess, "check_output", return_value="a"*40), \
                  patch.object(runtime, "build_integrated_control_client", return_value=client), \
                  patch.object(runtime, "build_execution_worker", return_value=worker) as builder, \
@@ -46,6 +55,9 @@ class MainnetRuntimeTests(unittest.TestCase):
             self.assertEqual(builder.call_args.kwargs["risk_config"].max_notional_usd, 25)
             worker.disable_new_entries.assert_called()
             exchange.disconnect.assert_called_once()
+            market.disconnect.assert_called_once()
+            if open_position:
+                market.wait_quote.assert_called_once()
             return exchange, client, worker
 
     def test_disarmed_flat_runtime_cannot_enable(self):
@@ -64,7 +76,6 @@ class MainnetRuntimeTests(unittest.TestCase):
 
     def test_disarmed_open_position_is_managed_without_observation(self):
         exchange, client, worker = self.run_once(open_position=True)
-        exchange.quote.assert_called_once_with("BTCUSDT")
         worker.process_open_quote.assert_called_once()
         worker.enable_new_entries.assert_not_called()
         exchange.guard.preflight.assert_not_called()
