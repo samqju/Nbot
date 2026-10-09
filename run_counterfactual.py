@@ -140,11 +140,18 @@ def main() -> int:
             ledger.expire()
             now_mono = time.monotonic()
             if now_mono >= next_funding_sync:
-                # Query a complete 5h window: every 4h hypothesis plus margin
-                # for scheduler jitter. Funding completion is required before a
-                # counterfactual can become an ML training target.
+                # Prove the entire decision-to-exit funding interval. After a
+                # service outage this can extend beyond five hours; never turn
+                # unavailable historical funding into an invented zero cost.
                 now_ms = int(time.time() * 1000)
-                ledger.finalize_funding(history.funding_history(now_ms - 5*60*60*1000, now_ms))
+                funding_start = ledger.funding_requirement_start_ms()
+                if funding_start is not None:
+                    funding_rows = history.funding_history(funding_start, now_ms)
+                    ledger.finalize_funding(
+                        funding_rows,
+                        coverage_start_ms=funding_start,
+                        coverage_end_ms=now_ms,
+                    )
                 next_funding_sync = now_mono + 60.0
             pending = set(ledger.pending_symbols())
             with lock:
