@@ -1,5 +1,11 @@
 # Documentation index and current bot behavior
 
+**Research branch: WSS-first + rejected-decision replay:** [WSS-first execution and high-resolution decision learning](WSS_COUNTERFACTUAL_LEARNING.md)
+documents the draft architecture for realtime Binance bookTicker execution data,
+chronological aggTrade counterfactual outcomes, broader observation, Selective ML
+V3 and causal PASS/REJECT calibration. It is not active on the running V2 cohort
+unless this branch is deliberately deployed.
+
 **2026-10-06 Selective ML V1:** [Selective ML architecture and operations](SELECTIVE_ML.md)
 documents the bounded LightGBM mean-R, lower-quantile and entry-feasibility
 models used only by learned `live-paper`. Ridge remains a fallback/benchmark;
