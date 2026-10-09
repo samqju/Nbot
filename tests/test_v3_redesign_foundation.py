@@ -253,11 +253,13 @@ class TwoTierWatchTests(unittest.TestCase):
                 WatchCandidate("SOLUSDT",.01,.08,"c"),
             ]
             plan=rt.refresh_watch_plan(broad_symbols=broad,candidates=candidates)
-            self.assertNotIn("SOLUSDT",plan.high_res_symbols)
-            d=FrozenDecision("sol-d","e2",1000,"SOLUSDT","LONG","c","abc","model","fd",
-                             .01,.01,.01,.01,3,.02,-.01,False,"BELOW_THRESHOLD",100,101,
+            excluded=next(symbol for symbol in broad if symbol not in plan.high_res_symbols)
+            setup={"BTCUSDT":"a","ETHUSDT":"b","SOLUSDT":"c"}[excluded]
+            score={"BTCUSDT":.2,"ETHUSDT":.1,"SOLUSDT":.01}[excluded]
+            d=FrozenDecision("excluded-d","e2",1000,excluded,"LONG",setup,"abc","model","fd",
+                             score,score,score,score,3,.02,-.01,False,"CAPACITY_TEST",100,101,
                              "WSS_BOOK","TICK_INTEGER_R_V1",1.0,True)
-            h=ReplayHypothesis("sol-d","SOLUSDT","LONG",100,1,1000,TrailPolicy.TICK_INTEGER_R)
+            h=ReplayHypothesis("excluded-d",excluded,"LONG",100,1,1000,TrailPolicy.TICK_INTEGER_R)
             rt.submit(d,h)
             self.assertEqual(rt.replays.active_count,0)
             self.assertEqual(rt.ledger.counts()["unresolved"],1)
