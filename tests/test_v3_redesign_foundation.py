@@ -222,7 +222,16 @@ class TwoTierWatchTests(unittest.TestCase):
 
     def test_selection_preserves_learning_mix(self):
         broad=[f"S{i:03d}USDT" for i in range(100)]
-        plan=plan_two_tier_watch(broad_symbols=broad,candidates=self.candidates(100))
+        candidates=[]
+        for i in range(10):
+            candidates.append(WatchCandidate(f"S{i:03d}USDT",.20,.08,"strong","MID",.20,.20,True))
+        for i in range(10,14):
+            candidates.append(WatchCandidate(f"S{i:03d}USDT",.04,.08,"disagree","HIGH",.12,.02,False))
+        for i in range(14,18):
+            candidates.append(WatchCandidate(f"S{i:03d}USDT",.075,.08,"edge","LOW",.07,.07,False))
+        for i in range(18,30):
+            candidates.append(WatchCandidate(f"S{i:03d}USDT",.01,.08,f"setup{i%3}",("HIGH","LOW")[i%2],.01,.01,False))
+        plan=plan_two_tier_watch(broad_symbols=broad,candidates=candidates)
         reasons=set(plan.reasons.values())
         self.assertIn("STRONG_OR_APPROVED",reasons)
         self.assertIn("RIDGE_ML_DISAGREEMENT",reasons)
