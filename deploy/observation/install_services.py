@@ -22,6 +22,7 @@ BASE_UNIT_NAMES = (
     "nbot-observation-live.service",
     "nbot-research-epoch.service",
     "nbot-research-epoch.timer",
+    "nbot-counterfactual-replay.service",
     "nbot-observer.target",
 )
 OPTIONAL_UNIT_NAMES = (

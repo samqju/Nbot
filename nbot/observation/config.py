@@ -121,5 +121,12 @@ def observation_config_for_profile(profile: Profile) -> ObservationConfig:
     if resource_profile == "tiny":
         config = replace(config, observation_universe_size=20, candle_fetch_workers=2,
                          gap_recovery_max_events_per_cycle=4)
+    # Breadth is independently tunable from CPU/memory profile. This allows a
+    # small VPS to benchmark 100 symbols without changing the research worker
+    # resource envelope or silently changing existing deployments.
+    if "NBOT_OBSERVATION_UNIVERSE_SIZE" in os.environ:
+        config = replace(config, observation_universe_size=int(os.environ["NBOT_OBSERVATION_UNIVERSE_SIZE"]))
+    if "NBOT_OBSERVATION_CANDLE_WORKERS" in os.environ:
+        config = replace(config, candle_fetch_workers=int(os.environ["NBOT_OBSERVATION_CANDLE_WORKERS"]))
     config.validate()
     return config

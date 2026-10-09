@@ -136,6 +136,8 @@ def request_weight(path, params=None):
         return 1 if params.get("symbol") else 10
     if path.endswith("/income"):
         return 30
+    if path.endswith("/aggTrades"):
+        return 20
     if path.endswith("/klines"):
         limit = int(params.get("limit", 500))
         return 1 if limit < 100 else 2 if limit < 500 else 5 if limit <= 1000 else 10

@@ -1,0 +1,23 @@
+[Unit]
+Description=NBOT high-resolution rejected-decision counterfactual replay
+After=network-online.target nbot-observation-live.service
+Wants=network-online.target nbot-observation-live.service
+PartOf=nbot-observer.target
+
+[Service]
+Type=simple
+User=@NBOT_USER@
+WorkingDirectory=@NBOT_ROOT@
+Environment=PYTHONUNBUFFERED=1
+Environment=NBOT_PROFILE=live-paper
+EnvironmentFile=-@NBOT_ROOT@/config/secrets/observation-live.env
+ExecStart=@NBOT_PYTHON@ @NBOT_ROOT@/run_counterfactual.py
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=nbot-observer.target

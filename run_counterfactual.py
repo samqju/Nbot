@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""Passive Binance aggTrade replay service for NBOT decision counterfactuals.
+
+No credentials, no order authority, no recommendation authority. The service
+subscribes only symbols with OPEN hypotheses. REST is used only to backfill the
+small chronology window between decision creation/reconnect and live WSS.
+"""
+from __future__ import annotations
+
+import signal
+import threading
+import time
+from pathlib import Path
+
+from nbot.config.profiles import get_profile
+from nbot.exchange.binance_stream import (
+    AggTrade, BinanceLiveStreamConfig, BinanceLiveWebSocketMarketData,
+)
+from nbot.exchange.binance_public import BinanceLivePublicMarketConfig, BinanceLivePublicMarketData
+from nbot.observation.binance_public import BinanceUsdMPublicClient
+from nbot.observation.config import observation_config_for_profile
+from nbot.observation.decision_ledger import DecisionOutcomeLedger
+
+
+def main() -> int:
+    root = Path(__file__).resolve().parent
+    ledger = DecisionOutcomeLedger(root / "data/observation/live/decision_outcomes.db")
+    profile = get_profile("live-paper")
+    rest = BinanceLivePublicMarketData(BinanceLivePublicMarketConfig())
+    stream = BinanceLiveWebSocketMarketData(
+        BinanceLiveStreamConfig(
+            enable_book_ticker=False, enable_agg_trade=True, max_symbols=200,
+            max_quote_age_ms=5_000,
+        ),
+        rest_recovery=rest,
+    )
+    history = BinanceUsdMPublicClient(observation_config_for_profile(profile))
+    stop = threading.Event()
+    lock = threading.RLock()
+    ready: set[str] = set()
+    buffering: set[str] = set()
+    buffers: dict[str, list[AggTrade]] = {}
+    generation = 0
+
+    def on_trade(trade: AggTrade) -> None:
+        with lock:
+            if trade.symbol in buffering:
+                buf = buffers.setdefault(trade.symbol, [])
+                if len(buf) >= 20_000:
+                    # Losing chronology is preferable to pretending the path is complete.
+                    ledger.mark_stream_gap(at_ms=trade.trade_time_ms)
+                    del buf[:10_000]
+                buf.append(trade)
+                return
+        ledger.on_agg_trade(trade, source="WSS")
+
+    def on_status(state: str, at_ms: int) -> None:
+        nonlocal generation
+        if state == "DISCONNECTED":
+            ledger.mark_stream_gap(at_ms=at_ms)
+            with lock:
+                ready.clear()
+        elif state == "CONNECTED":
+            generation += 1
+
+    def catch_up(symbol: str) -> None:
+        start = ledger.catchup_start_ms(symbol)
+        if start is None:
+            return
+        with lock:
+            buffering.add(symbol)
+            buffers.setdefault(symbol, [])
+        stream.subscribe(symbol)
+        cutoff = int(time.time() * 1000)
+        # Endpoint requires <1 hour per start/end range and returns max 1000.
+        # The client paginates within each slice and the 4h hypothesis horizon
+        # is comfortably inside Binance's documented 48h REST retention.
+        for trade in history.aggregate_trades(symbol, start, cutoff):
+            ledger.on_agg_trade(trade, source="REST_BACKFILL")
+        with lock:
+            queued = sorted(
+                buffers.pop(symbol, []),
+                key=lambda t: (t.trade_time_ms, t.aggregate_trade_id),
+            )
+            buffering.discard(symbol)
+            ready.add(symbol)
+        for trade in queued:
+            ledger.on_agg_trade(trade, source="WSS")
+        ledger.resolve_stream_gap(symbol)
+
+    stream.add_trade_listener(on_trade)
+    stream.add_status_listener(on_status)
+
+    def request_stop(_signum, _frame):
+        stop.set()
+
+    signal.signal(signal.SIGTERM, request_stop)
+    signal.signal(signal.SIGINT, request_stop)
+    stream.connect()
+    try:
+        while not stop.wait(1.0):
+            ledger.expire()
+            pending = set(ledger.pending_symbols())
+            with lock:
+                needs = sorted(pending.difference(ready).difference(buffering))
+            for symbol in needs:
+                if stop.is_set():
+                    break
+                try:
+                    catch_up(symbol)
+                except Exception:
+                    # Preserve the unresolved-gap marker. A later loop retries.
+                    with lock:
+                        buffering.discard(symbol)
+                        buffers.pop(symbol, None)
+                        ready.discard(symbol)
+                    time.sleep(1.0)
+        return 0
+    finally:
+        stream.disconnect()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
