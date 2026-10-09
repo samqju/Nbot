@@ -25,7 +25,7 @@ import sqlite3
 import time
 from typing import Any, Iterable
 
-from nbot.exchange.binance_stream import AggTrade
+from nbot.common.market import AggTrade
 
 VERSION = "DECISION_OUTCOME_LEDGER_V1"
 AUTHORITY = "RESEARCH_ONLY_NO_EXECUTION"
@@ -322,23 +322,43 @@ class DecisionOutcomeLedger:
         return updated
 
     def resolve_stream_gap(self, symbol: str) -> int:
+        """Mark a fully backfilled symbol chronology as resolved.
+
+        Backfill can itself cross a stop and mature a hypothesis before this
+        method runs. Therefore both OPEN state and already-MATURED results must
+        be repaired atomically; otherwise a completely backfilled path would be
+        permanently excluded from training as an unresolved gap.
+        """
         updated = 0
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             rows = conn.execute(
-                "SELECT hypothesis_id,state_json,state_digest FROM decision_hypotheses "
-                "WHERE status='OPEN' AND symbol=?",
+                "SELECT hypothesis_id,status,state_json,state_digest,result_json,result_digest "
+                "FROM decision_hypotheses WHERE status IN ('OPEN','MATURED') AND symbol=?",
                 (str(symbol).upper(),),
             ).fetchall()
-            for hid, raw, check in rows:
-                state = self._verified(raw, check)
-                if int(state.get("unresolved_gap_count", 0)) > 0:
-                    state["unresolved_gap_count"] = 0
+            for hid, status, state_raw, state_check, result_raw, result_check in rows:
+                state = self._verified(state_raw, state_check)
+                if int(state.get("unresolved_gap_count", 0)) <= 0:
+                    continue
+                state["unresolved_gap_count"] = 0
+                if status == "MATURED":
+                    if result_raw is None or result_check is None:
+                        raise ValueError("DECISION_LEDGER_MATURED_RESULT_MISSING")
+                    result = self._verified(result_raw, result_check)
+                    result["unresolved_gap_count"] = 0
+                    result["path_quality"] = "AGGTRADE_RESOLVED"
+                    conn.execute(
+                        "UPDATE decision_hypotheses SET state_json=?,state_digest=?,"
+                        "result_json=?,result_digest=? WHERE hypothesis_id=?",
+                        (_json(state), _digest(state), _json(result), _digest(result), hid),
+                    )
+                else:
                     conn.execute(
                         "UPDATE decision_hypotheses SET state_json=?,state_digest=? WHERE hypothesis_id=?",
                         (_json(state), _digest(state), hid),
                     )
-                    updated += 1
+                updated += 1
         return updated
 
     def on_agg_trade(self, trade: AggTrade, *, source: str = "WSS") -> int:
