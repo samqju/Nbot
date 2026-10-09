@@ -141,3 +141,31 @@ class SamplingRuntimeTests(unittest.TestCase):
     def test_combined_stream_decoder(self):
         data=decode_combined_message('{"stream":"btcusdt@bookTicker","data":{"e":"bookTicker","s":"BTCUSDT"}}')
         self.assertEqual(data["s"],"BTCUSDT")
+
+
+from nbot.observation.aggtrade_recovery import recover_agg_trades
+from nbot.observation.coarse_replay import OhlcBar, replay_coarse_bars
+
+
+class RecoveryFallbackTests(unittest.TestCase):
+    def test_bounded_aggtrade_recovery(self):
+        class Resp:
+            def __enter__(self): return self
+            def __exit__(self,*args): pass
+            def read(self): return b'[{"a":5,"T":1000,"p":"100"},{"a":6,"T":1001,"p":"101"}]'
+        rows=recover_agg_trades("BTCUSDT",first_id=5,last_id=6,urlopen_fn=lambda *args,**kwargs:Resp())
+        self.assertEqual([row.trade_id for row in rows],[5,6])
+
+    def test_five_minute_tick_path_is_ambiguous_when_order_unknown(self):
+        bar=OhlcBar(0,300_000,100,102,99,101)
+        outcome=replay_coarse_bars([bar],side="LONG",entry_price=100,one_r_price=1,
+                                   policy=TrailPolicy.TICK_INTEGER_R)
+        self.assertEqual(outcome.quality,EvidenceQuality.FIVE_MINUTE_AMBIGUOUS)
+        self.assertIsNone(outcome.net_r)
+
+    def test_bar_close_policy_can_resolve_same_ohlc(self):
+        bar=OhlcBar(0,300_000,100,102,99,101)
+        outcome=replay_coarse_bars([bar],side="LONG",entry_price=100,one_r_price=1,
+                                   policy=TrailPolicy.BAR_CLOSE_INTEGER_R)
+        self.assertEqual(outcome.gross_r,-1)
+        self.assertFalse(outcome.ambiguous)
