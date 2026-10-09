@@ -29,10 +29,8 @@ from .shadow import ShadowBook, ShadowConfig
 from .model_compatibility import compatible_training_release
 from .candidate_setups import load_histories, matches, FALLBACK, CATALOG_DIGEST, history_digest, tie_key
 from .research_memory import ResearchMemoryStore
-from .selective_ml import (
-    LOWER_SCORE_WEIGHT, MEAN_SCORE_WEIGHT, SelectiveMLManager, SelectiveMLRuntime,
-    TARGET as SELECTIVE_ML_TARGET,
-)
+from .selective_ml import LOWER_SCORE_WEIGHT, MEAN_SCORE_WEIGHT
+from .selective_ml_v3 import SelectiveMLManager, SelectiveMLRuntime
 
 
 SIGNAL_INPUTS = (
@@ -413,7 +411,8 @@ class LearnedTestnetSource:
                 ml_detail = None
                 if ml_runtime is not None:
                     ml_mean, ml_lower = ml_runtime.score(vector)
-                    ensemble_mean = 0.25 * ridge_score + 0.75 * ml_mean
+                    ridge_weight = self.selective_ml.ridge_blend_weight(ml_record)
+                    ensemble_mean = ridge_weight * ridge_score + (1.0 - ridge_weight) * ml_mean
                     selection_base = (
                         MEAN_SCORE_WEIGHT * ensemble_mean + LOWER_SCORE_WEIGHT * ml_lower
                     )
@@ -426,6 +425,10 @@ class LearnedTestnetSource:
                         "ml_lower_r": ml_lower,
                         "ensemble_mean_r": ensemble_mean,
                         "conservative_score_r": selection_base,
+                        "selective_ml_version": ml_record["payload"].get("version"),
+                        "target": self.selective_ml.target_for_record(ml_record),
+                        "ridge_blend_weight": ridge_weight,
+                        "entry_gate_mode": ml_record["payload"].get("entry_gate_mode", "EXECUTION_REALTIME_ONLY"),
                     }
                 candidates.append((selection_base, feature["symbol"], side, vector, ridge_score, ml_detail))
         if not candidates:
@@ -437,14 +440,14 @@ class LearnedTestnetSource:
         ml_gate_reason = None
         ml_selection_audit = None
         if ml_runtime is not None:
-            ml_cfg = self.selective_ml.config
+            min_confidence_r, min_edge_gap_r = self.selective_ml.gate_for_record(ml_record)
             runner_up = selection_order[1] if len(selection_order) > 1 else None
             edge_gap = (
                 selection_baseline[0] - runner_up[0] if runner_up is not None else None
             )
-            if selection_baseline[0] < ml_cfg.min_lower_r:
+            if selection_baseline[0] < min_confidence_r:
                 ml_gate_reason = "LEARNED_ML_ABSTAIN_LOW_CONFIDENCE"
-            elif edge_gap is not None and edge_gap < ml_cfg.min_edge_gap_r:
+            elif edge_gap is not None and edge_gap < min_edge_gap_r:
                 ml_gate_reason = "LEARNED_ML_ABSTAIN_EDGE_TOO_SMALL"
             winner_ml = selection_baseline[5] or {}
             ml_selection_audit = {
@@ -455,16 +458,16 @@ class LearnedTestnetSource:
                 "ml_lower_r": winner_ml.get("ml_lower_r"),
                 "ensemble_mean_r": winner_ml.get("ensemble_mean_r"),
                 "conservative_score_r": selection_baseline[0],
-                "min_confidence_r": ml_cfg.min_lower_r,
-                "confidence_pass": selection_baseline[0] >= ml_cfg.min_lower_r,
+                "min_confidence_r": min_confidence_r,
+                "confidence_pass": selection_baseline[0] >= min_confidence_r,
                 "runner_up_symbol": runner_up[1] if runner_up is not None else None,
                 "runner_up_side": runner_up[2] if runner_up is not None else None,
                 "runner_up_conservative_score_r": runner_up[0] if runner_up is not None else None,
                 "edge_gap_r": edge_gap,
-                "min_edge_gap_r": ml_cfg.min_edge_gap_r,
-                "edge_pass": edge_gap is None or edge_gap >= ml_cfg.min_edge_gap_r,
+                "min_edge_gap_r": min_edge_gap_r,
+                "edge_pass": edge_gap is None or edge_gap >= min_edge_gap_r,
                 "gate_reason": ml_gate_reason,
-                "entry_gate_mode": "EXECUTION_REALTIME_ONLY",
+                "entry_gate_mode": (ml_record["payload"].get("entry_gate_mode", "EXECUTION_REALTIME_ONLY") if ml_record is not None else "EXECUTION_REALTIME_ONLY"),
             }
 
         feedback_detail = None
@@ -498,7 +501,7 @@ class LearnedTestnetSource:
                         detail["selective_ml"] = {
                             **ml_detail,
                             "pre_feedback_gate": ml_gate_reason,
-                            "entry_gate_mode": "EXECUTION_REALTIME_ONLY",
+                            "entry_gate_mode": (ml_record["payload"].get("entry_gate_mode", "EXECUTION_REALTIME_ONLY") if ml_record is not None else "EXECUTION_REALTIME_ONLY"),
                         }
                     ranked.append((adjusted, candidate_symbol, candidate_side,
                                    candidate_vector, selection_base, ridge_score, detail))
@@ -529,7 +532,7 @@ class LearnedTestnetSource:
                     "reason": feedback_detail["status"],
                     "post_feedback_score_r": feedback_detail.get("post_feedback_score_r"),
                     "outcome_factor": feedback_detail.get("outcome_factor"),
-                    "entry_gate_mode": "EXECUTION_REALTIME_ONLY",
+                    "entry_gate_mode": (ml_record["payload"].get("entry_gate_mode", "EXECUTION_REALTIME_ONLY") if ml_record is not None else "EXECUTION_REALTIME_ONLY"),
                     "next_bar_signal_decay": feedback_detail.get("next_bar_signal_decay", {}),
                 },
                 "choice_changed": (symbol,side,feedback_detail["candidate"]["id"]) !=
@@ -613,8 +616,8 @@ class LearnedTestnetSource:
         generated = min(captured_ms, int(quote_ms))
         self._record_decision_universe(
             event_ms=event_ms, now_ms=now_ms, quotes=quotes, candidates=candidates,
-            histories=histories, ranked=ranked, selected_symbol=symbol,
-            selected_side=side, final_score=score, final_reason=None,
+            histories=histories, ranked=ranked, btc_available=btc_available,
+            selected_symbol=symbol, selected_side=side, final_score=score, final_reason=None,
             raw_ml_gate=ml_gate_reason, model_digest=artifact["model_digest"],
         )
         source_inputs = {"live_event": event_ms, "vector": vector,
@@ -640,11 +643,15 @@ class LearnedTestnetSource:
                 "execution_environment": self.profile.market_environment, "model_version": artifact["model_version"],
                 "training_cutoff_event_ms": artifact["training_cutoff_event_ms"],
                 "live_market_event_ms": event_ms, "reference_quote_environment": self.profile.market_environment,
-                "selection_method": ("SELECTIVE_ML_V2_RIDGE_LIGHTGBM_REALTIME_ENTRY"
-                                     if selected_ml is not None else "CONTEXT_CALIBRATED_RIDGE"),
+                "selection_method": (
+                    f"{selected_ml.get('selective_ml_version','SELECTIVE_ML')}_LIGHTGBM_REALTIME_WSS_ENTRY"
+                    if selected_ml is not None else "CONTEXT_CALIBRATED_RIDGE"
+                ),
                 "setup_explanation": setup_explanation,
-                "prediction_target": (SELECTIVE_ML_TARGET if selected_ml is not None
-                                      else "SIMULATED_ATR_R_4H_NOT_EXECUTION_PNL"),
+                "prediction_target": (
+                    selected_ml.get("target") if selected_ml is not None
+                    else "SIMULATED_ATR_R_4H_NOT_EXECUTION_PNL"
+                ),
                 "candidate_count": len(candidates),
                 **({"selective_ml": selected_ml} if selected_ml is not None else {}),
                 **({"shadow_main_candidate": main_candidate} if self.shadow else {}),

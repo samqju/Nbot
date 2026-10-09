@@ -121,7 +121,7 @@ def _challenger_cycle() -> ContinuousChallengerCycle:
 
 
 def _selective_ml():
-    from nbot.observation.selective_ml import SelectiveMLManager
+    from nbot.observation.selective_ml_v3 import SelectiveMLManager
     if not _v384_active():
         raise RuntimeError("SELECTIVE_ML_COMPACT_RESEARCH_MEMORY_REQUIRED")
     return SelectiveMLManager(_memory(), _db(), release_sha=_release_sha())
