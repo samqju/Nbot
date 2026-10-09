@@ -70,6 +70,38 @@ class DecisionOutcomeLedgerTests(unittest.TestCase):
         targets = ledger.training_targets()
         self.assertEqual(len(targets), 1)
 
+
+    def test_batch_replay_preserves_profit_then_stop_chronology(self):
+        ledger, base = self.make()
+        ledger.record(side="LONG", selected=False, decision="REJECTED",
+                      blocker="LOW_CONFIDENCE", **base)
+        ledger.on_agg_trades((
+            trade("BTCUSDT", 103.2, 1_300_100, 1),
+            trade("BTCUSDT", 101.9, 1_300_200, 2),
+        ))
+        ledger.finalize_funding([])
+        row = next(iter(ledger.training_targets().values()))
+        self.assertGreater(row["target_net_r"], 1.0)
+        self.assertEqual(row["assessment"], "MISSED_PROFITABLE_POLICY_OUTCOME")
+
+    def test_funding_requires_full_proven_coverage_when_bounds_are_supplied(self):
+        ledger, base = self.make()
+        ledger.record(side="LONG", selected=False, decision="REJECTED",
+                      blocker="LOW_CONFIDENCE", **base)
+        ledger.on_agg_trade(trade("BTCUSDT", 98.9, 1_300_100, 1))
+        self.assertEqual(ledger.funding_requirement_start_ms(), 1_300_000)
+        # A query window beginning after the decision cannot prove that no
+        # funding event occurred during the complete hypothetical holding time.
+        ledger.finalize_funding(
+            [], coverage_start_ms=1_300_050, coverage_end_ms=1_400_000
+        )
+        self.assertEqual(ledger.training_targets(), {})
+        ledger.finalize_funding(
+            [], coverage_start_ms=1_300_000, coverage_end_ms=1_400_000
+        )
+        self.assertEqual(len(ledger.training_targets()), 1)
+        self.assertIsNone(ledger.funding_requirement_start_ms())
+
     def test_horizon_close_seals_open_path(self):
         ledger, base = self.make()
         ledger.record(side="LONG", selected=True, decision="APPROVED",
