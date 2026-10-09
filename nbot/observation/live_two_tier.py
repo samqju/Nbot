@@ -9,7 +9,7 @@ order submission path.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import json
 import math
@@ -28,7 +28,7 @@ from .selective_ml import LOWER_SCORE_WEIGHT, MEAN_SCORE_WEIGHT, SelectiveMLRunt
 from .two_tier_runtime import TwoTierV3ResearchRuntime
 from .research_replay import ReplayHypothesis
 from .watch_planner import WatchCandidate
-from .wss_market import AggTrade, WssMarketState
+from .wss_market import AggTrade, MarketDataUnavailable, WssMarketState
 from .wss_transport import CombinedStreamRunner
 
 
@@ -331,6 +331,32 @@ class ResearchWssFeed:
         self.state = None
         self.symbols = ()
 
+    def wait_quotes(
+        self, symbols: tuple[str, ...], *, timeout_seconds: float = 5.0, max_age_ms: int = 2_000
+    ) -> dict[str, Any]:
+        """Wait briefly for fresh WSS executable quotes for newly admitted symbols."""
+        wanted = tuple(sorted(set(symbols)))
+        if not wanted:
+            return {}
+        deadline = time.monotonic() + max(0.0, float(timeout_seconds))
+        while time.monotonic() <= deadline:
+            state = self.state
+            if state is None:
+                return {}
+            now_ms = int(time.time() * 1000)
+            found = {}
+            for symbol in wanted:
+                try:
+                    found[symbol] = state.executable_quote(
+                        symbol, now_ms=now_ms, max_age_ms=max_age_ms
+                    )
+                except MarketDataUnavailable:
+                    pass
+            if len(found) == len(wanted):
+                return found
+            time.sleep(0.05)
+        return found if "found" in locals() else {}
+
     def snapshot(self) -> dict[str, Any]:
         now_ms = int(time.time() * 1000)
         health = {}
@@ -464,22 +490,37 @@ class LiveTwoTierResearchSupervisor:
             self.feed.update(plan.high_res_symbols, self.runtime.high_res_stream_shards())
 
             newly = set(plan.newly_admitted_symbols)
+            fresh_quotes = self.feed.wait_quotes(tuple(newly))
             chosen: dict[str, ResearchCandidate] = {}
             for candidate in candidates:
                 symbol = candidate.decision.symbol
                 if symbol in newly and symbol not in chosen:
                     chosen[symbol] = candidate
 
+            retained = set(plan.retained_active_symbols)
+            admitted = set(plan.high_res_symbols)
             for candidate in candidates:
                 decision = candidate.decision
-                if chosen.get(decision.symbol) is candidate:
+                if chosen.get(decision.symbol) is candidate and decision.symbol in fresh_quotes:
+                    quote = fresh_quotes[decision.symbol]
+                    entry = quote.ask if decision.side == "LONG" else quote.bid
+                    risk_frac = candidate.one_r_price / candidate.hypothesis_entry_price
+                    decision_time_ms = int(time.time() * 1000)
+                    decision = replace(
+                        decision,
+                        decision_time_ms=decision_time_ms,
+                        bid=quote.bid,
+                        ask=quote.ask,
+                        quote_source="WSS_BOOK",
+                        capacity_available=True,
+                    )
                     hypothesis = ReplayHypothesis(
                         decision.decision_id,
                         decision.symbol,
                         decision.side,
-                        candidate.hypothesis_entry_price,
-                        candidate.one_r_price,
-                        decision.decision_time_ms,
+                        entry,
+                        entry * risk_frac,
+                        decision_time_ms,
                         TrailPolicy.TICK_INTEGER_R,
                         horizon_ms=DEFAULT_HORIZON_MS,
                         costs=ReplayCosts(),
@@ -490,14 +531,20 @@ class LiveTwoTierResearchSupervisor:
                         extras={
                             "broad_target": self.runtime.broad_target,
                             "high_res_cap": self.runtime.high_res_cap,
-                            "entry_source": "LIVE_POINT_IN_TIME_SNAPSHOT",
+                            "entry_source": "WSS_BOOK",
+                            "quote_receipt_time_ms": quote.receipt_time_ms,
                         },
                     )
                 else:
-                    reason = (
-                        "HIGH_RES_ACTIVE_SLOT_BUSY"
-                        if decision.symbol in set(plan.retained_active_symbols)
-                        else "HIGH_RES_NOT_ADMITTED"
+                    if chosen.get(decision.symbol) is candidate and decision.symbol not in fresh_quotes:
+                        reason = "HIGH_RES_WSS_NOT_READY"
+                    elif decision.symbol in retained:
+                        reason = "HIGH_RES_ACTIVE_SLOT_BUSY"
+                    else:
+                        reason = "HIGH_RES_NOT_ADMITTED"
+                    decision = replace(
+                        decision,
+                        capacity_available=decision.symbol in admitted and reason != "HIGH_RES_WSS_NOT_READY",
                     )
                     self.runtime.record_without_replay(
                         decision,
