@@ -396,7 +396,7 @@ class BinanceUsdMPublicClient:
 
     def aggregate_trades(self, symbol: str, start_time_ms: int, end_time_ms: int):
         """Chronological aggTrade backfill for WSS gaps; never a realtime hot path."""
-        from nbot.exchange.binance_stream import AggTrade
+        from nbot.common.market import AggTrade
         symbol = str(symbol).strip().upper()
         start, end = int(start_time_ms), int(end_time_ms)
         if not symbol or start < 0 or end < start:
