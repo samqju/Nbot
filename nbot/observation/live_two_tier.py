@@ -19,6 +19,8 @@ import time
 from typing import Any, Callable, Mapping
 
 from .chronological_replay import TradeEvent
+from .challengers import ContinuousChallengerCycle
+from .research_memory import ResearchMemoryStore
 from .counterfactual import ReplayCosts, TrailPolicy
 from .decision_ledger import FrozenDecision
 from .context_learning import describe
@@ -38,6 +40,7 @@ DEFAULT_HIGH_RES_CAP = 20
 DEFAULT_HORIZON_MS = 4 * 60 * 60 * 1000
 DEFAULT_QUOTE_TTL_MS = 120_000
 STATUS_VERSION = "NBOT_V3_TWO_TIER_LIVE_STATUS_V1"
+TWO_TIER_MODEL_PREFIX = "two_tier:ridge_snapshot:"
 
 
 def _canonical(value: Any) -> str:
@@ -84,13 +87,53 @@ class BroadResearchScanner:
             release_sha=self.release_sha,
             profile_name="live-paper",
         )
+        self.memory = ResearchMemoryStore(self.source.memory_path)
+        self.last_reason: str | None = None
+        self.last_model_source: str | None = None
+
+    def _two_tier_ridge_snapshot(self, *, event_open_ms: int) -> dict[str, Any] | None:
+        history = self.memory.history_base()
+        cutoff = history.get("through_event_ms")
+        if cutoff is None:
+            self.last_reason = "WAIT_FOR_RESEARCH_MEMORY"
+            return None
+        key = f"{TWO_TIER_MODEL_PREFIX}{self.release_sha}:{int(cutoff)}"
+        record = self.memory.artifact(key)
+        if record is None:
+            artifact = ContinuousChallengerCycle(
+                self.memory, release_sha=self.release_sha
+            ).ridge_model_artifact()
+            artifact = {
+                **artifact,
+                "artifact_type": "TWO_TIER_RIDGE_SNAPSHOT",
+                "purpose": "BROAD_COUNTERFACTUAL_RESEARCH_ONLY",
+                "automatic_promotion": False,
+                "execution_authority": "NONE",
+            }
+            record = self.memory.persist_artifact(key, artifact)
+        artifact = record["payload"]
+        if artifact.get("release_sha") != self.release_sha:
+            raise RuntimeError("TWO_TIER_MODEL_RELEASE_MISMATCH")
+        if int(artifact["training_cutoff_event_ms"]) != int(cutoff):
+            raise RuntimeError("TWO_TIER_MODEL_CUTOFF_MISMATCH")
+        if int(artifact["model_available_at_ms"]) >= int(event_open_ms):
+            self.last_reason = "MODEL_FROZEN_WAIT_NEXT_EVENT"
+            return None
+        return artifact
 
     def scan(self, *, event_open_ms: int, now_ms: int) -> tuple[ResearchCandidate, ...]:
         event_open_ms = int(event_open_ms)
         now_ms = int(now_ms)
+        self.last_reason = None
+        self.last_model_source = None
         artifact = self.source._model(event_open_ms)
-        if artifact is None:
-            return ()
+        if artifact is not None:
+            self.last_model_source = "COMPATIBLE_CHALLENGER"
+        else:
+            artifact = self._two_tier_ridge_snapshot(event_open_ms=event_open_ms)
+            if artifact is None:
+                return ()
+            self.last_model_source = "CURRENT_RELEASE_RIDGE_SNAPSHOT"
 
         with self.database.connection() as conn:
             event = conn.execute(
@@ -108,14 +151,17 @@ class BroadResearchScanner:
                 (event_open_ms,),
             ).fetchall()
         if event is None:
+            self.last_reason = "EVENT_NOT_COMPLETE"
             return ()
         close_ms, captured_at_ms = map(int, event)
         if not close_ms <= captured_at_ms <= now_ms:
+            self.last_reason = "EVENT_CAPTURE_TIME_INVALID"
             return ()
         quotes = _execution_compatible_quotes(
             quote_rows, close_ms=close_ms, now_ms=now_ms, ttl_ms=DEFAULT_QUOTE_TTL_MS
         )
         if not quotes:
+            self.last_reason = "NO_USABLE_POINT_IN_TIME_QUOTES"
             return ()
 
         ml_record = self.source.selective_ml.latest_for_event(event_open_ms) if self.source.selective_ml else None
@@ -244,6 +290,8 @@ class BroadResearchScanner:
                 approved=approved,
             )
             result.append(ResearchCandidate(decision, entry, one_r, watch, row["score"]))
+        if not result:
+            self.last_reason = "NO_FULL_HISTORY_SCORABLE_ROWS"
         return tuple(result)
 
 
@@ -464,6 +512,8 @@ class LiveTwoTierResearchSupervisor:
             "high_res_cap": self.runtime.high_res_cap,
             "last_event_open_ms": self.last_event_open_ms,
             "last_scan_candidates": self.last_scan_candidates,
+            "scanner_reason": self.scanner.last_reason,
+            "model_source": self.scanner.last_model_source,
             "last_matured": self.last_matured,
             "active_hypotheses": self.runtime.replays.active_count,
             "active_symbols": list(self.runtime.replays.active_symbols),
@@ -500,7 +550,12 @@ class LiveTwoTierResearchSupervisor:
             candidates = self.scanner.scan(event_open_ms=event_open_ms, now_ms=now_ms)
             self.last_scan_candidates = len(candidates)
             if not candidates:
-                self._emit("TWO_TIER_RESEARCH_WAIT", event_open_ms=event_open_ms, reason="NO_COMPATIBLE_CANDIDATES")
+                self._emit(
+                    "TWO_TIER_RESEARCH_WAIT",
+                    event_open_ms=event_open_ms,
+                    reason=self.scanner.last_reason or "NO_COMPATIBLE_CANDIDATES",
+                    model_source=self.scanner.last_model_source,
+                )
                 self._write_status("WAITING")
                 return
 
