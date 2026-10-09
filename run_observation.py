@@ -187,13 +187,6 @@ def main(argv: list[str] | None = None) -> int:
     two_tier_setting = str(os.environ.get("NBOT_TWO_TIER_RESEARCH", "1")).strip()
     if two_tier_setting not in {"0", "1"}:
         raise ValueError("NBOT_TWO_TIER_RESEARCH_INVALID")
-    if profile_name == "live-paper" and two_tier_setting == "1":
-        two_tier_supervisor = LiveTwoTierResearchSupervisor(
-            worker.database,
-            release_sha=_git_sha(root),
-            event_sink=event_sink,
-            enabled=True,
-        )
 
     def request_stop(_signum, _frame) -> None:
         worker.stop()
@@ -205,6 +198,13 @@ def main(argv: list[str] | None = None) -> int:
     recommendation_supervisor = None
 
     with lock:
+        if profile_name == "live-paper" and two_tier_setting == "1":
+            two_tier_supervisor = LiveTwoTierResearchSupervisor(
+                worker.database,
+                release_sha=_git_sha(root),
+                event_sink=event_sink,
+                enabled=True,
+            )
         if args.control_api:
             auth_token = str(os.environ.get("NBOT_CONTROL_AUTH_TOKEN", ""))
             if not auth_token:
