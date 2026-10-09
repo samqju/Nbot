@@ -112,6 +112,7 @@ class BinanceLiveWebSocketMarketData:
         self._ws: Any | None = None
         self._symbols: set[str] = set()
         self._latest_quotes: dict[str, QuoteUpdate] = {}
+        self._last_quote_read_sequence: dict[str, int] = {}
         self._sequence = 0
         self._request_id = 0
         self._trade_listeners: list[Callable[[AggTrade], None]] = []
@@ -210,12 +211,28 @@ class BinanceLiveWebSocketMarketData:
             self._send_subscriptions((symbol,))
 
     def quote(self, symbol: str) -> Quote:
-        """Return fresh WSS bid/ask; never silently replace entry truth with REST."""
-        return self.wait_quote(
+        """Return a newly observed fresh WSS bid/ask.
+
+        EntryLifecycle deliberately asks more than once (initial quote, stop
+        feasibility, final pre-order recheck). Reusing the same cached update
+        would weaken that final recheck, so ordinary quote reads advance past
+        the last update returned by this method. Open-position management uses
+        wait_quote() with its own explicit sequence cursor.
+        """
+        symbol = self._symbol(symbol)
+        with self._condition:
+            previous = int(self._last_quote_read_sequence.get(symbol, 0))
+        update = self.wait_quote(
             symbol,
-            after_sequence=0,
+            after_sequence=previous,
             timeout_seconds=float(self.config.first_event_timeout_seconds),
-        ).quote
+        )
+        with self._condition:
+            self._last_quote_read_sequence[symbol] = max(
+                int(self._last_quote_read_sequence.get(symbol, 0)),
+                int(update.sequence),
+            )
+        return update.quote
 
     def wait_quote(
         self,
