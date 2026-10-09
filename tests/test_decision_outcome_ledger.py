@@ -102,6 +102,20 @@ class DecisionOutcomeLedgerTests(unittest.TestCase):
         self.assertEqual(len(ledger.training_targets()), 1)
         self.assertIsNone(ledger.funding_requirement_start_ms())
 
+    def test_same_event_isolated_by_live_profile(self):
+        ledger, base = self.make()
+        first = ledger.record(
+            side="LONG", selected=False, decision="REJECTED",
+            blocker="LOW_CONFIDENCE", **base
+        )
+        other = dict(base)
+        other["profile"] = "live-trade"
+        second = ledger.record(
+            side="LONG", selected=False, decision="REJECTED",
+            blocker="LOW_CONFIDENCE", **other
+        )
+        self.assertNotEqual(first, second)
+
     def test_horizon_close_seals_open_path(self):
         ledger, base = self.make()
         ledger.record(side="LONG", selected=True, decision="APPROVED",
