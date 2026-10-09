@@ -141,7 +141,7 @@ def plan_two_tier_watch(
     reasons: dict[str, str] = {symbol: "ACTIVE_HYPOTHESIS_STICKY" for symbol in active}
     remaining_slots = high_res_cap - len(selected)
 
-    def admit(rows: list[WatchCandidate], reason: str) -> None:
+    def admit(rows: list[WatchCandidate], reason: str, limit: int | None = None) -> None:
         nonlocal remaining_slots
         if remaining_slots <= 0:
             return
@@ -153,9 +153,8 @@ def plan_two_tier_watch(
                 _stable(row.symbol, seed),
             )
         )
-        for row in rows:
-            if remaining_slots <= 0:
-                break
+        allowed = remaining_slots if limit is None else min(remaining_slots, max(0, limit))
+        for row in rows[:allowed]:
             selected.append(row.symbol)
             reasons[row.symbol] = reason
             remaining_slots -= 1
@@ -169,28 +168,13 @@ def plan_two_tier_watch(
     diversity_quota = max(1, round(initial_free * 0.10)) if initial_free >= 8 else 0
     control_quota = max(1, initial_free - strong_quota - disagreement_quota - threshold_quota - diversity_quota) if initial_free else 0
 
-    def admit_limited(rows: list[WatchCandidate], reason: str, limit: int) -> None:
-        nonlocal remaining_slots
-        before = len(selected)
-        if limit <= 0:
-            return
-        admit(rows, reason)
-        overflow = len(selected) - before - limit
-        if overflow > 0:
-            # admit() is general-purpose; trim deterministic excess and restore slots.
-            removed = selected[-overflow:]
-            del selected[-overflow:]
-            for symbol in removed:
-                reasons.pop(symbol, None)
-            remaining_slots += overflow
-
-    admit_limited(
+    admit(
         [row for row in best.values() if row.approved or row.conservative_score_r >= row.threshold_r],
         "STRONG_OR_APPROVED",
         strong_quota,
     )
-    admit_limited([row for row in best.values() if row.disagreement], "RIDGE_ML_DISAGREEMENT", disagreement_quota)
-    admit_limited([row for row in best.values() if row.near_threshold], "NEAR_THRESHOLD", threshold_quota)
+    admit([row for row in best.values() if row.disagreement], "RIDGE_ML_DISAGREEMENT", disagreement_quota)
+    admit([row for row in best.values() if row.near_threshold], "NEAR_THRESHOLD", threshold_quota)
 
     diversity_used = 0
     seen_setups = {best[s].setup_id for s in selected if s in best}
@@ -198,7 +182,7 @@ def plan_two_tier_watch(
         if diversity_used >= diversity_quota or remaining_slots <= 0:
             break
         before = len(selected)
-        admit_limited([row for row in best.values() if row.setup_id == setup_id], "SETUP_DIVERSITY", 1)
+        admit([row for row in best.values() if row.setup_id == setup_id], "SETUP_DIVERSITY", 1)
         diversity_used += len(selected) - before
 
     seen_vol = {best[s].volatility_bucket for s in selected if s in best}
@@ -206,7 +190,7 @@ def plan_two_tier_watch(
         if diversity_used >= diversity_quota or remaining_slots <= 0:
             break
         before = len(selected)
-        admit_limited([row for row in best.values() if row.volatility_bucket == bucket], "VOLATILITY_DIVERSITY", 1)
+        admit([row for row in best.values() if row.volatility_bucket == bucket], "VOLATILITY_DIVERSITY", 1)
         diversity_used += len(selected) - before
 
     controls = [row for row in best.values() if row.symbol not in selected]
