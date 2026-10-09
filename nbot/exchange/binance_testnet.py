@@ -736,12 +736,26 @@ class BinanceTestnetExchange:
             return None  # Reconciliation installs the required protection first.
         return self._stop_ref(active[0])
 
-    def validate_protective_stop(self, symbol: str, side: Side, stop_price: float) -> bool:
+    def validate_protective_stop_against_quote(
+        self, symbol: str, side: Side, stop_price: float, quote: Quote
+    ) -> bool:
+        """Validate stop geometry against caller-supplied fresh market truth.
+
+        The capital adapter owns exchange tick-size quantization. A routed LIVE
+        runtime can therefore keep the hot market-data read on WSS without
+        duplicating filter semantics or falling back to this adapter's REST
+        quote endpoint.
+        """
         if side not in {"LONG", "SHORT"} or not math.isfinite(stop_price) or stop_price <= 0:
             return False
+        if quote.symbol != symbol:
+            return False
         stop = self._stop_price(symbol, side, stop_price)
-        quote = self.quote(symbol)
         return stop < quote.bid if side == "LONG" else stop > quote.ask
+
+    def validate_protective_stop(self, symbol: str, side: Side, stop_price: float) -> bool:
+        quote = self.quote(symbol)
+        return self.validate_protective_stop_against_quote(symbol, side, stop_price, quote)
 
     # --------------------------- entry ---------------------------
 
