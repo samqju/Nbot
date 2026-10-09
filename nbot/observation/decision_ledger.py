@@ -543,6 +543,10 @@ class DecisionOutcomeLedger:
             for hid, decision_ms, frozen_raw, frozen_check, state_raw, state_check in rows:
                 frozen = self._verified(frozen_raw, frozen_check)
                 state = self._verified(state_raw, state_check)
+                # Never seal a horizon result across a known chronology gap.
+                # Keep it OPEN so the passive service can REST-backfill first.
+                if int(state.get("unresolved_gap_count", 0)) > 0:
+                    continue
                 if state.get("last_price") is None:
                     result = {
                         "version": VERSION, "status": "UNSCORABLE",
