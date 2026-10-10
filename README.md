@@ -1,11 +1,6 @@
 # NBOT V3
 
-**2026-10-06 Selective ML V1:** learned `live-paper` can now use a bounded
-[LightGBM selective learner](docs/SELECTIVE_ML.md) alongside Ridge, V4 paper
-feedback and shadow evidence. It predicts nonlinear after-cost research R,
-uses a lower-quantile confidence gate, learns entry feasibility from measured
-shadow fill/drift outcomes, and explicitly abstains when no opportunity clears
-the quality gates. Testnet and live-trade do not automatically inherit it.
+**Current detailed-outcome learning:** [Automatic paper learning from accepted and rejected opportunities](docs/DETAILED_OUTCOME_LEARNING.md) documents the V3 tick-outcome bridge, future evaluation, automatic paper-model replacement, rollback and resource limits. V2 remains the fallback.
 
 **2026-10-05 three-mode command audit:** use [the all-mode operator command reference](docs/ALL_MODES_COMMANDS.md) for validated `testnet-trade`, `live-paper`, and `live-trade` syntax. Current guides distinguish these active commands from historical phase examples.
 

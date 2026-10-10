@@ -1,5 +1,8 @@
 # A 30-day paper auto-learning experiment
 
+**Current detailed-outcome learning:** [Automatic paper learning from accepted and rejected opportunities](DETAILED_OUTCOME_LEARNING.md) documents the V3 tick-outcome bridge, future evaluation, automatic paper-model replacement, rollback and resource limits. V2 remains the fallback.
+
+
 This experiment applies only to learned `live-paper` feedback. The base learner
 and operator tooling also support `testnet-trade` and the separately authorized
 bounded `live-trade` route; see

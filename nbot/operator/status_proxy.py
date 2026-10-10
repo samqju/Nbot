@@ -348,6 +348,9 @@ def _format_learning(data: Mapping[str, Any]) -> str:
     research = data.get("research_champion_promotion") if isinstance(data.get("research_champion_promotion"), Mapping) else {}
     two_tier = data.get("two_tier_research") if isinstance(data.get("two_tier_research"), Mapping) else {}
     ledger = two_tier.get("ledger_counts") if isinstance(two_tier.get("ledger_counts"), Mapping) else {}
+    detailed = data.get("counterfactual_learning") or {}
+    detailed = detailed if isinstance(detailed, Mapping) else {}
+    review = detailed.get("review") or {}
     states = governance.get("challenger_states") or []
     finalized = [row for row in states if isinstance(row, Mapping)
                  and row.get("state") != "ACTIVE_WAITING_FUTURE_EVIDENCE"]
@@ -368,6 +371,10 @@ def _format_learning(data: Mapping[str, Any]) -> str:
         f" / {_e(two_tier.get('high_res_cap'))}\n"
         f"Active high-resolution hypotheses: {_e(two_tier.get('active_hypotheses'))}\n"
         f"Research outcomes matured: {_e(ledger.get('matured_research'))}\n"
+        f"Detailed outcomes usable for training: {_e(detailed.get('eligible_rows'))}\n"
+        f"Usable rejected opportunities: {_e(detailed.get('rejected_opportunities'))}\n"
+        f"Detailed paper model active: {_e('yes' if detailed.get('active_model') else 'no; using fallback')}\n"
+        f"Detailed model review: {_e(review.get('status') or 'waiting for enough later evidence')}\n"
         f"Research decisions rejected/not admitted: {_e(ledger.get('rejected'))}"
         f" / unresolved {_e(ledger.get('unresolved'))}\n\n"
         "The learner tests predictions against later market outcomes.\n"

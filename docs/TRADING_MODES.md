@@ -1,5 +1,8 @@
 # Three trading modes: simple setup and switching guide
 
+**Current detailed-outcome learning:** [Automatic paper learning from accepted and rejected opportunities](DETAILED_OUTCOME_LEARNING.md) documents the V3 tick-outcome bridge, future evaluation, automatic paper-model replacement, rollback and resource limits. V2 remains the fallback.
+
+
 For a compact validated command matrix, see
 [ALL_MODES_COMMANDS.md](ALL_MODES_COMMANDS.md).
 

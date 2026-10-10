@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -79,6 +80,13 @@ class CombinedStreamRunner:
                     parsed = self.state.ingest_agg_trade(payload, receipt_time_ms=receipt)
                     if self.event_sink is not None:
                         self.event_sink("aggTrade", parsed)
+            except Exception:
+                logging.getLogger(__name__).exception("WSS_CONSUMER_PAYLOAD_FAILED")
+                self.state.mark_disconnected(self.symbols)
+                if self.event_sink is not None:
+                    self.event_sink("disconnected", self.symbols)
+                if self._ws is not None:
+                    await self._ws.close()
             finally:
                 self.queue.task_done()
 
@@ -88,6 +96,8 @@ class CombinedStreamRunner:
         try:
             while not self._stop:
                 self.state.mark_disconnected(self.symbols)
+                if self.event_sink is not None:
+                    self.event_sink("disconnected", self.symbols)
                 try:
                     cm = await self.connect_factory(self.url)
                     async with cm as ws:
@@ -96,7 +106,8 @@ class CombinedStreamRunner:
                         attempt = 0
                         started = time.monotonic()
                         while not self._stop and time.monotonic() - started < self.rotate_seconds:
-                            raw = await ws.recv()
+                            remaining = self.rotate_seconds - (time.monotonic() - started)
+                            raw = await asyncio.wait_for(ws.recv(), timeout=max(.1, remaining))
                             payload = decode_combined_message(raw)
                             item = (int(time.time() * 1000), payload)
                             try:
@@ -111,6 +122,8 @@ class CombinedStreamRunner:
                 except Exception:
                     self._ws = None
                     self.state.mark_disconnected(self.symbols)
+                    if self.event_sink is not None:
+                        self.event_sink("disconnected", self.symbols)
                     if not self._stop:
                         await asyncio.sleep(reconnect_delay_seconds(attempt, jitter=0))
                         attempt = min(attempt + 1, 16)

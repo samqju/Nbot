@@ -1,5 +1,8 @@
 # One main position plus ten shadow simulations
 
+**Current detailed-outcome learning:** [Automatic paper learning from accepted and rejected opportunities](DETAILED_OUTCOME_LEARNING.md) documents the V3 tick-outcome bridge, future evaluation, automatic paper-model replacement, rollback and resource limits. V2 remains the fallback.
+
+
 Shadow simulation exists alongside learned `live-paper` and learned
 `live-trade`; `testnet-trade` has no shadow engine. For current commands for
 all three modes, see [ALL_MODES_COMMANDS.md](ALL_MODES_COMMANDS.md).

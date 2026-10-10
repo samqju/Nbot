@@ -1,11 +1,14 @@
 # Learning on a 1 CPU / 1 GB VPS
 
+**Current detailed-outcome learning:** [Automatic paper learning from accepted and rejected opportunities](DETAILED_OUTCOME_LEARNING.md) documents the V3 tick-outcome bridge, future evaluation, automatic paper-model replacement, rollback and resource limits. V2 remains the fallback.
+
+
 The tiny Observation learner can serve the current three-mode architecture:
 `testnet-trade`, learned `live-paper`, and the separately authorized bounded
 `live-trade` route. Only one Execution mode should run at a time. See
 [ALL_MODES_COMMANDS.md](ALL_MODES_COMMANDS.md) for operator syntax.
 
-Paper feedback update: [30-day auto-learning experiment](PAPER_AUTO_LEARNING.md). Learned mainnet-paper adapts setup rankings from settled paper trades. [Selective ML V1](SELECTIVE_ML.md) adds bounded nonlinear ranking and abstention on the Learning VPS. Testnet and real-money selection remain separate; economic proof is still unestablished.
+Paper feedback update: [30-day auto-learning experiment](PAPER_AUTO_LEARNING.md). Learned mainnet-paper adapts setup rankings from settled paper trades. [Selective ML V2 fallback](SELECTIVE_ML.md) adds bounded nonlinear ranking and abstention on the Learning VPS. Testnet and real-money selection remain separate; economic proof is still unestablished.
 
 
 Reviewed 2026-10-05 against the current V3.9 tiny-service and three-mode operator behavior. See the
@@ -17,7 +20,7 @@ invent strategy code, or guarantee profits. Real-money order permission is uncha
 
 ## What is new
 
-Learned `live-paper` can now use Selective ML V1 when an eligible exact-release
+Learned `live-paper` can now use Selective ML V2 fallback when an eligible exact-release
 artifact exists. The small-VPS defaults use one LightGBM thread, at most 600
 recent compact-memory events / 60,000 rows, shallow trees and early stopping.
 Each five-minute market event receives total training weight 1 regardless of
@@ -34,7 +37,7 @@ Install the optional Learning dependency after each fresh environment setup:
 
 The existing Ridge model is still retained as a benchmark and automatic
 fallback. A low conservative ML score, a weak best-versus-second-best edge, or
-poor learned entry-fill probability produces NO TRADE rather than forcing an
+a failed realtime Execution entry check produces NO TRADE rather than forcing an
 entry.
 
 The existing price model is also checked against recent evidence for five setups:

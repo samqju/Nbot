@@ -1,4 +1,12 @@
-# Selective ML V2
+# Selective ML: V3 detailed learner and V2 fallback
+
+**Current detailed-outcome learning:** [Automatic paper learning from accepted and rejected opportunities](DETAILED_OUTCOME_LEARNING.md) documents the V3 tick-outcome bridge, future evaluation, automatic paper-model replacement, rollback and resource limits. V2 remains the fallback.
+
+The sections below describe the retained **V2 fallback**. V3 uses the same
+feature schema but a separately versioned tick-policy target and future paper
+activation gates. V2 does not inherit those gates or labels.
+
+## V2 fallback
 
 Selective ML V2 is the nonlinear, abstention-first learner for learned `live-paper`.
 It does **not** grant exchange authority, change Execution risk limits, arm real money,

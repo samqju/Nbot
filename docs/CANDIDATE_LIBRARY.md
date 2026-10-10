@@ -1,5 +1,8 @@
 # The 24-candidate paper learner
 
+**Current detailed-outcome learning:** [Automatic paper learning from accepted and rejected opportunities](DETAILED_OUTCOME_LEARNING.md) documents the V3 tick-outcome bridge, future evaluation, automatic paper-model replacement, rollback and resource limits. V2 remains the fallback.
+
+
 The 24-candidate feedback experiment is specific to learned `live-paper`.
 For current operator commands across Testnet, LIVE paper and bounded LIVE trade,
 see [ALL_MODES_COMMANDS.md](ALL_MODES_COMMANDS.md).
@@ -9,7 +12,7 @@ See also [the shadow simulation guide](SHADOW_TRADING.md): up to ten additional,
 For the planned 4 CPU / 8-12 GB Learning VPS, use the **standard** resource
 profile. The bot checks 24 named trade candidates in learned mainnet-paper
 mode. A candidate is a rule describing an opportunity, not a promise of profit.
-With [Selective ML V1](SELECTIVE_ML.md), these rules remain interpretable
+With [Selective ML V2 fallback](SELECTIVE_ML.md), these rules remain interpretable
 feedback/shadow labels; they no longer define the full nonlinear decision
 capability of learned paper.
 

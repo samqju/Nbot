@@ -30,18 +30,24 @@ class V3ResearchRuntime:
 
     def mature_due(self, *, now_ms: int) -> dict[str, MaturedOutcome]:
         results = {}
+        evidence = {key: self.replays.evidence(key) for key in self.replays.active_ids}
         for decision_id, outcome in self.replays.mature_due(now_ms=now_ms).items():
             if outcome.quality is EvidenceQuality.GAP_UNRESOLVED or outcome.net_r is None:
                 self.ledger.record_unresolved(
                     decision_id, outcome.policy_id, now_ms, outcome.exit_reason,
                     {"source_digest": outcome.source_digest, "events_seen": outcome.events_seen},
                 )
+                self.replays.forget_result(decision_id)
                 continue
             matured = MaturedOutcome(
                 decision_id, outcome.policy_id, now_ms, outcome.quality.value, outcome.exit_reason,
                 outcome.net_r, outcome.mfe_r, outcome.mae_r, outcome.source_digest,
+                evidence={**evidence.get(decision_id, {}), "exit_time_ms": outcome.exit_time_ms,
+                          "exit_price": outcome.exit_price, "gross_r": outcome.gross_r,
+                          "events_seen": outcome.events_seen, "source_digest": outcome.source_digest},
             )
             self.ledger.record_outcome(matured)
+            self.replays.forget_result(decision_id)
             results[decision_id] = matured
         return results
 

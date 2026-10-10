@@ -1,5 +1,8 @@
 # All-mode operator command reference
 
+**Current detailed-outcome learning:** [Automatic paper learning from accepted and rejected opportunities](DETAILED_OUTCOME_LEARNING.md) documents the V3 tick-outcome bridge, future evaluation, automatic paper-model replacement, rollback and resource limits. V2 remains the fallback.
+
+
 Reviewed 2026-10-09 against the current NBOT V3 `nbotctl` parser and three-mode
 cluster unit map. This is an operator syntax reference, not economic approval.
 Run only one Execution mode at a time.
