@@ -141,7 +141,7 @@ class LearnedPaperRuntimeTests(unittest.TestCase):
             with patch.object(runtime, "build_live_paper_exchange", return_value=(exchange, market)), \
                  patch.object(runtime, "build_integrated_control_client", return_value=client), \
                  patch.object(runtime, "build_execution_worker", return_value=worker) as builder, \
-                 patch.object(runtime, "_operator_surface", return_value=operator), \
+                 patch.object(runtime, "_operator_surface", return_value=operator) as surface_builder, \
                  patch.object(runtime.signal, "signal", side_effect=register), \
                  patch.object(runtime.time, "sleep", side_effect=sleep):
                 result = runtime.run_learned_paper_runtime(
@@ -153,11 +153,27 @@ class LearnedPaperRuntimeTests(unittest.TestCase):
             worker.enable_new_entries.assert_not_called()
             market.disconnect.assert_called_once()
             operator.stop.assert_called_once()
+            self.enable_policy = surface_builder.call_args.kwargs["enable_policy"]
             return exchange, client, worker
 
     def test_restart_starts_with_entries_disabled(self):
         _exchange, _client, worker = self.run_once(open_position=False)
         worker.process_flat_cycle.assert_called_once()
+
+    def test_telegram_paper_enable_allows_waiting_for_a_model(self):
+        _exchange, client, worker = self.run_once(open_position=False)
+        client.health.return_value={"status":"NOT_READY","reason":"LEARNING_WAIT_FOR_COMPATIBLE_MODEL"}
+        self.assertEqual(self.enable_policy(),(True,"PAPER_PERMISSION_VALID_PROPOSAL_STILL_REQUIRED"))
+        client.health.assert_not_called()
+        # Testing permission itself does not open a position or change the gate.
+        worker.enable_new_entries.assert_not_called()
+
+    def test_telegram_paper_enable_does_not_require_learning_server_availability(self):
+        _exchange, client, worker = self.run_once(open_position=False)
+        client.health.side_effect=RuntimeError("learning offline")
+        self.assertTrue(self.enable_policy()[0])
+        client.health.assert_not_called()
+        worker.enable_new_entries.assert_not_called()
 
     def test_open_management_has_no_observation_dependency(self):
         exchange, client, worker = self.run_once(open_position=True)
