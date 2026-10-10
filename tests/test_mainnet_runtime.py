@@ -9,10 +9,16 @@ import run_execution as runtime
 
 
 class MainnetRuntimeTests(unittest.TestCase):
-    def run_once(self, *, open_position=False, armed=False, enable=False, current_sha=True):
+    def run_once(self, *, open_position=False, armed=False, enable=False, current_sha=True,
+                 probe_enable=False, health_status="NOT_READY"):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             exchange, client, worker, operator = [MagicMock() for _ in range(4)]
+            client.health.return_value={"status":health_status,"recommendation_authority":LIVE_LEARNED_AUTHORITY}
+            def make_surface(**kwargs):
+                if probe_enable:
+                    self.policy_result=kwargs["enable_policy"]()
+                return operator
             exchange.guard.preflight.return_value = {
                 "armed": armed, "session_entries": 0, "max_session_entries": 1}
             exchange.guard._parse_arm.return_value = {"sha": "a"*40 if current_sha else "b"*40}
@@ -32,7 +38,7 @@ class MainnetRuntimeTests(unittest.TestCase):
                  patch.object(runtime.subprocess, "check_output", return_value="a"*40), \
                  patch.object(runtime, "build_integrated_control_client", return_value=client), \
                  patch.object(runtime, "build_execution_worker", return_value=worker) as builder, \
-                 patch.object(runtime, "_operator_surface", return_value=operator), \
+                 patch.object(runtime, "_operator_surface", side_effect=make_surface), \
                  patch.object(runtime, "operator_entries_blocked", return_value=not enable), \
                  patch.object(runtime.signal, "signal", side_effect=register), \
                  patch.object(runtime.time, "sleep", side_effect=sleep):
@@ -51,6 +57,15 @@ class MainnetRuntimeTests(unittest.TestCase):
     def test_disarmed_flat_runtime_cannot_enable(self):
         _, _, worker = self.run_once(enable=True)
         worker.enable_new_entries.assert_not_called()
+
+    def test_telegram_real_money_enable_still_requires_arm_and_ready_learning(self):
+        _, client, _ = self.run_once(probe_enable=True)
+        self.assertFalse(self.policy_result[0])
+        client.health.assert_not_called()
+        self.run_once(armed=True, probe_enable=True)
+        self.assertEqual(self.policy_result,(False,"LEARNED_NOT_READY"))
+        self.run_once(armed=True, probe_enable=True, health_status="READY")
+        self.assertEqual(self.policy_result,(True,"LEARNED_READY"))
 
     def test_armed_runtime_still_requires_operator_enable(self):
         _, _, worker = self.run_once(armed=True)

@@ -131,8 +131,16 @@ Resume only after checking the selected profile is healthy:
 ./nbotctl entries enable live-trade
 ~~~
 
+In learned mainnet paper mode, Telegram `/enable` grants permission to wait for
+a valid trade, the same as `entries enable live-paper`. It does not require a
+ready model or an immediate opportunity. Reconciliation and daily-risk checks
+still apply; every paper entry still needs a valid, fresh recommendation and
+passes Execution's trade checks. Real-money `/enable` retains its arm and
+Observation-readiness requirements. Sending `/enable` does not force a trade.
+
 Testnet must still be armed. LIVE trading must still have a valid current
-real-money trial arm. Learned paper enable remains subject to Observation readiness.
+real-money trial arm. Paper permission can be enabled while learning is waiting;
+an actual paper entry remains subject to Observation readiness and trade checks.
 
 ## Safe stop
 

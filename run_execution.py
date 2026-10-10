@@ -869,6 +869,11 @@ def run_learned_paper_runtime(*, repo_root: Path, environment: Mapping[str, str]
     def enable_policy():
         if not local_entry_permission():
             return False, "LIVE_EXPLICIT_TRIAL_ARM_REQUIRED"
+        if not is_live:
+            # Paper permission means "wait for a valid opportunity", just like
+            # nbotctl entries enable. Observation readiness is checked again by
+            # the flat-cycle proposal path before any simulated entry.
+            return True, "PAPER_PERMISSION_VALID_PROPOSAL_STILL_REQUIRED"
         health = client.health()
         ok = (health.get("status") == "READY" and
               health.get("recommendation_authority") == authority)
