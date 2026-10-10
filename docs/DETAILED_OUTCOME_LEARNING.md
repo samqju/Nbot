@@ -177,6 +177,8 @@ Back up all three Observation databases (`observer.db`, `research_memory.db`,
 reviews, data digests and activation/rollback records live in research memory.
 Old notebook entries survive restarts; unfinished precise paths are honestly
 marked unresolved because missed prices cannot be recreated.
+An unresolved stream gap also causes a fresh research feed to start; old
+interrupted hypotheses are invalidated, never repaired by simply clearing a flag.
 
 Testnet and real-money model selectors do not consume V3. Learning cannot arm
 real trading, change credentials, create Binance orders or increase the main

@@ -353,7 +353,14 @@ class ResearchWssFeed:
     def update(self, symbols: tuple[str, ...], shards) -> None:
         normalized = tuple(sorted(set(symbols)))
         if normalized == self.symbols and self.thread is not None and self.thread.is_alive():
-            return
+            now_ms = int(time.time() * 1000)
+            broken = self.last_error is not None or (self.state is not None and any(
+                self.state.health(symbol, now_ms=now_ms).gap_unresolved for symbol in normalized))
+            if not broken:
+                return
+            # Begin a fresh observation cohort. Never clear an old gap and
+            # pretend the interrupted historical hypotheses were continuous.
+            self.runtime.replays.invalidate_paths(self.symbols)
         self.stop()
         self.symbols = normalized
         if not normalized:
@@ -381,6 +388,8 @@ class ResearchWssFeed:
         thread = self.thread
         if thread is not None and thread.is_alive():
             thread.join(timeout=8)
+            if thread.is_alive():
+                raise RuntimeError("WSS_THREAD_STOP_TIMEOUT")
         self.thread = None
         self.loop = None
         self.runners = []

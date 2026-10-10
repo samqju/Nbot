@@ -232,6 +232,35 @@ class ModelLifecycleTests(unittest.TestCase):
 
 
 class LiveCollectionTests(unittest.TestCase):
+    def test_feed_stop_timeout_does_not_create_a_second_live_thread(self):
+        from nbot.observation.live_two_tier import ResearchWssFeed
+        from unittest.mock import Mock
+        feed=ResearchWssFeed(Mock())
+        thread=Mock()
+        thread.is_alive.return_value=True
+        feed.thread=thread
+        with self.assertRaisesRegex(RuntimeError,"WSS_THREAD_STOP_TIMEOUT"):
+            feed.stop()
+        self.assertIs(feed.thread,thread)
+        thread.join.assert_called_once_with(timeout=8)
+
+    def test_broken_feed_restarts_without_reusing_interrupted_paths(self):
+        from nbot.observation.live_two_tier import ResearchWssFeed
+        from unittest.mock import Mock
+        runtime=Mock()
+        feed=ResearchWssFeed(runtime)
+        feed.symbols=("BTCUSDT",)
+        feed.thread=Mock()
+        feed.thread.is_alive.return_value=True
+        feed.state=Mock()
+        feed.state.health.return_value=SimpleNamespace(gap_unresolved=True)
+        with patch.object(feed,"stop") as stop, \
+             patch("nbot.observation.live_two_tier.threading.Thread") as thread:
+            feed.update(("BTCUSDT",),())
+            stop.assert_called_once()
+            runtime.replays.invalidate_paths.assert_called_once_with(("BTCUSDT",))
+            thread.return_value.start.assert_called_once()
+
     def test_both_sides_and_overlapping_rejected_decisions_are_observed(self):
         from nbot.observation.live_two_tier import LiveTwoTierResearchSupervisor, ResearchCandidate
         from nbot.observation.watch_planner import WatchCandidate

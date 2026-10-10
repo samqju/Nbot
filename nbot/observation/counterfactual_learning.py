@@ -207,6 +207,8 @@ class CounterfactualLearner:
         if not self.memory.path.is_file():
             return []
         with closing(sqlite3.connect(self.memory.path.resolve().as_uri()+"?mode=ro", uri=True, timeout=2)) as conn:
+            if conn.execute("SELECT 1 FROM sqlite_master WHERE name='research_memory_artifacts'").fetchone() is None:
+                return []
             keys = conn.execute("""SELECT artifact_key FROM research_memory_artifacts
                 WHERE artifact_key LIKE ? AND json_extract(artifact_json,'$.release_sha')=?
                 ORDER BY recorded_at_ms DESC,artifact_key DESC LIMIT 64""",

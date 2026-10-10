@@ -135,3 +135,5 @@ class CombinedStreamRunner:
                 pass
             self._ws = None
             self.state.mark_disconnected(self.symbols)
+            if self.event_sink is not None:
+                self.event_sink("disconnected", self.symbols)
