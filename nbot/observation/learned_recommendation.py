@@ -140,6 +140,27 @@ class LearnedTestnetSource:
                 Path(__file__).resolve().parents[2], trained_sha, self.release_sha)
         return self._release_compatibility[trained_sha]
 
+    @classmethod
+    def ridge_record_for_memory(cls, memory, *, release_sha, event_ms):
+        """Use the inference resolver without constructing collectors or feedback stores."""
+        reader = cls.__new__(cls)
+        reader.memory_path = memory.path
+        reader.release_sha = release_sha
+        reader.profile = get_profile("live-paper")
+        reader._release_compatibility = {}
+        artifact = reader._model(event_ms)
+        if artifact is None:
+            return None
+        # Lookup by canonical payload digest; the resolver already verified links.
+        wanted = hashlib.sha256(json.dumps(artifact, sort_keys=True,
+            separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+        with closing(sqlite3.connect(memory.path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)) as conn:
+            key = conn.execute("SELECT artifact_key FROM research_memory_artifacts WHERE artifact_digest=? ORDER BY artifact_key LIMIT 1",
+                               (wanted,)).fetchone()
+        if key is None:
+            raise ValueError("PAPER_INCUMBENT_RIDGE_ARTIFACT_MISSING")
+        return memory.artifact(key[0])
+
     def _model(self, event_ms):
         if not self.memory_path.is_file():
             return None

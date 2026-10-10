@@ -203,6 +203,45 @@ class CounterfactualLearner:
         self.memory, self.release_sha = memory, release_sha
         self.ledger_path = Path(ledger_path or memory.path.parent / "decision_outcomes.db")
 
+    def _ridge_record(self, event_ms):
+        from .learned_recommendation import LearnedTestnetSource
+        return LearnedTestnetSource.ridge_record_for_memory(
+            self.memory, release_sha=self.release_sha, event_ms=event_ms)
+
+    def paper_incumbent(self, event_ms):
+        """Freeze the same V3/V2/Ridge hierarchy and V2 blend used by paper inference."""
+        from .selective_ml import SelectiveMLConfig
+        ml_setting = os.environ.get("NBOT_SELECTIVE_ML", "1")
+        if ml_setting not in {"0", "1"}:
+            raise ValueError("NBOT_SELECTIVE_ML_INVALID")
+        if ml_setting == "0":
+            return None  # no nonlinear replacement while nonlinear inference is disabled
+        active = self.active(event_ms=event_ms) if ml_setting == "1" else None
+        if active:
+            return {"kind": VERSION, "key": active["artifact_key"],
+                    "digest": active["artifact_digest"], "threshold": .08, "edge": .05}
+        cfg = SelectiveMLConfig.from_environment()
+        v2 = (SelectiveMLManager(self.memory, release_sha=self.release_sha, config=cfg)
+              .latest_for_event(event_ms)) if ml_setting == "1" else None
+        ridge = self._ridge_record(event_ms)
+        if ridge is None:
+            return None  # inference cannot recommend without a compatible Ridge base
+        result = {"kind": V2 if v2 else "RIDGE", "key": v2["artifact_key"] if v2 else ridge["artifact_key"],
+            "digest": v2["artifact_digest"] if v2 else ridge["artifact_digest"],
+            "ridge_key": ridge["artifact_key"], "ridge_digest": ridge["artifact_digest"],
+            "threshold": cfg.min_lower_r if v2 else .08, "edge": cfg.min_edge_gap_r if v2 else .05}
+        return result
+
+    def _incumbent_matches(self, payload, now):
+        frozen = payload.get("incumbent")
+        return frozen is not None and self.paper_incumbent(now) == frozen
+
+    def _verified_record(self, key, expected_digest):
+        record = self.memory.artifact(key)
+        if record is None or record["artifact_digest"] != expected_digest:
+            raise ValueError("PAPER_INCUMBENT_ARTIFACT_CHANGED")
+        return record
+
     def _records(self, prefix):
         if not self.memory.path.is_file():
             return []
@@ -287,8 +326,10 @@ class CounterfactualLearner:
             if review["status"] == "PASS_PAPER_GATE" and not any(
                     r["payload"].get("review_digest") == digest(review)
                     for r in self._records(ACTIVATION_PREFIX)):
-                self._activate(candidate, review, now)
-                return {"status": "RECOVERED_PAPER_ACTIVATION"}
+                if self._activate(candidate, review, now):
+                    return {"status": "RECOVERED_PAPER_ACTIVATION"}
+                # Stale passed evidence cannot activate; allow a new candidate
+                # only once genuinely newer training evidence is available.
             if not rows or rows[-1]["event_ms"] <= review["through_event_ms"] + SPACING_MS:
                 return {"status": "WAIT_FOR_NEW_TRAINING_EVIDENCE"}
         train, valid = purged_split(rows)
@@ -305,7 +346,9 @@ class CounterfactualLearner:
         mean = _train_booster(lgb, tx, ty, tw, vx, vy, vw, cfg=cfg, objective="regression")
         lower = _train_booster(lgb, tx, ty, tw, vx, vy, vw, cfg=cfg, objective="quantile", alpha=LOWER_QUANTILE)
         now = int(time.time() * 1000)  # actual completion time, not fitting start
-        active = self.active(event_ms=now)
+        incumbent = self.paper_incumbent(now)
+        if incumbent is None:
+            return {"status": "WAIT_FOR_PAPER_INCUMBENT"}
         used = [r for _, rs in train + valid for r in rs]
         payload = {"version": VERSION, "target": TARGET, "evidence_contract": CONTRACT,
             "feature_names": list(ML_FEATURE_NAMES), "feature_schema": FEATURE_SCHEMA,
@@ -315,7 +358,8 @@ class CounterfactualLearner:
             "training_events": len(train), "holdout_events": len(valid),
             "training_rows": len(ty), "data_digest": digest([(r["id"], r["source_digest"]) for r in used]),
             "mean_model": mean.model_to_string(), "lower_model": lower.model_to_string(),
-            "config": asdict(cfg), "incumbent_key": active["artifact_key"] if active else None,
+            "config": asdict(cfg), "incumbent": incumbent,
+            "incumbent_key": incumbent["key"],
             "libraries": {"python": platform.python_version(), "lightgbm": lgb.__version__,
                           "numpy": np.__version__},
             "selection_gate": {"min_lower_r": .08, "min_edge_gap_r": .05},
@@ -329,12 +373,23 @@ class CounterfactualLearner:
 
     def _evaluate(self, candidate, rows, now):
         p = candidate["payload"]
+        if not self._incumbent_matches(p, now):
+            review = {"status": "REJECT_PAPER_GATE", "reason": "INCUMBENT_CHANGED_OR_UNFROZEN",
+                "incumbent_changed_during_evaluation": True, "candidate_key": candidate["artifact_key"],
+                "candidate_digest": candidate["artifact_digest"], "through_event_ms": now,
+                "release_sha": self.release_sha, "recorded_at_ms": now, "order_authority": "NONE"}
+            self.memory.persist_artifact(REVIEW_PREFIX + candidate["artifact_digest"], review, recorded_at_ms=now)
+            return review
         groups = future_groups(rows, p["trained_at_ms"])
         if len(groups) < FUTURE_EVENTS:
             return {"status": "WAIT_FOR_FUTURE_EVALUATION", "events": len(groups), "required": FUTURE_EVENTS}
         candidate_runtime = runtime_from_payload(p)
-        incumbent = self.memory.artifact(p["incumbent_key"]) if p["incumbent_key"] else None
-        incumbent_runtime = runtime_from_payload(incumbent["payload"]) if incumbent else None
+        frozen = p["incumbent"]
+        incumbent = self._verified_record(frozen["key"], frozen["digest"])
+        incumbent_runtime = runtime_from_payload(incumbent["payload"]) if frozen["kind"] != "RIDGE" else None
+        ridge = (self._verified_record(frozen["ridge_key"], frozen["ridge_digest"])
+                 if frozen["kind"] != VERSION else None)
+        from .selection import _ridge_score
         means, scores, old_means, old_scores = {}, {}, {}, {}
         for _, rs in groups:
             for r in rs:
@@ -343,15 +398,16 @@ class CounterfactualLearner:
                 means[r["id"]], scores[r["id"]] = mean, .7 * mean + .3 * lower
                 if incumbent_runtime:
                     om, ol = incumbent_runtime.score(vector)
+                    if frozen["kind"] == V2:
+                        om = .25 * _ridge_score(ridge["payload"]["model"], r["feature_vector_json"]) + .75 * om
                 else:
-                    # Frozen decision-time Ridge is a diagnostic fallback comparator.
-                    om = ol = float(r["ridge_score"] or 0)
+                    om = ol = _ridge_score(ridge["payload"]["model"], r["feature_vector_json"])
                 old_means[r["id"]], old_scores[r["id"]] = om, .7 * om + .3 * ol
-        reports = [evaluate_window(window, means, scores, old_means, old_scores)
+        reports = [evaluate_window(window, means, scores, old_means, old_scores,
+                                   incumbent_gate=frozen)
                    for window in (groups[:10], groups[10:])]
         passed = all(r["passed"] for r in reports)
-        current = self.active(event_ms=now)
-        incumbent_changed = (current["artifact_key"] if current else None) != p["incumbent_key"]
+        incumbent_changed = not self._incumbent_matches(p, int(time.time() * 1000))
         passed = passed and not incumbent_changed
         review = {"status": "PASS_PAPER_GATE" if passed else "REJECT_PAPER_GATE",
             "candidate_key": candidate["artifact_key"], "candidate_digest": candidate["artifact_digest"],
@@ -359,6 +415,7 @@ class CounterfactualLearner:
             "through_event_ms": groups[-1][0], "release_sha": self.release_sha,
             "evaluation_ids_digest": digest([[r["id"] for r in rs] for _, rs in groups]),
             "incumbent_changed_during_evaluation": incumbent_changed,
+            "incumbent": frozen,
             "economic_proof": False, "order_authority": "NONE"}
         self.memory.persist_artifact(REVIEW_PREFIX + candidate["artifact_digest"], review, recorded_at_ms=now)
         if passed:
@@ -366,17 +423,19 @@ class CounterfactualLearner:
         return review
 
     def _activate(self, candidate, review, now):
+        if not enabled() or review.get("status") != "PASS_PAPER_GATE" or not self._incumbent_matches(candidate["payload"], now):
+            return False
         active = self.active(event_ms=now)
-        if (active["artifact_key"] if active else None) != candidate["payload"]["incumbent_key"]:
-            return  # an operator rollback wins over an in-flight comparison
         self._save(ACTIVATION_PREFIX, {"model_key": candidate["artifact_key"],
             "model_artifact_digest": candidate["artifact_digest"], "release_sha": self.release_sha,
             "previous_model_key": active["artifact_key"] if active else None,
             "activated_at_ms": now, "reason": "PASS_PAPER_GATE", "review_digest": digest(review),
+            "incumbent": candidate["payload"]["incumbent"],
             "recorded_at_ms": now, "authority": "PAPER_ONLY"})
+        return True
 
 
-def evaluate_window(groups, means, scores, old_means, old_scores):
+def evaluate_window(groups, means, scores, old_means, old_scores, *, incumbent_gate=None):
     errors, old_errors, zeros = [], [], []
     for _, rs in groups:
         errors.append(sum(abs(max(-3., min(3., r["target_net_r"])) - means[r["id"]]) for r in rs) / len(rs))
@@ -384,7 +443,8 @@ def evaluate_window(groups, means, scores, old_means, old_scores):
         zeros.append(sum(abs(max(-3., min(3., r["target_net_r"]))) for r in rs) / len(rs))
     avg = lambda values: sum(values) / len(values)
     new = portfolio_metrics(groups, scores)
-    old = portfolio_metrics(groups, old_scores)
+    gate = incumbent_gate or {"threshold": .08, "edge": .05}
+    old = portfolio_metrics(groups, old_scores, threshold=gate["threshold"], edge=gate["edge"])
     stressed = portfolio_metrics(groups, scores, extra_cost=.10)
     selected = set(new["selected_ids"])
     regime_results = defaultdict(list)
@@ -405,6 +465,7 @@ def evaluate_window(groups, means, scores, old_means, old_scores):
         "enough_trades": new["trades"] >= 5, "positive_after_cost": new["net_r"] > 0,
         "cost_stress_positive": stressed["net_r"] > 0,
         "net_not_worse": new["net_r"] >= old["net_r"],
+        "net_improvement_at_least_0_1r": new["net_r"] >= old["net_r"] + .1,
         "drawdown_not_worse": new["drawdown_r"] <= old["drawdown_r"],
         "no_supported_regime_catastrophe": all(r["trades"] < 3 or r["mean_net_r"] > -1
                                                for r in regimes.values())}
