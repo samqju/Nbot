@@ -373,6 +373,8 @@ def _format_learning(data: Mapping[str, Any]) -> str:
         f"Research outcomes matured: {_e(ledger.get('matured_research'))}\n"
         f"Detailed outcomes usable for training: {_e(detailed.get('eligible_rows'))}\n"
         f"Usable rejected opportunities: {_e(detailed.get('rejected_opportunities'))}\n"
+        f"Detailed model later test events: {_e(detailed.get('future_events_collected'))}"
+        f" / {_e(detailed.get('future_events_required'))}\n"
         f"Detailed paper model active: {_e('yes' if detailed.get('active_model') else 'no; using fallback')}\n"
         f"Detailed model review: {_e(review.get('status') or 'waiting for enough later evidence')}\n"
         f"Research decisions rejected/not admitted: {_e(ledger.get('rejected'))}"

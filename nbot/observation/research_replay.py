@@ -51,7 +51,7 @@ class _TickState:
     gap_unresolved: bool = False
     digest: Any = field(default_factory=hashlib.sha256)
 
-    def ingest(self, event: TradeEvent) -> None:
+    def ingest(self, event: TradeEvent, canonical: bytes | None = None) -> None:
         h = self.hypothesis
         if event.symbol != h.symbol or self.exit_price is not None or self.gap_unresolved:
             return
@@ -63,7 +63,7 @@ class _TickState:
                 and event.price == self.last_price):
             return  # retransmission is not a missing or reversed path
 
-        canonical = json.dumps(
+        canonical = canonical or json.dumps(
             [event.symbol, event.trade_id, event.trade_time_ms, event.price],
             separators=(",", ":"), allow_nan=False,
         ).encode("utf-8")
@@ -156,11 +156,13 @@ class ResearchReplayBook:
             self._by_symbol.setdefault(hypothesis.symbol, set()).add(hypothesis.decision_id)
 
     def ingest(self, event: TradeEvent) -> None:
+        canonical = json.dumps([event.symbol, event.trade_id, event.trade_time_ms, event.price],
+                               separators=(",", ":"), allow_nan=False).encode("utf-8")
         with self._lock:
             for decision_id in tuple(self._by_symbol.get(event.symbol, ())):
                 state = self._active[decision_id]
                 if isinstance(state, _TickState):
-                    state.ingest(event)
+                    state.ingest(event, canonical)
                 else:
                     h = state.hypothesis
                     if h.entry_time_ms <= event.trade_time_ms <= h.entry_time_ms + h.horizon_ms:

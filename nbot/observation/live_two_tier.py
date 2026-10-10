@@ -34,6 +34,7 @@ from .watch_planner import WatchCandidate
 from .wss_market import AggTrade, MarketDataUnavailable, WssMarketState
 from .wss_transport import CombinedStreamRunner
 from .counterfactual_learning import CONTRACT, FEATURE_SCHEMA, runtime_from_payload
+from .features import CANONICAL_FEATURE_VERSION
 
 
 AUTHORITY = "RESEARCH_ONLY_NO_EXECUTION"
@@ -633,6 +634,7 @@ class LiveTwoTierResearchSupervisor:
                             "quote_receipt_time_ms": quote.receipt_time_ms,
                             "training_contract": CONTRACT,
                             "feature_schema": FEATURE_SCHEMA,
+                            "canonical_feature_version": CANONICAL_FEATURE_VERSION,
                             "feature_vector": candidate.feature_vector,
                             "horizon_ms": DEFAULT_HORIZON_MS,
                             "entry_price": entry,

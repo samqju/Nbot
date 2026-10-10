@@ -66,7 +66,9 @@ There is no model fitting in the quote/WebSocket or execution request threads.
 
 The fitting process reads at most 60,000 recent rows / 3,000 events. All rows in
 one event share total training weight one. The old 80/20 chronological split is
-used for training and diagnostic early stopping; overlapping labels and late
+used as the starting boundary for training and diagnostic early stopping. The
+diagnostic window is extended backward when needed to reserve ten disjoint
+events under the row cap; overlapping labels and late
 receipts are purged at the boundary, with an additional five-minute separation.
 Diagnostic events are spaced four hours five minutes apart. At least 80 purged
 training events and 10 diagnostic events are required. Sparse evidence means
@@ -91,6 +93,10 @@ Both windows must satisfy all of these checks:
 2. At least five hypothetical trades qualify under the fixed score/gap gates.
 3. Net R is positive after modeled costs and an extra 0.1R-per-trade stress.
 4. Net R is no worse and drawdown is no larger than the comparator.
+5. No volatility group with at least three selected trades has mean net R at or
+   below -1R. Sparse groups remain explicitly unproven. The report also counts
+   rejected hypothetical winners and avoided losses without calling them actual
+   trades or profit.
 
 The comparison chooses at most one position, skips overlapping opportunities
 and uses exactly the same observed candidates for both models. It is conditional

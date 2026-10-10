@@ -13,6 +13,7 @@ from nbot.observation.counterfactual_learning import (
     ACTIVATION_PREFIX, HORIZON_MS, SPACING_MS, CounterfactualLearner,
     PaperLearningManager, load_samples, purged_split, digest, portfolio_metrics,
     evaluate_window, runtime_from_payload,
+    CANONICAL_FEATURE_VERSION,
 )
 from nbot.observation.selection import FEATURE_VECTOR_NAMES
 from nbot.observation.decision_ledger import FrozenDecision, MaturedOutcome, DecisionLedger
@@ -39,6 +40,7 @@ def decision(key, event=100_000, approved=False):
 
 def extras(event=100_000):
     return {"training_contract": CONTRACT, "feature_schema": FEATURE_SCHEMA,
+        "canonical_feature_version": CANONICAL_FEATURE_VERSION,
         "feature_vector": vector(), "entry_time_ms": event,
         "entry_price": 100., "one_r_price": 1., "horizon_ms": HORIZON_MS,
         "costs": {"taker_fee_rate": .0005, "entry_slippage_bps": 1.,

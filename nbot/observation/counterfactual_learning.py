@@ -18,6 +18,7 @@ import sqlite3
 import time
 
 from .selection import FEATURE_VECTOR_NAMES
+from .features import CANONICAL_FEATURE_VERSION
 from .selective_ml import (SelectiveMLManager, SelectiveMLRuntime, VERSION as V2,
     _matrix, _train_booster, _ml_imports, ML_FEATURE_NAMES, FEATURE_SCHEMA,
     LOWER_QUANTILE, MEAN_SCORE_WEIGHT, LOWER_SCORE_WEIGHT)
@@ -85,6 +86,7 @@ def load_samples(path, *, now_ms, limit=MAX_ROWS):
             if digest(d) != dd or digest(o) != od:
                 raise ValueError("DIGEST")
             if (x.get("training_contract") != CONTRACT or x.get("feature_schema") != FEATURE_SCHEMA
+                    or x.get("canonical_feature_version") != CANONICAL_FEATURE_VERSION
                     or o.get("quality") != "AGGTRADE_RESOLVED" or o.get("actual_execution")
                     or d.get("policy_id") != "TICK_INTEGER_R_V1"
                     or o.get("policy_id") != d.get("policy_id")
@@ -113,6 +115,9 @@ def load_samples(path, *, now_ms, limit=MAX_ROWS):
             rr = float(o["net_r"])
             if not math.isfinite(rr) or not 0 < float(x["one_r_price"]) < float(x["entry_price"]):
                 raise ValueError("NUMERIC")
+            if not math.isclose(x["one_r_price"] / x["entry_price"],
+                                float(vector["atr14_frac"]), rel_tol=1e-8):
+                raise ValueError("RISK_GEOMETRY")
             direction = 1 if d["side"] == "LONG" else -1
             gross = direction * (float(evidence["exit_price"]) - x["entry_price"]) / x["one_r_price"]
             expected = gross - (.001 + .0002) * x["entry_price"] / x["one_r_price"]
@@ -124,7 +129,7 @@ def load_samples(path, *, now_ms, limit=MAX_ROWS):
                 "entry_ms": entry, "end_ms": end, "available_ms": available,
                 "symbol": d["symbol"], "side": d["side"], "approved": d["approved"],
                 "feature_vector_json": json.dumps(vector), "target_net_r": rr,
-                "ridge_score": d.get("ridge_score_r"), "source_digest": od,
+                "ridge_score": d.get("ridge_score_r"), "source_digest": digest([dd, od]),
                 "sampling": "CONDITIONAL_ON_HIGH_RES_POOL_NOT_MARKET_WIDE"})
         except (ValueError, KeyError, TypeError, OverflowError) as exc:
             exclusions[str(exc)[:80]] += 1
@@ -234,12 +239,16 @@ class CounterfactualLearner:
         active = self.active(event_ms=now)
         latest = candidates[-1] if candidates else None
         review = self.memory.artifact(REVIEW_PREFIX + latest["artifact_digest"]) if latest else None
+        train, valid = purged_split(rows)
+        future = len(future_groups(rows, latest["payload"]["trained_at_ms"])) if latest else 0
         return {"version": VERSION, "target": TARGET, "eligible_rows": len(rows),
             "accepted_opportunities": sum(bool(r["approved"]) for r in rows),
             "rejected_opportunities": sum(not r["approved"] for r in rows),
             "exclusions": excluded, "active_model": active["artifact_key"] if active else None,
             "candidate": latest["artifact_key"] if latest else None,
             "review": review["payload"] if review else None,
+            "train_events_ready": len(train), "diagnostic_events_ready": len(valid),
+            "future_events_collected": future,
             "future_events_required": FUTURE_EVENTS, "order_authority": "NONE"}
 
     def _save(self, prefix, payload):
@@ -293,6 +302,7 @@ class CounterfactualLearner:
             return {"status": "WAIT_FOR_HIGH_RES_ROWS"}
         mean = _train_booster(lgb, tx, ty, tw, vx, vy, vw, cfg=cfg, objective="regression")
         lower = _train_booster(lgb, tx, ty, tw, vx, vy, vw, cfg=cfg, objective="quantile", alpha=LOWER_QUANTILE)
+        now = int(time.time() * 1000)  # actual completion time, not fitting start
         active = self.active(event_ms=now)
         used = [r for _, rs in train + valid for r in rs]
         payload = {"version": VERSION, "target": TARGET, "evidence_contract": CONTRACT,
@@ -317,13 +327,7 @@ class CounterfactualLearner:
 
     def _evaluate(self, candidate, rows, now):
         p = candidate["payload"]
-        groups, last = [], p["trained_at_ms"]
-        for event, rs in groups_for(rows):
-            if event > p["trained_at_ms"] and event - last >= SPACING_MS:
-                groups.append((event, rs))
-                last = event
-            if len(groups) == FUTURE_EVENTS:
-                break
+        groups = future_groups(rows, p["trained_at_ms"])
         if len(groups) < FUTURE_EVENTS:
             return {"status": "WAIT_FOR_FUTURE_EVALUATION", "events": len(groups), "required": FUTURE_EVENTS}
         candidate_runtime = runtime_from_payload(p)
@@ -380,15 +384,44 @@ def evaluate_window(groups, means, scores, old_means, old_scores):
     new = portfolio_metrics(groups, scores)
     old = portfolio_metrics(groups, old_scores)
     stressed = portfolio_metrics(groups, scores, extra_cost=.10)
+    selected = set(new["selected_ids"])
+    regime_results = defaultdict(list)
+    avoided_losses = missed_winners = 0
+    for _, rs in groups:
+        for row in rs:
+            if not row["approved"]:
+                avoided_losses += row["target_net_r"] < 0
+                missed_winners += row["target_net_r"] > 0
+            if row["id"] in selected:
+                volatility = json.loads(row["feature_vector_json"])["volatility_percentile"]
+                bucket = "LOW" if volatility < 1/3 else "HIGH" if volatility > 2/3 else "NORMAL"
+                regime_results[bucket].append(row["target_net_r"])
+    regimes = {name: {"trades": len(values), "mean_net_r": avg(values)}
+               for name, values in regime_results.items()}
     checks = {"prediction_beats_zero": avg(errors) < avg(zeros),
         "prediction_not_worse_than_incumbent": avg(errors) <= avg(old_errors),
         "enough_trades": new["trades"] >= 5, "positive_after_cost": new["net_r"] > 0,
         "cost_stress_positive": stressed["net_r"] > 0,
         "net_not_worse": new["net_r"] >= old["net_r"],
-        "drawdown_not_worse": new["drawdown_r"] <= old["drawdown_r"]}
+        "drawdown_not_worse": new["drawdown_r"] <= old["drawdown_r"],
+        "no_supported_regime_catastrophe": all(r["trades"] < 3 or r["mean_net_r"] > -1
+                                               for r in regimes.values())}
     return {"passed": all(checks.values()), "checks": checks, "events": len(groups),
         "mae_r": avg(errors), "zero_mae_r": avg(zeros), "incumbent_mae_r": avg(old_errors),
-        "candidate": new, "incumbent": old, "extra_0_1r_cost": stressed}
+        "candidate": new, "incumbent": old, "extra_0_1r_cost": stressed,
+        "volatility_regimes": regimes, "rejected_avoided_losses": avoided_losses,
+        "rejected_missed_winners": missed_winners}
+
+
+def future_groups(rows, trained_at_ms):
+    groups, last = [], trained_at_ms
+    for event, rs in groups_for(rows):
+        if event > trained_at_ms and event - last >= SPACING_MS:
+            groups.append((event, rs))
+            last = event
+        if len(groups) == FUTURE_EVENTS:
+            break
+    return groups
 
 
 class PaperLearningManager(SelectiveMLManager):
