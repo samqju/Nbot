@@ -84,9 +84,11 @@ score gate is +0.08R and best-versus-second gap is +0.05R.
 
 After training, collect 20 **new** mature events, each spaced four hours five
 minutes apart: ten for validation and ten for the final test. The candidate and
-its incumbent comparator are frozen before these observations. If no V3 model
-exists, the frozen decision-time Ridge scores provide a clearly labelled
-diagnostic comparator. No thresholds are fitted on either future window.
+its exact incumbent comparator are frozen before these observations: active V3,
+otherwise eligible V2, otherwise compatible Ridge used by paper inference.
+V2's Ridge blend, both artifact keys/digests and its selection gates are frozen
+too. No thresholds are fitted on either future window. An incumbent artifact or
+gate change rejects the comparison; a new candidate needs fresh future evidence.
 
 Both windows must satisfy all of these checks:
 
@@ -94,7 +96,8 @@ Both windows must satisfy all of these checks:
    incumbent comparator, with event-level weights.
 2. At least five hypothetical trades qualify under the fixed score/gap gates.
 3. Net R is positive after modeled costs and an extra 0.1R-per-trade stress.
-4. Net R is no worse and drawdown is no larger than the comparator.
+4. Net R improves by at least 0.1R in each window and drawdown is no larger than
+   the exact frozen comparator. A tie does not permit replacement.
 5. No volatility group with at least three selected trades has mean net R at or
    below -1R. Sparse groups remain explicitly unproven. The report also counts
    rejected hypothetical winners and avoided losses without calling them actual
@@ -108,6 +111,10 @@ checks can further change paper behaviour. These gates permit a **paper trial**,
 not a profitability claim or Research/Paper Champion promotion.
 
 Results are immutable. A failed model leaves the previous model/fallback in use.
+Candidates created before exact incumbent freezing was introduced cannot
+activate or recover an activation. Their history remains saved; a new candidate
+must use the corrected comparator contract and new future evaluation windows.
+Manual V2 training uses the same research lock as V3 training and rollback.
 A passed model receives a durable paper activation record effective only for
 later events. Restart recovery completes a reviewed activation idempotently.
 The exact-release rule applies to active V3 models; a new release falls back

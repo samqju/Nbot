@@ -467,7 +467,8 @@ def cmd_challenger_status(_args: argparse.Namespace) -> int:
 
 
 def cmd_selective_ml_train(args: argparse.Namespace) -> int:
-    return _emit(_selective_ml().train_if_needed(force=bool(args.force)))
+    with _research_epoch_command_lock():
+        return _emit(_selective_ml().train_if_needed(force=bool(args.force)))
 
 
 def cmd_selective_ml_status(_args: argparse.Namespace) -> int:

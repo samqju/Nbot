@@ -159,6 +159,13 @@ class EvaluationTests(unittest.TestCase):
         ones={str(i):1 for i in range(10)}; zeros={str(i):0 for i in range(10)}
         self.assertTrue(evaluate_window(groups,ones,ones,zeros,zeros)["passed"])
 
+    def test_tied_policy_cannot_replace_incumbent(self):
+        groups=[(i*SPACING_MS,[sample(str(i),i*SPACING_MS)]) for i in range(10)]
+        ones={str(i):1 for i in range(10)}
+        result=evaluate_window(groups,ones,ones,ones,ones)
+        self.assertFalse(result["passed"])
+        self.assertFalse(result["checks"]["net_improvement_at_least_0_1r"])
+
 
 class ModelLifecycleTests(unittest.TestCase):
     def setUp(self):
@@ -166,7 +173,14 @@ class ModelLifecycleTests(unittest.TestCase):
         self.memory=ResearchMemoryStore(Path(self.td.name)/"memory.db")
         self.memory.persist_artifact("seed",{})
         self.learner=CounterfactualLearner(self.memory, release_sha="a"*40)
+        self.ridge = self.memory.persist_artifact("ridge-fixture", {"model": {}})
+        self.ridge_patch = patch.object(CounterfactualLearner, "_ridge_record", return_value=self.ridge)
+        self.ridge_patch.start()
+        self.score_patch = patch("nbot.observation.selection._ridge_score", return_value=0.)
+        self.score_patch.start()
     def tearDown(self):
+        self.ridge_patch.stop()
+        self.score_patch.stop()
         gc.collect()
         self.td.cleanup()
     def test_wait_with_no_ledger_does_not_replace_model(self):
@@ -188,7 +202,8 @@ class ModelLifecycleTests(unittest.TestCase):
             self.assertIsNone(self.learner.active(event_ms=10**15))
     def fake_candidate(self):
         p={"version":VERSION,"target":TARGET,"release_sha":"a"*40,
-           "trained_at_ms":1_000_000,"training_available_ms":900_000,"incumbent_key":None}
+           "trained_at_ms":1_000_000,"training_available_ms":900_000,"incumbent_key":None,
+           "incumbent":self.learner.paper_incumbent(1_000_000)}
         return self.memory.persist_artifact(MODEL_PREFIX+"fixture",p)
     def test_future_pass_activation_restart_and_rollback(self):
         candidate=self.fake_candidate()
@@ -229,6 +244,69 @@ class ModelLifecycleTests(unittest.TestCase):
             self.assertEqual(self.learner.train_if_needed()["status"],"RECOVERED_PAPER_ACTIVATION")
             self.assertEqual(self.learner.train_if_needed()["status"],"WAIT_FOR_NEW_TRAINING_EVIDENCE")
         self.assertEqual(len(self.learner._records(ACTIVATION_PREFIX)),1)
+
+    def test_v3_beats_ridge_but_loses_to_v2_must_not_activate(self):
+        from nbot.observation.selective_ml import ARTIFACT_PREFIX, VERSION as V2
+        v2=self.memory.persist_artifact(ARTIFACT_PREFIX+"old", {"version":V2,
+            "release_sha":"a"*40,"trained_at_ms":1,"training_cutoff_event_ms":1,"eligible":True})
+        candidate=self.fake_candidate()
+        rows=[]
+        for i in range(20):
+            event=1_000_001+(i+1)*SPACING_MS
+            rows.extend([sample(f"good-{i}",event,signal=1.),sample(f"better-{i}",event,signal=2.)])
+        class Runtime:
+            def __init__(self,v2): self.v2=v2
+            def score(self,v):
+                target=v["ret_4h_side"]*100
+                score=target if self.v2 else (1. if target==1 else .2)
+                return score,score
+        with patch("nbot.observation.counterfactual_learning.runtime_from_payload",
+                   side_effect=lambda p:Runtime(p["version"]==V2)):
+            report=self.learner._evaluate(candidate,rows,10**12)
+        self.assertEqual(candidate["payload"]["incumbent"]["key"],v2["artifact_key"])
+        self.assertEqual(report["status"],"REJECT_PAPER_GATE")
+        self.assertGreater(report["validation"]["candidate"]["net_r"],0)
+        self.assertGreater(report["validation"]["incumbent"]["net_r"],report["validation"]["candidate"]["net_r"])
+        self.assertIsNone(self.learner.active(event_ms=10**15))
+
+    def test_v2_changes_during_future_testing_blocks_promotion(self):
+        from nbot.observation.selective_ml import ARTIFACT_PREFIX, VERSION as V2
+        def save(name,stamp):
+            return self.memory.persist_artifact(ARTIFACT_PREFIX+name,{"version":V2,
+                "release_sha":"a"*40,"trained_at_ms":stamp,"training_cutoff_event_ms":stamp,"eligible":True},recorded_at_ms=stamp)
+        save("old",1)
+        candidate=self.fake_candidate()
+        save("new",2)
+        rows=[sample(str(i),1_000_001+(i+1)*SPACING_MS) for i in range(20)]
+        report=self.learner._evaluate(candidate,rows,10**12)
+        self.assertEqual(report["status"],"REJECT_PAPER_GATE")
+        self.assertTrue(report["incumbent_changed_during_evaluation"])
+        self.assertFalse(self.learner._activate(candidate,{"status":"PASS_PAPER_GATE"},10**12))
+        self.assertIsNone(self.learner.active(event_ms=10**15))
+
+    def test_legacy_candidate_without_exact_comparator_cannot_activate(self):
+        candidate=self.fake_candidate()
+        candidate["payload"].pop("incumbent")
+        self.assertFalse(self.learner._activate(candidate,{"status":"PASS_PAPER_GATE"},10**12))
+
+    def test_ridge_digest_change_blocks_activation(self):
+        candidate=self.fake_candidate()
+        replacement=self.memory.persist_artifact("ridge-new",{"model":{"changed":True}})
+        with patch.object(self.learner,"_ridge_record",return_value=replacement):
+            self.assertFalse(self.learner._activate(candidate,{"status":"PASS_PAPER_GATE"},10**12))
+
+    def test_inference_ridge_resolver_preserves_exact_artifact_digest(self):
+        from nbot.observation.learned_recommendation import LearnedTestnetSource
+        record=self.memory.persist_artifact("ridge-negative-zero",{"model":{"value":-0.0}})
+        with patch.object(LearnedTestnetSource,"_model",return_value=record["payload"]):
+            actual=LearnedTestnetSource.ridge_record_for_memory(self.memory,release_sha="a"*40,event_ms=10**12)
+        self.assertEqual(actual["artifact_key"],record["artifact_key"])
+        self.assertEqual(actual["artifact_digest"],record["artifact_digest"])
+
+    def test_disabled_selective_ml_cannot_promote_hidden_v3(self):
+        candidate=self.fake_candidate()
+        with patch.dict(os.environ,{"NBOT_SELECTIVE_ML":"0"}):
+            self.assertFalse(self.learner._activate(candidate,{"status":"PASS_PAPER_GATE"},10**12))
 
 
 class LiveCollectionTests(unittest.TestCase):
