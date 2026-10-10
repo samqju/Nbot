@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import replace
 from typing import Iterable
 
 from .decision_ledger import FrozenDecision
@@ -31,7 +32,8 @@ class TwoTierV3ResearchRuntime(V3ResearchRuntime):
     def watch_plan(self) -> WatchPlan | None:
         return self._plan
 
-    def refresh_watch_plan(self, *, broad_symbols: Iterable[str], candidates: Iterable[WatchCandidate]) -> WatchPlan:
+    def refresh_watch_plan(self, *, broad_symbols: Iterable[str], candidates: Iterable[WatchCandidate],
+                           holding_symbols: Iterable[str] = ()) -> WatchPlan:
         plan = plan_two_tier_watch(
             broad_symbols=broad_symbols,
             candidates=candidates,
@@ -39,6 +41,17 @@ class TwoTierV3ResearchRuntime(V3ResearchRuntime):
             broad_target=self.broad_target,
             high_res_cap=self.high_res_cap,
         )
+        holding = tuple(sorted(set(holding_symbols)))
+        if holding:
+            if len(holding) > self.high_res_cap or not set(self.replays.active_symbols) <= set(holding):
+                raise ValueError("HIGH_RES_HELD_POOL_INVALID")
+            # Shared combined connections must not reconnect retained paths
+            # simply because another symbol has finished. Drain the cohort.
+            plan = replace(plan, high_res_symbols=holding,
+                retained_active_symbols=self.replays.active_symbols,
+                newly_admitted_symbols=(),
+                rejected_for_capacity=tuple(s for s in plan.broad_symbols if s not in holding),
+                reasons={s: "OBSERVATION_COHORT_DRAINING" for s in holding})
         self._plan = plan
         return plan
 

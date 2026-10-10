@@ -591,15 +591,19 @@ class LiveTwoTierResearchSupervisor:
                     seen.add(symbol)
                     broad_symbols.append(symbol)
 
+            if not self.runtime.replays.active_count:
+                self._admission_until.clear()
             plan = self.runtime.refresh_watch_plan(
                 broad_symbols=broad_symbols,
                 candidates=[candidate.watch for candidate in candidates],
+                holding_symbols=(getattr(self.feed, "symbols", ())
+                                 if self.runtime.replays.active_count else ()),
             )
             self.feed.update(plan.high_res_symbols, self.runtime.high_res_stream_shards())
 
             fresh_quotes = self.feed.wait_quotes(plan.high_res_symbols)
             for symbol in plan.newly_admitted_symbols:
-                self._admission_until[symbol] = now_ms + 60 * 60_000
+                self._admission_until.setdefault(symbol, now_ms + 60 * 60_000)
             self._admission_until = {s: t for s, t in self._admission_until.items()
                                      if s in plan.high_res_symbols}
 

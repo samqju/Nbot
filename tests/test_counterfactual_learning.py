@@ -232,6 +232,19 @@ class ModelLifecycleTests(unittest.TestCase):
 
 
 class LiveCollectionTests(unittest.TestCase):
+    def test_shared_stream_pool_is_held_until_active_paths_drain(self):
+        from nbot.observation.two_tier_runtime import TwoTierV3ResearchRuntime
+        from nbot.observation.watch_planner import WatchCandidate
+        with tempfile.TemporaryDirectory() as td:
+            runtime=TwoTierV3ResearchRuntime(Path(td)/"ledger.db",broad_target=3,high_res_cap=2)
+            runtime.replays.add(ReplayHypothesis("still-open","BTCUSDT","LONG",100,1,100_000,TrailPolicy.TICK_INTEGER_R))
+            plan=runtime.refresh_watch_plan(broad_symbols=("BTCUSDT","ETHUSDT","SOLUSDT"),
+                candidates=[WatchCandidate("SOLUSDT",1.,.08,"TREND",approved=True)],
+                holding_symbols=("BTCUSDT","ETHUSDT"))
+            self.assertEqual(plan.high_res_symbols,("BTCUSDT","ETHUSDT"))
+            self.assertFalse(plan.newly_admitted_symbols)
+            self.assertIn("SOLUSDT",plan.rejected_for_capacity)
+
     def test_feed_stop_timeout_does_not_create_a_second_live_thread(self):
         from nbot.observation.live_two_tier import ResearchWssFeed
         from unittest.mock import Mock

@@ -28,6 +28,8 @@ balance, and the legacy ten shadow accounts remain a separate experiment.
 - There is a hard maximum of 1,920 active hypotheses. A symbol accepts new
   hypotheses for one hour, then drains its remaining four-hour paths before
   rotating. No active path is deliberately discarded just to chase a new score.
+  The combined-stream pool stays fixed while any cohort path is active, so a
+  finished symbol does not cause a reconnect that loses other symbols' paths.
 - Pool admission includes strong scores, disagreements, near-threshold cases,
   diversity and deterministic controls. Training covers the **observed pool**;
   it does not pretend these samples represent every coin or rejected decision.
