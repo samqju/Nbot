@@ -223,20 +223,37 @@ class StreamShard:
 
 def plan_combined_streams(
     symbols: Iterable[str], *, max_streams_per_connection: int = 180,
-    base_url: str = "wss://fstream.binance.com/stream?streams="
+    public_base_url: str = "wss://fstream.binance.com/public/stream?streams=",
+    market_base_url: str = "wss://fstream.binance.com/market/stream?streams=",
 ) -> tuple[StreamShard, ...]:
-    """Deterministically shard bookTicker + aggTrade subscriptions."""
-    values = tuple(sorted(set(str(s).upper() for s in symbols)))
-    if not values or max_streams_per_connection < 2:
-        raise ValueError("WSS_SHARD_CONFIG_INVALID")
-    symbols_per_shard = max_streams_per_connection // 2
-    shards = []
-    for start in range(0, len(values), symbols_per_shard):
-        chunk = values[start:start + symbols_per_shard]
-        streams = tuple(x for s in chunk for x in (f"{s.lower()}@bookTicker", f"{s.lower()}@aggTrade"))
-        shards.append(StreamShard(chunk, streams, base_url + quote("/".join(streams), safe="/@")))
-    return tuple(shards)
+    """Deterministically shard Binance 2026 public + market subscriptions.
 
+    Binance USD-M Futures routes high-frequency public feeds such as
+    bookTicker through /public and regular market feeds such as aggTrade
+    through /market. Do not mix those categories on the legacy /stream
+    endpoint: after Binance's 2026 migration the socket can stay connected
+    while market-category messages stop arriving.
+    """
+    values = tuple(sorted(set(str(s).upper() for s in symbols)))
+    if not values or max_streams_per_connection < 1:
+        raise ValueError("WSS_SHARD_CONFIG_INVALID")
+
+    shards: list[StreamShard] = []
+    for base_url, suffix in (
+        (public_base_url, "bookTicker"),
+        (market_base_url, "aggTrade"),
+    ):
+        for start in range(0, len(values), max_streams_per_connection):
+            chunk = values[start:start + max_streams_per_connection]
+            streams = tuple(f"{symbol.lower()}@{suffix}" for symbol in chunk)
+            shards.append(
+                StreamShard(
+                    chunk,
+                    streams,
+                    base_url + quote("/".join(streams), safe="/@"),
+                )
+            )
+    return tuple(shards)
 
 def reconnect_delay_seconds(attempt: int, *, base: float = 0.5, cap: float = 30.0, jitter: float = 0.20,
                             rng: random.Random | None = None) -> float:

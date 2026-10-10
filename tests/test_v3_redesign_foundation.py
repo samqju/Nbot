@@ -26,8 +26,25 @@ class WssStateTests(unittest.TestCase):
 
     def test_shards_bound_stream_count(self):
         shards = plan_combined_streams([f"S{i}USDT" for i in range(200)], max_streams_per_connection=180)
-        self.assertEqual(len(shards), 3)
+        self.assertEqual(len(shards), 4)
         self.assertTrue(all(len(s.streams) <= 180 for s in shards))
+
+    def test_binance_2026_stream_categories_use_separate_endpoints(self):
+        shards = plan_combined_streams(["BTCUSDT", "ETHUSDT"])
+        self.assertEqual(len(shards), 2)
+        public_shard = next(s for s in shards if "/public/stream?streams=" in s.combined_url)
+        market_shard = next(s for s in shards if "/market/stream?streams=" in s.combined_url)
+        self.assertEqual(
+            public_shard.streams,
+            ("btcusdt@bookTicker", "ethusdt@bookTicker"),
+        )
+        self.assertEqual(
+            market_shard.streams,
+            ("btcusdt@aggTrade", "ethusdt@aggTrade"),
+        )
+        self.assertTrue(all("@aggTrade" not in s for s in public_shard.streams))
+        self.assertTrue(all("@bookTicker" not in s for s in market_shard.streams))
+        self.assertTrue(all("fstream.binance.com/stream?streams=" not in s.combined_url for s in shards))
 
 
 class DecisionLedgerTests(unittest.TestCase):
