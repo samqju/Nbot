@@ -13,6 +13,7 @@ from dataclasses import dataclass, replace
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import threading
 import time
@@ -32,6 +33,8 @@ from .research_replay import ReplayHypothesis
 from .watch_planner import WatchCandidate
 from .wss_market import AggTrade, MarketDataUnavailable, WssMarketState
 from .wss_transport import CombinedStreamRunner
+from .counterfactual_learning import CONTRACT, FEATURE_SCHEMA, runtime_from_payload
+from .features import CANONICAL_FEATURE_VERSION
 
 
 AUTHORITY = "RESEARCH_ONLY_NO_EXECUTION"
@@ -72,6 +75,7 @@ class ResearchCandidate:
     one_r_price: float
     watch: WatchCandidate
     score: float
+    feature_vector: dict[str, float] | None = None
 
 
 class BroadResearchScanner:
@@ -168,7 +172,7 @@ class BroadResearchScanner:
         ml_runtime = None
         threshold_r = 0.0
         if ml_record is not None:
-            ml_runtime = SelectiveMLRuntime(ml_record["payload"])
+            ml_runtime = runtime_from_payload(ml_record["payload"])
             threshold_r = float(self.source.selective_ml.config.min_lower_r)
 
         feature_rows = [
@@ -212,7 +216,8 @@ class BroadResearchScanner:
                 conservative = ridge
                 if ml_runtime is not None:
                     ml_mean, ml_lower = ml_runtime.score(vector)
-                    ensemble_mean = 0.25 * ridge + 0.75 * ml_mean
+                    ensemble_mean = (ml_mean if ml_record["payload"]["version"] == "SELECTIVE_ML_V3_TICK_PAPER"
+                                     else 0.25 * ridge + 0.75 * ml_mean)
                     conservative = MEAN_SCORE_WEIGHT * ensemble_mean + LOWER_SCORE_WEIGHT * ml_lower
                 if not math.isfinite(conservative):
                     continue
@@ -289,7 +294,7 @@ class BroadResearchScanner:
                 ml_score_r=row["ml_mean"],
                 approved=approved,
             )
-            result.append(ResearchCandidate(decision, entry, one_r, watch, row["score"]))
+            result.append(ResearchCandidate(decision, entry, one_r, watch, row["score"], row["vector"]))
         if not result:
             self.last_reason = "NO_FULL_HISTORY_SCORABLE_ROWS"
         return tuple(result)
@@ -310,6 +315,9 @@ class ResearchWssFeed:
         self.started_at_ms: int | None = None
 
     def _on_market_event(self, kind: str, value: Any) -> None:
+        if kind == "disconnected":
+            self.runtime.replays.invalidate_paths(value)
+            return
         if kind != "aggTrade" or not isinstance(value, AggTrade):
             return
         try:
@@ -345,7 +353,14 @@ class ResearchWssFeed:
     def update(self, symbols: tuple[str, ...], shards) -> None:
         normalized = tuple(sorted(set(symbols)))
         if normalized == self.symbols and self.thread is not None and self.thread.is_alive():
-            return
+            now_ms = int(time.time() * 1000)
+            broken = self.last_error is not None or (self.state is not None and any(
+                self.state.health(symbol, now_ms=now_ms).gap_unresolved for symbol in normalized))
+            if not broken:
+                return
+            # Begin a fresh observation cohort. Never clear an old gap and
+            # pretend the interrupted historical hypotheses were continuous.
+            self.runtime.replays.invalidate_paths(self.symbols)
         self.stop()
         self.symbols = normalized
         if not normalized:
@@ -373,6 +388,8 @@ class ResearchWssFeed:
         thread = self.thread
         if thread is not None and thread.is_alive():
             thread.join(timeout=8)
+            if thread.is_alive():
+                raise RuntimeError("WSS_THREAD_STOP_TIMEOUT")
         self.thread = None
         self.loop = None
         self.runners = []
@@ -468,6 +485,12 @@ class LiveTwoTierResearchSupervisor:
         self.last_error: str | None = None
         self.last_scan_candidates = 0
         self.last_matured = 0
+        self.max_hypotheses = int(os.environ.get("NBOT_RESEARCH_MAX_HYPOTHESES", "1920"))
+        if not 1 <= self.max_hypotheses <= 1920:
+            raise ValueError("HIGH_RES_HYPOTHESIS_LIMIT_INVALID")
+        # Stop adding after one hour, then drain existing four-hour paths.
+        # Otherwise overlapping observations would keep the same pool forever.
+        self._admission_until = {}
 
         # Precise WSS chronology is intentionally not reconstructed after a
         # process restart. Any previously pending path therefore becomes
@@ -516,6 +539,7 @@ class LiveTwoTierResearchSupervisor:
             "model_source": self.scanner.last_model_source,
             "last_matured": self.last_matured,
             "active_hypotheses": self.runtime.replays.active_count,
+            "max_hypotheses": self.max_hypotheses,
             "active_symbols": list(self.runtime.replays.active_symbols),
             "buffered_trade_events": self.runtime.replays.buffered_event_count(),
             "ledger_counts": self.runtime.ledger.counts(),
@@ -567,19 +591,21 @@ class LiveTwoTierResearchSupervisor:
                     seen.add(symbol)
                     broad_symbols.append(symbol)
 
+            if not self.runtime.replays.active_count:
+                self._admission_until.clear()
             plan = self.runtime.refresh_watch_plan(
                 broad_symbols=broad_symbols,
                 candidates=[candidate.watch for candidate in candidates],
+                holding_symbols=(getattr(self.feed, "symbols", ())
+                                 if self.runtime.replays.active_count else ()),
             )
             self.feed.update(plan.high_res_symbols, self.runtime.high_res_stream_shards())
 
-            newly = set(plan.newly_admitted_symbols)
-            fresh_quotes = self.feed.wait_quotes(tuple(newly))
-            chosen: dict[str, ResearchCandidate] = {}
-            for candidate in candidates:
-                symbol = candidate.decision.symbol
-                if symbol in newly and symbol not in chosen:
-                    chosen[symbol] = candidate
+            fresh_quotes = self.feed.wait_quotes(plan.high_res_symbols)
+            for symbol in plan.newly_admitted_symbols:
+                self._admission_until.setdefault(symbol, now_ms + 60 * 60_000)
+            self._admission_until = {s: t for s, t in self._admission_until.items()
+                                     if s in plan.high_res_symbols}
 
             retained = set(plan.retained_active_symbols)
             admitted = set(plan.high_res_symbols)
@@ -589,7 +615,9 @@ class LiveTwoTierResearchSupervisor:
                     decision.decision_id, decision.policy_id
                 ):
                     continue
-                if chosen.get(decision.symbol) is candidate and decision.symbol in fresh_quotes:
+                if (decision.symbol in fresh_quotes
+                        and now_ms < self._admission_until.get(decision.symbol, 0)
+                        and self.runtime.replays.active_count < self.max_hypotheses):
                     quote = fresh_quotes[decision.symbol]
                     entry = quote.ask if decision.side == "LONG" else quote.bid
                     risk_frac = candidate.one_r_price / candidate.hypothesis_entry_price
@@ -604,7 +632,7 @@ class LiveTwoTierResearchSupervisor:
                         entry_time_ms,
                         TrailPolicy.TICK_INTEGER_R,
                         horizon_ms=DEFAULT_HORIZON_MS,
-                        costs=ReplayCosts(),
+                        costs=ReplayCosts(entry_slippage_bps=1.0, exit_slippage_bps=1.0),
                     )
                     self.runtime.activate(
                         decision,
@@ -617,13 +645,25 @@ class LiveTwoTierResearchSupervisor:
                             "entry_bid": quote.bid,
                             "entry_ask": quote.ask,
                             "quote_receipt_time_ms": quote.receipt_time_ms,
+                            "training_contract": CONTRACT,
+                            "feature_schema": FEATURE_SCHEMA,
+                            "canonical_feature_version": CANONICAL_FEATURE_VERSION,
+                            "feature_vector": candidate.feature_vector,
+                            "horizon_ms": DEFAULT_HORIZON_MS,
+                            "entry_price": entry,
+                            "one_r_price": entry * risk_frac,
+                            "costs": {"taker_fee_rate": .0005, "entry_slippage_bps": 1.0,
+                                      "exit_slippage_bps": 1.0, "funding_r": 0.0},
+                            "sampling_scope": "CONDITIONAL_ON_HIGH_RES_POOL",
                         },
                     )
                 else:
-                    if chosen.get(decision.symbol) is candidate and decision.symbol not in fresh_quotes:
+                    if decision.symbol in admitted and decision.symbol not in fresh_quotes:
                         reason = "HIGH_RES_WSS_NOT_READY"
-                    elif decision.symbol in retained:
-                        reason = "HIGH_RES_ACTIVE_SLOT_BUSY"
+                    elif self.runtime.replays.active_count >= self.max_hypotheses:
+                        reason = "HIGH_RES_HYPOTHESIS_CAP"
+                    elif now_ms >= self._admission_until.get(decision.symbol, 0) and decision.symbol in admitted:
+                        reason = "HIGH_RES_POOL_DRAINING"
                     else:
                         reason = "HIGH_RES_NOT_ADMITTED"
                     decision = replace(

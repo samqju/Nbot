@@ -1,7 +1,8 @@
 """Append-only V3 decision/outcome ledger for approved and rejected candidates."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
+from contextlib import contextmanager
 import hashlib
 import json
 import math
@@ -81,6 +82,7 @@ class MaturedOutcome:
     source_digest: str
     actual_execution: bool = False
     execution_outcome_id: str | None = None
+    evidence: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.decision_id or not self.policy_id or self.matured_at_ms < 0:
@@ -124,12 +126,17 @@ class DecisionLedger:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(self.path)
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA journal_mode=WAL")
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def initialize(self) -> None:
         with self._connect() as conn:

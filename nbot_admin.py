@@ -127,6 +127,25 @@ def _selective_ml():
     return SelectiveMLManager(_memory(), _db(), release_sha=_release_sha())
 
 
+def _counterfactual_learner():
+    from nbot.observation.counterfactual_learning import CounterfactualLearner
+    return CounterfactualLearner(_memory(), release_sha=_release_sha())
+
+
+def cmd_counterfactual_status(_args):
+    return _emit(_counterfactual_learner().status())
+
+
+def cmd_counterfactual_train(_args):
+    with _research_epoch_command_lock():
+        return _emit(_counterfactual_learner().train_if_needed())
+
+
+def cmd_counterfactual_rollback(_args):
+    with _research_epoch_command_lock():
+        return _emit(_counterfactual_learner().rollback())
+
+
 def _governance() -> ModelGovernanceRegistry:
     if not _v384_active():
         raise RuntimeError("NBOT_V392_COMPACT_RESEARCH_MEMORY_REQUIRED")
@@ -315,6 +334,7 @@ def cmd_learning_status(_args: argparse.Namespace) -> int:
             "research_champion_promotion": _research_champion_promotion().review(),
             "paper_champion": _paper_champion_gate().status(),
             "two_tier_research": _two_tier_status(),
+            "counterfactual_learning": _counterfactual_learner().status(),
             "legacy_learning_foundation": _memory().artifact("learning_foundations"),
             "legacy_model_registry": _memory().artifact("model_registry"),
             "legacy_challenger_registry": _memory().artifact("challenger_registry"),
@@ -708,6 +728,14 @@ def cmd_research_epoch_run(args: argparse.Namespace) -> int:
                         }
                     if args.prune_raw:
                         report["raw_prune"] = processor.prune_raw()
+            # Detailed outcomes mature independently of 96-event coarse epochs.
+            # Run on each healthy timer check under the same exclusive lock.
+            try:
+                report["counterfactual_learning"] = _counterfactual_learner().train_if_needed()
+            except Exception as learning_exc:
+                research_log.exception("COUNTERFACTUAL_LEARNING_FAILED")
+                report["counterfactual_learning"] = {"status": "ERROR",
+                    "error": type(learning_exc).__name__ + ":" + str(learning_exc)[:240]}
     except Exception as exc:
         research_log.exception("RESEARCH_EPOCH_FAILED")
         telegram.send_critical(
@@ -984,6 +1012,12 @@ def build_parser() -> argparse.ArgumentParser:
     challenger_status = sub.add_parser("challenger-status")
     challenger_status.set_defaults(func=cmd_challenger_status)
 
+    for name, handler, help_text in (
+        ("counterfactual-learning-status", cmd_counterfactual_status, "Inspect detailed outcome learning and paper-model evaluation"),
+        ("counterfactual-learning-train", cmd_counterfactual_train, "Train/evaluate a paper-only candidate under the research lock"),
+        ("counterfactual-learning-rollback", cmd_counterfactual_rollback, "Restore previous paper model; never changes trading permission"),
+    ):
+        sub.add_parser(name, help=help_text).set_defaults(func=handler)
     selective_ml_train = sub.add_parser(
         "selective-ml-train",
         help="train/update the bounded live-paper selective ML artifact",

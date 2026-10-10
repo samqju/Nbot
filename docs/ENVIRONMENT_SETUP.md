@@ -1,5 +1,8 @@
 # Private environment files: fresh-VPS guide
 
+**Current detailed-outcome learning:** [Automatic paper learning from accepted and rejected opportunities](DETAILED_OUTCOME_LEARNING.md) documents the V3 tick-outcome bridge, future evaluation, automatic paper-model replacement, rollback and resource limits. V2 remains the fallback.
+
+
 For validated operator syntax after configuration, see
 [ALL_MODES_COMMANDS.md](ALL_MODES_COMMANDS.md). This page covers private settings
 for all three profiles; it does not itself authorize trading.

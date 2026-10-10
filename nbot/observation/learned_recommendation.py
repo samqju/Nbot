@@ -32,6 +32,7 @@ from .selective_ml import (
     LOWER_SCORE_WEIGHT, MEAN_SCORE_WEIGHT, SelectiveMLManager, SelectiveMLRuntime,
     TARGET as SELECTIVE_ML_TARGET,
 )
+from .counterfactual_learning import PaperLearningManager, runtime_from_payload, VERSION as CF_VERSION
 
 
 TWO_TIER_MODEL_PREFIX = "two_tier:ridge_snapshot:"
@@ -95,7 +96,7 @@ class LearnedTestnetSource:
         if ml_enabled not in {"0", "1"}:
             raise ValueError("NBOT_SELECTIVE_ML_INVALID")
         self.selective_ml = (
-            SelectiveMLManager(ResearchMemoryStore(self.memory_path), self.live, release_sha=release_sha)
+            PaperLearningManager(ResearchMemoryStore(self.memory_path), self.live, release_sha=release_sha)
             if profile_name == "live-paper" and ml_enabled == "1" else None
         )
         self._selective_ml_runtime = None
@@ -333,7 +334,9 @@ class LearnedTestnetSource:
         ml_runtime = None
         if ml_record is not None:
             if self._selective_ml_artifact_digest != ml_record["artifact_digest"]:
-                self._selective_ml_runtime = SelectiveMLRuntime(ml_record["payload"])
+                self._selective_ml_runtime = (runtime_from_payload(ml_record["payload"])
+                    if ml_record["payload"].get("version") == CF_VERSION
+                    else SelectiveMLRuntime(ml_record["payload"]))
                 self._selective_ml_artifact_digest = ml_record["artifact_digest"]
             ml_runtime = self._selective_ml_runtime
 
@@ -355,12 +358,15 @@ class LearnedTestnetSource:
                 ml_detail = None
                 if ml_runtime is not None:
                     ml_mean, ml_lower = ml_runtime.score(vector)
-                    ensemble_mean = 0.25 * ridge_score + 0.75 * ml_mean
+                    ensemble_mean = (ml_mean if ml_record["payload"].get("version") == CF_VERSION
+                                     else 0.25 * ridge_score + 0.75 * ml_mean)
                     selection_base = (
                         MEAN_SCORE_WEIGHT * ensemble_mean + LOWER_SCORE_WEIGHT * ml_lower
                     )
                     ml_detail = {
                         "artifact_key": ml_record["artifact_key"],
+                        "version": ml_record["payload"].get("version", "SELECTIVE_ML_V2"),
+                        "prediction_target": ml_record["payload"].get("target", SELECTIVE_ML_TARGET),
                         "artifact_digest": ml_record["artifact_digest"],
                         "model_digest": ml_record["payload"]["model_digest"],
                         "ridge_score": ridge_score,
@@ -380,6 +386,9 @@ class LearnedTestnetSource:
         ml_selection_audit = None
         if ml_runtime is not None:
             ml_cfg = self.selective_ml.config
+            if ml_record["payload"].get("version") == CF_VERSION:
+                from dataclasses import replace
+                ml_cfg = replace(ml_cfg, min_lower_r=.08, min_edge_gap_r=.05)
             runner_up = selection_order[1] if len(selection_order) > 1 else None
             edge_gap = (
                 selection_baseline[0] - runner_up[0] if runner_up is not None else None
@@ -568,10 +577,10 @@ class LearnedTestnetSource:
                 "execution_environment": self.profile.market_environment, "model_version": artifact["model_version"],
                 "training_cutoff_event_ms": artifact["training_cutoff_event_ms"],
                 "live_market_event_ms": event_ms, "reference_quote_environment": self.profile.market_environment,
-                "selection_method": ("SELECTIVE_ML_V2_RIDGE_LIGHTGBM_REALTIME_ENTRY"
+                "selection_method": ((selected_ml.get("version", "SELECTIVE_ML_V2") + "_REALTIME_ENTRY")
                                      if selected_ml is not None else "CONTEXT_CALIBRATED_RIDGE"),
                 "setup_explanation": setup_explanation,
-                "prediction_target": (SELECTIVE_ML_TARGET if selected_ml is not None
+                "prediction_target": (selected_ml.get("prediction_target", SELECTIVE_ML_TARGET) if selected_ml is not None
                                       else "SIMULATED_ATR_R_4H_NOT_EXECUTION_PNL"),
                 "candidate_count": len(candidates),
                 **({"selective_ml": selected_ml} if selected_ml is not None else {}),

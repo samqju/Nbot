@@ -1,5 +1,8 @@
 # Observation VPS services
 
+**Current detailed-outcome learning:** [Automatic paper learning from accepted and rejected opportunities](../../docs/DETAILED_OUTCOME_LEARNING.md) documents the V3 tick-outcome bridge, future evaluation, automatic paper-model replacement, rollback and resource limits. V2 remains the fallback.
+
+
 **2026-10-02 mode update:** [The three-mode guide](../../docs/TRADING_MODES.md) describes Testnet trading, learned mainnet paper, and the separately authorized small mainnet trial. Earlier V3.10-only restrictions below describe the original automatic Champion roadmap. This manual trial does not declare those economic gates passed. No Testnet-paper mode is supported.
 
 

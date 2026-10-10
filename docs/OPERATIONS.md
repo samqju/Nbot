@@ -1,5 +1,8 @@
 # NBOT V3 Operations
 
+**Current detailed-outcome learning:** [Automatic paper learning from accepted and rejected opportunities](DETAILED_OUTCOME_LEARNING.md) documents the V3 tick-outcome bridge, future evaluation, automatic paper-model replacement, rollback and resource limits. V2 remains the fallback.
+
+
 Current command syntax for all three profiles is centralized in
 [ALL_MODES_COMMANDS.md](ALL_MODES_COMMANDS.md). The current sections below use
 explicit three-mode examples; preserved historical sections retain their original

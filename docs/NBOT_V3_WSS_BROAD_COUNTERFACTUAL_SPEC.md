@@ -1,6 +1,9 @@
 # NBOT V3 — WebSocket-first broad research and chronological decision outcomes
 
-Status: DEVELOPMENT SPECIFICATION, NOT DEPLOYED. Base release: 4dfe34b442f12f4f7118eec1fd2df4d15fabf7b8.
+**Current detailed-outcome learning:** [Automatic paper learning from accepted and rejected opportunities](DETAILED_OUTCOME_LEARNING.md) documents the V3 tick-outcome bridge, future evaluation, automatic paper-model replacement, rollback and resource limits. V2 remains the fallback.
+
+
+Status: FOUNDATION MERGED; deployment and real-network capacity are not established by this document. Base release: 4dfe34b442f12f4f7118eec1fd2df4d15fabf7b8.
 
 ## Goals and non-negotiable boundaries
 
@@ -80,7 +83,7 @@ This document records the entire agreed scope. Branch creation and this specific
 
 ## Implementation status — 2026-10-09
 
-The branch now contains an integrated **research-only** implementation foundation. This does not authorize deployment and does not change either running VPS.
+The branch now contains an integrated **research-only** implementation foundation. Repository implementation does not establish which release either VPS runs.
 
 Implemented on this branch:
 - WSS-first market-state primitives for `bookTicker` and `aggTrade`, symbol-local ordering, duplicate/gap accounting, quote freshness, fail-closed executable-quote access, deterministic 100/200-symbol stream sharding, reconnect backoff, bounded queueing, ping-capable combined-stream transport, and proactive rotation.
@@ -94,7 +97,7 @@ Implemented on this branch:
 - Deterministic stratified candidate sampling that explicitly includes threshold-near cases, Ridge/ML disagreements, setup-family coverage, volatility coverage and stable controls, with inclusion probability recorded for downstream weighting.
 - Chronological calibration helpers, inverse-probability score bins, event-level correlation-aware policy summaries, Ridge-vs-ML disagreement reports and challenger threshold grids. All challenger evaluation is marked research-only with no auto-deployment.
 - An integrated `V3ResearchRuntime` that records decisions, consumes chronological trades, matures research outcomes into the ledger, preserves actual paper outcomes as a separate truth, and has no order method (attempted order submission fails closed).
-- A pinned V3 WSS dependency isolated in `requirements-wss.txt`; the existing Execution authority and production profiles are unchanged.
+- A pinned V3 WSS dependency listed in normal runtime requirements and `requirements-wss.txt`; the existing Execution authority and production profiles are unchanged.
 
 Verification now present:
 - Opposite intrabar chronology fixtures.
@@ -109,7 +112,7 @@ Verification now present:
 - Chronological/event-weighted calibration and disagreement-policy reporting.
 - Integrated research runtime explicitly rejecting order submission.
 
-Still required before any deployment or merge approval:
+Physical verification still required before expanding a paper rollout:
 1. GitHub full regression must be green on the final head.
 2. Real-network WSS soak tests and reconnect/gap-repair exercises must be run separately from the active cohort.
 3. 20 -> 100 -> 200 symbol CPU, memory, messages/sec, queue depth, disk and p95/p99 lag benchmarks must be recorded on representative infrastructure.

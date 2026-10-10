@@ -44,13 +44,14 @@ class _TickState:
     last_id: int | None = None
     last_time_ms: int | None = None
     last_price: float | None = None
+    first_trade_ms: int | None = None
     exit_time_ms: int | None = None
     exit_price: float | None = None
     exit_reason: str = "HORIZON"
     gap_unresolved: bool = False
     digest: Any = field(default_factory=hashlib.sha256)
 
-    def ingest(self, event: TradeEvent) -> None:
+    def ingest(self, event: TradeEvent, canonical: bytes | None = None) -> None:
         h = self.hypothesis
         if event.symbol != h.symbol or self.exit_price is not None or self.gap_unresolved:
             return
@@ -58,8 +59,11 @@ class _TickState:
             return
         if event.trade_time_ms > h.entry_time_ms + h.horizon_ms:
             return
+        if (event.trade_id == self.last_id and event.trade_time_ms == self.last_time_ms
+                and event.price == self.last_price):
+            return  # retransmission is not a missing or reversed path
 
-        canonical = json.dumps(
+        canonical = canonical or json.dumps(
             [event.symbol, event.trade_id, event.trade_time_ms, event.price],
             separators=(",", ":"), allow_nan=False,
         ).encode("utf-8")
@@ -73,6 +77,8 @@ class _TickState:
                 return
 
         self.last_id = event.trade_id
+        if self.first_trade_ms is None:
+            self.first_trade_ms = event.trade_time_ms
         self.last_time_ms = event.trade_time_ms
         self.last_price = event.price
         self.seen += 1
@@ -150,11 +156,13 @@ class ResearchReplayBook:
             self._by_symbol.setdefault(hypothesis.symbol, set()).add(hypothesis.decision_id)
 
     def ingest(self, event: TradeEvent) -> None:
+        canonical = json.dumps([event.symbol, event.trade_id, event.trade_time_ms, event.price],
+                               separators=(",", ":"), allow_nan=False).encode("utf-8")
         with self._lock:
             for decision_id in tuple(self._by_symbol.get(event.symbol, ())):
                 state = self._active[decision_id]
                 if isinstance(state, _TickState):
-                    state.ingest(event)
+                    state.ingest(event, canonical)
                 else:
                     h = state.hypothesis
                     if h.entry_time_ms <= event.trade_time_ms <= h.entry_time_ms + h.horizon_ms:
@@ -188,6 +196,26 @@ class ResearchReplayBook:
             del self._by_symbol[h.symbol]
         return outcome
 
+    def invalidate_paths(self, symbols) -> None:
+        """Disconnected transport cannot prove uninterrupted chronology."""
+        with self._lock:
+            for symbol in symbols:
+                for decision_id in self._by_symbol.get(symbol, ()):
+                    state = self._active[decision_id]
+                    if isinstance(state, _TickState):
+                        state.gap_unresolved = True
+
+    def evidence(self, decision_id):
+        with self._lock:
+            state = self._active.get(decision_id)
+            if not isinstance(state, _TickState):
+                return {}
+            return {"first_trade_ms": state.first_trade_ms, "continuous": not state.gap_unresolved}
+
+    def forget_result(self, decision_id):
+        with self._lock:
+            self._results.pop(decision_id, None)
+
     def mature(self, decision_id: str, *, now_ms: int, force: bool = False) -> PolicyOutcome | None:
         with self._lock:
             return self._mature_unlocked(decision_id, now_ms=now_ms, force=force)
@@ -212,6 +240,11 @@ class ResearchReplayBook:
     def active_count(self) -> int:
         with self._lock:
             return len(self._active)
+
+    @property
+    def active_ids(self):
+        with self._lock:
+            return tuple(self._active)
 
     @property
     def active_symbols(self) -> tuple[str, ...]:

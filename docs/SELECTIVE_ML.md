@@ -1,4 +1,12 @@
-# Selective ML V2
+# Selective ML: V3 detailed learner and V2 fallback
+
+**Current detailed-outcome learning:** [Automatic paper learning from accepted and rejected opportunities](DETAILED_OUTCOME_LEARNING.md) documents the V3 tick-outcome bridge, future evaluation, automatic paper-model replacement, rollback and resource limits. V2 remains the fallback.
+
+The sections below describe the retained **V2 fallback**. V3 uses the same
+feature schema but a separately versioned tick-policy target and future paper
+activation gates. V2 does not inherit those gates or labels.
+
+## V2 fallback
 
 Selective ML V2 is the nonlinear, abstention-first learner for learned `live-paper`.
 It does **not** grant exchange authority, change Execution risk limits, arm real money,
@@ -51,7 +59,7 @@ least-bad opportunity.
 
 ## What the nonlinear model sees
 
-V1 reuses the existing causal feature vector and adds deterministic continuous
+The V2 fallback reuses the existing causal feature vector and adds deterministic continuous
 interactions including ATR-normalized returns, range/ATR, spread/ATR, BTC-relative
 returns, short-vs-long momentum curvature, pullback strength, 1h/4h volatility
 ratio, breadth change, relative-strength centering, trend/volatility interaction,
@@ -61,7 +69,7 @@ The existing 24 named candidate rules remain useful for interpretability,
 paper-feedback attribution and shadow experiments. They are no longer the sole
 source of adaptation when Selective ML is active.
 
-V1 deliberately does not pretend that a candlestick name or one fixed threshold
+The V2 fallback deliberately does not pretend that a candlestick name or one fixed threshold
 is a discovered market law. A later feature-generation revision can add more
 raw-candle/swing/level measurements, but changing the causal feature contract
 must be versioned and evaluated rather than silently mixed with old evidence.
