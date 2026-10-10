@@ -59,7 +59,7 @@ least-bad opportunity.
 
 ## What the nonlinear model sees
 
-V1 reuses the existing causal feature vector and adds deterministic continuous
+The V2 fallback reuses the existing causal feature vector and adds deterministic continuous
 interactions including ATR-normalized returns, range/ATR, spread/ATR, BTC-relative
 returns, short-vs-long momentum curvature, pullback strength, 1h/4h volatility
 ratio, breadth change, relative-strength centering, trend/volatility interaction,
@@ -69,7 +69,7 @@ The existing 24 named candidate rules remain useful for interpretability,
 paper-feedback attribution and shadow experiments. They are no longer the sole
 source of adaptation when Selective ML is active.
 
-V1 deliberately does not pretend that a candlestick name or one fixed threshold
+The V2 fallback deliberately does not pretend that a candlestick name or one fixed threshold
 is a discovered market law. A later feature-generation revision can add more
 raw-candle/swing/level measurements, but changing the causal feature contract
 must be versioned and evaluated rather than silently mixed with old evidence.

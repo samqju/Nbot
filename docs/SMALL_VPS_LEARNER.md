@@ -14,7 +14,7 @@ Paper feedback update: [30-day auto-learning experiment](PAPER_AUTO_LEARNING.md)
 Reviewed 2026-10-05 against the current V3.9 tiny-service and three-mode operator behavior. See the
 [documentation index](DOCUMENTATION_INDEX.md) for current instructions and historical contracts.
 
-This is an experimental Testnet learner. It learns numerical relationships and
+This is an experimental research and paper learner. It learns numerical relationships and
 recent setup reliability. It does not read news, understand every chart pattern,
 invent strategy code, or guarantee profits. Real-money order permission is unchanged.
 

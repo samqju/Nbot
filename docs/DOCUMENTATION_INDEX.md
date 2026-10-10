@@ -47,20 +47,20 @@ For private-file creation and every placeholder, use the
 
 ## What the bot currently does, in simple English
 
-The learning server collects real market prices. It waits until future labels
-are causally mature, then stores compact symbol/side examples for each market
-event. Ridge remains the stable linear benchmark. In learned `live-paper`, an
-eligible Selective ML artifact can additionally learn nonlinear relationships
-from those same causal examples while giving every market event total training
-weight 1.
+The learning server collects real market prices. Its detailed research system
+saves what it knew before both accepted and rejected opportunities, then records
+their forward simulated outcomes. Only complete, verified tick-policy examples
+enter the V3 learner. Rows from one market event share training weight one.
 
-The live-paper selector combines Ridge, nonlinear mean-R, a lower-quantile
-confidence estimate, paper/shadow feedback; entry feasibility is checked immediately by Execution. It can reject the entire event rather
-than choosing the least-bad coin. If no eligible ML artifact exists, it falls
-back to the existing Ridge + V4 behavior.
+A fitted V3 model must pass two later evaluation windows before it can
+automatically replace the active paper model. Those checks include prediction
+error, costs, drawdown and one-position capacity. Until then, the existing V2
+nonlinear model or Ridge benchmark remains the fallback. Paper/shadow feedback
+and loss pauses remain separate; Execution checks immediate entry feasibility.
+A weak prediction or unclear choice can produce NO TRADE.
 
 The learning server can recommend one positive-ranked opportunity using fresh
-Testnet prices. The trading server independently checks permission, prices,
+prices for the selected trading mode. The trading server independently checks permission, prices,
 risk, existing position and protective orders. It keeps at most one position.
 Missing/stale data, incompatible models or no positive opportunity can correctly
 mean no trade.
@@ -72,7 +72,7 @@ The V3 tick-paper learner separately trains from verified detailed outcomes and
 requires new future evaluation before automatic paper activation. It does not
 change the historical challenger timing below; see the detailed guide.
 
-## How long learning takes
+## Timing for the retained Ridge/challenger learner
 
 - The first model needs roughly 16 hours of continuous usable collection plus
   processing. Missing data or slow hardware can extend this.
@@ -99,8 +99,7 @@ Execution uses its own fixed-dollar risk and exit lifecycle. A model score is
 therefore not a forecast of actual trade profits.
 
 Testnet may use a non-rejected model before its research evaluation finishes.
-This does not promote a Research Champion or Paper Champion. LIVE/PAPER remains
-an operational canary unless separately granted qualifying authority. Automatic Research/Paper-Champion approval remains blocked behind the frozen
+This does not promote a Research Champion or Paper Champion. Learned LIVE paper is the experimental adaptation route described above. Automatic Research/Paper-Champion approval remains blocked behind the frozen
 the historical numbered-phase economic gates. Separately, the code exposes a bounded, explicitly
 operator-authorized `live-trade` trial; that route is not Champion approval and
 does not establish profitability.
