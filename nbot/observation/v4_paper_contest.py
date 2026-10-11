@@ -1,0 +1,620 @@
+"""Forward-only V4 paper examination for frozen model generations.
+
+This module is deliberately paper/research-only:
+- no Binance private endpoints;
+- no order submission path;
+- one realistic paper position per examined model;
+- common five-minute candidate universe;
+- shared public WSS evidence for active paper paths;
+- 100 completed scored trades is a review checkpoint, never automatic promotion.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+import hashlib
+import json
+import math
+from pathlib import Path
+import sqlite3
+import time
+from typing import Any
+
+from .counterfactual import ReplayCosts, TrailPolicy
+from .decision_ledger import FrozenDecision
+from .features import CanonicalFeatureStore
+from .live_two_tier import ResearchWssFeed
+from .research_replay import ReplayHypothesis
+from .redesign_runtime import V3ResearchRuntime
+from .selective_ml import ML_FEATURE_NAMES, augment_vector, _ml_imports
+from .v4_generation import V4GenerationStore
+from .v4_research import (
+    HORIZON_MS,
+    INTERVAL_MS,
+    V4Candidate,
+    V4CandidateScanner,
+    _digest as research_digest,
+)
+from .wss_market import plan_combined_streams
+
+VERSION = "NBOT_V4_PAPER_CONTEST_V1"
+AUTHORITY = "V4_PAPER_ONLY_NO_ORDER_AUTHORITY"
+ORDER_AUTHORITY = "NONE"
+CHECKPOINT_TRADES = 100
+STARTING_BALANCE_USD = 10_000.0
+RISK_USD = 10.0
+
+
+def _json(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def _digest(value: Any) -> str:
+    return hashlib.sha256(_json(value).encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True)
+class ScoredCandidate:
+    candidate: V4Candidate
+    score: float
+
+
+class FrozenGenerationModel:
+    def __init__(self, generation: int, record: dict[str, Any]) -> None:
+        self.generation = int(generation)
+        self.qualification = str(record["qualification_status"])
+        self.artifact = dict(record["artifact"])
+        if self.artifact.get("order_authority") != "NONE":
+            raise ValueError("V4_PAPER_MODEL_AUTHORITY_INVALID")
+        feature_names = tuple(self.artifact.get("feature_names") or ())
+        if feature_names != tuple(ML_FEATURE_NAMES):
+            raise ValueError("V4_PAPER_MODEL_FEATURE_CONTRACT_MISMATCH")
+        lgb, _ = _ml_imports()
+        self.model = lgb.Booster(model_str=str(self.artifact["ranking_model"]))
+        self.model_digest = str(self.artifact["model_digest"])
+        self.trained_at_ms = int(self.artifact["trained_at_ms"])
+
+    def score(self, candidate: V4Candidate) -> float:
+        _, np = _ml_imports()
+        vector = augment_vector(candidate.vector)
+        values = np.asarray(
+            [[float(vector[name]) for name in ML_FEATURE_NAMES]], dtype="float32"
+        )
+        score = float(self.model.predict(values)[0])
+        if not math.isfinite(score):
+            raise ValueError("V4_PAPER_MODEL_SCORE_INVALID")
+        return score
+
+
+class V4PaperContestStore:
+    def __init__(self, path: str | Path = "data/observation/v4/paper_contest.db") -> None:
+        self.path = Path(path)
+
+    def initialize(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(self.path) as conn:
+            conn.executescript("""
+            PRAGMA journal_mode=WAL;
+            CREATE TABLE IF NOT EXISTS paper_models(
+                generation INTEGER PRIMARY KEY,
+                role TEXT NOT NULL,
+                qualification TEXT NOT NULL,
+                model_digest TEXT NOT NULL,
+                admitted_at_ms INTEGER NOT NULL,
+                starting_balance_usd REAL NOT NULL,
+                realized_r REAL NOT NULL DEFAULT 0,
+                peak_realized_r REAL NOT NULL DEFAULT 0,
+                max_drawdown_r REAL NOT NULL DEFAULT 0,
+                completed_trades INTEGER NOT NULL DEFAULT 0,
+                positive_trades INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS paper_decisions(
+                generation INTEGER NOT NULL,
+                event_open_ms INTEGER NOT NULL,
+                decision_id TEXT,
+                symbol TEXT,
+                side TEXT,
+                score REAL,
+                rank INTEGER,
+                action TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                created_at_ms INTEGER NOT NULL,
+                PRIMARY KEY(generation,event_open_ms)
+            );
+            CREATE TABLE IF NOT EXISTS paper_trades(
+                decision_id TEXT PRIMARY KEY,
+                generation INTEGER NOT NULL,
+                event_open_ms INTEGER NOT NULL,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                entry_time_ms INTEGER NOT NULL,
+                entry_price REAL NOT NULL,
+                one_r_price REAL NOT NULL,
+                status TEXT NOT NULL,
+                exit_time_ms INTEGER,
+                net_r REAL,
+                mfe_r REAL,
+                mae_r REAL,
+                exit_reason TEXT,
+                source_digest TEXT
+            );
+            CREATE INDEX IF NOT EXISTS paper_trades_generation
+              ON paper_trades(generation,status,event_open_ms);
+            CREATE TABLE IF NOT EXISTS contest_meta(
+                key TEXT PRIMARY KEY,
+                value_json TEXT NOT NULL
+            );
+            """)
+
+    def admitted_generations(self) -> set[int]:
+        self.initialize()
+        with sqlite3.connect(self.path) as conn:
+            return {int(row[0]) for row in conn.execute("SELECT generation FROM paper_models")}
+
+    def admit_model(
+        self, generation: int, *, role: str, qualification: str,
+        model_digest: str, now_ms: int
+    ) -> None:
+        self.initialize()
+        if role not in {"CHAMPION", "CHALLENGER"}:
+            raise ValueError("V4_PAPER_ROLE_INVALID")
+        with sqlite3.connect(self.path) as conn:
+            conn.execute(
+                """INSERT OR IGNORE INTO paper_models(
+                    generation,role,qualification,model_digest,admitted_at_ms,
+                    starting_balance_usd,status
+                ) VALUES(?,?,?,?,?,?,?)""",
+                (
+                    int(generation), role, str(qualification), str(model_digest),
+                    int(now_ms), STARTING_BALANCE_USD, "EXAMINING",
+                ),
+            )
+
+    def set_role(self, generation: int, role: str) -> None:
+        if role not in {"CHAMPION", "CHALLENGER"}:
+            raise ValueError("V4_PAPER_ROLE_INVALID")
+        self.initialize()
+        with sqlite3.connect(self.path) as conn:
+            conn.execute(
+                "UPDATE paper_models SET role=? WHERE generation=?",
+                (role, int(generation)),
+            )
+
+    def record_decision(
+        self, generation: int, event_open_ms: int, *, decision_id: str | None,
+        symbol: str | None, side: str | None, score: float | None,
+        rank: int | None, action: str, reason: str, now_ms: int
+    ) -> None:
+        self.initialize()
+        with sqlite3.connect(self.path) as conn:
+            conn.execute(
+                """INSERT OR IGNORE INTO paper_decisions
+                   VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    int(generation), int(event_open_ms), decision_id, symbol, side,
+                    score, rank, str(action), str(reason), int(now_ms),
+                ),
+            )
+
+    def open_trade(
+        self, *, decision_id: str, generation: int, event_open_ms: int,
+        symbol: str, side: str, entry_time_ms: int, entry_price: float,
+        one_r_price: float
+    ) -> None:
+        self.initialize()
+        with sqlite3.connect(self.path) as conn:
+            conn.execute(
+                """INSERT OR IGNORE INTO paper_trades(
+                    decision_id,generation,event_open_ms,symbol,side,entry_time_ms,
+                    entry_price,one_r_price,status
+                ) VALUES(?,?,?,?,?,?,?,?, 'OPEN')""",
+                (
+                    decision_id, int(generation), int(event_open_ms), symbol, side,
+                    int(entry_time_ms), float(entry_price), float(one_r_price),
+                ),
+            )
+
+    def close_trade(
+        self, decision_id: str, *, net_r: float, mfe_r: float, mae_r: float,
+        exit_time_ms: int | None, exit_reason: str, source_digest: str
+    ) -> None:
+        self.initialize()
+        with sqlite3.connect(self.path) as conn:
+            row = conn.execute(
+                "SELECT generation,status FROM paper_trades WHERE decision_id=?",
+                (decision_id,),
+            ).fetchone()
+            if row is None or row[1] != "OPEN":
+                return
+            generation = int(row[0])
+            conn.execute(
+                """UPDATE paper_trades
+                   SET status='CLOSED',exit_time_ms=?,net_r=?,mfe_r=?,mae_r=?,
+                       exit_reason=?,source_digest=?
+                   WHERE decision_id=? AND status='OPEN'""",
+                (
+                    None if exit_time_ms is None else int(exit_time_ms),
+                    float(net_r), float(mfe_r), float(mae_r), str(exit_reason),
+                    str(source_digest), decision_id,
+                ),
+            )
+            m = conn.execute(
+                """SELECT realized_r,peak_realized_r,max_drawdown_r,
+                          completed_trades,positive_trades
+                   FROM paper_models WHERE generation=?""",
+                (generation,),
+            ).fetchone()
+            if m is None:
+                raise ValueError("V4_PAPER_MODEL_UNKNOWN")
+            realized = float(m[0]) + float(net_r)
+            peak = max(float(m[1]), realized)
+            drawdown = max(float(m[2]), peak - realized)
+            completed = int(m[3]) + 1
+            positive = int(m[4]) + (1 if float(net_r) > 0 else 0)
+            status = "REVIEW_REQUIRED" if completed >= CHECKPOINT_TRADES else "EXAMINING"
+            conn.execute(
+                """UPDATE paper_models
+                   SET realized_r=?,peak_realized_r=?,max_drawdown_r=?,
+                       completed_trades=?,positive_trades=?,status=?
+                   WHERE generation=?""",
+                (realized, peak, drawdown, completed, positive, status, generation),
+            )
+
+    def mark_unscorable(self, decision_id: str, *, reason: str) -> None:
+        self.initialize()
+        with sqlite3.connect(self.path) as conn:
+            conn.execute(
+                """UPDATE paper_trades
+                   SET status='UNSCORABLE',exit_reason=?
+                   WHERE decision_id=? AND status='OPEN'""",
+                (str(reason), decision_id),
+            )
+
+    def open_trades(self) -> list[dict[str, Any]]:
+        self.initialize()
+        with sqlite3.connect(self.path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM paper_trades WHERE status='OPEN' ORDER BY entry_time_ms"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def model_status(self, generation: int) -> dict[str, Any] | None:
+        self.initialize()
+        with sqlite3.connect(self.path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM paper_models WHERE generation=?", (int(generation),)
+            ).fetchone()
+        return None if row is None else dict(row)
+
+    def status(self) -> dict[str, Any]:
+        self.initialize()
+        with sqlite3.connect(self.path) as conn:
+            conn.row_factory = sqlite3.Row
+            models = [dict(r) for r in conn.execute(
+                "SELECT * FROM paper_models ORDER BY generation"
+            )]
+            open_rows = [dict(r) for r in conn.execute(
+                "SELECT generation,decision_id,symbol,side,entry_time_ms FROM paper_trades "
+                "WHERE status='OPEN' ORDER BY generation"
+            )]
+            excluded = {
+                int(g): int(n) for g, n in conn.execute(
+                    "SELECT generation,COUNT(*) FROM paper_trades "
+                    "WHERE status='UNSCORABLE' GROUP BY generation"
+                )
+            }
+        for model in models:
+            completed = int(model["completed_trades"])
+            model["positive_rate"] = (
+                0.0 if completed == 0 else int(model["positive_trades"]) / completed
+            )
+            model["balance_usd"] = (
+                float(model["starting_balance_usd"]) + float(model["realized_r"]) * RISK_USD
+            )
+            model["checkpoint_trades"] = CHECKPOINT_TRADES
+            model["remaining_to_checkpoint"] = max(0, CHECKPOINT_TRADES - completed)
+            model["unscorable_trades"] = excluded.get(int(model["generation"]), 0)
+        return {
+            "version": VERSION,
+            "models": models,
+            "open_positions": open_rows,
+            "order_authority": ORDER_AUTHORITY,
+            "automatic_promotion": False,
+        }
+
+
+class V4PaperContest:
+    def __init__(
+        self, database, *, release_sha: str,
+        generation_path: str | Path = "data/observation/v4/generations.db",
+        paper_ledger_path: str | Path = "data/observation/v4/paper_ledger.db",
+        contest_path: str | Path = "data/observation/v4/paper_contest.db",
+    ) -> None:
+        self.database = database
+        self.release_sha = str(release_sha)
+        self.generations = V4GenerationStore(generation_path)
+        self.generations.initialize()
+        self.store = V4PaperContestStore(contest_path)
+        self.store.initialize()
+        self.runtime = V3ResearchRuntime(paper_ledger_path)
+        self.feed = ResearchWssFeed(self.runtime)
+        self.scanner = V4CandidateScanner(database)
+        self._feed_universe: tuple[str, ...] = ()
+        self._models: dict[int, FrozenGenerationModel] = {}
+        self._active: dict[int, str] = {}
+        self.last_event_open_ms: int | None = None
+
+        # Exact tick chronology cannot survive a process stop. Preserve the
+        # interrupted paper attempt as unscorable rather than fabricating a path.
+        now_ms = int(time.time() * 1000)
+        for pending in self.runtime.ledger.pending_decisions():
+            decision_id = str(pending["decision_id"])
+            self.runtime.ledger.record_unresolved(
+                decision_id, str(pending["policy_id"]), now_ms,
+                "V4_PAPER_PROCESS_RESTART_PATH_LOST",
+                {"release_sha": self.release_sha},
+            )
+            self.store.mark_unscorable(
+                decision_id, reason="V4_PAPER_PROCESS_RESTART_PATH_LOST"
+            )
+
+    def _generation_record(self, generation: int) -> dict[str, Any]:
+        record = self.generations.generation(generation)
+        if record is None:
+            raise ValueError("V4_PAPER_GENERATION_UNKNOWN")
+        return record
+
+    def _load_model(self, generation: int) -> FrozenGenerationModel:
+        generation = int(generation)
+        if generation not in self._models:
+            self._models[generation] = FrozenGenerationModel(
+                generation, self._generation_record(generation)
+            )
+        return self._models[generation]
+
+    def _eligible_roles(self, now_ms: int) -> dict[int, str]:
+        state = self.generations.state()
+        roles: dict[int, str] = {}
+        champion = state.get("champion_generation")
+        challenger = state.get("challenger_generation")
+        if champion is not None:
+            roles[int(champion)] = "CHAMPION"
+        if challenger is not None and challenger != champion:
+            roles[int(challenger)] = "CHALLENGER"
+
+        # If the Challenger slot is free, admit the oldest qualified generation
+        # not already examined. This is the durable queue behind an active exam.
+        if challenger is None:
+            admitted = self.store.admitted_generations()
+            with sqlite3.connect(self.generations.path) as conn:
+                row = conn.execute(
+                    """SELECT generation FROM generations
+                       WHERE qualification_status IN ('BASELINE_READY','CHALLENGER_READY')
+                       ORDER BY generation"""
+                ).fetchall()
+            queued = [int(r[0]) for r in row if int(r[0]) not in admitted and int(r[0]) != champion]
+            if queued:
+                challenger = queued[0]
+                self.generations.set_state("challenger_generation", challenger)
+                roles[challenger] = "CHALLENGER"
+
+        for generation, role in roles.items():
+            model = self._load_model(generation)
+            self.store.admit_model(
+                generation, role=role, qualification=model.qualification,
+                model_digest=model.model_digest, now_ms=now_ms,
+            )
+            self.store.set_role(generation, role)
+        return roles
+
+    def _ensure_feed(self, candidates: tuple[V4Candidate, ...]) -> None:
+        if self._feed_universe:
+            return
+        symbols = tuple(sorted({c.symbol for c in candidates}))
+        if not symbols:
+            return
+        self._feed_universe = symbols
+        self.feed.update(symbols, plan_combined_streams(symbols))
+
+    def _sync_matured(self, now_ms: int) -> int:
+        matured = self.runtime.mature_due(now_ms=now_ms)
+        active_ids = set(self.runtime.replays.active_ids)
+        closed = 0
+        for generation, decision_id in tuple(self._active.items()):
+            if decision_id in matured:
+                outcome = matured[decision_id]
+                evidence = dict(outcome.evidence or {})
+                self.store.close_trade(
+                    decision_id,
+                    net_r=float(outcome.net_r),
+                    mfe_r=float(outcome.mfe_r or 0.0),
+                    mae_r=float(outcome.mae_r or 0.0),
+                    exit_time_ms=evidence.get("exit_time_ms"),
+                    exit_reason=outcome.exit_reason,
+                    source_digest=outcome.source_digest,
+                )
+                del self._active[generation]
+                closed += 1
+            elif decision_id not in active_ids:
+                # V3ResearchRuntime removes GAP_UNRESOLVED outcomes after writing
+                # the immutable unresolved ledger record.
+                self.store.mark_unscorable(decision_id, reason="GAP_UNRESOLVED")
+                del self._active[generation]
+        return closed
+
+    def on_five_minute_event(
+        self, *, event_open_ms: int, now_ms: int | None = None
+    ) -> dict[str, Any]:
+        now_ms = int(time.time() * 1000) if now_ms is None else int(now_ms)
+        event_open_ms = int(event_open_ms)
+        if event_open_ms % INTERVAL_MS:
+            raise ValueError("V4_PAPER_EVENT_NOT_5M_ALIGNED")
+        if self.last_event_open_ms is not None and event_open_ms <= self.last_event_open_ms:
+            return self.status()
+
+        closed = self._sync_matured(now_ms)
+        roles = self._eligible_roles(now_ms)
+        candidates = self.scanner.scan(event_open_ms=event_open_ms, now_ms=now_ms)
+        self._ensure_feed(candidates)
+        if self._feed_universe:
+            candidates = tuple(c for c in candidates if c.symbol in self._feed_universe)
+
+        opened = 0
+        for generation in sorted(roles):
+            if generation in self._active:
+                self.store.record_decision(
+                    generation, event_open_ms, decision_id=None, symbol=None, side=None,
+                    score=None, rank=None, action="HOLD",
+                    reason="PAPER_BOOK_POSITION_OPEN", now_ms=now_ms,
+                )
+                continue
+
+            model = self._load_model(generation)
+            scored: list[ScoredCandidate] = []
+            for candidate in candidates:
+                try:
+                    scored.append(ScoredCandidate(candidate, model.score(candidate)))
+                except (KeyError, TypeError, ValueError):
+                    continue
+            scored.sort(
+                key=lambda item: (
+                    -item.score,
+                    item.candidate.symbol,
+                    item.candidate.side,
+                )
+            )
+            if not scored:
+                self.store.record_decision(
+                    generation, event_open_ms, decision_id=None, symbol=None, side=None,
+                    score=None, rank=None, action="ABSTAIN",
+                    reason="NO_SCORABLE_CANDIDATE", now_ms=now_ms,
+                )
+                continue
+
+            winner = scored[0]
+            candidate = winner.candidate
+            quote = self.feed.wait_quotes((candidate.symbol,), timeout_seconds=2.0).get(candidate.symbol)
+            if quote is None:
+                self.store.record_decision(
+                    generation, event_open_ms, decision_id=None,
+                    symbol=candidate.symbol, side=candidate.side, score=winner.score,
+                    rank=1, action="ABSTAIN", reason="FRESH_WSS_QUOTE_UNAVAILABLE",
+                    now_ms=now_ms,
+                )
+                continue
+
+            entry = float(quote.ask if candidate.side == "LONG" else quote.bid)
+            one_r = entry * float(candidate.atr_frac)
+            if not (entry > 0 and one_r > 0 and math.isfinite(one_r)):
+                self.store.record_decision(
+                    generation, event_open_ms, decision_id=None,
+                    symbol=candidate.symbol, side=candidate.side, score=winner.score,
+                    rank=1, action="ABSTAIN", reason="PAPER_RISK_GEOMETRY_INVALID",
+                    now_ms=now_ms,
+                )
+                continue
+
+            decision_id = _digest({
+                "version": VERSION,
+                "generation": generation,
+                "model_digest": model.model_digest,
+                "event_open_ms": event_open_ms,
+                "symbol": candidate.symbol,
+                "side": candidate.side,
+            })[:32]
+            decision_time_ms = max(event_open_ms + INTERVAL_MS, now_ms)
+            decision = FrozenDecision(
+                decision_id=decision_id,
+                event_id=f"V4PAPER5M:{event_open_ms}",
+                decision_time_ms=decision_time_ms,
+                symbol=candidate.symbol,
+                side=candidate.side,
+                setup_id=(candidate.setup_tags[0]["id"] if candidate.setup_tags else "MODEL_ONLY"),
+                release_sha=self.release_sha,
+                model_id=f"V4_MODEL_GEN_{generation:03d}",
+                feature_digest=research_digest(candidate.vector),
+                ridge_score_r=None,
+                ml_mean_r=winner.score,
+                ml_lower_r=None,
+                conservative_score_r=winner.score,
+                rank=1,
+                runner_up_score_r=(scored[1].score if len(scored) > 1 else None),
+                edge_gap_r=(winner.score - scored[1].score if len(scored) > 1 else None),
+                approved=True,
+                reason="V4_PAPER_TOP1",
+                bid=float(quote.bid),
+                ask=float(quote.ask),
+                quote_source="WSS_BOOK",
+                policy_id=TrailPolicy.TICK_INTEGER_R.value,
+                sampling_probability=1.0,
+                capacity_available=True,
+            )
+            self.runtime.submit(
+                decision,
+                ReplayHypothesis(
+                    decision_id, candidate.symbol, candidate.side, entry, one_r,
+                    decision_time_ms, TrailPolicy.TICK_INTEGER_R,
+                    horizon_ms=HORIZON_MS,
+                    costs=ReplayCosts(
+                        taker_fee_rate=.0005,
+                        entry_slippage_bps=1.0,
+                        exit_slippage_bps=1.0,
+                    ),
+                ),
+                extras={
+                    "v4_paper_contract": VERSION,
+                    "generation": generation,
+                    "model_digest": model.model_digest,
+                    "feature_vector": candidate.vector,
+                    "selection_rank": candidate.selection_rank,
+                    "entry_price": entry,
+                    "one_r_price": one_r,
+                    "paper_starting_balance_usd": STARTING_BALANCE_USD,
+                    "paper_risk_usd": RISK_USD,
+                    "order_authority": ORDER_AUTHORITY,
+                },
+            )
+            self.store.record_decision(
+                generation, event_open_ms, decision_id=decision_id,
+                symbol=candidate.symbol, side=candidate.side, score=winner.score,
+                rank=1, action="OPEN", reason="V4_PAPER_TOP1", now_ms=now_ms,
+            )
+            self.store.open_trade(
+                decision_id=decision_id, generation=generation,
+                event_open_ms=event_open_ms, symbol=candidate.symbol,
+                side=candidate.side, entry_time_ms=decision_time_ms,
+                entry_price=entry, one_r_price=one_r,
+            )
+            self._active[generation] = decision_id
+            opened += 1
+
+        self.last_event_open_ms = event_open_ms
+        result = {
+            "version": VERSION,
+            "event_open_ms": event_open_ms,
+            "models_examining": len(roles),
+            "closed_this_cycle": closed,
+            "opened_this_cycle": opened,
+            "active_positions": len(self._active),
+            "checkpoint_trades": CHECKPOINT_TRADES,
+            "order_authority": ORDER_AUTHORITY,
+        }
+        return result
+
+    def status(self) -> dict[str, Any]:
+        return {
+            **self.store.status(),
+            "generation_state": self.generations.state(),
+            "feed_symbols": len(self._feed_universe),
+            "last_event_open_ms": self.last_event_open_ms,
+            "active_positions": len(self._active),
+            "order_authority": ORDER_AUTHORITY,
+        }
+
+    def stop(self) -> None:
+        self.feed.stop()
+
+    def submit_order(self, *args, **kwargs):
+        raise RuntimeError("V4_PAPER_HAS_NO_ORDER_AUTHORITY")
