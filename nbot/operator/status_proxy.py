@@ -341,51 +341,163 @@ def _feedback_text(data: Mapping[str, Any]) -> str:
     )
 
 
+def _v4_learning_snapshot(repo_root: Path) -> dict[str, Any] | None:
+    """Read the V4 research/generation state without importing learning code."""
+    root = Path(repo_root)
+    ledger_path = root / "data/observation/v4/research_ledger.db"
+    meta_path = root / "data/observation/v4/research_meta.db"
+    generation_path = root / "data/observation/v4/generations.db"
+    if not ledger_path.is_file():
+        return None
+
+    def ro(path: Path):
+        return sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)
+
+    with closing(ro(ledger_path)) as conn:
+        frozen = int(conn.execute("SELECT COUNT(*) FROM frozen_decisions").fetchone()[0])
+        resolved = int(conn.execute(
+            "SELECT COUNT(*) FROM matured_outcomes WHERE actual_execution=0"
+        ).fetchone()[0])
+        unresolved = int(conn.execute("SELECT COUNT(*) FROM unresolved_outcomes").fetchone()[0])
+    pending = max(0, frozen - resolved - unresolved)
+
+    batches: list[dict[str, Any]] = []
+    last_cycle = None
+    if meta_path.is_file():
+        with closing(ro(meta_path)) as conn:
+            batches = [
+                {"batch_no": int(n), "status": str(s), "closed_at_ms": int(t)}
+                for n, s, t in conn.execute(
+                    "SELECT batch_no,status,closed_at_ms FROM v4_batches ORDER BY batch_no"
+                ).fetchall()
+            ]
+            row = conn.execute(
+                "SELECT value_json FROM v4_meta WHERE key='last_cycle'"
+            ).fetchone()
+            if row is not None:
+                try:
+                    value = json.loads(row[0])
+                    if isinstance(value, Mapping):
+                        last_cycle = dict(value)
+                except (TypeError, json.JSONDecodeError):
+                    pass
+
+    state = {"champion_generation": None, "challenger_generation": None}
+    latest_generation = None
+    trained_batches: set[int] = set()
+    if generation_path.is_file():
+        with closing(ro(generation_path)) as conn:
+            try:
+                state_rows = dict(conn.execute("SELECT key,value FROM state"))
+                state = {
+                    "champion_generation": (
+                        None if state_rows.get("champion_generation") is None
+                        else int(state_rows["champion_generation"])
+                    ),
+                    "challenger_generation": (
+                        None if state_rows.get("challenger_generation") is None
+                        else int(state_rows["challenger_generation"])
+                    ),
+                }
+                trained_batches = {
+                    int(row[0]) for row in conn.execute("SELECT batch_no FROM generations")
+                }
+                row = conn.execute(
+                    """SELECT generation,batch_no,validation_events,
+                              validation_mean_net_r,validation_positive_rate,
+                              qualification_status
+                       FROM generations ORDER BY generation DESC LIMIT 1"""
+                ).fetchone()
+                if row is not None:
+                    latest_generation = {
+                        "generation": int(row[0]),
+                        "batch_no": int(row[1]),
+                        "validation_events": int(row[2]),
+                        "validation_mean_net_r": float(row[3]),
+                        "validation_positive_rate": float(row[4]),
+                        "qualification_status": str(row[5]),
+                    }
+            except sqlite3.OperationalError:
+                pass
+
+    ready_batches = [
+        int(row["batch_no"]) for row in batches
+        if row["status"] == "READY_FOR_TRAINING" and int(row["batch_no"]) not in trained_batches
+    ]
+    batch_size = 1000
+    capacity = 100
+    next_training_at = ((resolved // batch_size) + 1) * batch_size
+    return {
+        "version": "NBOT_V4_RESEARCH_FACTORY_V1",
+        "capacity": capacity,
+        "open_pending": pending,
+        "resolved": resolved,
+        "unresolved": unresolved,
+        "batch_size": batch_size,
+        "next_training_at": next_training_at,
+        "current_batch": (resolved // batch_size) + 1,
+        "batch_progress_pct": round((resolved % batch_size) * 100.0 / batch_size, 1),
+        "ready_batches": ready_batches,
+        "generation_state": state,
+        "latest_generation": latest_generation,
+        "last_cycle": last_cycle,
+        "order_authority": "NONE",
+    }
+
+
+def _format_v4_learning(data: Mapping[str, Any]) -> str:
+    cycle = data.get("last_cycle") if isinstance(data.get("last_cycle"), Mapping) else {}
+    state = data.get("generation_state") if isinstance(data.get("generation_state"), Mapping) else {}
+    latest = data.get("latest_generation") if isinstance(data.get("latest_generation"), Mapping) else {}
+
+    lines = [
+        f"Research: {_e(data.get('open_pending'))}/{_e(data.get('capacity'))} active",
+        f"Completed: {_e(data.get('resolved'))}/{_e(data.get('next_training_at'))} "
+        f"({_e(data.get('batch_progress_pct'))}%)",
+        f"Unresolved: {_e(data.get('unresolved'))}",
+        f"Batch: {_e(data.get('current_batch'))} | ready: "
+        f"{_e(','.join(map(str, data.get('ready_batches') or [])) or 'none')}",
+        f"Champion: {_e(state.get('champion_generation') or 'none')}",
+        f"Challenger: {_e(state.get('challenger_generation') or 'none')}",
+    ]
+    if latest:
+        lines.append(
+            f"Latest Gen-{_e(latest.get('generation'))}: "
+            f"{_e(str(latest.get('qualification_status') or 'unknown').replace('_', ' ').lower())}"
+        )
+        lines.append(
+            f"Validation: {_e(round(float(latest.get('validation_mean_net_r') or 0.0), 4))}R mean | "
+            f"{_e(round(100.0 * float(latest.get('validation_positive_rate') or 0.0), 1))}% positive"
+        )
+    if cycle:
+        lines.append(
+            "Last 5m cycle: "
+            f"closed {_e(cycle.get('matured_this_cycle'))}, "
+            f"opened {_e(cycle.get('opened_this_cycle'))}, "
+            f"active {_e(cycle.get('active'))}"
+        )
+    lines.append("Order authority: NONE")
+    return "\n".join(lines)
+
+
 def _format_learning(data: Mapping[str, Any]) -> str:
+    v4 = data.get("v4") if isinstance(data.get("v4"), Mapping) else None
+    if v4 is not None:
+        return _format_v4_learning(v4)
+
+    # Legacy fallback for pre-V4 Observation deployments.
     challengers = data.get("challengers") if isinstance(data.get("challengers"), Mapping) else {}
     active = challengers.get("active_challenger") if isinstance(challengers.get("active_challenger"), Mapping) else {}
     future = challengers.get("active_future_evidence") if isinstance(challengers.get("active_future_evidence"), Mapping) else {}
-    governance = data.get("governance") if isinstance(data.get("governance"), Mapping) else {}
-    eligibility = governance.get("research_champion_eligibility") if isinstance(governance.get("research_champion_eligibility"), Mapping) else {}
-    research = data.get("research_champion_promotion") if isinstance(data.get("research_champion_promotion"), Mapping) else {}
     two_tier = data.get("two_tier_research") if isinstance(data.get("two_tier_research"), Mapping) else {}
     ledger = two_tier.get("ledger_counts") if isinstance(two_tier.get("ledger_counts"), Mapping) else {}
-    detailed = data.get("counterfactual_learning") or {}
-    detailed = detailed if isinstance(detailed, Mapping) else {}
-    review = detailed.get("review") or {}
-    states = governance.get("challenger_states") or []
-    finalized = [row for row in states if isinstance(row, Mapping)
-                 and row.get("state") != "ACTIVE_WAITING_FUTURE_EVIDENCE"]
-    latest = finalized[-1] if finalized else {}
-    return _activity_text(data) + (
-        f"Learning state: {_e(str(data.get('status') or 'unknown').replace('_', ' ').lower())}\n"
-        f"New model being tested: {_e(active.get('model_version') or 'none currently')}\n"
-        f"Later market samples collected: {_e(future.get('available_future_events'))}"
-        f" / {_e(future.get('required_future_events'))} needed\n"
-        f"Tests passed: {_e(challengers.get('passed_windows'))}\n"
-        f"Tests rejected: {_e(challengers.get('rejected_windows'))}\n"
-        f"Latest completed test: {_e(str(latest.get('state') or 'none yet').replace('_', ' ').lower())}\n"
-        f"Research model selected: {_e(research.get('current_research_champion') or 'none yet')}\n"
-        f"Review progress: {_e(str(eligibility.get('decision') or 'unknown').replace('_', ' ').lower())}\n\n"
-        f"100/20 research: {_e(str(two_tier.get('state') or 'not running').replace('_', ' ').lower())}\n"
-        f"Broad scan target: {_e(two_tier.get('broad_target'))}\n"
-        f"High-resolution symbols: {_e(len(two_tier.get('active_symbols') or []))}"
-        f" / {_e(two_tier.get('high_res_cap'))}\n"
-        f"Active high-resolution hypotheses: {_e(two_tier.get('active_hypotheses'))}\n"
-        f"Research outcomes matured: {_e(ledger.get('matured_research'))}\n"
-        f"Detailed outcomes usable for training: {_e(detailed.get('eligible_rows'))}\n"
-        f"Usable rejected opportunities: {_e(detailed.get('rejected_opportunities'))}\n"
-        f"Detailed model later test events: {_e(detailed.get('future_events_collected'))}"
-        f" / {_e(detailed.get('future_events_required'))}\n"
-        f"Detailed paper model active: {_e('yes' if detailed.get('active_model') else 'no; using fallback')}\n"
-        f"Detailed model review: {_e(review.get('status') or 'waiting for enough later evidence')}\n"
-        f"Research decisions rejected/not admitted: {_e(ledger.get('rejected'))}"
-        f" / unresolved {_e(ledger.get('unresolved'))}\n\n"
-        "The learner tests predictions against later market outcomes.\n"
-        "Waiting means more evidence is needed. Rejected means a test did not pass.\n"
-        "These counts alone do not prove improving trading profits.\n"
-        "Use /recent and /pnl for your actual paper-trade results.\n"
-        "This report does not approve real-money trading."
+    return (
+        f"Legacy learner: {_e(str(data.get('status') or 'unknown').replace('_', ' ').lower())}\n"
+        f"Active model test: {_e(active.get('model_version') or 'none')}\n"
+        f"Future evidence: {_e(future.get('available_future_events'))}"
+        f"/{_e(future.get('required_future_events'))}\n"
+        f"Research outcomes: {_e(ledger.get('matured_research'))}\n"
+        "Order authority: NONE"
     )
 
 
@@ -444,19 +556,13 @@ class ObservationReadOnlyStatusProvider:
                 raise RuntimeError("OBSERVATION_DATABASE_STATUS_INVALID")
             return dict(data)
         if view == "learning":
+            try:
+                v4 = _v4_learning_snapshot(self.repo_root)
+            except Exception:
+                v4 = None
+            if v4 is not None:
+                return {"v4": v4}
             data = self._admin_json(READ_ONLY_ADMIN_VIEWS["learning"])
-            data["recommendation"] = self.target.health_snapshot()
-            try:
-                data["shadow_activity"] = _activity_summary(
-                    self.target.database.path, self.target.profile.name, self.target.release_sha)
-            except Exception:
-                data["shadow_activity"] = {"status": "Activity report unavailable"}
-            try:
-                source = self.target.recommendations.learned_source
-                data["compatible_model_available"] = (
-                    source._model(int(time.time()*1000)) is not None if source else False)
-            except Exception:
-                data["compatible_model_available"] = "unavailable"
             return data
         if view == "challenger":
             return {
@@ -485,10 +591,7 @@ class ObservationReadOnlyStatusProvider:
                 return copy.deepcopy(self._learning_cache)
             result = self._status_document(normalized)
             result["report_generated_at_ms"] = int(time.time() * 1000)
-            result["telegram_body"] = (
-                "Report snapshot (cached for up to 30 seconds).\n"
-                + result["telegram_body"]
-            )[:3500]
+            result["telegram_body"] = result["telegram_body"][:3500]
             self._learning_cache = copy.deepcopy(result)
             self._learning_cache_at = time.monotonic()
             return result
