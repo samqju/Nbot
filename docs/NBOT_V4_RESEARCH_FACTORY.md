@@ -303,3 +303,52 @@ For the current ~1 GiB Observation VPS, V4 training is intentionally capped at:
 - `Nice=10`
 
 These limits protect the continuous Observation/WSS research process. If a future generation cannot train within these limits, prefer moving training to a separate VPS rather than starving real-time research.
+
+
+## Telegram operator contract for the first Champion deployment
+
+Do not deploy these Telegram changes to the VPS until the first V4 Champion deployment window.
+
+The Execution Telegram surface remains intentionally small:
+
+- `/status` — execution state, position, daily PnL, trade count, risk halt if any.
+- `/position` — current position, entry, stop, risk, MFE/MAE.
+- `/recent` — most recent completed trade, PnL/R, holding time, exit reason.
+- `/pnl` — today's realized paper PnL, closed-trade count, halt status.
+- `/learning` — V4-only research/model progress when V4 databases exist; legacy fallback only for an older deployment.
+- `/enable` — allow new entries only after existing Execution safety/reconciliation checks.
+- `/disable` — block new entries while open-position management continues.
+- `/help` — concise command list.
+
+Only `/enable` and `/disable` mutate entry state. Status and learning commands have no order authority.
+
+### Force Telegram output to the channel
+
+Use one bot token, but separate its input and output destinations:
+
+```text
+EXECUTION_TELEGRAM_CHAT_ID=-100<CHANNEL_ID>
+EXECUTION_TELEGRAM_COMMAND_CHAT_ID=<PRIVATE_OR_OPERATOR_CHAT_ID>
+EXECUTION_TELEGRAM_OPERATOR_USER_ID=<AUTHORIZED_USER_ID>
+```
+
+`EXECUTION_TELEGRAM_CHAT_ID` is the single outbound destination and must be the target Telegram channel. The bot must be an administrator of that channel with permission to post messages.
+
+`EXECUTION_TELEGRAM_COMMAND_CHAT_ID` is input-only. Commands may be typed in the private/operator chat, but command responses are deliberately routed through the main channel dispatcher. Alerts, trade panels, command results, errors, and learning/status responses therefore all go to `EXECUTION_TELEGRAM_CHAT_ID`, not back to the command chat.
+
+The command listener continues to require both the configured command-chat ID and authorized operator user ID, so posting to the public/output channel does not expand command authority.
+
+### V4 /learning output
+
+When V4 data exists, `/learning` reports only the useful V4 state:
+
+- active virtual research slots / 100;
+- completed outcomes and progress to the next 1,000-trade trigger;
+- unresolved count;
+- current batch / training-ready batch;
+- Champion and Challenger generation IDs;
+- latest generation qualification and compact validation summary;
+- last persisted 5-minute cycle: closed, opened, active;
+- `Order authority: NONE`.
+
+The research factory persists only the latest bounded cycle summary for this operator view; it does not retain extra raw Telegram telemetry.
