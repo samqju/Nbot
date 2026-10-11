@@ -3,12 +3,14 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from types import SimpleNamespace
 
 from nbot.observation.v4_research import (
     AUTHORITY, BATCH_SIZE, CAPACITY, ORDER_AUTHORITY,
     V4ResearchStore,
 )
 from nbot.observation.v4_generation import V4GenerationStore
+from nbot.observation.live_two_tier import ResearchWssFeed
 
 
 class V4ResearchContractTests(unittest.TestCase):
@@ -56,6 +58,45 @@ class V4ResearchContractTests(unittest.TestCase):
                              (json.dumps({"x":2}),))
             with self.assertRaisesRegex(ValueError,"ARTIFACT_CORRUPT"):
                 store.generation(1)
+
+
+class _ReplayRecorder:
+    def __init__(self):
+        self.invalidated = []
+
+    def invalidate_paths(self, symbols):
+        self.invalidated.append(tuple(symbols))
+
+
+class _RuntimeRecorder:
+    def __init__(self):
+        self.replays = _ReplayRecorder()
+
+
+class V4WssIsolationTests(unittest.TestCase):
+    def test_book_ticker_disconnect_does_not_invalidate_research_paths(self):
+        runtime = _RuntimeRecorder()
+        feed = ResearchWssFeed(runtime)
+        shard = SimpleNamespace(streams=("btcusdt@bookTicker",))
+        feed._shard_event_sink(shard)("disconnected", ("BTCUSDT",))
+        self.assertEqual(runtime.replays.invalidated, [])
+
+    def test_agg_trade_disconnect_invalidates_only_that_shard(self):
+        runtime = _RuntimeRecorder()
+        feed = ResearchWssFeed(runtime)
+        shard = SimpleNamespace(streams=("btcusdt@aggTrade", "ethusdt@aggTrade"))
+        feed._shard_event_sink(shard)("disconnected", ("BTCUSDT", "ETHUSDT"))
+        self.assertEqual(runtime.replays.invalidated, [("BTCUSDT", "ETHUSDT")])
+
+    def test_symbol_local_market_gap_invalidates_only_symbol(self):
+        runtime = _RuntimeRecorder()
+        feed = ResearchWssFeed(runtime)
+        feed._on_market_event(
+            "market_data_gap",
+            {"symbol": "ETHUSDT", "reason": "WSS_AGG_TRADE_OUT_OF_ORDER"},
+        )
+        self.assertEqual(runtime.replays.invalidated, [("ETHUSDT",)])
+        self.assertEqual(feed.last_error, "WSS_AGG_TRADE_OUT_OF_ORDER:ETHUSDT")
 
 
 if __name__=="__main__":
