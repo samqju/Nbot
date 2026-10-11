@@ -148,7 +148,7 @@ class V391ContinuousChallengerTests(unittest.TestCase):
             conn.execute('UPDATE research_memory_events SET training_blob=? WHERE event_open_ms=?',
                          (b'corrupt', expected[0]))
         # A display count never authorizes the model: actual evidence decoding fails.
-        with self.assertRaises(Exception):
+        with self.assertRaisesRegex(ValueError, "TRAINING_BLOB_INVALID"):
             list(cycle._future_records(0))
 
     def test_first_cycle_freezes_research_only_artifacts_and_waits_for_future(self):

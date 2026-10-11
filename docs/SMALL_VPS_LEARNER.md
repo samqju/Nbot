@@ -219,4 +219,3 @@ unpacking every stored market record. This number is progress information,
 not proof that the data is valid. Actual model evaluation still checks archive
 digests, data contracts and outcomes before accepting a model. Evaluation also
 skips overlapping dates before decoding records, reducing wasted CPU and RAM.
-
