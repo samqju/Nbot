@@ -1,0 +1,10 @@
+[Unit]
+Description=Check for ready NBOT V4 1000-trade training batches
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
