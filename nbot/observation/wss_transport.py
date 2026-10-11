@@ -8,7 +8,7 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from .wss_market import WssMarketState, reconnect_delay_seconds
+from .wss_market import MarketDataUnavailable, WssMarketState, reconnect_delay_seconds
 
 AUTHORITY = "RESEARCH_MARKET_DATA_ONLY_NO_EXECUTION"
 
@@ -68,6 +68,7 @@ class CombinedStreamRunner:
                 pass
 
     async def _consume(self) -> None:
+        logger = logging.getLogger(__name__)
         while not self._stop:
             receipt, payload = await self.queue.get()
             try:
@@ -80,8 +81,26 @@ class CombinedStreamRunner:
                     parsed = self.state.ingest_agg_trade(payload, receipt_time_ms=receipt)
                     if self.event_sink is not None:
                         self.event_sink("aggTrade", parsed)
+            except MarketDataUnavailable as exc:
+                # A symbol-local ordering/gap failure must not tear down a whole
+                # combined shard. WssMarketState has already marked the affected
+                # symbol unhealthy where applicable; let the research layer
+                # invalidate only that symbol's active paths.
+                symbol = str(payload.get("s") or "")
+                logger.warning(
+                    "WSS_MARKET_DATA_GAP symbol=%s event=%s reason=%s",
+                    symbol, payload.get("e"), exc,
+                )
+                if self.event_sink is not None and symbol:
+                    self.event_sink(
+                        "market_data_gap",
+                        {"symbol": symbol, "reason": str(exc), "event": payload.get("e")},
+                    )
             except Exception:
-                logging.getLogger(__name__).exception("WSS_CONSUMER_PAYLOAD_FAILED")
+                logger.exception(
+                    "WSS_CONSUMER_PAYLOAD_FAILED event=%s symbol=%s",
+                    payload.get("e"), payload.get("s"),
+                )
                 self.state.mark_disconnected(self.symbols)
                 if self.event_sink is not None:
                     self.event_sink("disconnected", self.symbols)
@@ -91,18 +110,19 @@ class CombinedStreamRunner:
                 self.queue.task_done()
 
     async def run(self) -> None:
+        logger = logging.getLogger(__name__)
         consumer = asyncio.create_task(self._consume())
         attempt = 0
+        ever_connected = False
         try:
             while not self._stop:
                 self.state.mark_disconnected(self.symbols)
-                if self.event_sink is not None:
-                    self.event_sink("disconnected", self.symbols)
                 try:
                     cm = await self.connect_factory(self.url)
                     async with cm as ws:
                         self._ws = ws
                         self.state.mark_connected(self.symbols)
+                        ever_connected = True
                         attempt = 0
                         started = time.monotonic()
                         while not self._stop and time.monotonic() - started < self.rotate_seconds:
@@ -119,10 +139,14 @@ class CombinedStreamRunner:
                         self._ws = None
                 except asyncio.CancelledError:
                     raise
-                except Exception:
+                except Exception as exc:
                     self._ws = None
                     self.state.mark_disconnected(self.symbols)
-                    if self.event_sink is not None:
+                    logger.exception(
+                        "WSS_RUNNER_RECONNECT symbols=%d attempt=%d reason=%s",
+                        len(self.symbols), attempt, exc,
+                    )
+                    if ever_connected and self.event_sink is not None:
                         self.event_sink("disconnected", self.symbols)
                     if not self._stop:
                         await asyncio.sleep(reconnect_delay_seconds(attempt, jitter=0))
