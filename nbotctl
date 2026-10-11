@@ -898,6 +898,7 @@ def _cluster_doctor_payload(
                 transport,
                 repo_root=remote_root,
                 arguments=("doctor", profile_name),
+                timeout_seconds=180.0,
             ),
             label="DOCTOR",
         )
