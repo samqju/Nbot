@@ -184,91 +184,143 @@ Do not delete/reset these databases.
 
 Repository: `samqju/Nbot`
 
-Old draft:
-- PR #18 — closed as superseded.
+Superseded work:
+- PR #18 — closed/superseded; old ranking/calibration-only design.
+- branch `feature/v4-ranking-calibration` is obsolete and may be deleted after confirming no needed unique work remains.
 
-Current V4 branch:
-- `feature/nbot-v4-research-factory`
+Merged V4 research factory:
+- PR #19 — merged to `main`.
+- merge commit: `215305ea55a288b14b5176fea7e11c781c127f15`.
+- included clean V4 research factory, generation training, Telegram/status staging, and WSS continuity fixes.
+- WSS fix regression: workflow `selective-ml-tests` run #142 — **success**.
 
-Current replacement PR:
-- PR #19 — V4 clean-slate research factory.
+Merged V4 paper contest:
+- PR #20 — merged to `main`.
+- tested head: `299f69400864b4c93d6f9813187d24a83e83b674`.
+- merge commit: `856dedfdbadea87dec2af67247b3bd0d8794964b`.
+- workflow `selective-ml-tests` run #147 — **success**.
+- adds frozen-model paper examination, fresh contest epochs, explicit review, service wiring, and queue-safe generation semantics.
 
-Known-good branch head after import-path fix:
-- `afa01c70bc290198ad7b19dd4968fa39eec4f61f`
-
-GitHub CI for that exact SHA:
-- workflow `selective-ml-tests`
-- run #129
-- conclusion: **success**
-
-Key V4 files:
+Current key V4 files:
 - `nbot/observation/v4_research.py`
 - `nbot/observation/v4_generation.py`
+- `nbot/observation/v4_paper_contest.py`
 - `deploy/observation/run_v4_research.py`
 - `deploy/observation/run_v4_training.py`
+- `deploy/observation/run_v4_paper_contest.py`
 - `deploy/observation/v4_status.py`
+- `deploy/observation/v4_paper_admin.py`
 - `deploy/systemd/nbot-v4-research.service.in`
 - `deploy/systemd/nbot-v4-training.service.in`
 - `deploy/systemd/nbot-v4-training.timer.in`
+- `deploy/systemd/nbot-v4-paper-contest.service.in`
 - `tests/test_v4_research_factory.py`
+- `tests/test_v4_paper_contest.py`
 
-## Deployed Observation/Learning VPS state
+## Verified runtime milestone
 
-Confirmed deployed and enabled:
+The Observation/Learning VPS successfully reached the first V4 training threshold.
+
+Verified research/training state after Batch #1:
+- resolved valid virtual research trades: **1008**
+- unresolved research paths: **492**
+- active virtual research target: **100**
+- Batch #1: closed and trained
+- next training trigger: **2000 resolved**
+- order authority: **NONE**
+
+The unresolved total includes intentionally failed-closed paths from the earlier WSS continuity defect and one deliberate V4 service stop/restart. These records must remain preserved and excluded from valid training outcomes.
+
+The repeated WSS bulk-invalidations were traced to shard-wide invalidation behavior. The merged fix:
+- prevents bookTicker disconnects from destroying aggTrade research paths;
+- scopes symbol-local market-data gaps to the affected symbol;
+- retains fail-closed behavior for actual aggTrade continuity failures;
+- logs WSS reconnect/error reasons explicitly.
+
+After deployment of the fix, a live WSS reconnect occurred while the research cohort was active and:
+- valid resolved outcomes continued increasing;
+- active capacity returned to 100;
+- no new `GAP_UNRESOLVED` event was recorded in the observed verification window.
+
+## Generation 1
+
+Verified Gen-1 record:
+
+- generation: **1**
+- batch: **1**
+- training rows: **881**
+- training events: **39**
+- validation events: **8**
+- validation mean net R: **-0.5581845994248907**
+- validation positive rate: **0.25**
+- qualification: **BASELINE_READY**
+- artifact digest: `4e31059f5647d7961a46ca7c7873fbdc0e3881fefcaca610d54d3afee5ab0b46`
+
+Verified generation state:
+- `challenger_generation = 1`
+- `champion_generation = None`
+
+Interpretation:
+- `BASELINE_READY` means Gen-1 is the first frozen provisional baseline eligible for paper examination.
+- It does **not** mean the model is profitable, broadly validated, or a Champion.
+- The validation sample is small and its observed metrics are weak.
+- No automatic live-money authority follows from this state.
+
+Generation qualification was corrected so:
+- only Gen-1 may receive `BASELINE_READY`;
+- Gen-2+ must pass the held-out Challenger gate even while no Champion exists;
+- training a newer generation cannot overwrite an active Challenger paper exam.
+
+## V4 paper Champion-vs-Challenger implementation
+
+The paper examination layer is separate from the 100-slot virtual research factory and remains Observation-side with no exchange order authority.
+
+Storage:
+- `data/observation/v4/paper_ledger.db`
+- `data/observation/v4/paper_contest.db`
+
+Contract:
+- frozen generation artifacts are loaded exactly from `generations.db`;
+- all models use the same forward completed five-minute candidate universe;
+- each examined model has at most one open paper position;
+- public WSS manages the active paper path using after-cost integer-R trailing semantics;
+- process/WSS discontinuities become unscorable and do not count toward the checkpoint;
+- Gen-1 first runs a `BASELINE_EXAM`;
+- once a Champion exists, each qualified Challenger starts a fresh `HEAD_TO_HEAD` epoch;
+- Champion and Challenger both start each head-to-head epoch at 0 completed contest trades;
+- old Champion results are never reused as its 100-trade proof against a new Challenger;
+- each model requires **100 completed scored paper trades** in that contest;
+- a model that reaches 100 first stops opening fresh paper positions while the other completes its checkpoint;
+- when all required models reach 100, contest state becomes `REVIEW_REQUIRED`;
+- promotion/rejection is explicit through `v4_paper_admin.py`;
+- paper review never grants real exchange order authority;
+- newer qualified generations remain queued behind the active contest.
+
+The first Gen-1 baseline exam has not been claimed as completed or as a Champion in this handover. Deployment/runtime verification of the new paper-contest service remains the next operational step.
+
+## Current operational boundaries
+
+Confirmed intended services:
 - `nbot-observation-live.service`
 - `nbot-v4-research.service`
 - `nbot-v4-training.timer`
+- `nbot-v4-paper-contest.service` after its next Observation deployment
 
-Confirmed active:
-- all three above.
-
-Old V3 two-tier research inside the raw Observation collector is disabled with:
+Old V3 two-tier research inside the raw Observation collector remains disabled with:
 - `NBOT_TWO_TIER_RESEARCH=0`
 
-V4 initially demonstrated the exact intended refill behavior:
-
-- first cycle opened 100 virtual research trades;
-- next observed cycle matured 4;
-- exactly 4 fresh research trades were opened;
-- active book returned to 100.
-
-Latest user-reported V4 status in this conversation:
-
-- capacity: 100
-- open_pending: 100
-- resolved: 124
-- unresolved: 0
-- next_training_at: 1000
-- research_batches: []
-- Champion: none
-- Challenger: none
-- order_authority: NONE
-
-Therefore, at this handover point:
-- **35 V4 virtual research trades have completed successfully**;
-- **100 virtual research trades are currently open**;
-- **0 are unresolved**;
-- no V4 model generation exists yet because the first 1,000-trade threshold has not been reached.
+Do not deploy the staged Telegram changes merely because the code is now in `main`; the prior decision remains to deploy those operator-surface changes with the first Champion deployment window unless the owner explicitly changes that decision.
 
 ## Next checkpoints
 
-1. Keep V4 research running; avoid unnecessary Observation restarts because active WSS research paths are in-memory and restart breaks their exact chronology.
-2. Monitor:
-   - resolved count;
-   - unresolved count;
-   - whether active book stays near 100;
-   - CPU/RAM;
-   - WSS stability;
-   - DB growth.
-3. At `resolved >= 1000`:
-   - verify Batch #1 closes correctly;
-   - verify resource-limited training runs;
-   - inspect Gen-1 training/validation artifact;
-   - do not assume Gen-1 is automatically a broadly proven Champion.
-4. Only after Gen-1 exists should the paper Champion stage be wired/validated.
-5. Subsequent 1,000-trade batches train candidate generations; only research-qualified candidates become Challengers.
-6. Champion-vs-Challenger paper comparison target remains ~100 completed strategy trades per model plus time/regime/risk robustness gates.
-7. Real-money execution remains out of scope until explicit future authorization after substantial mainnet paper proof.
+1. Deploy current `main` to the Observation/Learning VPS and install/start only the new V4 paper-contest service without disturbing the running V4 research/training services.
+2. Verify Gen-1 begins a `BASELINE_EXAM`, with one-position paper behavior, WSS continuity, durable status, and `order_authority=NONE`.
+3. Keep virtual research running independently toward 2000 resolved trades / Batch #2.
+4. Do not promote Gen-1 merely for reaching 100 paper trades. At `REVIEW_REQUIRED`, inspect after-cost R, positive rate, drawdown, worst trade, side balance, elapsed future time, and regime coverage.
+5. Only after explicit review may Gen-1 become the first paper Champion.
+6. Future Gen-2+ candidates must pass research qualification before entering the queue.
+7. Every later Champion-vs-Challenger comparison uses a fresh forward head-to-head epoch.
+8. Real-money execution remains out of scope until explicit future authorization after substantial paper proof.
 
 ## Useful status commands
 
