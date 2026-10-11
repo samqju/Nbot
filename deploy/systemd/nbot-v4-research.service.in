@@ -8,6 +8,7 @@ Type=simple
 User=@NBOT_USER@
 WorkingDirectory=@NBOT_ROOT@
 Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=@NBOT_ROOT@
 ExecStart=@NBOT_PYTHON@ @NBOT_ROOT@/deploy/observation/run_v4_research.py
 Restart=on-failure
 RestartSec=5
