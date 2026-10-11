@@ -352,3 +352,37 @@ When V4 data exists, `/learning` reports only the useful V4 state:
 - `Order authority: NONE`.
 
 The research factory persists only the latest bounded cycle summary for this operator view; it does not retain extra raw Telegram telemetry.
+
+
+## V4 paper Champion-vs-Challenger implementation
+
+The paper examination layer is implemented separately from the 100-slot virtual research factory.
+
+Files:
+- `nbot/observation/v4_paper_contest.py`
+- `deploy/observation/run_v4_paper_contest.py`
+- `deploy/observation/v4_paper_admin.py`
+- `deploy/systemd/nbot-v4-paper-contest.service.in`
+- `data/observation/v4/paper_ledger.db`
+- `data/observation/v4/paper_contest.db`
+
+Contract:
+- frozen generation artifacts are loaded exactly from `generations.db`;
+- no V4 paper component has exchange order authority;
+- all models see the same completed five-minute candidate universe;
+- each examined model has at most one open paper position;
+- active paths use public WSS evidence and the same after-cost integer-R trailing policy;
+- WSS/process discontinuities are recorded as unscorable and do not count toward the checkpoint;
+- Gen-1 first runs a `BASELINE_EXAM` by itself;
+- after a Champion exists, every qualified Challenger starts a fresh `HEAD_TO_HEAD` epoch;
+- Champion and Challenger counters restart at zero for each head-to-head epoch so old Champion trades are not reused against a new Challenger;
+- each model must complete 100 scored paper trades in that contest before the contest becomes `REVIEW_REQUIRED`;
+- a model that reaches 100 first stops opening new paper trades while the other model finishes;
+- promotion is never automatic and does not grant live order authority;
+- explicit paper review uses `v4_paper_admin.py promote` or `reject` only after the contest is review-ready;
+- newer qualified generations remain queued while a current Challenger is under examination.
+
+Generation qualification is also frozen correctly:
+- only Gen-1 may be `BASELINE_READY`;
+- Gen-2+ must pass the held-out Challenger gate even if no Champion has been named yet;
+- training a newer generation never overwrites an active Challenger slot.

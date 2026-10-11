@@ -45,6 +45,14 @@ def _relevance(net_r: float) -> int:
     return 0
 
 
+def _qualification_status(existing_generations: int, metrics: dict[str, float]) -> str:
+    if int(existing_generations) == 0:
+        return "BASELINE_READY"
+    if float(metrics["mean_net_r"]) > 0 and float(metrics["positive_rate"]) >= .50:
+        return "CHALLENGER_READY"
+    return "RESEARCH_REJECTED"
+
+
 @dataclass(frozen=True)
 class ResearchRow:
     decision_id: str
@@ -250,11 +258,12 @@ class V4GenerationTrainer:
         metrics=_top1_metrics(valid,model.predict(valid[0]))
 
         state=self.store.state()
-        # Generation 1 is a provisional baseline. Later candidates must at least
-        # show positive held-out top-1 expectancy before consuming a paper test.
-        qualification=("BASELINE_READY" if state["champion_generation"] is None
-                       else "CHALLENGER_READY" if metrics["mean_net_r"]>0 and metrics["positive_rate"]>=.50
-                       else "RESEARCH_REJECTED")
+        existing_generations = len(self.store.existing_batches())
+        # Generation 1 alone is the provisional baseline. Every later generation
+        # must pass the held-out gate even while the first baseline is still in
+        # paper examination. This prevents a newer training batch from replacing
+        # the frozen active challenger merely because no Champion exists yet.
+        qualification = _qualification_status(existing_generations, metrics)
         artifact={"version":VERSION,"research_version":RESEARCH_VERSION,"batch_no":batch,
                   "trained_at_ms":int(time.time()*1000),"training_cutoff_event_ms":train_groups[-1][0],
                   "feature_names":list(ML_FEATURE_NAMES),"ranking_model":model.model_to_string(),
@@ -267,10 +276,13 @@ class V4GenerationTrainer:
             validation_mean=metrics["mean_net_r"],validation_positive=metrics["positive_rate"],
             qualification=qualification,now_ms=artifact["trained_at_ms"])
         if qualification=="BASELINE_READY":
-            # Baseline is eligible for the first paper-validation stage; this is
-            # not live-money authority.
+            # Gen-1 is eligible for the first paper-validation stage; this is not
+            # live-money authority.
             self.store.set_state("challenger_generation",generation)
         elif qualification=="CHALLENGER_READY" and state["challenger_generation"] is None:
+            # An active paper exam is frozen. Qualified newer generations remain
+            # durable in the registry and are picked up by the paper-contest queue
+            # after the current Challenger leaves that slot.
             self.store.set_state("challenger_generation",generation)
         return {"status":qualification,"generation":generation,"batch_no":batch,
                 "validation":metrics,"order_authority":"NONE"}

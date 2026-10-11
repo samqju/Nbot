@@ -11,6 +11,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from nbot.observation.decision_ledger import DecisionLedger
 from nbot.observation.v4_generation import V4GenerationTrainer
 from nbot.observation.v4_research import BATCH_SIZE, CAPACITY, V4ResearchStore
+from nbot.observation.v4_paper_contest import V4PaperContestStore
 
 
 def main() -> int:
@@ -20,6 +21,7 @@ def main() -> int:
     pending=len(ledger.pending_decisions())
     meta=V4ResearchStore(Path("data/observation/v4/research_meta.db")).status()
     generations=V4GenerationTrainer().status()
+    paper=V4PaperContestStore().status()
     resolved=counts["matured_research"]
     print(json.dumps({
         "capacity":CAPACITY,
@@ -30,6 +32,7 @@ def main() -> int:
         "next_training_at":((resolved//BATCH_SIZE)+1)*BATCH_SIZE,
         "research_batches":meta["batches"],
         "generation":generations,
+        "paper_contest":paper,
         "order_authority":"NONE",
     },sort_keys=True,indent=2))
     return 0
