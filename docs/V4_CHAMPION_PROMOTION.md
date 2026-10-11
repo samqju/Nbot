@@ -127,6 +127,12 @@ messages, time since the last message, queue depth, dropped messages, close
 code, exception type, and retry delay. These identify transport, freshness, and
 backpressure symptoms; they do not claim a reconnect root cause or change retry
 behavior. A running process receives the diagnostics after a safe restart.
+Use `/wss` on the Execution bot, or
+`.venv/bin/python deploy/observation/wss_diagnosis.py` on Observation, for a
+bounded read-only summary of existing journals. This works immediately without
+restarting research or Gen-1. Old runtime messages are explicitly unlabelled;
+new per-connection fields appear only after those processes safely load the
+new transport code.
 Do not restart research or the contest while doing so would discard active
 paths. Code installed on disk and the version loaded by each service must be
 reported separately during a staged deployment.

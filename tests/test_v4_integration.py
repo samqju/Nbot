@@ -179,3 +179,13 @@ class V4IntegrationTests(unittest.TestCase):
             for field in ('stream=aggTrade', 'connected_seconds=', 'messages=0', 'queue_depth=0', 'close_code=1006', 'exception=RuntimeError', 'retry_seconds='):
                 self.assertIn(field, output)
         asyncio.run(run())
+
+    def test_journal_diagnosis_distinguishes_old_and_new_without_exposing_logs(self):
+        from nbot.operator.wss_diagnosis import summarize
+        result = summarize(['WSS_RUNNER_RECONNECT attempt=0 reason=no close frame received or sent',
+            'WSS_RUNNER_RECONNECT stream=aggTrade messages=10 close_code=1006 reason=keepalive ping timeout credential=secret',
+            'WSS_MARKET_DATA_GAP symbol=BTCUSDT reason=gap'])
+        self.assertEqual(result['stream_counts'], {'unlabelled':1, 'aggTrade':1})
+        self.assertEqual(result['symbol_gap_events'], 1)
+        self.assertEqual(result['categories']['keepalive_timeout'], 1)
+        self.assertNotIn('secret', json.dumps(result))

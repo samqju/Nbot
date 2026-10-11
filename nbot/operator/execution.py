@@ -600,6 +600,8 @@ class ExecutionOperatorSurface:
                 self._remote_observation_status(view="learning", title="LEARNING PROGRESS")
             elif command == '/champion':
                 self._paper_review_command(text)
+            elif command == '/wss':
+                self._remote_observation_status(view='wss', title='WSS RECONNECT DIAGNOSIS')
             elif command == "/disable":
                 set_operator_entry_block(self.repo_root, self.profile, blocked=True)
                 self.worker.disable_new_entries()
@@ -620,6 +622,7 @@ class ExecutionOperatorSurface:
                 body += "\n\nReplies and alerts are posted to the configured channel. Only /enable and /disable change entry state."
                 if self.profile == 'live-paper':
                     body += '\n/champion - Paper exam, gates, and explicit approve/reject commands. Promotion changes only the paper model role.'
+                    body += '\n/wss - Read-only Observation reconnect diagnosis.'
                 self.command_dispatcher.send_info("BOT COMMANDS", body)
             elif command:
                 self.command_dispatcher.send_warning("UNKNOWN COMMAND", f"{html.escape(command)}\nUse /help.")

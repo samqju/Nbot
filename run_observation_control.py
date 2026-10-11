@@ -112,6 +112,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     from nbot.observation.v4_operator import V4PaperOperator
     paper_operator = V4PaperOperator(root) if profile.name == 'live-paper' else None
+    def operator_status(view):
+        if view == 'v4-review' and paper_operator:
+            return paper_operator.status()
+        if view == 'wss':
+            from nbot.operator.wss_diagnosis import wss_status
+            return wss_status()
+        return operator_status_provider.status(view)
     server = ObservationControlServer(
         target=target,
         auth_token=auth_token,
@@ -119,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
         port=args.control_port,
         tls_certfile=_optional_path(args.control_tls_cert),
         tls_keyfile=_optional_path(args.control_tls_key),
-        operator_status_provider=lambda view: paper_operator.status() if view == 'v4-review' and paper_operator else operator_status_provider.status(view),
+        operator_status_provider=operator_status,
         paper_review_provider=paper_operator.review if paper_operator else None,
     )
 
