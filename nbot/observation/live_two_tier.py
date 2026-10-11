@@ -318,6 +318,13 @@ class ResearchWssFeed:
         if kind == "disconnected":
             self.runtime.replays.invalidate_paths(value)
             return
+        if kind == "market_data_gap":
+            symbol = str((value or {}).get("symbol") or "") if isinstance(value, dict) else ""
+            if symbol:
+                self.runtime.replays.invalidate_paths((symbol,))
+                reason = str((value or {}).get("reason") or "WSS_MARKET_DATA_GAP")
+                self.last_error = f"{reason}:{symbol}"
+            return
         if kind != "aggTrade" or not isinstance(value, AggTrade):
             return
         try:
@@ -327,6 +334,20 @@ class ResearchWssFeed:
         except Exception as exc:
             self.last_error = f"{type(exc).__name__}:{exc}"
 
+    def _shard_event_sink(self, shard):
+        # bookTicker availability affects fresh entry pricing, but it is not
+        # the chronology used to resolve active research paths. Only an
+        # aggTrade transport disconnect can invalidate every symbol on that
+        # shard. Symbol-local market-data gaps are handled separately.
+        is_agg_trade = any(str(stream).endswith("@aggTrade") for stream in shard.streams)
+
+        def sink(kind: str, value: Any) -> None:
+            if kind == "disconnected" and not is_agg_trade:
+                return
+            self._on_market_event(kind, value)
+
+        return sink
+
     async def _run(self, shards) -> None:
         self.loop = asyncio.get_running_loop()
         self.runners = [
@@ -334,7 +355,7 @@ class ResearchWssFeed:
                 url=shard.combined_url,
                 state=self.state,
                 symbols=shard.symbols,
-                event_sink=self._on_market_event,
+                event_sink=self._shard_event_sink(shard),
             )
             for shard in shards
         ]
