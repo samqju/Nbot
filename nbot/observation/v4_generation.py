@@ -45,6 +45,14 @@ def _relevance(net_r: float) -> int:
     return 0
 
 
+def _qualification_status(existing_generations: int, metrics: dict[str, float]) -> str:
+    if int(existing_generations) == 0:
+        return "BASELINE_READY"
+    if float(metrics["mean_net_r"]) > 0 and float(metrics["positive_rate"]) >= .50:
+        return "CHALLENGER_READY"
+    return "RESEARCH_REJECTED"
+
+
 @dataclass(frozen=True)
 class ResearchRow:
     decision_id: str
@@ -255,12 +263,7 @@ class V4GenerationTrainer:
         # must pass the held-out gate even while the first baseline is still in
         # paper examination. This prevents a newer training batch from replacing
         # the frozen active challenger merely because no Champion exists yet.
-        if existing_generations == 0:
-            qualification = "BASELINE_READY"
-        elif metrics["mean_net_r"] > 0 and metrics["positive_rate"] >= .50:
-            qualification = "CHALLENGER_READY"
-        else:
-            qualification = "RESEARCH_REJECTED"
+        qualification = _qualification_status(existing_generations, metrics)
         artifact={"version":VERSION,"research_version":RESEARCH_VERSION,"batch_no":batch,
                   "trained_at_ms":int(time.time()*1000),"training_cutoff_event_ms":train_groups[-1][0],
                   "feature_names":list(ML_FEATURE_NAMES),"ranking_model":model.model_to_string(),
