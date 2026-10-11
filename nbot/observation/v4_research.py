@@ -312,7 +312,7 @@ class V4ResearchFactory:
             decision = FrozenDecision(
                 decision_id=decision_id,
                 event_id=f"V4LIVE5M:{int(event_open_ms)}",
-                decision_time_ms=int(event_open_ms) + INTERVAL_MS - 1,
+                decision_time_ms=max(int(event_open_ms) + INTERVAL_MS, now_ms),
                 symbol=candidate.symbol,
                 side=candidate.side,
                 setup_id=(candidate.setup_tags[0]["id"] if candidate.setup_tags else "MODEL_ONLY"),
