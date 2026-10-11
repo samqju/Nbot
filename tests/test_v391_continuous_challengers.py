@@ -125,6 +125,32 @@ class V391ContinuousChallengerTests(unittest.TestCase):
         self.assertEqual(len(ridge_row), len(RIDGE_COLUMNS))
         self.memory.replace_ridge_state(ridge_row)
 
+    def test_future_records_skip_overlap_before_decoding_and_verify_selected_payloads(self):
+        from nbot.observation.retention import _decode_training_blob
+        from nbot.observation.causal_ridge import LABEL_HORIZON_MS
+        state = RidgeSufficientStatistics.empty()
+        self._append_events(100, state)
+        cycle = ContinuousChallengerCycle(self.memory, release_sha=self.release_sha)
+        expected = []
+        boundary = 0
+        for event in range(300_000, self.next_event, 300_000):
+            if event > boundary:
+                expected.append(event)
+                boundary = event + LABEL_HORIZON_MS
+        with mock.patch('nbot.observation.research_memory._decode_training_blob',
+                        wraps=_decode_training_blob) as decode:
+            actual = [r['event_open_ms'] for r in cycle._future_records(0)]
+            self.assertEqual(actual, expected)
+            self.assertEqual(decode.call_count, len(expected))
+        self.assertEqual(self.memory.count_event_slots(after_event_ms=0,
+            spacing_ms=LABEL_HORIZON_MS, limit=40), len(expected))
+        with self.memory._connect() as conn:
+            conn.execute('UPDATE research_memory_events SET training_blob=? WHERE event_open_ms=?',
+                         (b'corrupt', expected[0]))
+        # A display count never authorizes the model: actual evidence decoding fails.
+        with self.assertRaises(Exception):
+            list(cycle._future_records(0))
+
     def test_first_cycle_freezes_research_only_artifacts_and_waits_for_future(self):
         state = RidgeSufficientStatistics.empty()
         self._append_events(25, state)

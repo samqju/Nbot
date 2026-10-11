@@ -207,3 +207,16 @@ python3 deploy/observation/benchmark_learner.py
 
 The script uses a temporary data directory and repository test fixtures. Do not
 run it alongside production research on a 1 GB VPS.
+# Learning reports on small servers
+
+`/learning` reuses its report for up to 30 seconds. This reduces repeated CPU
+and database work if you request it several times. The report includes its
+generation timestamp in the API response. Trading health and trade requests
+always read current state; they do not use this report cache.
+
+Future test progress is counted from indexed market-event dates without
+unpacking every stored market record. This number is progress information,
+not proof that the data is valid. Actual model evaluation still checks archive
+digests, data contracts and outcomes before accepting a model. Evaluation also
+skips overlapping dates before decoding records, reducing wasted CPU and RAM.
+

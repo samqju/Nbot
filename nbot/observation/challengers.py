@@ -459,7 +459,9 @@ class ContinuousChallengerCycle:
     def _future_records(self, after_event_ms):
         # No shared future candles between validation and test examples.
         boundary = after_event_ms
-        with closing(self.memory.iter_event_records(after_event_ms=after_event_ms)) as records:
+        with closing(self.memory.iter_event_records(
+            after_event_ms=after_event_ms, minimum_spacing_ms=LABEL_HORIZON_MS + 1
+        )) as records:
             for record in records:
                 event = int(record["event_open_ms"])
                 if event > boundary:
@@ -743,9 +745,12 @@ class ContinuousChallengerCycle:
         future = None
         if latest is not None:
             cutoff = int(latest.get("evaluation_after_event_ms", latest["training_cutoff_event_ms"]))
-            with closing(self._future_records(cutoff)) as records:
-                count = sum(1 for _ in islice(records, self.config.validation_events + self.config.test_events))
+            count = self.memory.count_event_slots(
+                after_event_ms=cutoff, spacing_ms=LABEL_HORIZON_MS,
+                limit=self.config.validation_events + self.config.test_events,
+            )
             future = {
+                "count_quality": "METADATA_ONLY_EVALUATION_STILL_VERIFIES_ARCHIVES",
                 "training_cutoff_event_ms": cutoff,
                 "available_future_events": count,
                 "required_future_events": self.config.validation_events + self.config.test_events,

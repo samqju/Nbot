@@ -10,11 +10,13 @@ modules.
 from __future__ import annotations
 
 import html
+import copy
 import json
 from pathlib import Path
 import subprocess
 import sqlite3
 import time
+import threading
 from contextlib import closing
 from typing import Any, Mapping
 
@@ -403,6 +405,9 @@ class ObservationReadOnlyStatusProvider:
     def __init__(self, *, repo_root: Path, target: Any) -> None:
         self.repo_root = Path(repo_root)
         self.target = target
+        self._learning_cache = None
+        self._learning_cache_at = 0.0
+        self._learning_status_lock = threading.Lock()
 
     def _admin_json(self, command: tuple[str, ...]) -> dict[str, Any]:
         proc = subprocess.run(
@@ -467,6 +472,30 @@ class ObservationReadOnlyStatusProvider:
         normalized = str(view or "").strip().lower()
         if normalized not in PUBLIC_VIEWS:
             raise ValueError("OBSERVATION_OPERATOR_VIEW_INVALID")
+        if normalized != "learning":
+            return self._status_document(normalized)
+        # One builder at a time; concurrent Telegram requests must not spawn
+        # multiple research scans on a small VPS. Cache only informational data,
+        # never execution health or trade requests, and never cache failures.
+        if not self._learning_status_lock.acquire(blocking=False):
+            raise RuntimeError("LEARNING_REPORT_BUSY_RETRY_SHORTLY")
+        try:
+            if (self._learning_cache is not None
+                    and time.monotonic() - self._learning_cache_at < 30.0):
+                return copy.deepcopy(self._learning_cache)
+            result = self._status_document(normalized)
+            result["report_generated_at_ms"] = int(time.time() * 1000)
+            result["telegram_body"] = (
+                "Report snapshot (cached for up to 30 seconds).\n"
+                + result["telegram_body"]
+            )[:3500]
+            self._learning_cache = copy.deepcopy(result)
+            self._learning_cache_at = time.monotonic()
+            return result
+        finally:
+            self._learning_status_lock.release()
+
+    def _status_document(self, normalized: str) -> dict[str, Any]:
         document = self._document(normalized)
         if normalized in {"observation", "recommendation"}:
             body = _format_observation(document)
