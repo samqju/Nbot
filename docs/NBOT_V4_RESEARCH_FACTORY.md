@@ -236,7 +236,7 @@ Latest user-reported V4 status in this conversation:
 
 - capacity: 100
 - open_pending: 100
-- resolved: 35
+- resolved: 124
 - unresolved: 0
 - next_training_at: 1000
 - research_batches: []
@@ -292,3 +292,14 @@ systemctl is-active nbot-observation-live.service
 systemctl is-active nbot-v4-research.service
 systemctl is-active nbot-v4-training.timer
 ```
+
+## Current small-VPS training safety limits
+
+For the current ~1 GiB Observation VPS, V4 training is intentionally capped at:
+
+- `CPUQuota=35%`
+- `MemoryHigh=256M`
+- `MemoryMax=384M`
+- `Nice=10`
+
+These limits protect the continuous Observation/WSS research process. If a future generation cannot train within these limits, prefer moving training to a separate VPS rather than starving real-time research.
