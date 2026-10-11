@@ -32,6 +32,7 @@ OPTIONAL_UNIT_NAMES = (
     "nbot-v4-research.service",
     "nbot-v4-training.service",
     "nbot-v4-training.timer",
+    "nbot-v4-paper-contest.service",
 )
 
 
