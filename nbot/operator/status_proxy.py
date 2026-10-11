@@ -495,8 +495,11 @@ def _format_learning(data: Mapping[str, Any]) -> str:
         f"Legacy learner: {_e(str(data.get('status') or 'unknown').replace('_', ' ').lower())}\n"
         f"Active model test: {_e(active.get('model_version') or 'none')}\n"
         f"Future evidence: {_e(future.get('available_future_events'))}"
-        f"/{_e(future.get('required_future_events'))}\n"
+        f" / {_e(future.get('required_future_events'))}\n"
+        f"Tests passed: {_e(challengers.get('passed_windows'))}\n"
+        f"Tests rejected: {_e(challengers.get('rejected_windows'))}\n"
         f"Research outcomes: {_e(ledger.get('matured_research'))}\n"
+        "These counts alone do not prove improving trading profits.\n"
         "Order authority: NONE"
     )
 
