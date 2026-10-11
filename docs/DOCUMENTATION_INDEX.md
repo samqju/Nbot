@@ -1,5 +1,7 @@
 # Documentation index and current bot behavior
 
+**Continuing in a new chat:** read the [project handover](PROJECT_HANDOFF.md) for the development history, verified deployment checkpoint, important decisions and remaining work.
+
 **Current detailed-outcome learning:** [Automatic paper learning from accepted and rejected opportunities](DETAILED_OUTCOME_LEARNING.md) documents the V3 tick-outcome bridge, future evaluation, automatic paper-model replacement, rollback and resource limits. V2 remains the fallback.
 
 **2026-10-05 command audit:** [All-mode operator commands](ALL_MODES_COMMANDS.md)
