@@ -132,6 +132,10 @@ Outstanding priorities:
 
 ## Read these documents before editing
 
+- [Enforced V4 paper Champion promotion](V4_CHAMPION_PROMOTION.md) — numerical
+  promotion gates, immutable proof checks, failed-review behavior, and durable
+  recovery. A model completing 100 trades is not automatically eligible.
+
 - [Documentation index](DOCUMENTATION_INDEX.md)
 - [Beginner two-VPS deployment guide](TWO_VPS_BEGINNER_GUIDE.md)
 - [Three trading modes](TRADING_MODES.md)

@@ -22,6 +22,7 @@ from typing import Any
 
 from .selective_ml import ML_FEATURE_NAMES, augment_vector, _ml_imports
 from .v4_research import BATCH_SIZE, VERSION as RESEARCH_VERSION
+from .v4_promotion import connect
 
 VERSION = "NBOT_V4_GENERATION_V1"
 AUTHORITY = "V4_MODEL_RESEARCH_ONLY_NO_ORDER_AUTHORITY"
@@ -70,7 +71,7 @@ class V4GenerationStore:
 
     def initialize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.path) as conn:
+        with connect(self.path) as conn:
             conn.executescript("""
             PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS generations(
@@ -92,10 +93,20 @@ class V4GenerationStore:
             );
             INSERT OR IGNORE INTO state VALUES('champion_generation', NULL);
             INSERT OR IGNORE INTO state VALUES('challenger_generation', NULL);
+            CREATE TABLE IF NOT EXISTS paper_review_outbox(
+                contest_path TEXT NOT NULL,
+                contest_id INTEGER NOT NULL,
+                decision TEXT NOT NULL,
+                reviewed_at_ms INTEGER NOT NULL,
+                report_json TEXT NOT NULL,
+                champion_generation INTEGER,
+                applied INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(contest_path,contest_id)
+            );
             """)
     def existing_batches(self) -> set[int]:
         self.initialize()
-        with sqlite3.connect(self.path) as conn:
+        with connect(self.path) as conn:
             return {int(r[0]) for r in conn.execute("SELECT batch_no FROM generations")}
     def save_generation(self, *, batch_no: int, artifact: dict[str, Any],
                         training_rows: int, training_events: int, validation_events: int,
@@ -104,7 +115,7 @@ class V4GenerationStore:
         self.initialize()
         encoded = json.dumps(artifact, sort_keys=True, separators=(",", ":"), allow_nan=False)
         digest = hashlib.sha256(encoded.encode()).hexdigest()
-        with sqlite3.connect(self.path) as conn:
+        with connect(self.path) as conn:
             generation = int(conn.execute("SELECT COALESCE(MAX(generation),0)+1 FROM generations").fetchone()[0])
             conn.execute(
                 """INSERT INTO generations VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
@@ -117,17 +128,27 @@ class V4GenerationStore:
         if key not in {"champion_generation", "challenger_generation"}:
             raise ValueError("V4_STATE_KEY_INVALID")
         self.initialize()
-        with sqlite3.connect(self.path) as conn:
+        with connect(self.path) as conn:
             conn.execute("UPDATE state SET value=? WHERE key=?",
                          (None if generation is None else str(int(generation)), key))
     def state(self) -> dict[str, int | None]:
         self.initialize()
-        with sqlite3.connect(self.path) as conn:
+        with connect(self.path) as conn:
             rows = dict(conn.execute("SELECT key,value FROM state"))
         return {k: None if v is None else int(v) for k,v in rows.items()}
+    def assign_challenger_if_empty(self, generation: int) -> bool:
+        self.initialize()
+        with connect(self.path) as conn:
+            changed = conn.execute(
+                """UPDATE state SET value=? WHERE key='challenger_generation'
+                   AND value IS NULL
+                   AND NOT EXISTS(SELECT 1 FROM paper_review_outbox WHERE applied=0)""",
+                (str(int(generation)),),
+            ).rowcount
+        return bool(changed)
     def generation(self, generation: int) -> dict[str, Any] | None:
         self.initialize()
-        with sqlite3.connect(self.path) as conn:
+        with connect(self.path) as conn:
             row = conn.execute(
                 "SELECT artifact_json,artifact_digest,qualification_status FROM generations WHERE generation=?",
                 (int(generation),),
@@ -143,7 +164,7 @@ def load_rows(ledger_path: str | Path, *, through_outcome: int) -> list[Research
     path = Path(ledger_path)
     if not path.is_file():
         return []
-    with sqlite3.connect(path) as conn:
+    with connect(path) as conn:
         rows = conn.execute(
             """SELECT d.decision_id,d.event_id,d.symbol,d.side,d.payload_json,
                       o.payload_json,o.matured_at_ms
@@ -233,7 +254,7 @@ class V4GenerationTrainer:
 
     def ready_batches(self) -> list[int]:
         if not self.research_meta_path.is_file(): return []
-        with sqlite3.connect(self.research_meta_path) as conn:
+        with connect(self.research_meta_path) as conn:
             rows=conn.execute("SELECT batch_no FROM v4_batches WHERE status='READY_FOR_TRAINING' ORDER BY batch_no").fetchall()
         done=self.store.existing_batches()
         return [int(r[0]) for r in rows if int(r[0]) not in done]
@@ -278,12 +299,12 @@ class V4GenerationTrainer:
         if qualification=="BASELINE_READY":
             # Gen-1 is eligible for the first paper-validation stage; this is not
             # live-money authority.
-            self.store.set_state("challenger_generation",generation)
+            self.store.assign_challenger_if_empty(generation)
         elif qualification=="CHALLENGER_READY" and state["challenger_generation"] is None:
             # An active paper exam is frozen. Qualified newer generations remain
             # durable in the registry and are picked up by the paper-contest queue
             # after the current Challenger leaves that slot.
-            self.store.set_state("challenger_generation",generation)
+            self.store.assign_challenger_if_empty(generation)
         return {"status":qualification,"generation":generation,"batch_no":batch,
                 "validation":metrics,"order_authority":"NONE"}
 

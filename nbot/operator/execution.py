@@ -14,6 +14,7 @@ import json
 import logging
 from pathlib import Path
 import time
+import threading
 from typing import Callable, Mapping
 
 from nbot.common.atomic_io import atomic_write_json, atomic_write_text
@@ -96,6 +97,7 @@ class ExecutionOperatorSurface:
         runtime_mode: str | None = None,
         position_manage_warn_ms: float = 1000.0,
         observation_status_reader: Callable[[str], Mapping[str, object]] | None = None,
+        paper_review_writer: Callable[[Mapping[str, object]], Mapping[str, object]] | None = None,
     ) -> None:
         self.repo_root = Path(repo_root)
         self.profile = profile
@@ -117,8 +119,12 @@ class ExecutionOperatorSurface:
         self.runtime_mode = None if runtime_mode is None else str(runtime_mode).strip() or None
         self.position_manage_warn_ms = max(1.0, float(position_manage_warn_ms))
         self.observation_status_reader = observation_status_reader
+        self.paper_review_writer = paper_review_writer
+        self._review_stop = threading.Event()
+        self._review_thread = None
         paths = ExecutionStatePaths.for_profile(self.repo_root, profile)
         self.operator_state_path = paths.base_dir / OPERATOR_STATE_FILE
+        self.review_notification_path = paths.base_dir / 'paper_review_notification.json'
         self._state = self._load_operator_state()
         self._listener = TelegramCommandListener(
             command_telegram,
@@ -195,6 +201,9 @@ class ExecutionOperatorSurface:
             body += f"\nMode: {html.escape(mode)}\nBinance private writes: false"
         self.dispatcher.send_info("EXECUTION WORKER STARTED", body)
         self._listener.start()
+        if self.profile == 'live-paper' and self.observation_status_reader and self.paper_review_writer and self.telegram.config.commands_enabled:
+            self._review_thread = threading.Thread(target=self._poll_paper_review, name='nbot-paper-review-notify', daemon=True)
+            self._review_thread.start()
         self.system_log.info(
             "EXECUTION_OPERATOR_SURFACE_STARTED profile=%s telegram=%s commands=%s",
             self.profile,
@@ -203,6 +212,9 @@ class ExecutionOperatorSurface:
         )
 
     def stop(self) -> None:
+        self._review_stop.set()
+        if self._review_thread is not None:
+            self._review_thread.join(timeout=1)
         self._listener.stop()
         self.dispatcher.send_info("EXECUTION WORKER STOPPED", f"Profile: {html.escape(self.profile)}")
         self.dispatcher.stop()
@@ -532,6 +544,47 @@ class ExecutionOperatorSurface:
         )
         self.command_dispatcher.send_info(title, body)
 
+    def _poll_paper_review(self) -> None:
+        # Remote polling/Telegram delivery never runs in the capital hot path.
+        while not self._review_stop.is_set():
+            try:
+                self._notify_paper_review()
+            except Exception as exc:
+                self.system_log.warning('V4_REVIEW_NOTIFY_FAILED error=%s', type(exc).__name__)
+            self._review_stop.wait(60)
+
+    def _notify_paper_review(self) -> None:
+        payload = self.observation_status_reader('v4-review')
+        if payload.get('order_authority') != 'NONE':
+            raise ValueError('V4_REVIEW_AUTHORITY_INVALID')
+        document = payload['document']
+        if not document.get('review_ready'):
+            return
+        contest = document['contest']
+        identity = [contest['contest_id'], contest['challenger_generation']]
+        if self.review_notification_path.is_file():
+            saved = json.loads(self.review_notification_path.read_text(encoding='utf-8'))
+            if saved.get('review') == identity:
+                return
+        if self.telegram.send_info('PAPER EXAM READY FOR YOUR REVIEW', payload['telegram_body']) is not None:
+            atomic_write_json(self.review_notification_path, {'review': identity}, mode=0o600)
+
+    def _paper_review_command(self, text: str) -> None:
+        if self.profile != 'live-paper' or self.paper_review_writer is None:
+            raise ValueError('V4_PAPER_REVIEW_NOT_CONFIGURED')
+        args = text.strip().split()[1:]
+        if not args:
+            self._remote_observation_status(view='v4-review', title='V4 PAPER CHAMPION REVIEW')
+            return
+        if len(args) != 3 or args[0] not in {'approve', 'reject'}:
+            self.command_dispatcher.send_warning('REVIEW COMMAND', 'Use /champion to see the current exam and its exact approval or rejection command.')
+            return
+        result = self.paper_review_writer({'action': args[0], 'contest_id': int(args[1]), 'generation': int(args[2])})
+        if result.get('order_authority') != 'NONE':
+            raise ValueError('V4_REVIEW_AUTHORITY_INVALID')
+        self.command_dispatcher.send_info('PAPER REVIEW RECORDED',
+            f"Contest {int(result['contest_id'])}: {html.escape(result['decision'])}\nPaper Champion: {result.get('champion_generation') or 'none'}\nEntry enablement is unchanged. Real-money execution remains disabled.")
+
     def handle_command(self, text: str) -> None:
         command = str(text or "").strip().split()[0].split("@", 1)[0].lower() if str(text or "").strip() else ""
         try:
@@ -545,6 +598,10 @@ class ExecutionOperatorSurface:
                 self.command_dispatcher.send_info("DAILY PNL", self._pnl_body())
             elif command == "/learning":
                 self._remote_observation_status(view="learning", title="LEARNING PROGRESS")
+            elif command == '/champion':
+                self._paper_review_command(text)
+            elif command == '/wss':
+                self._remote_observation_status(view='wss', title='WSS RECONNECT DIAGNOSIS')
             elif command == "/disable":
                 set_operator_entry_block(self.repo_root, self.profile, blocked=True)
                 self.worker.disable_new_entries()
@@ -563,6 +620,9 @@ class ExecutionOperatorSurface:
             elif command == "/help":
                 body = "\n".join(f"/{name} - {description}" for name, description in EXECUTION_TELEGRAM_COMMANDS)
                 body += "\n\nReplies and alerts are posted to the configured channel. Only /enable and /disable change entry state."
+                if self.profile == 'live-paper':
+                    body += '\n/champion - Paper exam, gates, and explicit approve/reject commands. Promotion changes only the paper model role.'
+                    body += '\n/wss - Read-only Observation reconnect diagnosis.'
                 self.command_dispatcher.send_info("BOT COMMANDS", body)
             elif command:
                 self.command_dispatcher.send_warning("UNKNOWN COMMAND", f"{html.escape(command)}\nUse /help.")

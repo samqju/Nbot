@@ -179,6 +179,7 @@ def _operator_surface(
     enable_policy,
     runtime_mode: str | None = None,
     observation_status_reader=None,
+    paper_review_writer=None,
 ) -> ExecutionOperatorSurface:
     paths = execution_log_paths(repo_root, profile_name)
     system_log = configure_logging(
@@ -206,6 +207,7 @@ def _operator_surface(
         runtime_mode=runtime_mode,
         position_manage_warn_ms=warn_ms,
         observation_status_reader=observation_status_reader,
+        paper_review_writer=paper_review_writer,
     )
 
 
@@ -734,6 +736,7 @@ def run_testnet_runtime(
         repo_root=repo_root, profile_name=profile.name, worker=worker,
         environment=environment, enable_policy=enable_policy,
         observation_status_reader=getattr(remote_client, "operator_status", None),
+        paper_review_writer=getattr(remote_client, "paper_review", None),
     )
     stop_requested = False
 
@@ -883,7 +886,8 @@ def run_learned_paper_runtime(*, repo_root: Path, environment: Mapping[str, str]
         repo_root=repo_root, profile_name=profile.name, worker=worker,
         environment=environment, enable_policy=enable_policy,
         runtime_mode="LIVE_EXPLICIT_TRIAL" if is_live else "LIVE_PAPER_LEARNED",
-        observation_status_reader=getattr(client, "operator_status", None))
+        observation_status_reader=getattr(client, "operator_status", None),
+        paper_review_writer=getattr(client, "paper_review", None))
     stop_requested = False
 
     def request_stop(_signum, _frame):
@@ -1020,6 +1024,7 @@ def run_live_paper_runtime(
         environment=environment, enable_policy=enable_policy,
         runtime_mode="LIVE_PAPER_OPERATIONAL_CANARY",
         observation_status_reader=getattr(remote_client, "operator_status", None),
+        paper_review_writer=getattr(remote_client, "paper_review", None),
     )
     stop_requested = False
 

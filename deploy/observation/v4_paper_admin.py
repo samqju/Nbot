@@ -19,14 +19,18 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.action == "status":
-        result = V4PaperContestStore().status()
+        result = {**V4PaperContestStore().status(),
+                  "promotion_review": V4PaperReviewAdmin().promotion_status()}
     else:
         admin = V4PaperReviewAdmin()
-        result = (
-            admin.promote_challenger()
-            if args.action == "promote"
-            else admin.reject_challenger()
-        )
+        try:
+            result = (admin.promote_challenger() if args.action == "promote"
+                      else admin.reject_challenger())
+        except ValueError as exc:
+            print(json.dumps({"status": "BLOCKED", "reason": str(exc),
+                              "promotion_review": admin.promotion_status(),
+                              "order_authority": "NONE"}, sort_keys=True, indent=2))
+            return 1
     print(json.dumps(result, sort_keys=True, indent=2))
     return 0
 
