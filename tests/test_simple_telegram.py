@@ -31,14 +31,14 @@ class SimpleTelegramTests(unittest.TestCase):
             reader.assert_not_called()
             self.assertEqual(s.worker.enable_calls+s.worker.disable_calls, 0)
 
-    def test_private_commands_authorize_user_and_chat_and_reply_privately(self):
+    def test_private_commands_authorize_user_and_chat_and_reply_to_channel(self):
         with tempfile.TemporaryDirectory() as td:
             s = self.surface(td, separate=True)
             calls = []
             s.telegram._requester = lambda method, payload, timeout: calls.append(dict(payload)) or {"ok":True,"result":{"message_id":1}}
             s._listener.client._requester = s.telegram._requester
             self.assertEqual(s.dispatcher.client.config.chat_id, "-100123")
-            self.assertEqual(s.command_dispatcher.client.config.chat_id, "456")
+            self.assertEqual(s.command_dispatcher.client.config.chat_id, "-100123")
             # Same user in the channel, or another user in the private chat, cannot act.
             for i, (chat, user) in enumerate([(-100123,456),(456,999)]):
                 s._listener._dispatch({"update_id":i,"message":{"chat":{"id":chat},"from":{"id":user},"text":"/disable"}})
@@ -47,7 +47,7 @@ class SimpleTelegramTests(unittest.TestCase):
             self.assertEqual(s.worker.disable_calls, 1)
             s.command_dispatcher.stop()
             self.assertTrue(calls)
-            self.assertTrue(all(p["chat_id"]=="456" for p in calls))
+            self.assertTrue(all(p["chat_id"]=="-100123" for p in calls))
 
     def test_status_explains_remote_wait_without_mutating_worker(self):
         reader = Mock(return_value={"order_authority":"NONE","document":{

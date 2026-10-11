@@ -29,6 +29,9 @@ OPTIONAL_UNIT_NAMES = (
     "nbot-observation-testnet-control.service",
     "nbot-observation-live-paper-control.service",
     "nbot-challenger-cycle.service",
+    "nbot-v4-research.service",
+    "nbot-v4-training.service",
+    "nbot-v4-training.timer",
 )
 
 

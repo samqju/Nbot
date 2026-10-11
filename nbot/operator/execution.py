@@ -26,14 +26,14 @@ OPERATOR_BLOCK_FILE = "OPERATOR_ENTRIES_DISABLED"
 OPERATOR_STATE_FILE = "operator_state.json"
 
 EXECUTION_TELEGRAM_COMMANDS: tuple[tuple[str, str], ...] = (
-    ("help", "Show the eight commands"),
-    ("status", "Bot status and why it is waiting"),
-    ("position", "Current trade and stop-loss"),
+    ("status", "Execution state"),
+    ("position", "Current position"),
     ("recent", "Last completed trade"),
-    ("pnl", "Today: profit, loss and risk limits"),
-    ("learning", "Learning progress and model tests"),
-    ("enable", "Allow new trades after safety checks"),
-    ("disable", "Pause new trades; manage the open trade"),
+    ("pnl", "Today's paper PnL"),
+    ("learning", "V4 research and model progress"),
+    ("enable", "Allow new entries after safety checks"),
+    ("disable", "Pause new entries"),
+    ("help", "Show commands"),
 )
 
 
@@ -101,15 +101,16 @@ class ExecutionOperatorSurface:
         self.profile = profile
         self.worker = worker
         self.telegram = telegram
+        # Main dispatcher is the single outbound destination. Configure its
+        # chat_id as the Telegram channel ID. A separate command_chat_id is
+        # input-only and can never redirect replies away from the channel.
         self.dispatcher = TelegramDispatcher(telegram, logger=system_log)
-        self._command_dispatcher = None
         command_telegram = telegram
         command_chat = telegram.config.command_chat_id
         if command_chat and command_chat != telegram.config.chat_id:
             command_telegram = TelegramClient(
                 replace(telegram.config, chat_id=command_chat),
                 logger=system_log, requester=telegram._requester)
-            self._command_dispatcher = TelegramDispatcher(command_telegram, logger=system_log)
         self.system_log = system_log
         self.trade_log = trade_log
         self.enable_policy = enable_policy
@@ -128,8 +129,8 @@ class ExecutionOperatorSurface:
 
     @property
     def command_dispatcher(self):
-        # Share the existing dispatcher unless a separate command chat is set.
-        return self._command_dispatcher or self.dispatcher
+        # Command responses always go to the main outbound destination/channel.
+        return self.dispatcher
 
     def _default_state(self) -> dict[str, object]:
         return {
@@ -205,8 +206,6 @@ class ExecutionOperatorSurface:
         self._listener.stop()
         self.dispatcher.send_info("EXECUTION WORKER STOPPED", f"Profile: {html.escape(self.profile)}")
         self.dispatcher.stop()
-        if self._command_dispatcher is not None:
-            self._command_dispatcher.stop()
 
     def runtime_error(self, exc: BaseException) -> None:
         self.dispatcher.send_critical(
@@ -253,40 +252,24 @@ class ExecutionOperatorSurface:
         status = "OPEN (RECOVERED)" if recovered else "OPEN"
         return (
             f"📊 <b>TRADE {status}</b>\n\n"
-            f"Profile: {html.escape(self.profile)}\n"
-            f"Symbol: {html.escape(position.symbol)}\n"
-            f"Side: {html.escape(position.side)}\n"
+            f"{html.escape(position.symbol)} {html.escape(position.side)}\n"
             f"Entry: {_f(position.entry_price)}\n"
-            f"Initial Stop: {_f(position.initial_stop_price)}\n"
-            f"Current Stop: {_f(position.stop_price)} ✅\n"
-            f"Qty: {_f(position.quantity, 6)}\n"
+            f"Stop: {_f(position.stop_price)}\n"
             f"Risk: {_f(position.initial_risk_usd, 2)} USD\n"
-            f"MFE: {_signed(position.mfe_r, 'R')}\n"
-            f"MAE: {_signed(position.mae_r, 'R')}\n"
-            f"Authority: {html.escape(position.entry_authority)}\n"
-            f"Exit Policy: {html.escape(position.exit_policy_version)}\n"
-            f"Proposal: {html.escape(position.proposal_id)}\n"
+            f"MFE/MAE: {_signed(position.mfe_r, 'R')} / {_signed(position.mae_r, 'R')}\n"
             "Protection: VERIFIED"
         )
 
     def _close_panel(self, payload: Mapping[str, object], *, acked: bool) -> str:
         return (
             "✅ <b>TRADE CLOSED</b>\n\n"
-            f"Profile: {html.escape(str(payload.get('profile') or self.profile))}\n"
-            f"Symbol: {html.escape(str(payload.get('symbol') or 'N/A'))}\n"
-            f"Side: {html.escape(str(payload.get('side') or 'N/A'))}\n"
-            f"Entry: {_f(payload.get('entry_price'))}\n"
-            f"Exit: {_f(payload.get('exit_price'))}\n"
-            f"Final Stop: {_f(payload.get('final_stop_price'))}\n"
-            f"Qty: {_f(payload.get('quantity'), 6)}\n"
-            f"Risk: {_f(payload.get('initial_risk_usd'), 2)} USD\n"
-            f"PnL: {_signed(payload.get('realized_pnl_usd'), ' USD')}\n"
-            f"Result: {_signed(payload.get('r_multiple'), 'R')}\n"
-            f"MFE: {_signed(payload.get('mfe_r'), 'R')}\n"
-            f"MAE: {_signed(payload.get('mae_r'), 'R')}\n"
+            f"{html.escape(str(payload.get('symbol') or 'N/A'))} "
+            f"{html.escape(str(payload.get('side') or 'N/A'))}\n"
+            f"PnL: {_signed(payload.get('realized_pnl_usd'), ' USD')} | "
+            f"{_signed(payload.get('r_multiple'), 'R')}\n"
+            f"MFE/MAE: {_signed(payload.get('mfe_r'), 'R')} / {_signed(payload.get('mae_r'), 'R')}\n"
             f"Holding: {_duration_ms(payload.get('entry_timestamp_ms'), payload.get('closed_timestamp_ms'))}\n"
             f"Reason: {html.escape(str(payload.get('exit_reason') or 'UNKNOWN'))}\n"
-            f"Outcome: {html.escape(str(payload.get('outcome_id') or 'N/A'))}\n"
             f"Observation ACK: {'RECORDED' if acked else 'PENDING'}"
         )
 
@@ -434,26 +417,24 @@ class ExecutionOperatorSurface:
         snap = self.worker.state.snapshot
         pos = snap.open_position
         daily = snap.daily_risk
-        body = (
-            f"Profile: {html.escape(self.profile)}\n"
-            f"Entries enabled: {str(snap.entries_enabled).lower()}\n"
-            f"Operator block: {str(operator_entries_blocked(self.repo_root, self.profile)).lower()}\n"
-            f"Position: {'FLAT' if pos is None else html.escape(pos.symbol + ' ' + pos.side)}\n"
-            f"Entry inflight: {'NONE' if snap.entry_inflight is None else html.escape(snap.entry_inflight.proposal_id)}\n"
-            f"Pending outcomes: {self.worker.durable.outbox.pending_count()}\n"
-            f"Daily PnL: {_signed(daily.realized_pnl_usd, ' USD')}\n"
-            f"Daily halt: {str(daily.halted).lower()}\n"
-            f"Last event: {html.escape(snap.health.last_event or 'NONE')}"
-        )
-
         if daily.halted:
-            body += "\nNew trades paused: daily risk limit reached."
+            state = "HALTED"
         elif operator_entries_blocked(self.repo_root, self.profile) or not snap.entries_enabled:
-            body += "\nNew trades paused: entries are disabled."
+            state = "PAUSED"
         elif pos is not None:
-            body += "\nManaging the open trade; no second main position is allowed."
+            state = "MANAGING POSITION"
         else:
-            body += "\nWaiting for a valid trade suggestion."
+            state = "READY / WAITING"
+
+        body = (
+            f"Mode: {html.escape(self.runtime_mode or self.profile)}\n"
+            f"State: {state}\n"
+            f"Position: {'FLAT' if pos is None else html.escape(pos.symbol + ' ' + pos.side)}\n"
+            f"Daily PnL: {_signed(daily.realized_pnl_usd, ' USD')}\n"
+            f"Trades today: {daily.trades_closed}"
+        )
+        if daily.halted:
+            body += f"\nRisk halt: {html.escape(daily.halt_reason or 'ACTIVE')}"
         try:
             payload = self.observation_status_reader("recommendation") if self.observation_status_reader else None
             if not isinstance(payload, Mapping) or payload.get("order_authority") != "NONE":
@@ -462,19 +443,25 @@ class ExecutionOperatorSurface:
             if not isinstance(data, Mapping):
                 raise ValueError("READ_ONLY_STATUS_INVALID")
             ready = data.get("status") == "READY"
-            body += "\nLearning service: " + ("ready to suggest trades." if ready else "not ready.")
+            body += "\nLearning service: " + ("ready." if ready else "not ready.")
             reason = str(data.get("reason") or "").replace("_", " ").lower()
             if reason:
                 body += "\nReason: " + html.escape(reason)
         except Exception:
-            body += "\nLearning service status unavailable; open-trade management continues."
+            body += "\nLearning service status unavailable."
         return body
 
     def _position_body(self) -> str:
         pos = self.worker.state.open_position
         if pos is None:
-            return "Position: FLAT"
-        return self._open_panel(pos, recovered=False).replace("📊 <b>TRADE OPEN</b>\n\n", "")
+            return "FLAT"
+        return (
+            f"{html.escape(pos.symbol)} {html.escape(pos.side)}\n"
+            f"Entry: {_f(pos.entry_price)}\n"
+            f"Stop: {_f(pos.stop_price)}\n"
+            f"Risk: {_f(pos.initial_risk_usd, 2)} USD\n"
+            f"MFE/MAE: {_signed(pos.mfe_r, 'R')} / {_signed(pos.mae_r, 'R')}"
+        )
 
     def _health_body(self) -> str:
         health = asdict(self.worker.state.health)
@@ -485,21 +472,25 @@ class ExecutionOperatorSurface:
         if not rows:
             return "No completed trades."
         payload = rows[-1]["payload"]
-        return self._close_panel(payload, acked=not self._outcome_pending(str(payload.get("outcome_id") or ""))).replace(
-            "✅ <b>TRADE CLOSED</b>\n\n", ""
+        return (
+            f"{html.escape(str(payload.get('symbol') or 'N/A'))} "
+            f"{html.escape(str(payload.get('side') or 'N/A'))}\n"
+            f"PnL: {_signed(payload.get('realized_pnl_usd'), ' USD')} | "
+            f"{_signed(payload.get('r_multiple'), 'R')}\n"
+            f"Holding: {_duration_ms(payload.get('entry_timestamp_ms'), payload.get('closed_timestamp_ms'))}\n"
+            f"Reason: {html.escape(str(payload.get('exit_reason') or 'UNKNOWN'))}"
         )
 
     def _pnl_body(self) -> str:
         daily = self.worker.state.daily_risk
-        return (
-            f"UTC day: {html.escape(daily.utc_day or 'NOT_ROLLED')}\n"
+        body = (
             f"Realized: {_signed(daily.realized_pnl_usd, ' USD')}\n"
-            f"Peak realized: {_signed(daily.peak_realized_pnl_usd, ' USD')}\n"
-            f"Highest unrealized: {_signed(daily.highest_unrealized_usd, ' USD')}\n"
-            f"Trades closed: {daily.trades_closed}\n"
-            f"Halted: {str(daily.halted).lower()}\n"
-            f"Reason: {html.escape(daily.halt_reason or 'NONE')}"
+            f"Trades: {daily.trades_closed}\n"
+            f"Halted: {str(daily.halted).lower()}"
         )
+        if daily.halted:
+            body += f"\nReason: {html.escape(daily.halt_reason or 'ACTIVE')}"
+        return body
 
     def _remote_observation_status(self, *, view: str, title: str) -> None:
         """Display read-only Observation status on the Execution Telegram bot.
@@ -558,7 +549,7 @@ class ExecutionOperatorSurface:
                 set_operator_entry_block(self.repo_root, self.profile, blocked=True)
                 self.worker.disable_new_entries()
                 self.system_log.warning("OPERATOR_ENTRY_DISABLE source=TELEGRAM")
-                self.command_dispatcher.send_warning("NEW ENTRIES DISABLED", "Open-position management remains active.")
+                self.command_dispatcher.send_warning("NEW ENTRIES DISABLED", "Open position management continues.")
             elif command == "/enable":
                 allowed, reason = self.enable_policy()
                 if not allowed:
@@ -568,10 +559,10 @@ class ExecutionOperatorSurface:
                 set_operator_entry_block(self.repo_root, self.profile, blocked=False)
                 result = self.worker.enable_new_entries()
                 self.system_log.warning("OPERATOR_ENTRY_ENABLE source=TELEGRAM reconciliation=%s", result.status)
-                self.command_dispatcher.send_info("NEW ENTRIES ENABLED", f"Reconciliation: {html.escape(result.status)}")
+                self.command_dispatcher.send_info("NEW ENTRIES ENABLED", f"Safety check: {html.escape(result.status)}")
             elif command == "/help":
                 body = "\n".join(f"/{name} - {description}" for name, description in EXECUTION_TELEGRAM_COMMANDS)
-                body += "\n\nOnly /enable and /disable change trading.\n/disable keeps managing an open trade."
+                body += "\n\nReplies and alerts are posted to the configured channel. Only /enable and /disable change entry state."
                 self.command_dispatcher.send_info("BOT COMMANDS", body)
             elif command:
                 self.command_dispatcher.send_warning("UNKNOWN COMMAND", f"{html.escape(command)}\nUse /help.")
