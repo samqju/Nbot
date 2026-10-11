@@ -29,6 +29,7 @@ from .research_replay import ReplayHypothesis
 from .redesign_runtime import V3ResearchRuntime
 from .selective_ml import ML_FEATURE_NAMES, augment_vector, _ml_imports
 from .v4_generation import V4GenerationStore
+from .v4_promotion import connect, promotion_report, rows as promotion_rows
 from .v4_research import (
     HORIZON_MS,
     INTERVAL_MS,
@@ -92,7 +93,7 @@ class V4PaperContestStore:
 
     def initialize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.path) as conn:
+        with connect(self.path) as conn:
             conn.executescript("""
             PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS paper_models(
@@ -162,13 +163,13 @@ class V4PaperContestStore:
 
     def admitted_generations(self) -> set[int]:
         self.initialize()
-        with sqlite3.connect(self.path) as conn:
+        with connect(self.path) as conn:
             return {int(r[0]) for r in conn.execute("SELECT generation FROM paper_models")}
 
     def _register_model(
         self, generation: int, *, qualification: str, model_digest: str, now_ms: int
     ) -> None:
-        with sqlite3.connect(self.path) as conn:
+        with connect(self.path) as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO paper_models VALUES(?,?,?,?)",
                 (int(generation), str(qualification), str(model_digest), int(now_ms)),
@@ -184,7 +185,7 @@ class V4PaperContestStore:
         if champion == challenger:
             raise ValueError("V4_PAPER_CONTEST_SAME_MODEL")
         mode = "BASELINE_EXAM" if champion is None else "HEAD_TO_HEAD"
-        with sqlite3.connect(self.path) as conn:
+        with connect(self.path) as conn:
             row = conn.execute(
                 """SELECT contest_id,champion_generation,challenger_generation
                    FROM contests
@@ -217,7 +218,7 @@ class V4PaperContestStore:
                 generation, qualification=model.qualification,
                 model_digest=model.model_digest, now_ms=now_ms,
             )
-            with sqlite3.connect(self.path) as conn:
+            with connect(self.path) as conn:
                 conn.execute(
                     """INSERT INTO contest_models(
                         contest_id,generation,role,starting_balance_usd,status
@@ -228,7 +229,7 @@ class V4PaperContestStore:
 
     def active_contest(self) -> dict[str, Any] | None:
         self.initialize()
-        with sqlite3.connect(self.path) as conn:
+        with connect(self.path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """SELECT * FROM contests
@@ -239,7 +240,7 @@ class V4PaperContestStore:
 
     def contest_model_status(self, contest_id: int, generation: int) -> dict[str, Any] | None:
         self.initialize()
-        with sqlite3.connect(self.path) as conn:
+        with connect(self.path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM contest_models WHERE contest_id=? AND generation=?",
@@ -253,7 +254,7 @@ class V4PaperContestStore:
         score: float | None, rank: int | None, action: str, reason: str, now_ms: int
     ) -> None:
         self.initialize()
-        with sqlite3.connect(self.path) as conn:
+        with connect(self.path) as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO paper_decisions VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 (
@@ -268,7 +269,7 @@ class V4PaperContestStore:
         entry_price: float, one_r_price: float
     ) -> None:
         self.initialize()
-        with sqlite3.connect(self.path) as conn:
+        with connect(self.path) as conn:
             conn.execute(
                 """INSERT OR IGNORE INTO paper_trades(
                     decision_id,contest_id,generation,event_open_ms,symbol,side,
@@ -285,7 +286,7 @@ class V4PaperContestStore:
         exit_time_ms: int | None, exit_reason: str, source_digest: str
     ) -> None:
         self.initialize()
-        with sqlite3.connect(self.path) as conn:
+        with connect(self.path) as conn:
             row = conn.execute(
                 "SELECT contest_id,generation,status FROM paper_trades WHERE decision_id=?",
                 (decision_id,),
@@ -339,7 +340,7 @@ class V4PaperContestStore:
 
     def mark_unscorable(self, decision_id: str, *, reason: str) -> None:
         self.initialize()
-        with sqlite3.connect(self.path) as conn:
+        with connect(self.path) as conn:
             conn.execute(
                 """UPDATE paper_trades SET status='UNSCORABLE',exit_reason=?
                    WHERE decision_id=? AND status='OPEN'""",
@@ -351,8 +352,10 @@ class V4PaperContestStore:
     ) -> None:
         if decision not in {"PROMOTE", "REJECT"}:
             raise ValueError("V4_PAPER_REVIEW_DECISION_INVALID")
+        if decision == "PROMOTE":
+            raise ValueError("V4_PAPER_PROMOTION_REQUIRES_GATED_REVIEW_ADMIN")
         self.initialize()
-        with sqlite3.connect(self.path) as conn:
+        with connect(self.path) as conn:
             row = conn.execute(
                 "SELECT status FROM contests WHERE contest_id=?", (int(contest_id),)
             ).fetchone()
@@ -366,7 +369,7 @@ class V4PaperContestStore:
 
     def open_trades(self) -> list[dict[str, Any]]:
         self.initialize()
-        with sqlite3.connect(self.path) as conn:
+        with connect(self.path) as conn:
             conn.row_factory = sqlite3.Row
             return [dict(r) for r in conn.execute(
                 "SELECT * FROM paper_trades WHERE status='OPEN' ORDER BY entry_time_ms"
@@ -374,7 +377,7 @@ class V4PaperContestStore:
 
     def status(self) -> dict[str, Any]:
         self.initialize()
-        with sqlite3.connect(self.path) as conn:
+        with connect(self.path) as conn:
             conn.row_factory = sqlite3.Row
             contests = [dict(r) for r in conn.execute(
                 "SELECT * FROM contests ORDER BY contest_id DESC LIMIT 10"
@@ -446,42 +449,105 @@ class V4PaperContestStore:
 class V4PaperReviewAdmin:
     def __init__(
         self, *, generation_path: str | Path = "data/observation/v4/generations.db",
-        contest_path: str | Path = "data/observation/v4/paper_contest.db"
+        contest_path: str | Path = "data/observation/v4/paper_contest.db",
+        ledger_path: str | Path = "data/observation/v4/paper_ledger.db",
     ) -> None:
         self.generations = V4GenerationStore(generation_path)
         self.generations.initialize()
         self.store = V4PaperContestStore(contest_path)
         self.store.initialize()
+        self.ledger_path = Path(ledger_path)
+
+    def promotion_status(self, *, now_ms: int | None = None) -> dict[str, Any]:
+        now_ms = int(time.time() * 1000) if now_ms is None else int(now_ms)
+        try:
+            with connect(self.store.path.resolve().as_uri()+"?mode=ro", uri=True) as c, \
+                 connect(self.generations.path.resolve().as_uri()+"?mode=ro", uri=True) as g, \
+                 connect(self.ledger_path.resolve().as_uri()+"?mode=ro", uri=True) as ledger:
+                for conn in (c, g, ledger):
+                    conn.execute("PRAGMA query_only=ON")
+                    conn.execute("BEGIN")
+                return promotion_report(c, g, ledger, now_ms=now_ms)
+        except sqlite3.Error:
+            return {"eligible": False, "failed_checks": ["REVIEW_DATABASE_UNAVAILABLE"],
+                    "order_authority": "NONE", "automatic_promotion": False}
+
+    def recover_reviews(self) -> None:
+        """State + audit commit together; finish the second DB idempotently.
+
+        SQLite WAL does not guarantee atomic commits across attached databases.
+        The generation DB is the authoritative review decision; this outbox
+        recovers a crash between that commit and the contest closure.
+        """
+        path = str(self.store.path.resolve())
+        with connect(self.generations.path) as g:
+            g.execute("BEGIN IMMEDIATE")
+            pending = promotion_rows(g, "SELECT * FROM paper_review_outbox WHERE contest_path=? AND applied=0 ORDER BY contest_id", (path,))
+            for review in pending:
+                state = dict(g.execute("SELECT key,value FROM state"))
+                expected = review["champion_generation"]
+                if state.get("champion_generation") != (None if expected is None else str(expected)) or state.get("challenger_generation") is not None:
+                    raise ValueError("V4_PAPER_REVIEW_RECOVERY_STATE_CHANGED")
+                with connect(self.store.path) as c:
+                    c.execute("BEGIN IMMEDIATE")
+                    row = c.execute("SELECT status,review_decision FROM contests WHERE contest_id=?", (review["contest_id"],)).fetchone()
+                    if row == ("REVIEW_REQUIRED", None):
+                        c.execute("UPDATE contests SET status='CLOSED',review_decision=?,closed_at_ms=? WHERE contest_id=?",
+                                  (review["decision"], review["reviewed_at_ms"], review["contest_id"]))
+                    elif row != ("CLOSED", review["decision"]):
+                        raise ValueError("V4_PAPER_REVIEW_RECOVERY_CONTEST_CHANGED")
+                g.execute("UPDATE paper_review_outbox SET applied=1 WHERE contest_path=? AND contest_id=?", (path, review["contest_id"]))
+
+    def _review(self, decision: str, *, now_ms: int) -> dict[str, Any]:
+        self.recover_reviews()
+        # Lock both writers and re-evaluate at the point of mutation. A status
+        # report is informational and cannot authorize a later promotion.
+        with connect(self.store.path) as c, connect(self.generations.path) as g:
+            g.execute("BEGIN IMMEDIATE")
+            c.execute("BEGIN IMMEDIATE")
+            contests = promotion_rows(c, "SELECT * FROM contests WHERE status IN ('ACTIVE','REVIEW_REQUIRED') ORDER BY contest_id DESC LIMIT 1")
+            if not contests or contests[0]["status"] != "REVIEW_REQUIRED":
+                raise ValueError("V4_PAPER_CONTEST_NOT_REVIEW_READY")
+            contest = contests[0]
+            state = dict(g.execute("SELECT key,value FROM state"))
+            champ = contest["champion_generation"]
+            if state.get("champion_generation") != (None if champ is None else str(champ)) or state.get("challenger_generation") != str(contest["challenger_generation"]):
+                raise ValueError("V4_PAPER_CONTEST_GENERATION_STATE_CHANGED")
+            if c.execute("SELECT 1 FROM paper_trades WHERE contest_id=? AND status='OPEN'", (contest["contest_id"],)).fetchone():
+                raise ValueError("V4_PAPER_REVIEW_HAS_OPEN_POSITIONS")
+            report = {"order_authority": "NONE", "decision": "REJECT"}
+            if decision == "PROMOTE":
+                try:
+                    with connect(self.ledger_path.resolve().as_uri()+"?mode=ro", uri=True) as ledger:
+                        ledger.execute("PRAGMA query_only=ON")
+                        ledger.execute("BEGIN")
+                        report = promotion_report(c, g, ledger, now_ms=now_ms)
+                except sqlite3.Error as exc:
+                    raise ValueError("V4_PAPER_REVIEW_DATABASE_UNAVAILABLE") from exc
+                if not report["eligible"]:
+                    raise ValueError("V4_PAPER_PROMOTION_GATES_FAILED:" + ",".join(report["failed_checks"]))
+                champ = int(contest["challenger_generation"])
+            # A crash after this authoritative commit is repaired from the
+            # persisted proof, before the runtime assigns another Challenger.
+            g.execute("INSERT INTO paper_review_outbox(contest_path,contest_id,decision,reviewed_at_ms,report_json,champion_generation) VALUES(?,?,?,?,?,?)",
+                      (str(self.store.path.resolve()), contest["contest_id"], decision, now_ms, _json(report), champ))
+            g.execute("UPDATE state SET value=? WHERE key='champion_generation'", (None if champ is None else str(champ),))
+            g.execute("UPDATE state SET value=NULL WHERE key='challenger_generation'")
+            g.commit()
+            c.execute("UPDATE contests SET status='CLOSED',review_decision=?,closed_at_ms=? WHERE contest_id=?", (decision, now_ms, contest["contest_id"]))
+            c.commit()
+        self.recover_reviews()
+        return {"contest_id": contest["contest_id"], "decision": decision,
+                "champion_generation": champ, "promotion_review": report,
+                "order_authority": ORDER_AUTHORITY}
 
     def promote_challenger(self, *, now_ms: int | None = None) -> dict[str, Any]:
         now_ms = int(time.time() * 1000) if now_ms is None else int(now_ms)
-        contest = self.store.active_contest()
-        if contest is None or contest["status"] != "REVIEW_REQUIRED":
-            raise ValueError("V4_PAPER_CONTEST_NOT_REVIEW_READY")
-        challenger = int(contest["challenger_generation"])
-        self.store.finish_review(int(contest["contest_id"]), decision="PROMOTE", now_ms=now_ms)
-        self.generations.set_state("champion_generation", challenger)
-        self.generations.set_state("challenger_generation", None)
-        return {
-            "contest_id": int(contest["contest_id"]),
-            "decision": "PROMOTE",
-            "champion_generation": challenger,
-            "order_authority": ORDER_AUTHORITY,
-        }
+        return self._review("PROMOTE", now_ms=now_ms)
 
     def reject_challenger(self, *, now_ms: int | None = None) -> dict[str, Any]:
         now_ms = int(time.time() * 1000) if now_ms is None else int(now_ms)
-        contest = self.store.active_contest()
-        if contest is None or contest["status"] != "REVIEW_REQUIRED":
-            raise ValueError("V4_PAPER_CONTEST_NOT_REVIEW_READY")
-        self.store.finish_review(int(contest["contest_id"]), decision="REJECT", now_ms=now_ms)
-        self.generations.set_state("challenger_generation", None)
-        return {
-            "contest_id": int(contest["contest_id"]),
-            "decision": "REJECT",
-            "champion_generation": self.generations.state()["champion_generation"],
-            "order_authority": ORDER_AUTHORITY,
-        }
+        return self._review("REJECT", now_ms=now_ms)
 
 
 class V4PaperContest:
@@ -497,6 +563,11 @@ class V4PaperContest:
         self.generations.initialize()
         self.store = V4PaperContestStore(contest_path)
         self.store.initialize()
+        self.review_admin = V4PaperReviewAdmin(
+            generation_path=generation_path, contest_path=contest_path,
+            ledger_path=paper_ledger_path,
+        )
+        self.review_admin.recover_reviews()
         self.runtime = V3ResearchRuntime(paper_ledger_path)
         self.feed = ResearchWssFeed(self.runtime)
         self.scanner = V4CandidateScanner(database)
@@ -537,7 +608,7 @@ class V4PaperContest:
             return
         admitted = self.store.admitted_generations()
         champion = state["champion_generation"]
-        with sqlite3.connect(self.generations.path) as conn:
+        with connect(self.generations.path) as conn:
             rows = conn.execute(
                 """SELECT generation FROM generations
                    WHERE qualification_status IN ('BASELINE_READY','CHALLENGER_READY')
@@ -548,9 +619,10 @@ class V4PaperContest:
             if int(r[0]) not in admitted and int(r[0]) != champion
         ]
         if queued:
-            self.generations.set_state("challenger_generation", queued[0])
+            self.generations.assign_challenger_if_empty(queued[0])
 
     def _roles_and_contest(self, now_ms: int) -> tuple[int | None, dict[int, str]]:
+        self.review_admin.recover_reviews()
         self._assign_waiting_challenger()
         state = self.generations.state()
         challenger = state["challenger_generation"]

@@ -1,0 +1,99 @@
+# Enforced V4 paper Champion promotion
+
+Reaching 100 scored trades makes a contest review-ready; it does not make a
+model Champion. `v4_paper_admin.py promote` rechecks all gates at the moment of
+promotion. There is no override flag and no automatic promotion.
+
+These are conservative engineering defaults for paper experiments, not a
+calibrated statistical significance test or proof of real-money profitability.
+They are versioned in `nbot/observation/v4_promotion.py` as
+`NBOT_V4_PAPER_PROMOTION_V1`. Changing them requires a reviewed code change;
+environment variables cannot lower them.
+
+## Required evidence and performance
+
+| Requirement | Enforced threshold |
+|---|---|
+| Completed scored trades | Exactly 100 per examined model in this contest |
+| Open positions at review | None |
+| After-cost average | Challenger at least +0.10 R per trade |
+| Positive outcomes | Challenger at least 50% |
+| Maximum realized drawdown | Challenger at most 10 R |
+| Worst individual outcome | Challenger no worse than -3 R |
+| Actual forward trading span | At least 72 hours, measured first entry to last exit |
+| Time coverage | Entries on at least 3 UTC days and in at least 6 four-hour UTC blocks |
+| Block consistency | At least half of occupied blocks have positive total net R |
+| Lucky-block stress | Average remains positive after removing the most profitable block |
+| Chronological consistency | Both halves of the entry-ordered exam have positive average net R |
+| LONG and SHORT support | At least 20 scored trades each; each side has positive average net R |
+| Volatility coverage | At least 2 LOW/NORMAL/HIGH regimes have at least 10 trades each; every regime with that support has positive average net R |
+| Continuity | Unscorable / (scored + unscorable) at most 20% |
+
+Volatility regimes use the immutable entry feature `volatility_percentile`:
+LOW <= 0.25, HIGH >= 0.75, NORMAL otherwise. This is a limited regime proxy,
+not proof of coverage of all bull/bear/trend conditions.
+
+Every scored trade must match its immutable decision and `AGGTRADE_RESOLVED`
+outcome in `paper_ledger.db`, including net R, exit time/reason, source digest,
+frozen model identity, decision feature digest, contract and `order_authority=NONE`.
+Missing/nonfinite evidence, overlapping positions, outcomes outside the contest,
+changed artifacts, stale generation state, unexpected roles, and mismatched
+cached counters block promotion. Historical research results and older paper
+contests cannot replace fresh exam evidence.
+
+## Replacing an existing Champion
+
+In addition to all absolute Challenger requirements:
+
+- Both models must have 100 scored trades from the current fresh contest.
+- Challenger average net R must exceed Champion average by at least 0.10 R.
+- Challenger drawdown and worst outcome must be no worse than Champion's.
+- Both models must have entries in at least six common four-hour blocks.
+- Total Challenger advantage must remain positive after excluding its best
+  advantage block. Block comparison uses total net R on a shared UTC grid;
+  a block with no trades for a model contributes zero.
+
+A model cannot become Champion just by losing less money than another loser,
+tying the incumbent, or winning in one lucky period.
+
+## First Champion and unsuccessful exams
+
+When no Champion exists, the next research-qualified model runs a solo
+`BASELINE_EXAM`. Gen-2 does not need Gen-3 as an opponent. Only Gen-1 has the
+special research `BASELINE_READY` exemption; later generations still need
+`CHALLENGER_READY`. Every generation must pass the same paper promotion gates.
+
+An exam still stops opening positions at 100 scored trades. If its evidence is
+too short, one-sided, narrow, or unprofitable, waiting after the exam cannot
+manufacture eligibility. It remains review-required and cannot promote. The
+operator can reject it, allowing the next qualified generation to take its turn.
+This change does not reopen, erase, or alter the active Gen-1 exam or its artifact.
+
+## Operator commands and durable review
+
+```bash
+cd /home/ubuntu/Nbot
+.venv/bin/python deploy/observation/v4_paper_admin.py status
+.venv/bin/python deploy/observation/v4_paper_admin.py promote
+.venv/bin/python deploy/observation/v4_paper_admin.py reject
+```
+
+`status` includes `promotion_review.eligible`, versioned policy, metrics, and
+explicit `failed_checks`. A blocked `promote` prints its reasons and exits 1
+without changing contest/model state. A prior successful status report never
+authorizes promotion after the model, state, or evidence changes.
+
+Successful review stores its proof and the Champion/Challenger state change in
+one generation-database transaction. A durable `paper_review_outbox` then closes
+the contest idempotently. The runtime recovers unfinished closure before queue
+assignment; training cannot fill the Challenger slot while a review is pending.
+This avoids relying on atomic multi-database commits under SQLite WAL.
+
+The audit table is an additive schema change, preserving existing models,
+history, databases, and pending paths. Restarting the paper service can still
+invalidate an open path under its existing continuity contract: deployment
+must account for that separately. Do not deploy during the active exam merely
+because this patch is ready.
+
+Champion status remains paper-only. This change does not connect V4 to Execution
+recommendations, alter Telegram routing, fix WSS reconnects, or enable real orders.

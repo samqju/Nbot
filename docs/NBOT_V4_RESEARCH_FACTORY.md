@@ -313,6 +313,11 @@ Do not deploy the staged Telegram changes merely because the code is now in `mai
 
 ## Next checkpoints
 
+Promotion enforcement is specified in [V4 Champion promotion](V4_CHAMPION_PROMOTION.md).
+The promotion command must enforce numerical evidence/performance gates before
+an explicit paper review can appoint a Champion. This code change is not a VPS
+deployment checkpoint; preserve the active examination and its recorded paths.
+
 1. Deploy current `main` to the Observation/Learning VPS and install/start only the new V4 paper-contest service without disturbing the running V4 research/training services.
 2. Verify Gen-1 begins a `BASELINE_EXAM`, with one-position paper behavior, WSS continuity, durable status, and `order_authority=NONE`.
 3. Keep virtual research running independently toward 2000 resolved trades / Batch #2.

@@ -3,6 +3,7 @@ from pathlib import Path
 import unittest
 
 from nbot.observation.v4_generation import _qualification_status
+from nbot.observation.v4_promotion import connect
 from nbot.observation.v4_paper_contest import (
     AUTHORITY,
     CHECKPOINT_TRADES,
@@ -114,7 +115,7 @@ class V4PaperContestStoreTests(unittest.TestCase):
                 pass
             # Close the baseline review after reaching its checkpoint via direct
             # fixture state: the review API itself requires REVIEW_REQUIRED.
-            with __import__("sqlite3").connect(store.path) as conn:
+            with connect(store.path) as conn:
                 conn.execute(
                     "UPDATE contests SET status='CLOSED',review_decision='PROMOTE' WHERE contest_id=?",
                     (first,),
