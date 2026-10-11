@@ -1,4 +1,5 @@
 import json
+import sqlite3
 from dataclasses import asdict
 from pathlib import Path
 import tempfile
@@ -7,7 +8,7 @@ from unittest.mock import patch
 
 from nbot.observation.decision_ledger import DecisionLedger, FrozenDecision, MaturedOutcome
 from nbot.observation.v4_generation import V4GenerationStore
-from nbot.observation.v4_paper_contest import V4PaperReviewAdmin
+from nbot.observation.v4_paper_contest import V4PaperReviewAdmin, V4PaperContest
 from nbot.observation.v4_promotion import connect, digest
 
 START = 1_790_000_000_000
@@ -71,38 +72,38 @@ class PromotionTests(unittest.TestCase):
 
     def _trade_fixture(self, book, ledger, contest_id, model, generation, i,
                        returns, spacing, sides, regimes, evidence):
-            entry = START + i * spacing
-            side = sides(i) if sides else ('LONG' if i % 2 == 0 else 'SHORT')
-            vol = regimes(i) if regimes else (.1 if (i//2) % 2 == 0 else .9)
-            vector = {'volatility_percentile': vol}
-            net = returns(i) if returns else (-.2 if i % 4 == 0 else .4)
-            key = f'{contest_id}-{generation}-{i}'
-            extra = {'contest_id': contest_id, 'generation': generation, 'model_digest': model.model_digest,
-                     'order_authority': 'NONE', 'feature_vector': vector,
-                     'v4_paper_contract': 'NBOT_V4_PAPER_CONTEST_V1'}
-            if evidence:
-                decision = FrozenDecision(
-                    decision_id=key, event_id=f'event-{entry}', decision_time_ms=entry,
-                    symbol='BTCUSDT', side=side, setup_id='MODEL_ONLY', release_sha='test',
-                    model_id=f'V4_MODEL_GEN_{generation:03d}', feature_digest=digest(vector),
-                    ridge_score_r=None, ml_mean_r=1., ml_lower_r=None, conservative_score_r=1.,
-                    rank=1, runner_up_score_r=None, edge_gap_r=None, approved=True,
-                    reason='V4_PAPER_TOP1', bid=99., ask=100., quote_source='WSS_BOOK',
-                    policy_id='TICK_INTEGER_R_V1', sampling_probability=1., capacity_available=True)
-                dp = {**asdict(decision), 'authority': 'RESEARCH_ONLY_NO_EXECUTION', 'extras': extra}
-                ledger.execute('INSERT INTO frozen_decisions VALUES(?,?,?,?,?,?,?,?,?,?)',
-                    (key, decision.event_id, entry, 'BTCUSDT', side, 1, decision.reason,
-                     decision.policy_id, json.dumps(dp, sort_keys=True, separators=(',', ':')), digest(dp)))
-                outcome = MaturedOutcome(key, 'TICK_INTEGER_R_V1', entry+60_000,
-                    'AGGTRADE_RESOLVED', 'STOP', net, 1., -.2, f'source-{key}',
-                    evidence={'exit_time_ms': entry+60_000})
-                op = {**asdict(outcome), 'authority': 'RESEARCH_ONLY_NO_EXECUTION'}
-                ledger.execute('INSERT INTO matured_outcomes VALUES(?,?,?,?,?,?,?)',
-                    (key, outcome.policy_id, entry+60_000, outcome.quality, 0,
-                     json.dumps(op, sort_keys=True, separators=(',', ':')), digest(op)))
-            book.execute('INSERT INTO paper_trades VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                         (key, contest_id, generation, entry, 'BTCUSDT', side, entry,
-                          100., 1., 'CLOSED', entry+60_000, net, 1., -.2, 'STOP', f'source-{key}'))
+        entry = START + i * spacing
+        side = sides(i) if sides else ('LONG' if i % 2 == 0 else 'SHORT')
+        vol = regimes(i) if regimes else (.1 if (i//2) % 2 == 0 else .9)
+        vector = {'volatility_percentile': vol}
+        net = returns(i) if returns else (-.2 if i % 4 == 0 else .4)
+        key = f'{contest_id}-{generation}-{i}'
+        extra = {'contest_id': contest_id, 'generation': generation, 'model_digest': model.model_digest,
+                 'order_authority': 'NONE', 'feature_vector': vector,
+                 'v4_paper_contract': 'NBOT_V4_PAPER_CONTEST_V1'}
+        if evidence:
+            decision = FrozenDecision(
+                decision_id=key, event_id=f'event-{entry}', decision_time_ms=entry,
+                symbol='BTCUSDT', side=side, setup_id='MODEL_ONLY', release_sha='test',
+                model_id=f'V4_MODEL_GEN_{generation:03d}', feature_digest=digest(vector),
+                ridge_score_r=None, ml_mean_r=1., ml_lower_r=None, conservative_score_r=1.,
+                rank=1, runner_up_score_r=None, edge_gap_r=None, approved=True,
+                reason='V4_PAPER_TOP1', bid=99., ask=100., quote_source='WSS_BOOK',
+                policy_id='TICK_INTEGER_R_V1', sampling_probability=1., capacity_available=True)
+            dp = {**asdict(decision), 'authority': 'RESEARCH_ONLY_NO_EXECUTION', 'extras': extra}
+            ledger.execute('INSERT INTO frozen_decisions VALUES(?,?,?,?,?,?,?,?,?,?)',
+                (key, decision.event_id, entry, 'BTCUSDT', side, 1, decision.reason,
+                 decision.policy_id, json.dumps(dp, sort_keys=True, separators=(',', ':')), digest(dp)))
+            outcome = MaturedOutcome(key, 'TICK_INTEGER_R_V1', entry+60_000,
+                'AGGTRADE_RESOLVED', 'STOP', net, 1., -.2, f'source-{key}',
+                evidence={'exit_time_ms': entry+60_000})
+            op = {**asdict(outcome), 'authority': 'RESEARCH_ONLY_NO_EXECUTION'}
+            ledger.execute('INSERT INTO matured_outcomes VALUES(?,?,?,?,?,?,?)',
+                (key, outcome.policy_id, entry+60_000, outcome.quality, 0,
+                 json.dumps(op, sort_keys=True, separators=(',', ':')), digest(op)))
+        book.execute('INSERT INTO paper_trades VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                     (key, contest_id, generation, entry, 'BTCUSDT', side, entry,
+                      100., 1., 'CLOSED', entry+60_000, net, 1., -.2, 'STOP', f'source-{key}'))
 
     def blocked(self, reason):
         before = self.generations.state()
@@ -161,6 +162,50 @@ class PromotionTests(unittest.TestCase):
         cid, models = self.contest()
         self.trades(cid, models[1], regimes=lambda i: .5)
         self.blocked('REGIME_SUPPORT')
+
+    def test_positive_but_too_small_edge_is_blocked(self):
+        cid, models = self.contest()
+        self.trades(cid, models[1], returns=lambda i: .09)
+        self.blocked('POSITIVE_EXPECTANCY')
+
+    def test_low_positive_rate_is_blocked_despite_high_mean(self):
+        cid, models = self.contest()
+        self.trades(cid, models[1], returns=lambda i: 2. if i % 3 == 0 else -.1)
+        self.blocked('POSITIVE_RATE')
+
+    def test_second_half_losses_are_blocked(self):
+        cid, models = self.contest()
+        self.trades(cid, models[1], returns=lambda i: .5 if i < 50 else -.05)
+        self.blocked('BOTH_HALVES_POSITIVE')
+
+    def test_excessive_unscorable_paths_are_blocked(self):
+        cid, models = self.contest()
+        self.trades(cid, models[1])
+        with connect(self.store.path) as c:
+            for i in range(26):
+                c.execute("INSERT INTO paper_trades(decision_id,contest_id,generation,event_open_ms,symbol,side,entry_time_ms,entry_price,one_r_price,status) VALUES(?,?,?,?,?,?,?,?,?,'UNSCORABLE')",
+                          (f'gap-{i}', cid, 1, START, 'BTCUSDT', 'LONG', START, 100., 1.))
+        self.blocked('CONTINUITY_SUPPORT')
+
+    def test_open_position_prevents_review(self):
+        cid, models = self.contest()
+        self.trades(cid, models[1])
+        self.store.open_trade(decision_id='open', contest_id=cid, generation=1,
+            event_open_ms=START+101*HOUR, symbol='BTCUSDT', side='LONG',
+            entry_time_ms=START+101*HOUR, entry_price=100., one_r_price=1.)
+        self.assertIn('OPEN_PAPER_POSITIONS', self.admin.promotion_status(now_ms=NOW)['failed_checks'])
+        with self.assertRaisesRegex(ValueError, 'OPEN_POSITIONS'):
+            self.admin.promote_challenger(now_ms=NOW)
+
+    def test_no_champion_waiting_queue_advances_after_rejection(self):
+        cid, models = self.contest()
+        self.trades(cid, models[1], returns=lambda i: -.1)
+        self.generation(2)
+        self.admin.reject_challenger(now_ms=NOW)
+        runtime = V4PaperContest.__new__(V4PaperContest)
+        runtime.generations, runtime.store = self.generations, self.store
+        runtime._assign_waiting_challenger()
+        self.assertEqual(self.generations.state(), {'champion_generation': None, 'challenger_generation': 2})
 
     def test_one_lucky_block_is_blocked(self):
         cid, models = self.contest()
@@ -221,6 +266,18 @@ class PromotionTests(unittest.TestCase):
         self.trades(cid, models[2], 2)
         self.blocked('INSUFFICIENT_LIFT')
 
+    def test_losing_less_than_champion_is_not_enough(self):
+        cid, models = self.contest(head_to_head=True)
+        self.trades(cid, models[1], 1, returns=lambda i: -.2)
+        self.trades(cid, models[2], 2, returns=lambda i: -.1)
+        self.blocked('POSITIVE_EXPECTANCY')
+
+    def test_higher_average_with_worse_tail_does_not_replace_champion(self):
+        cid, models = self.contest(head_to_head=True)
+        self.trades(cid, models[1], 1)
+        self.trades(cid, models[2], 2, returns=lambda i: -.3 if i % 4 == 0 else .8)
+        self.blocked('RISK_WORSE_THAN_CHAMPION')
+
     def test_changed_generation_state_blocks_even_a_previously_good_report(self):
         cid, models = self.contest()
         self.trades(cid, models[1])
@@ -251,6 +308,28 @@ class PromotionTests(unittest.TestCase):
         original()
         self.assertIsNone(self.store.active_contest())
         self.assertTrue(self.generations.assign_challenger_if_empty(2))
+
+    def test_failure_between_database_commits_is_recovered(self):
+        cid, models = self.contest()
+        self.trades(cid, models[1])
+
+        class FailedContestCommit(sqlite3.Connection):
+            def commit(self):
+                raise RuntimeError('contest commit interrupted')
+
+        def fault_connect(path, **kwargs):
+            if path == self.store.path:
+                kwargs['factory'] = FailedContestCommit
+            return connect(path, **kwargs)
+
+        with patch('nbot.observation.v4_paper_contest.connect', side_effect=fault_connect):
+            with self.assertRaisesRegex(RuntimeError, 'contest commit interrupted'):
+                self.admin.promote_challenger(now_ms=NOW)
+        self.assertEqual(self.generations.state()['champion_generation'], 1)
+        self.assertEqual(self.store.active_contest()['status'], 'REVIEW_REQUIRED')
+        self.assertFalse(self.generations.assign_challenger_if_empty(2))
+        self.admin.recover_reviews()
+        self.assertIsNone(self.store.active_contest())
 
 
 if __name__ == '__main__':
