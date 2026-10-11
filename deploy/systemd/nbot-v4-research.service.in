@@ -1,0 +1,17 @@
+[Unit]
+Description=NBOT V4 clean-slate virtual research factory
+After=network-online.target nbot-observation-live.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@NBOT_USER@
+WorkingDirectory=@NBOT_ROOT@
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@NBOT_PYTHON@ @NBOT_ROOT@/deploy/observation/run_v4_research.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
