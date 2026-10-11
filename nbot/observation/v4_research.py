@@ -196,12 +196,39 @@ class V4ResearchStore:
                 ready.append(batch_no)
         return ready
 
+    def record_cycle(self, cycle: dict[str, Any]) -> None:
+        """Persist only the latest bounded cycle summary for operator visibility."""
+        self.initialize()
+        payload = {
+            key: cycle.get(key)
+            for key in (
+                "event_open_ms", "matured_this_cycle", "opened_this_cycle",
+                "active", "vacancies_after_refill", "resolved",
+                "next_training_at", "new_training_batches",
+            )
+        }
+        with sqlite3.connect(self.path) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO v4_meta(key,value_json) VALUES('last_cycle',?)",
+                (json.dumps(payload, sort_keys=True, separators=(",", ":")),),
+            )
+
     def status(self) -> dict[str, Any]:
         self.initialize()
         with sqlite3.connect(self.path) as conn:
             batches = conn.execute(
                 "SELECT batch_no,status,closed_at_ms FROM v4_batches ORDER BY batch_no"
             ).fetchall()
+            row = conn.execute(
+                "SELECT value_json FROM v4_meta WHERE key='last_cycle'"
+            ).fetchone()
+        last_cycle = None
+        if row is not None:
+            try:
+                value = json.loads(row[0])
+                last_cycle = value if isinstance(value, dict) else None
+            except (TypeError, json.JSONDecodeError):
+                last_cycle = None
         return {
             "version": VERSION,
             "capacity": CAPACITY,
@@ -210,6 +237,7 @@ class V4ResearchStore:
                 {"batch_no": int(n), "status": str(s), "closed_at_ms": int(t)}
                 for n, s, t in batches
             ],
+            "last_cycle": last_cycle,
             "order_authority": ORDER_AUTHORITY,
         }
 
@@ -365,7 +393,7 @@ class V4ResearchFactory:
         resolved = counts["matured_research"]
         batches = self.meta.close_ready_batches(resolved, now_ms=now_ms)
         self.last_event_open_ms = int(event_open_ms)
-        return {
+        result = {
             "version": VERSION,
             "event_open_ms": int(event_open_ms),
             "matured_this_cycle": len(matured),
@@ -378,6 +406,8 @@ class V4ResearchFactory:
             "authority": AUTHORITY,
             "order_authority": ORDER_AUTHORITY,
         }
+        self.meta.record_cycle(result)
+        return result
 
     def status(self) -> dict[str, Any]:
         counts = self.runtime.ledger.counts()
