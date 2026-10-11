@@ -497,6 +497,12 @@ class RemoteObservationClient:
             raise ObservationClientError("OBSERVATION_HEALTH_ORDER_AUTHORITY_INVALID")
         return payload
 
+    def paper_review(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        result = self._request_json(method='POST', path='/v4-paper-review', payload=dict(payload))
+        if result.get('order_authority') != 'NONE':
+            raise ObservationClientError('PAPER_REVIEW_AUTHORITY_INVALID')
+        return result
+
     def operator_status(self, view: str) -> dict[str, Any]:
         """Read Observation-owned operator status without creating authority."""
         normalized = str(view or "").strip().lower()

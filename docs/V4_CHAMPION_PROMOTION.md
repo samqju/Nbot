@@ -95,5 +95,38 @@ invalidate an open path under its existing continuity contract: deployment
 must account for that separately. Do not deploy during the active exam merely
 because this patch is ready.
 
-Champion status remains paper-only. This change does not connect V4 to Execution
-recommendations, alter Telegram routing, fix WSS reconnects, or enable real orders.
+## Telegram approval and Execution recommendations
+
+On the existing Execution bot, use `/champion` to see the active contest,
+completed trades, failed gates, and exact commands. `/learning` also shows exam
+progress. The authorized operator receives a channel notification when the
+contest reaches review. Approval is never automatic.
+
+For example, `/champion approve 1 1` approves Gen-1 in contest 1 only if every
+gate still passes. `/champion reject 1 1` rejects that same exam and frees the
+queue. Copy the command from the current report; old contest/generation
+identities are refused under the database locks. The existing Telegram listener
+accepts only the configured command chat and operator user ID. The review API
+also requires the existing control bearer token and a live-paper target.
+Notification delivery is retried until successful and then deduplicated durably.
+
+Run the standalone live-paper control with `--selection v4`. It serves only the
+frozen model recorded by a successful gated paper promotion, checking artifact
+hashes against the stored review proof. No Champion means
+`V4_WAIT_FOR_APPROVED_PAPER_CHAMPION`, with no older-model fallback. A positive
+top-ranked opportunity produces one frozen proposal per completed live event;
+negative scores abstain. Quotes and proposals retain the existing 30-second
+freshness limit. Model replacement waits for the next event. Execution still
+owns spread, risk, daily limits, entry permission, and position management.
+V4 uses the existing LIVE/PAPER learned authority envelope with explicit V4
+generation, model digest, and approved contest attribution. It is forbidden in
+the live-trade profile. Promotion never enables entries or real-money trading.
+
+WSS reconnect logs now include stream kind, connection duration, received
+messages, time since the last message, queue depth, dropped messages, close
+code, exception type, and retry delay. These identify transport, freshness, and
+backpressure symptoms; they do not claim a reconnect root cause or change retry
+behavior. A running process receives the diagnostics after a safe restart.
+Do not restart research or the contest while doing so would discard active
+paths. Code installed on disk and the version loaded by each service must be
+reported separately during a staged deployment.

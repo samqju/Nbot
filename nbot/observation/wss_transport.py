@@ -54,11 +54,9 @@ class CombinedStreamRunner:
         self.queue: asyncio.Queue[tuple[int, dict[str, Any]]] = asyncio.Queue(maxsize=queue_size)
         self.rotate_seconds = rotate_seconds
         self.event_sink = event_sink
-        self.stream_kind = (
-            "aggTrade" if "@aggTrade" in self.url
-            else "bookTicker" if "@bookTicker" in self.url
-            else "mixed"
-        )
+        self.stream_kind = ('mixed' if '@aggTrade' in self.url and '@bookTicker' in self.url
+                            else 'aggTrade' if '@aggTrade' in self.url
+                            else 'bookTicker' if '@bookTicker' in self.url else 'unknown')
         self.dropped = 0
         self._stop = False
         self._ws = None
@@ -122,6 +120,10 @@ class CombinedStreamRunner:
         try:
             while not self._stop:
                 self.state.mark_disconnected(self.symbols)
+                started = None
+                received = 0
+                last_receipt = None
+                ws = None
                 try:
                     cm = await self.connect_factory(self.url)
                     async with cm as ws:
@@ -133,6 +135,8 @@ class CombinedStreamRunner:
                         while not self._stop and time.monotonic() - started < self.rotate_seconds:
                             remaining = self.rotate_seconds - (time.monotonic() - started)
                             raw = await asyncio.wait_for(ws.recv(), timeout=max(.1, remaining))
+                            received += 1
+                            last_receipt = time.monotonic()
                             payload = decode_combined_message(raw)
                             item = (int(time.time() * 1000), payload)
                             try:
@@ -148,8 +152,12 @@ class CombinedStreamRunner:
                     self._ws = None
                     self.state.mark_disconnected(self.symbols)
                     logger.exception(
-                        "WSS_RUNNER_RECONNECT stream=%s symbols=%d attempt=%d reason=%s",
-                        self.stream_kind, len(self.symbols), attempt, exc,
+                        "WSS_RUNNER_RECONNECT stream=%s symbols=%d attempt=%d connected_seconds=%.3f messages=%d last_message_age_seconds=%s queue_depth=%d dropped_total=%d close_code=%s exception=%s retry_seconds=%.3f reason=%s",
+                        self.stream_kind, len(self.symbols), attempt,
+                        0.0 if started is None else time.monotonic()-started,
+                        received, None if last_receipt is None else round(time.monotonic()-last_receipt, 3),
+                        self.queue.qsize(), self.dropped, getattr(ws, 'close_code', None),
+                        type(exc).__name__, reconnect_delay_seconds(attempt, jitter=0), exc,
                     )
                     if ever_connected and self.event_sink is not None:
                         self.event_sink("disconnected", self.symbols)

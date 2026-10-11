@@ -55,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
         description="NBOT V3.8 standalone LIVE_PAPER Observation control plane"
     )
     parser.add_argument("--profile", choices=sorted(SUPPORTED_CONTROL_PROFILES))
-    parser.add_argument("--selection", choices=("mechanical", "learned"), default=os.environ.get("NBOT_PAPER_SELECTION", "mechanical"))
+    parser.add_argument("--selection", choices=("mechanical", "learned", "v4"), default=os.environ.get("NBOT_PAPER_SELECTION", "mechanical"))
     parser.add_argument("--control-host", default="127.0.0.1")
     parser.add_argument("--control-port", type=int, default=8765)
     parser.add_argument("--control-refresh-seconds", type=float, default=5.0)
@@ -90,6 +90,9 @@ def main(argv: list[str] | None = None) -> int:
     from nbot.observation.learned_recommendation import LearnedTestnetSource
     source = (LearnedTestnetSource(database, release_sha=_git_sha(root), profile_name=profile.name)
               if args.selection == "learned" else None)
+    if args.selection == 'v4':
+        from nbot.observation.v4_recommendation import V4ChampionSource
+        source = V4ChampionSource(database, release_sha=_git_sha(root), repo_root=root, profile_name=profile.name)
     target = ObservationControlTarget(
         database,
         profile,
@@ -107,6 +110,8 @@ def main(argv: list[str] | None = None) -> int:
     operator_status_provider = ObservationReadOnlyStatusProvider(
         repo_root=root, target=target
     )
+    from nbot.observation.v4_operator import V4PaperOperator
+    paper_operator = V4PaperOperator(root) if profile.name == 'live-paper' else None
     server = ObservationControlServer(
         target=target,
         auth_token=auth_token,
@@ -114,7 +119,8 @@ def main(argv: list[str] | None = None) -> int:
         port=args.control_port,
         tls_certfile=_optional_path(args.control_tls_cert),
         tls_keyfile=_optional_path(args.control_tls_key),
-        operator_status_provider=operator_status_provider.status,
+        operator_status_provider=lambda view: paper_operator.status() if view == 'v4-review' and paper_operator else operator_status_provider.status(view),
+        paper_review_provider=paper_operator.review if paper_operator else None,
     )
 
     stop = threading.Event()
@@ -134,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
                     "event": "NBOT_OBSERVATION_CONTROL_READY",
                     "phase": "V3.8",
                     "profile": profile.name,
-                    "mode": ("LIVE_LEARNED_TRIAL" if profile_name == "live-trade" else "LIVE_PAPER_LEARNED") if source else "LIVE_PAPER_OPERATIONAL_CANARY",
+                    "mode": 'V4_APPROVED_CHAMPION_PAPER' if args.selection == 'v4' else ("LIVE_LEARNED_TRIAL" if profile_name == "live-trade" else "LIVE_PAPER_LEARNED") if source else "LIVE_PAPER_OPERATIONAL_CANARY",
                     "recommendation_authority": source.authority if source else LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
                     "economic_claim": False,
                     "address": f"{address[0]}:{address[1]}",
@@ -149,7 +155,7 @@ def main(argv: list[str] | None = None) -> int:
         control_log.info(
             "NBOT_OBSERVATION_CONTROL_READY profile=%s address=%s:%s mode=%s authority=%s economic_claim=false order_authority=NONE",
             profile.name, address[0], address[1],
-            ("LIVE_LEARNED_TRIAL" if profile.name == "live-trade" else "LIVE_PAPER_LEARNED") if source else "LIVE_PAPER_OPERATIONAL_CANARY",
+            'V4_APPROVED_CHAMPION_PAPER' if args.selection == 'v4' else ("LIVE_LEARNED_TRIAL" if profile.name == "live-trade" else "LIVE_PAPER_LEARNED") if source else "LIVE_PAPER_OPERATIONAL_CANARY",
             source.authority if source else LIVE_PAPER_OPERATIONAL_CANARY_AUTHORITY,
         )
         while not stop.wait(1.0):

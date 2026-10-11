@@ -498,7 +498,7 @@ class V4PaperReviewAdmin:
                         raise ValueError("V4_PAPER_REVIEW_RECOVERY_CONTEST_CHANGED")
                 g.execute("UPDATE paper_review_outbox SET applied=1 WHERE contest_path=? AND contest_id=?", (path, review["contest_id"]))
 
-    def _review(self, decision: str, *, now_ms: int) -> dict[str, Any]:
+    def _review(self, decision: str, *, now_ms: int, expected: tuple[int, int] | None = None) -> dict[str, Any]:
         self.recover_reviews()
         # Lock both writers and re-evaluate at the point of mutation. A status
         # report is informational and cannot authorize a later promotion.
@@ -509,6 +509,8 @@ class V4PaperReviewAdmin:
             if not contests or contests[0]["status"] != "REVIEW_REQUIRED":
                 raise ValueError("V4_PAPER_CONTEST_NOT_REVIEW_READY")
             contest = contests[0]
+            if expected is not None and expected != (contest["contest_id"], contest["challenger_generation"]):
+                raise ValueError("V4_PAPER_REVIEW_STALE_APPROVAL")
             state = dict(g.execute("SELECT key,value FROM state"))
             champ = contest["champion_generation"]
             if state.get("champion_generation") != (None if champ is None else str(champ)) or state.get("challenger_generation") != str(contest["challenger_generation"]):

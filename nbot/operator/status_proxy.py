@@ -427,6 +427,12 @@ def _v4_learning_snapshot(repo_root: Path) -> dict[str, Any] | None:
     batch_size = 1000
     capacity = 100
     next_training_at = ((resolved // batch_size) + 1) * batch_size
+    paper_review = None
+    try:
+        from nbot.observation.v4_operator import V4PaperOperator
+        paper_review = V4PaperOperator(root).status()['document']
+    except (OSError, sqlite3.Error, ValueError, KeyError):
+        pass
     return {
         "version": "NBOT_V4_RESEARCH_FACTORY_V1",
         "capacity": capacity,
@@ -441,6 +447,7 @@ def _v4_learning_snapshot(repo_root: Path) -> dict[str, Any] | None:
         "generation_state": state,
         "latest_generation": latest_generation,
         "last_cycle": last_cycle,
+        "paper_review": paper_review,
         "order_authority": "NONE",
     }
 
@@ -476,6 +483,13 @@ def _format_v4_learning(data: Mapping[str, Any]) -> str:
             f"opened {_e(cycle.get('opened_this_cycle'))}, "
             f"active {_e(cycle.get('active'))}"
         )
+    paper = data.get('paper_review') or {}
+    contest = paper.get('contest') or {}
+    if contest:
+        lines.append(f"Paper contest {contest['contest_id']}: {_e(contest['status'])}")
+        for model in paper.get('models') or []:
+            lines.append(f"Gen-{model['generation']}: {model['completed_trades']}/100 scored | {model['realized_r']:.3f}R")
+        lines.append('Use /champion for promotion gates and approval commands.')
     lines.append("Order authority: NONE")
     return "\n".join(lines)
 

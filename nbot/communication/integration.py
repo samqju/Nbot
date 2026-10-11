@@ -71,6 +71,9 @@ class V37IntegratedObservationClient:
     def operator_status(self, view: str) -> dict[str, Any]:
         return self.remote.operator_status(view)
 
+    def paper_review(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        return self.remote.paper_review(payload)
+
     def record_entry_context(self, **kwargs: Any) -> None:
         self.remote.receipts.record_entry_context(**kwargs)
 
@@ -122,6 +125,9 @@ class V38LivePaperOperationalClient:
 
     def operator_status(self, view: str) -> dict[str, Any]:
         return self.base.operator_status(view)
+
+    def paper_review(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        return self.base.paper_review(payload)
 
     def request_proposal(self, **kwargs: Any):
         proposal = self.base.request_proposal(**kwargs)

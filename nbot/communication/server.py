@@ -30,6 +30,7 @@ class ObservationControlServer:
         tls_certfile: str | Path | None = None,
         tls_keyfile: str | Path | None = None,
         operator_status_provider: Callable[[str], Mapping[str, Any]] | None = None,
+        paper_review_provider: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
     ) -> None:
         self.target = target
         self.auth_token = validate_control_token(auth_token)
@@ -42,6 +43,7 @@ class ObservationControlServer:
         self.tls_certfile = None if tls_certfile is None else Path(tls_certfile)
         self.tls_keyfile = None if tls_keyfile is None else Path(tls_keyfile)
         self.operator_status_provider = operator_status_provider
+        self.paper_review_provider = paper_review_provider
         if (self.tls_certfile is None) != (self.tls_keyfile is None):
             raise ValueError("NBOT_CONTROL_TLS_CERT_KEY_PAIR_REQUIRED")
         if self.host not in _LOOPBACK_HOSTS and self.tls_certfile is None:
@@ -120,6 +122,15 @@ class ObservationControlServer:
                         result = dict(outer.operator_status_provider(str(payload["view"])))
                         if result.get("order_authority") != "NONE":
                             raise ValueError("OBSERVATION_OPERATOR_STATUS_AUTHORITY_INVALID")
+                        self._send(200, result)
+                        return
+                    if self.path == "/v4-paper-review":
+                        if outer.paper_review_provider is None or getattr(getattr(target, 'profile', None), 'name', None) != 'live-paper':
+                            self._send(403, {"error": "PAPER_REVIEW_UNAVAILABLE"})
+                            return
+                        result = dict(outer.paper_review_provider(payload))
+                        if result.get('order_authority') != 'NONE':
+                            raise ValueError('PAPER_REVIEW_AUTHORITY_INVALID')
                         self._send(200, result)
                         return
                     self._send(404, {"error": "NOT_FOUND"})
