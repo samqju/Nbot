@@ -189,6 +189,37 @@ class ResearchMemoryStore:
                 for example in decoded:
                     yield int(event_open_ms), example
 
+    def count_event_slots(self, *, after_event_ms: int, spacing_ms: int, limit: int) -> int:
+        """Count display-only future slots using indexed timestamps, never payloads.
+
+        This is not verified training evidence. Evaluation must still use
+        iter_event_records, which validates every selected archive and example.
+        """
+        if spacing_ms < 0 or not 0 <= limit <= 1000:
+            raise ValueError("MEMORY_STATUS_COUNT_LIMIT_INVALID")
+        boundary = int(after_event_ms)
+        count = 0
+        deadline = time.monotonic() + 2.0
+        with sqlite3.connect(
+            self.path.resolve().as_uri() + "?mode=ro", uri=True,
+            timeout=2.0, factory=ClosingConnection,
+        ) as conn:
+            conn.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+            conn.execute("BEGIN")
+            while count < limit:
+                if time.monotonic() > deadline:
+                    raise TimeoutError("MEMORY_STATUS_COUNT_TIMEOUT")
+                row = conn.execute(
+                    "SELECT event_open_ms FROM research_memory_events "
+                    "WHERE event_open_ms>? ORDER BY event_open_ms LIMIT 1",
+                    (boundary,),
+                ).fetchone()
+                if row is None:
+                    break
+                count += 1
+                boundary = int(row[0]) + spacing_ms
+        return count
+
     def iter_event_records(self, *, after_event_ms: int | None = None,
                            through_event_ms: int | None = None, minimum_spacing_ms: int = 0):
         """Stream immutable compact events with verified lineage and examples."""
