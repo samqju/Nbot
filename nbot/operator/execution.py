@@ -270,7 +270,7 @@ class ExecutionOperatorSurface:
             f"MFE/MAE: {_signed(payload.get('mfe_r'), 'R')} / {_signed(payload.get('mae_r'), 'R')}\n"
             f"Holding: {_duration_ms(payload.get('entry_timestamp_ms'), payload.get('closed_timestamp_ms'))}\n"
             f"Reason: {html.escape(str(payload.get('exit_reason') or 'UNKNOWN'))}\n"
-            f"Observation: {'RECORDED' if acked else 'PENDING'}"
+            f"Observation ACK: {'RECORDED' if acked else 'PENDING'}"
         )
 
     def _sync_health_alerts(self) -> None:
@@ -435,6 +435,20 @@ class ExecutionOperatorSurface:
         )
         if daily.halted:
             body += f"\nRisk halt: {html.escape(daily.halt_reason or 'ACTIVE')}"
+        try:
+            payload = self.observation_status_reader("recommendation") if self.observation_status_reader else None
+            if not isinstance(payload, Mapping) or payload.get("order_authority") != "NONE":
+                raise ValueError("READ_ONLY_STATUS_UNAVAILABLE")
+            data = payload.get("document")
+            if not isinstance(data, Mapping):
+                raise ValueError("READ_ONLY_STATUS_INVALID")
+            ready = data.get("status") == "READY"
+            body += "\nLearning service: " + ("ready." if ready else "not ready.")
+            reason = str(data.get("reason") or "").replace("_", " ").lower()
+            if reason:
+                body += "\nReason: " + html.escape(reason)
+        except Exception:
+            body += "\nLearning service status unavailable."
         return body
 
     def _position_body(self) -> str:
