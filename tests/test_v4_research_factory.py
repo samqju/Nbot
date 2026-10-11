@@ -11,6 +11,8 @@ from nbot.observation.v4_research import (
 )
 from nbot.observation.v4_generation import V4GenerationStore
 from nbot.observation.live_two_tier import ResearchWssFeed
+from nbot.observation.wss_market import WssMarketState
+from nbot.observation.wss_transport import CombinedStreamRunner
 
 
 class V4ResearchContractTests(unittest.TestCase):
@@ -87,6 +89,21 @@ class V4WssIsolationTests(unittest.TestCase):
         shard = SimpleNamespace(streams=("btcusdt@aggTrade", "ethusdt@aggTrade"))
         feed._shard_event_sink(shard)("disconnected", ("BTCUSDT", "ETHUSDT"))
         self.assertEqual(runtime.replays.invalidated, [("BTCUSDT", "ETHUSDT")])
+
+    def test_reconnect_runner_labels_stream_type(self):
+        state = WssMarketState(("BTCUSDT",))
+        book = CombinedStreamRunner(
+            url="wss://example/public?streams=btcusdt@bookTicker",
+            state=state,
+            symbols=("BTCUSDT",),
+        )
+        trades = CombinedStreamRunner(
+            url="wss://example/market?streams=btcusdt@aggTrade",
+            state=state,
+            symbols=("BTCUSDT",),
+        )
+        self.assertEqual(book.stream_kind, "bookTicker")
+        self.assertEqual(trades.stream_kind, "aggTrade")
 
     def test_symbol_local_market_gap_invalidates_only_symbol(self):
         runtime = _RuntimeRecorder()

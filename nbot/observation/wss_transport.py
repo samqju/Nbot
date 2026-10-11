@@ -54,6 +54,11 @@ class CombinedStreamRunner:
         self.queue: asyncio.Queue[tuple[int, dict[str, Any]]] = asyncio.Queue(maxsize=queue_size)
         self.rotate_seconds = rotate_seconds
         self.event_sink = event_sink
+        self.stream_kind = (
+            "aggTrade" if "@aggTrade" in self.url
+            else "bookTicker" if "@bookTicker" in self.url
+            else "mixed"
+        )
         self.dropped = 0
         self._stop = False
         self._ws = None
@@ -143,8 +148,8 @@ class CombinedStreamRunner:
                     self._ws = None
                     self.state.mark_disconnected(self.symbols)
                     logger.exception(
-                        "WSS_RUNNER_RECONNECT symbols=%d attempt=%d reason=%s",
-                        len(self.symbols), attempt, exc,
+                        "WSS_RUNNER_RECONNECT stream=%s symbols=%d attempt=%d reason=%s",
+                        self.stream_kind, len(self.symbols), attempt, exc,
                     )
                     if ever_connected and self.event_sink is not None:
                         self.event_sink("disconnected", self.symbols)
