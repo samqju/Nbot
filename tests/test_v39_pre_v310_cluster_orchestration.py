@@ -155,6 +155,15 @@ class V39PreV310ClusterOrchestrationTests(unittest.TestCase):
         self.assertNotIn("def cmd_not_implemented", nbotctl)
         self.assertNotIn("nbot.operator.cluster", worker)
 
+    def test_remote_observation_doctor_has_long_integrity_timeout(self):
+        text = (REPO / "nbotctl").read_text(encoding="utf-8")
+        doctor = text[
+            text.index("def _cluster_doctor_payload("):
+            text.index("def _cluster_wait_local(")
+        ]
+        self.assertIn('arguments=("doctor", profile_name)', doctor)
+        self.assertIn("timeout_seconds=180.0", doctor)
+
     def test_cluster_start_never_enables_entries(self):
         text = (REPO / "nbotctl").read_text(encoding="utf-8")
         start = text[text.index("def _cluster_start("):text.index("def _cluster_resolve_stop_profile(")]
