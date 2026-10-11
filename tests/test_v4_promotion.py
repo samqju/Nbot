@@ -168,6 +168,11 @@ class PromotionTests(unittest.TestCase):
         self.trades(cid, models[1], returns=lambda i: .09)
         self.blocked('POSITIVE_EXPECTANCY')
 
+    def test_exact_mean_threshold_tolerates_floating_point_summation(self):
+        cid, models = self.contest()
+        self.trades(cid, models[1], returns=lambda i: .1)
+        self.assertTrue(self.admin.promotion_status(now_ms=NOW)['eligible'])
+
     def test_low_positive_rate_is_blocked_despite_high_mean(self):
         cid, models = self.contest()
         self.trades(cid, models[1], returns=lambda i: 2. if i % 3 == 0 else -.1)

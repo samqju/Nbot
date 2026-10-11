@@ -207,10 +207,10 @@ def promotion_report(contest_conn, generation_conn, ledger_conn, *, now_ms):
             if role != "CHALLENGER":
                 continue
             gates = {
-                "POSITIVE_EXPECTANCY": m["mean_net_r"] is not None and m["mean_net_r"] >= POLICY["min_mean_net_r"],
+                "POSITIVE_EXPECTANCY": m["mean_net_r"] is not None and m["mean_net_r"] >= POLICY["min_mean_net_r"]-1e-12,
                 "POSITIVE_RATE": m["positive_rate"] >= POLICY["min_positive_rate"],
-                "DRAWDOWN_LIMIT": m["max_drawdown_r"] <= POLICY["max_drawdown_r"],
-                "TAIL_LOSS_LIMIT": m["worst_net_r"] is not None and m["worst_net_r"] >= POLICY["min_worst_net_r"],
+                "DRAWDOWN_LIMIT": m["max_drawdown_r"] <= POLICY["max_drawdown_r"]+1e-12,
+                "TAIL_LOSS_LIMIT": m["worst_net_r"] is not None and m["worst_net_r"] >= POLICY["min_worst_net_r"]-1e-12,
                 "FUTURE_TIME_COVERAGE": m["elapsed_hours"] >= POLICY["min_elapsed_hours"] and m["utc_days"] >= POLICY["min_utc_days"],
                 "TIME_BLOCK_SUPPORT": m["block_count"] >= POLICY["min_blocks"] and m["positive_block_fraction"] >= .50,
                 "NOT_ONE_LUCKY_BLOCK": m["without_best_block_mean_r"] is not None and m["without_best_block_mean_r"] > 0,
