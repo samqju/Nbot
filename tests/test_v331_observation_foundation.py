@@ -144,6 +144,11 @@ class V331ObservationFoundationTests(unittest.TestCase):
 
     def test_observation_foundation_has_no_capital_imports_and_only_v35_protocol_boundary(self):
         approved_communication = {
+            # Approved paper Champion proposals use only the existing wire envelope.
+            "v4_recommendation.py": {
+                "nbot.communication.authorities",
+                "nbot.communication.contracts",
+            },
             # Read-only validation of already-received paper outcomes; no order imports.
             "paper_feedback.py": {
                 "nbot.communication.authorities",
