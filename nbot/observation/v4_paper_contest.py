@@ -471,7 +471,24 @@ class V4PaperContest:
                 )
                 continue
 
+            model_status = self.store.model_status(generation)
+            if model_status is not None and model_status["status"] == "REVIEW_REQUIRED":
+                self.store.record_decision(
+                    generation, event_open_ms, decision_id=None, symbol=None, side=None,
+                    score=None, rank=None, action="HOLD",
+                    reason="PAPER_CHECKPOINT_REVIEW_REQUIRED", now_ms=now_ms,
+                )
+                continue
+
             model = self._load_model(generation)
+            if event_open_ms + INTERVAL_MS <= model.trained_at_ms:
+                self.store.record_decision(
+                    generation, event_open_ms, decision_id=None, symbol=None, side=None,
+                    score=None, rank=None, action="ABSTAIN",
+                    reason="MODEL_NOT_AVAILABLE_AT_EVENT", now_ms=now_ms,
+                )
+                continue
+
             scored: list[ScoredCandidate] = []
             for candidate in candidates:
                 try:
