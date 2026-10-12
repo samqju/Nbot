@@ -43,6 +43,15 @@ def entry(side="LONG", decision="d1"):
 
 class BridgeTests(unittest.TestCase):
     def setUp(self):
+        # Preexisting mechanical exit/funding fixtures are sparse synthetic
+        # four-hour paths: isolate their logic from the production watchdog.
+        # The independent-audit tests below explicitly restore the strict
+        # 30-second coverage rule and exercise source silence fail-closed.
+        self._synthetic_silence = patch(
+            "nbot.observation.v5_live_evidence.MAX_BOOKTICKER_SILENCE_MS",
+            HORIZON_MS + 100_000)
+        self._synthetic_silence.start()
+        self.addCleanup(self._synthetic_silence.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.path = Path(self.temp.name)/"v5"/"live.db"
         self.b = LiveEvidenceBridge(self.path, symbols=["BTCUSDT"])
@@ -146,6 +155,14 @@ class BridgeTests(unittest.TestCase):
         self.assertFalse(feed["connected"])
         self.assertTrue(all(r.status=="UNSCORABLE"
                             for r in self.b.finalize("d1",now_ms=T+31_000)))
+
+    def test_auditor_p1_strict_tick_coverage_gap_invalidates_even_if_trades_continue(self):
+        with patch("nbot.observation.v5_live_evidence.MAX_BOOKTICKER_SILENCE_MS",30_000):
+            self.b.ingest(trade(a=11,t=T+31_000),T+31_010)
+        self.assertEqual(self.b.lab._paths["d1"].gap_reason,
+                         "BOOKTICKER_COVERAGE_GAP")
+        rows=self.b.finalize("d1",now_ms=T+31_010)
+        self.assertTrue(all(r.status=="UNSCORABLE" for r in rows))
 
     def test_entry_anchor_cannot_predate_quote_capture_receipt(self):
         with self.assertRaisesRegex(ValueError,"LIVE_ANCHOR_UNPROVEN"):
