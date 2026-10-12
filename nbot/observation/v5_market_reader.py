@@ -51,13 +51,18 @@ def read_completed_event(
                WHERE s.event_open_ms=?
                ORDER BY s.symbol""", (event_open_ms,),
         ).fetchall()
-        if len(quotes) > 500 or not quotes:
+        snapshot_count = conn.execute(
+            "SELECT COUNT(*) FROM market_snapshots WHERE event_open_ms=?",
+            (event_open_ms,),
+        ).fetchone()[0]
+        if len(quotes) > 500 or not quotes or len(quotes) != snapshot_count:
+            # A missing membership row must not silently remove an instrument.
             raise ValueError("V5_MARKET_EVENT_UNIVERSE_INVALID")
         observations = []
         for symbol, bid, ask, quote_volume, funding_rate, rank, captured, membership_quality in quotes:
             # Do not silently drop symbols lacking complete membership.
             if membership_quality != "POINT_IN_TIME" or int(captured) > now_ms or (
-                int(captured) < int(close_ms)
+                int(captured) < int(close_ms) or int(captured) > int(captured_ms)
             ):
                 raise ValueError("V5_SNAPSHOT_PROVENANCE_INVALID")
             bars = conn.execute(
