@@ -24,6 +24,7 @@ MAX_QUOTE_AGE_MS = 2_000
 MAX_RECEIPT_DELAY_MS = 2_000
 MAX_ENTRY_ANCHOR_AGE_MS = 5_000
 MAX_CONCURRENT = 100
+MAX_PENDING_RESULTS = 100
 EXIT_POLICIES = ("FIXED_2R_V1", "TIME_EXIT_V1", "INTEGER_TRAIL_V1")
 
 
@@ -344,6 +345,10 @@ class PairedExitLab:
                 funding_coverage_confirmed=funding_coverage_confirmed)
             if rows is None:
                 return None
+            if len(self._completed) >= MAX_PENDING_RESULTS:
+                # No unbounded in-RAM accumulation when SQLite is unavailable.
+                # Keep the original path for safe retry after persistence frees room.
+                raise RuntimeError("V5_PAIRED_PERSISTENCE_BACKPRESSURE")
             del self._paths[decision_id]
             members = self._by_symbol[path.entry.symbol]
             members.remove(decision_id)
