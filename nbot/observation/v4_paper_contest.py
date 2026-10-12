@@ -783,14 +783,14 @@ class V4PaperContest:
                     model_id=f"V4_MODEL_GEN_{generation:03d}",
                     feature_digest=research_digest(candidate.vector),
                     ridge_score_r=None,
-                    ml_mean_r=winner[0],
+                    # These inherited V3 fields measure expected return in R.
+                    # V4 LambdaRank scores are NOT expected returns.
+                    ml_mean_r=None,
                     ml_lower_r=None,
-                    conservative_score_r=winner[0],
+                    conservative_score_r=None,
                     rank=1,
-                    runner_up_score_r=(scored[1][0] if len(scored) > 1 else None),
-                    edge_gap_r=(
-                        winner[0] - scored[1][0] if len(scored) > 1 else None
-                    ),
+                    runner_up_score_r=None,
+                    edge_gap_r=None,
                     approved=True,
                     reason="V4_PAPER_TOP1",
                     bid=float(quote.bid),
@@ -820,6 +820,9 @@ class V4PaperContest:
                         "model_digest": model.model_digest,
                         "feature_vector": candidate.vector,
                         "selection_rank": candidate.selection_rank,
+                        "ranking_score": winner[0],
+                        "runner_up_ranking_score": scored[1][0] if len(scored) > 1 else None,
+                        "ranking_score_kind": "LIGHTGBM_LAMBDARANK_UNCALIBRATED",
                         "entry_price": entry,
                         "one_r_price": one_r,
                         "paper_starting_balance_usd": STARTING_BALANCE_USD,
