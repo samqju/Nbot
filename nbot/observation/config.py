@@ -121,5 +121,18 @@ def observation_config_for_profile(profile: Profile) -> ObservationConfig:
     if resource_profile == "tiny":
         config = replace(config, observation_universe_size=20, candle_fetch_workers=2,
                          gap_recovery_max_events_per_cycle=4)
+        # V4 virtual research can hold one LONG and one SHORT per symbol.
+        # Its 100-slot book cannot fill when the tiny collector supplies only
+        # twenty symbols. Allow a bounded, explicit observation-only override
+        # without discarding the tiny CPU/recovery safeguards.
+        raw_universe = os.environ.get("NBOT_OBSERVATION_UNIVERSE_SIZE")
+        if raw_universe is not None:
+            try:
+                size = int(raw_universe)
+            except ValueError as exc:
+                raise ValueError("NBOT_TINY_UNIVERSE_SIZE_INVALID") from exc
+            if not 1 <= size <= 100:
+                raise ValueError("NBOT_TINY_UNIVERSE_SIZE_INVALID")
+            config = replace(config, observation_universe_size=size)
     config.validate()
     return config
