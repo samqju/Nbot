@@ -21,6 +21,7 @@ ORDER_AUTHORITY = "NONE"
 HORIZON_MS = 4 * 60 * 60 * 1000
 HORIZON_CLOSE_GRACE_MS = 5_000
 MAX_QUOTE_AGE_MS = 2_000
+MAX_RECEIPT_DELAY_MS = 2_000
 MAX_ENTRY_ANCHOR_AGE_MS = 5_000
 MAX_CONCURRENT = 100
 EXIT_POLICIES = ("FIXED_2R_V1", "TIME_EXIT_V1", "INTEGER_TRAIL_V1")
@@ -199,6 +200,8 @@ class _Path:
                 or tick.trade_time_ms < self.last_trade_time_ms
                 or tick.trade_time_ms <= e.entry_time_ms
                 or tick.receipt_time_ms < tick.trade_time_ms
+                or tick.receipt_time_ms - tick.trade_time_ms > MAX_RECEIPT_DELAY_MS
+                or tick.quote_update_id <= 0
                 or tick.quote_time_ms > tick.trade_time_ms
                 or tick.quote_time_ms < e.entry_quote_time_ms
                 or tick.trade_time_ms - tick.quote_time_ms > MAX_QUOTE_AGE_MS
@@ -250,13 +253,14 @@ class _Path:
                 a.exit_price is None or a.exit_time_ms is None for a in self.arms.values()):
             reason = "EXIT_PATH_INCOMPLETE"
         digest = self.digest.hexdigest()
-        outputs = []
-        for arm in self.arms.values():
-            accounting = None
-            arm_reason = reason
-            if arm_reason is None:
-                try:
-                    accounting = score_trade(
+        # Either every arm has independently auditable accounting or none
+        # can be used for a *paired* comparison. A funding-boundary ambiguity
+        # in one policy must not preferentially discard just that arm.
+        scored: dict[str, TradeAccounting] = {}
+        if reason is None:
+            try:
+                for arm in self.arms.values():
+                    scored[arm.policy_id] = score_trade(
                         symbol=self.entry.symbol, side=self.entry.side,
                         quantity=self.entry.quantity,
                         entry_fill_price=self.entry.entry_price,
@@ -267,17 +271,21 @@ class _Path:
                         funding_events=events,
                         funding_coverage_confirmed=True,
                     )
-                except (TypeError, ValueError):
-                    arm_reason = "ACCOUNTING_OR_FUNDING_UNSCORABLE"
-            outputs.append(ArmResult(
+            except (TypeError, ValueError):
+                reason = "ACCOUNTING_OR_FUNDING_UNSCORABLE"
+                scored.clear()
+        outputs = [
+            ArmResult(
                 self.entry.decision_id, arm.policy_id,
-                "UNSCORABLE" if arm_reason else "SCORED",
-                arm_reason or "CONTIGUOUS_AGGTRADE_RESOLVED",
-                arm.exit_time_ms if not arm_reason else None,
-                arm.exit_reason if not arm_reason else None,
+                "UNSCORABLE" if reason else "SCORED",
+                reason or "CONTIGUOUS_AGGTRADE_RESOLVED",
+                arm.exit_time_ms if not reason else None,
+                arm.exit_reason if not reason else None,
                 arm.high_r, arm.low_r, arm.stop_r, self.events_seen,
-                digest, accounting,
-            ))
+                digest, scored.get(arm.policy_id),
+            )
+            for arm in self.arms.values()
+        ]
         return tuple(outputs)
 
 
@@ -371,7 +379,10 @@ def persist_to_v5_ledger(store: object, results: tuple[ArmResult, ...]) -> None:
     if (not isinstance(store, V5EvidenceStore) or len(results) != len(EXIT_POLICIES)
             or {r.policy_id for r in results} != set(EXIT_POLICIES)
             or len({r.decision_id for r in results}) != 1
-            or len({r.evidence_digest for r in results}) != 1):
+            or len({r.evidence_digest for r in results}) != 1
+            or any(r.status not in ("SCORED", "UNSCORABLE")
+                   or (r.status == "SCORED") != (r.accounting is not None)
+                   for r in results)):
         raise ValueError("V5_PAIRED_PERSISTENCE_CONTRACT_INVALID")
     for result in results:
         store.record_outcome(
