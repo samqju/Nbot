@@ -7,7 +7,7 @@
 >
 > Repository: `samqju/Nbot`. Branch: `main`; new work goes through reviewed PRs.
 > First PR: [#30](https://github.com/samqju/Nbot/pull/30).
-> Last update: **2026-10-12**, Milestone 3 paired exit-policy lab PR #36 opened (tests/merge pending).
+> Last update: **2026-10-12**, paired-exit lab merged as PR #36; milestone progress recorded in PR #37.
 >
 > **Safety invariant: Research / Paper only. No order authority.**
 > No change to Execution role, private Binance credentials or real-money order
@@ -46,7 +46,7 @@
 | V5 Milestone 1 | MERGED, NOT DEPLOYED | PR #30 merged as `2b6bc33acf31978459cbca105b3ea1979562df30`. 1,428 tests passed on PR head and merged main (run 38250307646) |
 | V5 Milestone 2 | PROTOTYPE MERGED / NOT DEPLOYED | PR #32 merge `19eec7f9436f9cd1c3b2acae3dcc008d8d7f574d`; 1,436 tests passed on PR head; metadata/depth and prospective validation remain outstanding |
 | V5 market-quality bridge | PROTOTYPE MERGED / NOT DEPLOYED | PR #34 merge `0ad04e711d79c46047fa952cf249f3f429976ada`; 1,441 tests passed on PR head; merged-main full regression succeeded ([run 38259054293](https://github.com/samqju/Nbot/actions/runs/38259054293)) |
-| V5 Milestone 3 | PR OPEN / NOT DEPLOYED | PR #36 introduces streaming three-arm 4h exit-policy comparison, 1R stop, contiguous anchored price/quote path, fail-closed outcomes; requires WSS bridge/checkpoint/funding coverage |
+| V5 Milestone 3 | PROTOTYPE MERGED / NOT DEPLOYED | PR #36 merge `bece0864648cc3bdce0d24dbf842bbb3ebd6552f`, 1,456 clean PR-head tests, no worker; requires joint WSS feed/checkpoints/funding coverage |
 | V5 deployed | NO | Neither new services nor V5 data collection started |
 | V5 champion | NONE | First generation must qualify, no baseline exception |
 | V5 order authority | NONE | Permanently isolated in the V5 research/paper scope |
@@ -226,7 +226,9 @@ Verified PR-head CI: [1,436 tests, OK](https://github.com/samqju/Nbot/actions/ru
 
 ### Milestone 3 — Path-complete paired exit-policy lab
 
-**Status: PR OPEN — [#36](https://github.com/samqju/Nbot/pull/36). PURE RESEARCH PROTOTYPE, NOT DEPLOYED.**
+**Status: PROTOTYPE MERGED — [#36](https://github.com/samqju/Nbot/pull/36), merge SHA `bece0864648cc3bdce0d24dbf842bbb3ebd6552f`. NOT DEPLOYED.**
+
+Verified PR-head [CI run 38264782962](https://github.com/samqju/Nbot/actions/runs/38264782962): **1,456 tests passed, clean dots/OK**. Merged-main CI requires separate verification. This milestone is **not fully complete**: WSS quote-only stop evidence, durable checkpointing, funding-coverage verification and real-time forward study are not delivered.
 
 - [x] Implement research-only three-armed incremental tick state on a single shared entry and future market path.
 - [x] Require anchored consecutive aggregate IDs, monotonic timestamps, fresh executable quotes, closing horizon witness; errors make all three arms unscorable.
@@ -443,6 +445,7 @@ diagnostics if tests fail. **No masking errors to achieve cosmetic silence.**
 | 2026-10-12 | Start PR #34 point-in-time market quality bridge | Public exchangeInfo PRICE_FILTER/LOT_SIZE/MIN_NOTIONAL, depth freshness, order-book sweep, fail-closed missing/stale evidence; not deployed, thresholds unproven |
 | 2026-10-12 | Merge PR #34 quality bridge; record in PR #35 | Merge `0ad04e7`; clean 1,441-test CI at PR head, merged-main 38259054293 verified green; deployment and historical depth inference prohibited |
 | 2026-10-12 | Start PR #36 paired exit research lab | Same full 4h continuous path for three arms, no fake horizon fill, prospective funding proof contract, immutable outcome ledger; NO VPS changes |
+| 2026-10-12 | Merge PR #36 paired-exit prototype; record status in PR #37 | Merge `bece0864`, 1,456 green clean tests on PR head; quote-only crossings, actual WSS integration, funding proofs and state continuity remain; no V5 deployment |
 
 ## Handover checklist for a fresh ChatGPT session
 
@@ -451,7 +454,7 @@ diagnostics if tests fail. **No masking errors to achieve cosmetic silence.**
 - Confirm current services before suggesting any restart. A prior two-restart
   incident caused WSS path losses and 792 unresolved V4 outcomes.
 - PR #32 prototype merged at `19eec7f`. PR #34 public quality prototype merged at `0ad04e7` (main CI must be separately verified). The opt-in functions are **not** running: capture persistence, matched real-time event/metadata/depth provenance, portfolio correlation caps and prospective validation remain before V5 activation.
-- Review PR #36 paired-exit prototype and check CI before any merge. Next: prospective WSS/quote feed, restart/evidence continuity and funding-range proof.
+- PR #36 experimental paired-exit prototype merged at `bece0864`. Next: integrate a **joint WSS quote+aggTrade causal feed**, including quote-only price crossings, durably preserve evidence through restarts, verify funding coverage and test on new data; do not activate current pure replay prototype.
 - Identify next milestone by reading statuses, not by extrapolating chat.
 - Never claim V5 is collecting or learning until services are actually
   installed, started and observed.
