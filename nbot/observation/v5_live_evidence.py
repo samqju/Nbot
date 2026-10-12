@@ -617,12 +617,37 @@ owners. On database failure in-memory state rolls back to the last commit.
                      lambda: self.funding.update({key: proof}))
         return key
 
+    def check_source_coverage(self, now_ms, *, max_silence_ms=MAX_BOOKTICKER_SILENCE_MS):
+        """Check each symbol's bookTicker separately from other WSS traffic.
+
+        A bookTicker feed has no per-symbol heartbeats. Prolonged genuine
+        silence cannot be distinguished from quote loss, so reject rather
+        than certifying the stop path. Does not write on healthy checks.
+        """
+        integer(now_ms)
+        if type(max_silence_ms) is not int or max_silence_ms <= 0:
+            raise ValueError("V5_QUOTE_COVERAGE_POLICY_INVALID")
+        for symbol in self.symbols:
+            f = self.feeds[symbol]
+            if not f["connected"] or not f["synced"]:
+                continue
+            last = f["ticker_receipt"]
+            baseline = last if last is not None else f["synced_since"]
+            if baseline is not None and now_ms - baseline > max_silence_ms:
+                self.disconnect(symbol, "FEED_UNCERTAIN")
+                raise RuntimeError("V5_BOOKTICKER_SOURCE_SILENT")
+
     def finalize(self, decision_id, *, now_ms, funding_key=None):
         integer(now_ms)
         def action():
             if decision_id in self.lab._completed:
                 return self.lab._completed[decision_id]
             p = self.lab._paths[decision_id]
+            if (p.gap_reason is None and p.ready(now_ms)
+                    and (not p.ticker_events
+                         or p.ticker_last_time < p.deadline - MAX_BOOKTICKER_SILENCE_MS)):
+                # Depth-only continuity cannot establish bookTicker coverage.
+                p.gap_reason = "BOOKTICKER_COVERAGE_UNPROVEN"
             proof = self.funding.get(funding_key)
             exits = [a.exit_time_ms for a in p.arms.values()]
             covered = bool(proof and proof["symbol"] == p.entry.symbol
