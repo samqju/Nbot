@@ -7,7 +7,7 @@
 >
 > Repository: `samqju/Nbot`. Branch: `main`; new work goes through reviewed PRs.
 > First PR: [#30](https://github.com/samqju/Nbot/pull/30).
-> Last update: **2026-10-12**, PR #38 adds the research-only live evidence/recovery bridge; not deployed.
+> Last update: **2026-10-12**, PR #38 independent audit remediation (two P1 false-scoring defects), pending revised CI and second audit.
 >
 > **Safety invariant: Research / Paper only. No order authority.**
 > No change to Execution role, private Binance credentials or real-money order
@@ -229,7 +229,7 @@ Verified PR-head CI: [1,436 tests, OK](https://github.com/samqju/Nbot/actions/ru
 
 **Status: PROTOTYPE MERGED — [#36](https://github.com/samqju/Nbot/pull/36), merge SHA `bece0864648cc3bdce0d24dbf842bbb3ebd6552f`. NOT DEPLOYED.**
 
-Verified PR #36 head [CI run 38264782962](https://github.com/samqju/Nbot/actions/runs/38264782962): **1,456 tests passed, clean dots/OK**. Merged-main [CI run 38265101835](https://github.com/samqju/Nbot/actions/runs/38265101835) also passed the full regression suite. PR #38 now implements WSS quote-only stop evidence, checkpoints and public funding reconciliation. This milestone is **not fully complete**: prospective evidence validation, host performance and real-time forward study remain outstanding.
+Verified PR #36 head [CI run 38264782962](https://github.com/samqju/Nbot/actions/runs/38264782962): **1,456 tests passed, clean dots/OK**. Merged-main [CI run 38265101835](https://github.com/samqju/Nbot/actions/runs/38265101835) also passed the full regression suite. PR #38 now implements WSS quote-only stop evidence, checkpoints and public funding reconciliation. Its first independent review at `7d4fb915` found two blocking P1 defects: older depth quote overwrote newer bookTicker entry anchor; missing bookTicker source could still yield all three SCORED outcomes. **Do not merge** until corrected-head CI and second independent audit confirm these cases fail closed. This milestone is **not fully complete**: prospective evidence validation, host performance and real-time forward study remain outstanding.
 
 PR #38 validation includes 29 new focused tests: causal capture receipts, routed transport/snapshot
 buffering, trade recovery, quote-only LONG/SHORT stops, depth/horizon watermarks,
@@ -239,7 +239,7 @@ full regression CI remains a release gate. Implementation head `0f158bad` passed
 **1,485 tests, clean dots/OK**, including the roadmap gate, in
 [run 38272931564](https://github.com/samqju/Nbot/actions/runs/38272931564).
 This subsequent documentation-only revision requires its own latest-head CI;
-no deployment or merge is claimed here.
+no deployment or merge is claimed here. The remediation adds independent stream source tracking, conservative ticker-coverage watchdog and exact reproductions, but does not prove all sub-30-second silent packet loss detectable.
 
 - [x] Implement research-only three-armed incremental tick state on a single shared entry and future market path.
 - [x] Require anchored consecutive aggregate IDs, monotonic timestamps, fresh executable quotes, closing horizon witness; errors make all three arms unscorable.
@@ -440,6 +440,17 @@ accompanying edit to this document. The dedicated quiet test runner captures
 all test stdout/stderr, including subprocess prints and FD writes, while
 preserving actual unittest dot progress, error tracebacks and captured
 diagnostics if tests fail. **No masking errors to achieve cosmetic silence.**
+
+## PR #38 independent audit — remediation gates
+
+- [x] First independent review at `7d4fb915` reproduced two merge-blocking P1 evidence defects.
+- [x] Code correction: depth may not replace a newer bookTicker executable entry anchor; reject reversed/cross-source evidence and enforce two-source agreement for new admission.
+- [x] Code correction: require ticker evidence for admission and horizon; track per-symbol, per-event-source receipts; transport keeps socket identity and uses a watchdog independent of busy queue traffic.
+- [x] Add reproductions for stale SHORT entry, zero-bookTicker candidate and masked ticker silence.
+- [ ] Verify corrected PR #38 latest-head full CI, including all new tests.
+- [ ] Perform **a second independent read-only audit** of corrected SHA; require both original P1 defects to be irreproducible before merge.
+- [ ] Independently validate real Binance event timing, brief quote losses that evade silence watchdog, resource usage and settlement finality on isolated host. Until that acceptance, no live V5 scoring or VPS deployment.
+- [ ] Merge PR #38 only after the second review and green latest SHA CI, then verify merged-main CI; keep V4 untouched.
 
 ## Decision log (append-only)
 
