@@ -345,7 +345,13 @@ owners. On database failure in-memory state rolls back to the last commit.
     def add(self, entry):
         f = self._feed(entry.symbol)
         q = f["quote"]
+        depth = f["depth_quote"]
+        ticker = f["ticker"]
         if (not f["connected"] or not f["synced"] or not q or not f["trade"]
+                or not ticker or not depth or f["ticker_receipt"] is None
+                or q != ticker or ticker["b"] != depth["b"]
+                or ticker["a"] != depth["a"]
+                or ticker["T"] < depth["T"] or ticker["u"] < depth["u"]
                 or f["quote_receipt"] is None or f["trade_receipt"] is None
                 or entry.entry_time_ms < max(f["quote_receipt"], f["trade_receipt"])
                 or entry.anchor_agg_id != f["agg"]
@@ -393,6 +399,7 @@ owners. On database failure in-memory state rolls back to the last commit.
                 raise ValueError("V5_AGGTRADE_GAP")
             f["agg"], f["trade"] = r["a"], r
             f["trade_receipt"] = receipt
+            f["source_receipts"]["aggTrade"] = receipt
             self.lab.event(s, r, receipt, trade=True)
         elif kind == "bookTicker":
             r = {"T": t, "u": integer(row["u"]),
@@ -405,11 +412,16 @@ owners. On database failure in-memory state rolls back to the last commit.
                 return
             if f["ticker"] and (r["u"] <= f["ticker"]["u"] or t < f["ticker"]["T"]):
                 raise ValueError("V5_TICKER_REVERSED_OR_CONFLICT")
+            depth = f["depth_quote"]
+            if depth and (r["T"] < depth["T"] or r["u"] < depth["u"]):
+                raise ValueError("V5_TICKER_BEHIND_DEPTH")
             f["ticker"] = r
+            f["ticker_receipt"] = receipt
+            f["source_receipts"]["bookTicker"] = receipt
             if f["synced"]:
                 f["quote"] = r
                 f["quote_receipt"] = receipt
-                self.lab.event(s, r, receipt)
+                self.lab.event(s, r, receipt, source="bookTicker")
         else:
             integer(row["U"]); integer(row["u"]); integer(row["pu"])
             if row["U"] > row["u"]:
@@ -458,8 +470,13 @@ owners. On database failure in-memory state rolls back to the last commit.
             buffer, f["buffer"] = f["buffer"], []
             for item in buffer:
                 self._depth(symbol, item["row"], item["receipt"])
-            if f["quote_receipt"] is not None:
-                f["quote_receipt"] = max(f["quote_receipt"], receipt_ms)
+            if f["synced"]:
+                f["synced_since"] = receipt_ms
+                if f["ticker"] and f["depth_quote"]:
+                    latest, depth = f["ticker"], f["depth_quote"]
+                    if latest["T"] >= depth["T"] and latest["u"] >= depth["u"]:
+                        f["quote"] = latest
+                        f["quote_receipt"] = f["ticker_receipt"]
         try:
             self._change({"kind": "DEPTH_SNAPSHOT", "symbol": symbol,
                           "receipt": receipt_ms, "payload": payload}, action)
@@ -494,11 +511,21 @@ owners. On database failure in-memory state rolls back to the last commit.
         ask = min(f["asks"], key=Decimal)
         if Decimal(bid) >= Decimal(ask):
             raise ValueError("V5_DEPTH_BOOK_CROSSED")
-        f.update(depth_id=row["u"], synced=True, last_depth=row)
         r = {"T": row["T"], "u": row["u"], "b": bid, "a": ask}
-        f["quote"] = r
-        f["quote_receipt"] = receipt
-        self.lab.event(s, r, receipt, depth_watermark=(row["u"], row["T"]))
+        ticker = f["ticker"]
+        if ticker and (r["T"] < ticker["T"] or r["u"] < ticker["u"]):
+            # Late depth cannot replace newer bookTicker price evidence.
+            # Outer ingest/snapshot error handling invalidates existing
+            # hypotheses and blocks subsequent entry admission.
+            raise ValueError("V5_DEPTH_BEHIND_TICKER")
+        f.update(depth_id=row["u"], synced=True, last_depth=row)
+        f["depth_quote"] = r
+        f["depth_receipt"] = receipt
+        f["source_receipts"]["depthUpdate"] = receipt
+        # Depth updates can trigger virtual stops but cannot become
+        # a replacement bookTicker executable entry anchor.
+        self.lab.event(s, r, receipt, depth_watermark=(row["u"], row["T"]),
+                       source="depthUpdate")
 
     def recover_trades(self, symbol, through_id, rest, *, max_pages=10):
         """Recover available IDs inclusively; never issue paired quote ticks.
