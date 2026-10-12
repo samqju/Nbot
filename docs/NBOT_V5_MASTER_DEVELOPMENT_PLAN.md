@@ -7,7 +7,7 @@
 >
 > Repository: `samqju/Nbot`. Branch: `main`; new work goes through reviewed PRs.
 > First PR: [#30](https://github.com/samqju/Nbot/pull/30).
-> Last update: **2026-10-12**, PR #34 market-quality bridge merged, completion record PR #35.
+> Last update: **2026-10-12**, Milestone 3 paired exit-policy lab PR #36 opened (tests/merge pending).
 >
 > **Safety invariant: Research / Paper only. No order authority.**
 > No change to Execution role, private Binance credentials or real-money order
@@ -46,6 +46,7 @@
 | V5 Milestone 1 | MERGED, NOT DEPLOYED | PR #30 merged as `2b6bc33acf31978459cbca105b3ea1979562df30`. 1,428 tests passed on PR head and merged main (run 38250307646) |
 | V5 Milestone 2 | PROTOTYPE MERGED / NOT DEPLOYED | PR #32 merge `19eec7f9436f9cd1c3b2acae3dcc008d8d7f574d`; 1,436 tests passed on PR head; metadata/depth and prospective validation remain outstanding |
 | V5 market-quality bridge | PROTOTYPE MERGED / NOT DEPLOYED | PR #34 merge `0ad04e711d79c46047fa952cf249f3f429976ada`; 1,441 tests passed on PR head; merged-main full regression succeeded ([run 38259054293](https://github.com/samqju/Nbot/actions/runs/38259054293)) |
+| V5 Milestone 3 | PR OPEN / NOT DEPLOYED | PR #36 introduces streaming three-arm 4h exit-policy comparison, 1R stop, contiguous anchored price/quote path, fail-closed outcomes; requires WSS bridge/checkpoint/funding coverage |
 | V5 deployed | NO | Neither new services nor V5 data collection started |
 | V5 champion | NONE | First generation must qualify, no baseline exception |
 | V5 order authority | NONE | Permanently isolated in the V5 research/paper scope |
@@ -225,26 +226,32 @@ Verified PR-head CI: [1,436 tests, OK](https://github.com/samqju/Nbot/actions/ru
 
 ### Milestone 3 — Path-complete paired exit-policy lab
 
-**Status: PLANNED.**
+**Status: PR OPEN — [#36](https://github.com/samqju/Nbot/pull/36). PURE RESEARCH PROTOTYPE, NOT DEPLOYED.**
 
-- [ ] Retain starting stop at -1R for **all** policy arms.
-- [ ] Arm A: initial -1R stop, +2R target, fixed horizon (experimental).
-- [ ] Arm B: initial -1R stop, no target/trailing, fixed horizon.
-- [ ] Arm C: existing whole-R trailing, initial -1R stop, fixed horizon.
-- [ ] Use same entry, same quantity and same chronological verified
+- [x] Implement research-only three-armed incremental tick state on a single shared entry and future market path.
+- [x] Require anchored consecutive aggregate IDs, monotonic timestamps, fresh executable quotes, closing horizon witness; errors make all three arms unscorable.
+- [x] Account independently for per-arm exit prices and signed funding through shared V5 accounting contract.
+- [x] Keep constant-memory per hypothesis and capacity 100; append immutable three-arm outcomes with shared SHA-256 digest.
+- [ ] Integrate real WSS quote/trade event bridge, restart checkpoint and funding coverage proof before any live V5 feed.
+
+- [x] Retain starting stop at -1R for **all** policy arms (prototype).
+- [x] Arm A: initial -1R stop, +2R target, fixed horizon (experimental).
+- [x] Arm B: initial -1R stop, no target/trailing, fixed horizon.
+- [x] Arm C: existing whole-R trailing, initial -1R stop, fixed horizon.
+- [x] Use same entry, same quantity and same chronological verified
       trade feed for every arm; no path reconstruction from early
       stopped trade only.
 - [ ] Parameterized horizons only from prespecified experimental grid,
       not tuned against the holdout.
-- [ ] Side-consistent fills at bid/ask; stop crosses on tick; handle
+- [x] Side-consistent fills at bid/ask; stop crosses on tick; handle
       gap/jump, simultaneous triggers and exchange timestamp ambiguity.
-- [ ] Each arm has its own outcome, exit timestamp/reason, max favorable
+- [x] Each arm has its own outcome, exit timestamp/reason, max favorable
       and adverse excursion, initial risk, fees, slippage and funding.
-- [ ] Disconnected WSS, unproven trade ID sequence or restart interrupt
+- [x] Interface: disconnected WSS, unproven trade ID sequence or restart interrupt
       produce UNSCORABLE for affected arms.
 - [ ] Design WAL-safe restart/checkpoint for evidence integrity; do not
       invent missed trade paths. Capacity for 100 entries with 3 exit arms.
-- [ ] Add memory/CPU pressure tests and fast bounded queue behavior.
+- [ ] Add real-host memory/CPU pressure tests, durable pending-result queues and bounded WSS behavior. (Unit stream-memory and capacity tests in PR #36.)
 - **Acceptance:** deterministic, paired comparisons on identical future
   market events and strict evidence-integrity tests.
 
@@ -435,6 +442,7 @@ diagnostics if tests fail. **No masking errors to achieve cosmetic silence.**
 | 2026-10-12 | Record PR #32 merge in PR #33 | Handover document updated after milestone code change; V5 remains not deployed |
 | 2026-10-12 | Start PR #34 point-in-time market quality bridge | Public exchangeInfo PRICE_FILTER/LOT_SIZE/MIN_NOTIONAL, depth freshness, order-book sweep, fail-closed missing/stale evidence; not deployed, thresholds unproven |
 | 2026-10-12 | Merge PR #34 quality bridge; record in PR #35 | Merge `0ad04e7`; clean 1,441-test CI at PR head, merged-main 38259054293 verified green; deployment and historical depth inference prohibited |
+| 2026-10-12 | Start PR #36 paired exit research lab | Same full 4h continuous path for three arms, no fake horizon fill, prospective funding proof contract, immutable outcome ledger; NO VPS changes |
 
 ## Handover checklist for a fresh ChatGPT session
 
@@ -443,6 +451,7 @@ diagnostics if tests fail. **No masking errors to achieve cosmetic silence.**
 - Confirm current services before suggesting any restart. A prior two-restart
   incident caused WSS path losses and 792 unresolved V4 outcomes.
 - PR #32 prototype merged at `19eec7f`. PR #34 public quality prototype merged at `0ad04e7` (main CI must be separately verified). The opt-in functions are **not** running: capture persistence, matched real-time event/metadata/depth provenance, portfolio correlation caps and prospective validation remain before V5 activation.
+- Review PR #36 paired-exit prototype and check CI before any merge. Next: prospective WSS/quote feed, restart/evidence continuity and funding-range proof.
 - Identify next milestone by reading statuses, not by extrapolating chat.
 - Never claim V5 is collecting or learning until services are actually
   installed, started and observed.
