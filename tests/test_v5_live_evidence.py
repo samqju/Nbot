@@ -221,6 +221,61 @@ class BridgeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"DUPLICATE_CONFLICT"):
             self.b.ingest({**d,"b":[["99.7","1"]]},T+110)
 
+    def test_decimal_price_identity_and_future_exchange_time(self):
+        d=depth(u=101,pu=100,t=T+100,bid="99.8")
+        d["b"].append(["99.9000","0"])
+        self.b.ingest(d,T+110)
+        self.assertNotIn("99.9",self.b.feeds["BTCUSDT"]["bids"])
+        with self.assertRaisesRegex(ValueError,"STALE"):
+            self.b.ingest({**quote(t=T+200),"E":T+5000},T+210)
+
+    def test_unbridgeable_snapshot_and_depth_buffer_budget(self):
+        self.b.disconnect("BTCUSDT")
+        self.b.connected("BTCUSDT")
+        self.b.ingest(depth(u=200,U=200,t=T+100),T+110)
+        with self.assertRaisesRegex(ValueError,"BRIDGE_MISSING"):
+            self.b.snapshot("BTCUSDT",{"lastUpdateId":150,"T":T+100,
+                                       "bids":[["99.9","2"]],"asks":[["100","2"]]},T+120)
+        self.b.connected("BTCUSDT")
+        with patch("nbot.observation.v5_live_evidence.MAX_BUFFER",0):
+            with self.assertRaisesRegex(ValueError,"BUFFER_OVERFLOW"):
+                self.b.ingest(depth(u=300,t=T+200),T+210)
+        self.assertFalse(self.b.feeds["BTCUSDT"]["synced"])
+
+    def test_rest_failure_and_duplicate_settlement_do_not_create_proof(self):
+        def unavailable(*a): raise OSError("HTTP 429")
+        with self.assertRaises(OSError):
+            self.b.reconcile_funding("BTCUSDT",T,END,unavailable,
+                                     now_ms=END+FUNDING_GRACE_MS)
+        row={"symbol":"BTCUSDT","fundingTime":T+5000,"fundingRate":"0","markPrice":"100"}
+        with self.assertRaisesRegex(ValueError,"CHRONOLOGY"):
+            self.b.reconcile_funding("BTCUSDT",T,END,lambda *a:[row,row],
+                                     now_ms=END+FUNDING_GRACE_MS)
+        self.assertFalse(self.b.funding)
+
+    def test_horizon_complete_checkpoint_can_finish_funding_after_restart(self):
+        self.b.ingest(quote(t=END,bid="100.1",ask="100.2"),END+10)
+        self.b.ingest(trade(11,END),END+20)
+        b=LiveEvidenceBridge(self.path,symbols=["BTCUSDT"])
+        b.initialize()
+        self.assertIsNone(b.lab._paths["d1"].gap_reason)
+        key=b.reconcile_funding("BTCUSDT",T,END,lambda *a:[],now_ms=END+FUNDING_GRACE_MS)
+        self.assertTrue(all(r.status=="SCORED" for r in b.finalize("d1",now_ms=END+FUNDING_GRACE_MS,funding_key=key)))
+
+    def test_acknowledged_decision_identity_cannot_be_reused(self):
+        self.finish()
+        # Simulate an already persisted result acknowledgment; ID registry
+        # survives independently of bounded in-memory pending results.
+        self.b._change({"kind":"LEDGER_ACK","decision":"d1"},
+                       lambda:self.b.lab.acknowledge_persisted("d1"))
+        q=self.b.feeds["BTCUSDT"]["quote"]
+        e=replace(entry(),entry_time_ms=END+100,entry_quote_time_ms=END,
+                  entry_bid=float(q["b"]),entry_ask=float(q["a"]),
+                  anchor_agg_id=11,anchor_trade_time_ms=END)
+        with self.assertRaisesRegex(ValueError,"DECISION_REUSED"):
+            self.b.add(e)
+        self.assertEqual(self.b.lab.active_count,0)
+
     def test_snapshot_does_not_provide_historical_quote_recovery(self):
         self.b.disconnect("BTCUSDT")
         self.b.connected("BTCUSDT")

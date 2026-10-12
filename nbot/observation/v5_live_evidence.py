@@ -103,6 +103,10 @@ future quotes. bookTicker update IDs are NOT a consecutive trade sequence.
                 path.last_agg_id = row["a"]
                 path.last_trade_time_ms = timestamp
             else:
+                if (path.last_quote_update_id is not None
+                        and row["u"] < path.last_quote_update_id):
+                    path.invalidate("JOINT_QUOTE_ID_REVERSED")
+                    continue
                 # An identical second source quote at the same timestamp adds
                 # provenance, but cannot ratchet a trailing stop twice.
                 quote = (timestamp, row["b"], row["a"])
@@ -219,6 +223,12 @@ owners. On database failure in-memory state rolls back to the last commit.
                     state TEXT NOT NULL, digest TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS journal(
                     seq INTEGER PRIMARY KEY, event TEXT NOT NULL, digest TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS decision_ids(
+                    decision_id TEXT PRIMARY KEY, entry TEXT NOT NULL);
+                CREATE TRIGGER IF NOT EXISTS ids_no_update BEFORE UPDATE ON decision_ids
+                    BEGIN SELECT RAISE(ABORT,'IMMUTABLE_V5_ID'); END;
+                CREATE TRIGGER IF NOT EXISTS ids_no_delete BEFORE DELETE ON decision_ids
+                    BEGIN SELECT RAISE(ABORT,'IMMUTABLE_V5_ID'); END;
                 CREATE TRIGGER IF NOT EXISTS journal_no_update BEFORE UPDATE ON journal
                     BEGIN SELECT RAISE(ABORT,'IMMUTABLE_V5_JOURNAL'); END;
                 CREATE TRIGGER IF NOT EXISTS journal_no_delete BEFORE DELETE ON journal
@@ -265,6 +275,13 @@ owners. On database failure in-memory state rolls back to the last commit.
                     row = conn.execute("SELECT seq FROM checkpoint WHERE id=1").fetchone()
                     if (row[0] if row else 0) != self.seq:
                         raise RuntimeError("V5_EVIDENCE_CONCURRENT_WRITER")
+                    if event["kind"] == "ENTRY":
+                        decision = event["entry"]["decision_id"]
+                        if conn.execute("SELECT 1 FROM decision_ids WHERE decision_id=?",
+                                        (decision,)).fetchone():
+                            raise ValueError("V5_PAIRED_DECISION_REUSED")
+                        conn.execute("INSERT INTO decision_ids VALUES(?,?)",
+                                     (decision, _encode(event["entry"]).decode()))
                     conn.execute("INSERT INTO journal VALUES(?,?,?)",
                                  (self.seq + 1, _encode(event).decode(), digest))
                     conn.execute("INSERT OR REPLACE INTO checkpoint VALUES(1,?,?,?)",
@@ -329,8 +346,8 @@ owners. On database failure in-memory state rolls back to the last commit.
         if not f["connected"]:
             raise ValueError("V5_WSS_NOT_CONNECTED")
         t = integer(row["T"])
-        integer(row["E"])
-        if receipt < t or receipt - t > MAX_RECEIPT_DELAY_MS:
+        event_time = integer(row["E"])
+        if event_time < t or receipt < event_time or receipt - t > MAX_RECEIPT_DELAY_MS:
             raise ValueError("V5_WSS_RECEIPT_STALE")
         if kind == "aggTrade":
             r = self._trade(row)
@@ -345,7 +362,8 @@ owners. On database failure in-memory state rolls back to the last commit.
             self.lab.event(s, r, receipt, trade=True)
         elif kind == "bookTicker":
             r = {"T": t, "u": integer(row["u"]),
-                 "b": str(number(row["b"])), "a": str(number(row["a"]))}
+                 "b": str(number(row["b"]).normalize()),
+                 "a": str(number(row["a"]).normalize())}
             number(row["B"]); number(row["A"])
             if Decimal(r["b"]) >= Decimal(r["a"]):
                 raise ValueError("V5_QUOTE_CROSSED")
@@ -372,7 +390,8 @@ owners. On database failure in-memory state rolls back to the last commit.
     @staticmethod
     def _trade(row):
         r = {k: integer(row[k]) for k in ("a", "f", "l", "T")}
-        r.update(p=str(number(row["p"])), q=str(number(row["q"])), m=row["m"])
+        r.update(p=str(number(row["p"]).normalize()),
+                 q=str(number(row["q"]).normalize()), m=row["m"])
         if r["f"] > r["l"] or type(r["m"]) is not bool:
             raise ValueError("V5_TRADE_INVALID")
         return r
@@ -383,7 +402,7 @@ owners. On database failure in-memory state rolls back to the last commit.
             raise ValueError("V5_DEPTH_LEVELS_INVALID")
         levels = {}
         for price, qty in rows:
-            price, qty = str(number(price)), str(number(qty, zero=True))
+            price, qty = str(number(price).normalize()), str(number(qty, zero=True).normalize())
             if price in levels:
                 raise ValueError("V5_DEPTH_LEVEL_DUPLICATE")
             levels[price] = qty
