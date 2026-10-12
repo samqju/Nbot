@@ -9,12 +9,16 @@ from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
 import sys
 import tempfile
 import unittest
 
 
 def run_quiet(*, start_directory: str = "tests", pattern: str = "test_*.py") -> int:
+    root = str(Path(__file__).resolve().parents[2])
+    if root not in sys.path:
+        sys.path.insert(0, root)
     sys.stdout.flush()
     sys.stderr.flush()
     saved_stdout_fd = os.dup(1)
