@@ -87,6 +87,8 @@ class V5DirectionalSelectionTests(unittest.TestCase):
         bad=replace(observations(),bars=tuple(b))
         self.assertIn("INVALID_4H_HISTORY",evaluate(bad,"LONG",now_ms=NOW).reason)
         self.assertEqual(evaluate(bad,"LONG",now_ms=NOW).sampling_probability,0)
+        malformed=replace(observations(),bid=None)
+        self.assertIn("INVALID_BID_ASK",evaluate(malformed,"LONG",now_ms=NOW).reason)
         self.assertFalse(evaluate(bad,"LONG",now_ms=NOW).qualified)
 
     def test_economics_and_future_metadata_rejected(self):
@@ -127,6 +129,13 @@ class V5DirectionalSelectionTests(unittest.TestCase):
         self.assertEqual(len(a.selected),0)
         self.assertTrue(all(e.status=="EXPLORATORY" and e.sampling_probability>0
                             and not e.qualified for e in a.exploratory))
+        eligible_by_side={side:sum(r.exploration_eligible for r in a.records if r.side==side)
+                          for side in ("LONG","SHORT")}
+        selected_by_side={side:sum(r.side==side for r in a.exploratory)
+                          for side in ("LONG","SHORT")}
+        for item in a.exploratory:
+            self.assertAlmostEqual(item.sampling_probability,
+                                   selected_by_side[item.side]/eligible_by_side[item.side])
         with self.assertRaisesRegex(RuntimeError,"NO_ORDER_AUTHORITY"):
             submit_order()
 
