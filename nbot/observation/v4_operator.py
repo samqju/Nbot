@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import html
+from datetime import datetime, timezone
 from pathlib import Path
 import time
 
@@ -24,7 +25,15 @@ class V4PaperOperator:
             report = promotion_report(c, g, ledger, now_ms=now)
             contests = rows(c, "SELECT * FROM contests WHERE status IN ('ACTIVE','REVIEW_REQUIRED') ORDER BY contest_id DESC LIMIT 1")
             contest = contests[0] if contests else None
-            models = rows(c, 'SELECT generation,role,completed_trades,realized_r FROM contest_models WHERE contest_id=?', (contest['contest_id'],)) if contest else []
+            models = rows(c, 'SELECT generation,role,completed_trades,realized_r FROM contest_models WHERE contest_id=? ORDER BY generation', (contest['contest_id'],)) if contest else []
+            # Read only the active contest's persisted OPEN paper positions.
+            # These are model-examination paths, not exchange orders.
+            open_positions = rows(
+                c,
+                "SELECT generation,symbol,side,entry_time_ms FROM paper_trades "
+                "WHERE contest_id=? AND status='OPEN' ORDER BY generation,entry_time_ms",
+                (contest['contest_id'],),
+            ) if contest else []
             state = dict(g.execute('SELECT key,value FROM state'))
         lines = ['V4 paper Champion review', f"Champion: {state.get('champion_generation') or 'none'}"]
         ready = bool(contest and contest['status'] == 'REVIEW_REQUIRED')
@@ -33,6 +42,23 @@ class V4PaperOperator:
             for model in models:
                 from .v4_policy import contest_checkpoint
                 lines.append(f"Gen-{model['generation']} {model['role']}: {model['completed_trades']}/{contest_checkpoint(contest)} scored, {model['realized_r']:.3f}R")
+            lines.append('Open paper positions (not exchange orders):')
+            for model in models:
+                positions = [p for p in open_positions if p['generation'] == model['generation']]
+                if not positions:
+                    lines.append(f"Gen-{model['generation']} {model['role']}: none open")
+                for position in positions:
+                    entry_ms = int(position['entry_time_ms'])
+                    elapsed_minutes = max(0, (now - entry_ms) // 60_000)
+                    entry_utc = datetime.fromtimestamp(
+                        entry_ms / 1000, tz=timezone.utc
+                    ).strftime('%Y-%m-%d %H:%M UTC')
+                    lines.append(
+                        f"Gen-{model['generation']} {model['role']}: "
+                        f"{position['symbol']} {position['side']} OPEN; "
+                        f"entry {entry_utc}; elapsed "
+                        f"{elapsed_minutes // 60}h {elapsed_minutes % 60}m"
+                    )
         lines.append('Promotion gates: '+('PASS' if report['eligible'] else 'BLOCKED'))
         lines.extend(report.get('failed_checks', [])[:12])
         if ready:
@@ -43,7 +69,8 @@ class V4PaperOperator:
         lines.append('Paper only. Approval never enables entries or real-money trading.')
         return {'status': 'OK', 'view': 'v4-review', 'order_authority': 'NONE',
                 'telegram_body': html.escape('\n'.join(lines)),
-                'document': {'contest': contest, 'models': models, 'promotion_review': report,
+                'document': {'contest': contest, 'models': models,
+                             'open_positions': open_positions, 'promotion_review': report,
                              'review_ready': ready, 'order_authority': 'NONE'}}
 
     def review(self, payload):
