@@ -95,7 +95,9 @@ makes scoring unavailable. See
 ## Manual use and outstanding gates
 
 The callable bridge accepts frozen, proven live anchors, ingests events,
-reconciles funding, finalizes and durably acknowledges ledger writes. It does not
+reconciles funding, finalizes and durably acknowledges ledger writes. It rejects
+entry timestamps before actual trade/quote capture receipt (including snapshot
+completion). Exchange transaction time alone cannot prove availability. It does not
 select entries. The standalone capture command is explicitly opt-in:
 
 ```text

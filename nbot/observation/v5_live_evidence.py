@@ -198,7 +198,8 @@ owners. On database failure in-memory state rolls back to the last commit.
     def _fresh():
         return {"agg": None, "trade": None, "bids": {}, "asks": {},
                 "depth_id": None, "synced": False, "buffer": [],
-                "ticker": None, "quote": None, "connected": False}
+                "ticker": None, "quote": None, "connected": False,
+                "trade_receipt": None, "quote_receipt": None}
 
     @contextmanager
     def _connect(self):
@@ -262,6 +263,7 @@ owners. On database failure in-memory state rolls back to the last commit.
             old = self.feeds[s]
             fresh = self._fresh()
             fresh["agg"], fresh["trade"] = old["agg"], old["trade"]
+            fresh["trade_receipt"] = old["trade_receipt"]
             self.feeds[s] = fresh
 
     def _change(self, event, action):
@@ -322,6 +324,8 @@ owners. On database failure in-memory state rolls back to the last commit.
         f = self._feed(entry.symbol)
         q = f["quote"]
         if (not f["connected"] or not f["synced"] or not q or not f["trade"]
+                or f["quote_receipt"] is None or f["trade_receipt"] is None
+                or entry.entry_time_ms < max(f["quote_receipt"], f["trade_receipt"])
                 or entry.anchor_agg_id != f["agg"]
                 or entry.anchor_trade_time_ms != f["trade"]["T"]
                 or entry.entry_quote_time_ms != q["T"]
@@ -366,6 +370,7 @@ owners. On database failure in-memory state rolls back to the last commit.
                 # Keep cursor: explicit bounded REST recovery must close it.
                 raise ValueError("V5_AGGTRADE_GAP")
             f["agg"], f["trade"] = r["a"], r
+            f["trade_receipt"] = receipt
             self.lab.event(s, r, receipt, trade=True)
         elif kind == "bookTicker":
             r = {"T": t, "u": integer(row["u"]),
@@ -381,6 +386,7 @@ owners. On database failure in-memory state rolls back to the last commit.
             f["ticker"] = r
             if f["synced"]:
                 f["quote"] = r
+                f["quote_receipt"] = receipt
                 self.lab.event(s, r, receipt)
         else:
             integer(row["U"]); integer(row["u"]); integer(row["pu"])
@@ -430,6 +436,8 @@ owners. On database failure in-memory state rolls back to the last commit.
             buffer, f["buffer"] = f["buffer"], []
             for item in buffer:
                 self._depth(symbol, item["row"], item["receipt"])
+            if f["quote_receipt"] is not None:
+                f["quote_receipt"] = max(f["quote_receipt"], receipt_ms)
         try:
             self._change({"kind": "DEPTH_SNAPSHOT", "symbol": symbol,
                           "receipt": receipt_ms, "payload": payload}, action)
@@ -467,6 +475,7 @@ owners. On database failure in-memory state rolls back to the last commit.
         f.update(depth_id=row["u"], synced=True, last_depth=row)
         r = {"T": row["T"], "u": row["u"], "b": bid, "a": ask}
         f["quote"] = r
+        f["quote_receipt"] = receipt
         self.lab.event(s, r, receipt, depth_watermark=(row["u"], row["T"]))
 
     def recover_trades(self, symbol, through_id, rest, *, max_pages=10):

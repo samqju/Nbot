@@ -85,6 +85,10 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(len({r.evidence_digest for r in rows}), 1)
         self.assertEqual(self.b.feeds["BTCUSDT"]["agg"], 11)
 
+    def test_entry_anchor_cannot_predate_quote_capture_receipt(self):
+        with self.assertRaisesRegex(ValueError,"LIVE_ANCHOR_UNPROVEN"):
+            self.b.add(replace(entry("SHORT","late-capture"),entry_time_ms=T-90))
+
     def test_quote_only_short_stop_uses_ask(self):
         self.b.add(entry("SHORT", "short"))
         self.b.ingest(quote(bid="101.1", ask="101.2"), T+110)

@@ -231,7 +231,7 @@ Verified PR-head CI: [1,436 tests, OK](https://github.com/samqju/Nbot/actions/ru
 
 Verified PR #36 head [CI run 38264782962](https://github.com/samqju/Nbot/actions/runs/38264782962): **1,456 tests passed, clean dots/OK**. Merged-main [CI run 38265101835](https://github.com/samqju/Nbot/actions/runs/38265101835) also passed the full regression suite. PR #38 now implements WSS quote-only stop evidence, checkpoints and public funding reconciliation. This milestone is **not fully complete**: prospective evidence validation, host performance and real-time forward study remain outstanding.
 
-PR #38 validation includes 28 new focused tests: routed transport/snapshot
+PR #38 validation includes 29 new focused tests: causal capture receipts, routed transport/snapshot
 buffering, trade recovery, quote-only LONG/SHORT stops, depth/horizon watermarks,
 restart/partial recovery, failed writes/corruption/concurrent writers, permanent
 decision IDs, pending ledger retries and settlement funding cases. Latest PR-head
