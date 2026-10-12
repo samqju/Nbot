@@ -98,8 +98,13 @@ because this patch is ready.
 
 ## Telegram approval and Execution recommendations
 
-On the existing Execution bot, use `/champion` to see the active contest,
-completed trades, failed gates, and exact commands. `/learning` also shows exam
+On the existing Execution bot, `/champion` shows the active contest, completed
+trades, failed gates and exact approval/rejection commands. The live-paper menu
+registers all ten commands: `/help`, `/status`, `/position`, `/recent`, `/pnl`,
+`/learning`, `/enable`, `/disable`, `/champion`, `/wss`. `/help` uses that same
+list. Other Execution modes keep the eight base commands.
+
+`/learning` also shows exam
 progress. The authorized operator receives a channel notification when the
 contest reaches review. Approval is never automatic.
 

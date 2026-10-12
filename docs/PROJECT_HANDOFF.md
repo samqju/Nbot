@@ -38,7 +38,7 @@ The learning design evolved from price-model recommendations to fixed candidate 
 
 Settled main paper-trade outcomes and eligible shadow outcomes can influence paper feedback, rankings and loss pauses. The main position remains one; up to ten additional candidate shadow simulations are separately labelled. Actual execution profit/loss, paper/shadow feedback and detailed research-policy targets must not be silently mixed or described as equivalent.
 
-The Telegram menu was reduced to eight commands: `/help`, `/status`, `/position`, `/recent`, `/pnl`, `/learning`, `/enable`, `/disable`. Some research/admin capabilities remain CLI-only. The owner previously changed notification destination settings; preserve current private configuration rather than replacing it with templates.
+The Execution menu has eight base commands: `/help`, `/status`, `/position`, `/recent`, `/pnl`, `/learning`, `/enable`, `/disable`. The live-paper menu also registers `/champion` and `/wss` (ten commands total), and `/help` uses the same profile-specific list. Some research/admin capabilities remain CLI-only. The owner previously changed notification destination settings; preserve current private configuration rather than replacing it with templates.
 
 A prior repeated stale/invalid public-market timestamp error caused execution restart messages. Historical fixes were reported in the conversation, but the exact original patch is not reconstructed here. If this recurs, inspect current logs and data freshness rather than assuming the old cause.
 
