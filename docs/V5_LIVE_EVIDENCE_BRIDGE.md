@@ -123,3 +123,32 @@ readiness or profitable entry thresholds.
 
 Rollback: leave the opt-in module unused or revert this PR; retain V5 evidence
 files for audit. No V4 rollback, collector restart or VPS action is needed.
+
+## Independent audit remediation — PR #38 (second-review gate)
+
+The first independent audit reproduced two **P1 false-scoring defects**.
+The corrected V2 evidence contract now requires an observed bookTicker
+before any admission, preserves separate bookTicker-selected entry quotes
+and depth-book quotes, and refuses to allow a depth packet with older
+transaction time or update ID to replace newer ticker evidence. Conflicts
+invalidate the feed and every affected active virtual hypothesis. New
+entries require the latest ticker and reconstructed depth top-of-book to
+agree in both price and ordering.
+
+The transport preserves socket identity (`market` versus `public`), rejects
+misrouted events, and runs a source-specific bookTicker watchdog independent
+of shared queue traffic. Each symbol tracks `aggTrade`, `depthUpdate` and
+`bookTicker` receipts separately. Continuous paired scoring is contingent on
+fresh bookTicker evidence; if it goes silent for longer than 30 seconds,
+active paths fail closed. An unproven ticker path cannot be repaired by REST
+or a subsequent depth snapshot. Genuine exchange silence is also conservatively
+classified as uncertain rather than turned into a valid result.
+
+**Limitation:** Binance bookTicker has no guaranteed every-message historical
+replay or per-symbol heartbeat. The 30-second watchdog is a conservative
+liveness threshold, **not a cryptographic proof of uninterrupted bookTicker
+coverage**. An undetected lost crossing within that interval may remain
+possible. Real-market acceptance must assess this limitation against an
+independent captured quote reference before declaring deployed scoring safe.
+Historical V1 checkpoints deliberately cannot be resumed by the new V2
+contract; the new research component has not been deployed.
