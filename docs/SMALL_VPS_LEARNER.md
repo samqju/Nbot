@@ -112,9 +112,37 @@ sudo .venv/bin/python deploy/observation/install_services.py \
   --enable --start --enable-testnet-control --start-testnet-control
 ```
 
-Tiny mode watches up to 20 eligible coins, uses two candle-fetch workers and
-limits each gap-recovery pass to four events. Both LIVE and Testnet collectors
-use it. The training batch remains 96 events; it is not shrunk to obtain easier
+Tiny mode watches up to 20 eligible coins **by default**, uses two
+candle-fetch workers and limits each gap-recovery pass to four events. Both
+LIVE and Testnet collectors use these safe defaults. For V4 research on a
+small VPS, an explicit `NBOT_OBSERVATION_UNIVERSE_SIZE=60` environment
+setting on the **LIVE collector only** can increase the observed symbols
+within a hard 1–100 range while retaining two workers and limited recovery
+work. Do not apply this to every service or remove its tiny resource profile.
+Inspect collection time, RAM, CPU, OOM journal and observed completeness after
+a gradual increase. The small host may be unable to capture 60 symbols within
+every five-minute cycle; reduce the override or upgrade resources if necessary.
+
+Newly observed symbols need about four hours of **continuous five-minute
+history** before V4 research can use them. The V4 research and paper-contest
+processes freeze their initial WebSocket symbol lists at process start.
+Therefore, when expanding the collector universe, first restart the collector;
+keep existing V4 experiments running until the new symbols have complete
+history, then restart V4 research and paper contest. A restart deliberately
+marks their current simulated paths unresolved/unscorable; it never deletes
+completed outcomes or silently approves a model.
+
+For a read-only, detailed terminal view of current or historical V4 contest
+trades and model results on Observation:
+
+```bash
+.venv/bin/python deploy/observation/v4_paper_progress.py
+.venv/bin/python deploy/observation/v4_paper_progress.py --contest 1 --limit 30
+watch -n 60 '.venv/bin/python deploy/observation/v4_paper_progress.py'
+```
+
+The separate Telegram `/champion` command also shows active model progress
+and strict promotion gates. No command above grants order authority. The training batch remains 96 events; it is not shrunk to obtain easier
 pass results. Only one research timer should run.
 
 The installer gives research a 60% CPU quota and a 384 MB memory ceiling, and
