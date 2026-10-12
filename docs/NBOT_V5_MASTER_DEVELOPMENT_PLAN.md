@@ -7,7 +7,7 @@
 >
 > Repository: `samqju/Nbot`. Branch: `main`; new work goes through reviewed PRs.
 > First PR: [#30](https://github.com/samqju/Nbot/pull/30).
-> Last update: **2026-10-12**, PR #38 independent audit remediation (two P1 false-scoring defects), pending revised CI and second audit.
+> Last update: **2026-10-12**, PR #38 two P1 audit fixes verified on code head `64abdc6f` ([1,490 regression tests passed](https://github.com/samqju/Nbot/actions/runs/38280766303)); second independent audit pending.
 >
 > **Safety invariant: Research / Paper only. No order authority.**
 > No change to Execution role, private Binance credentials or real-money order
@@ -446,8 +446,8 @@ diagnostics if tests fail. **No masking errors to achieve cosmetic silence.**
 - [x] First independent review at `7d4fb915` reproduced two merge-blocking P1 evidence defects.
 - [x] Code correction: depth may not replace a newer bookTicker executable entry anchor; reject reversed/cross-source evidence and enforce two-source agreement for new admission.
 - [x] Code correction: require ticker evidence for admission and horizon; track per-symbol, per-event-source receipts; transport keeps socket identity and uses a watchdog independent of busy queue traffic.
-- [x] Add reproductions for stale SHORT entry, zero-bookTicker candidate and masked ticker silence.
-- [ ] Verify corrected PR #38 latest-head full CI, including all new tests.
+- [x] Add reproductions for stale SHORT entry, zero-bookTicker candidate, masked ticker silence, strict event-gap invalidation and apparent quote recovery after missing coverage.
+- [x] Corrected code head `64abdc6f` passed [1,490-test full CI](https://github.com/samqju/Nbot/actions/runs/38280766303) with clean dots/OK and no operator noise; final docs-only revision gets its own CI.
 - [ ] Perform **a second independent read-only audit** of corrected SHA; require both original P1 defects to be irreproducible before merge.
 - [ ] Independently validate real Binance event timing, brief quote losses that evade silence watchdog, resource usage and settlement finality on isolated host. Until that acceptance, no live V5 scoring or VPS deployment.
 - [ ] Merge PR #38 only after the second review and green latest SHA CI, then verify merged-main CI; keep V4 untouched.
