@@ -29,11 +29,14 @@ def _finite(value: float, *, positive: bool = False) -> float:
 @dataclass(frozen=True)
 class FundingSettlement:
     """Confirmed symbol-specific event; rate >0 means LONG pays SHORT."""
+    symbol: str
     time_ms: int
     rate: float
     mark_price: float
 
     def __post_init__(self) -> None:
+        if not self.symbol or self.symbol != self.symbol.upper():
+            raise ValueError("V5_FUNDING_SYMBOL_INVALID")
         if type(self.time_ms) is not int or self.time_ms < 0:
             raise ValueError("V5_FUNDING_TIME_INVALID")
         _finite(self.rate)
@@ -51,10 +54,13 @@ class CostPolicy:
     def __post_init__(self) -> None:
         if self.version != VERSION:
             raise ValueError("V5_ACCOUNTING_VERSION_INVALID")
-        for rate in (self.entry_fee_rate, self.exit_fee_rate,
-                     self.entry_slippage_rate, self.exit_slippage_rate):
-            if not 0 <= _finite(rate) < 0.1:
-                raise ValueError("V5_ACCOUNTING_COST_RATE_INVALID")
+        rates = (self.entry_fee_rate, self.exit_fee_rate,
+                 self.entry_slippage_rate, self.exit_slippage_rate)
+        if any(not math.isfinite(float(rate)) for rate in rates) or rates != (
+            ENTRY_FEE_RATE, EXIT_FEE_RATE, ENTRY_SLIPPAGE_RATE,
+            EXIT_SLIPPAGE_RATE,
+        ):
+            raise ValueError("V5_ACCOUNTING_COST_RATE_INVALID")
 
 
 @dataclass(frozen=True)
@@ -77,6 +83,7 @@ class TradeAccounting:
 
 def score_trade(
     *,
+    symbol: str,
     side: str,
     quantity: float,
     entry_fill_price: float,
@@ -97,6 +104,8 @@ def score_trade(
     counted. A settlement exactly on an entry or exit needs an explicit event-order
     decision upstream; this contract fails closed on such boundary events.
     """
+    if not symbol or symbol != symbol.upper():
+        raise ValueError("V5_ACCOUNTING_SYMBOL_INVALID")
     if side not in {"LONG", "SHORT"}:
         raise ValueError("V5_ACCOUNTING_SIDE_INVALID")
     if type(entry_time_ms) is not int or type(exit_time_ms) is not int or (
@@ -123,6 +132,8 @@ def score_trade(
     for event in settlements:
         if not isinstance(event, FundingSettlement):
             raise ValueError("V5_FUNDING_EVENT_INVALID")
+        if event.symbol != symbol:
+            raise ValueError("V5_FUNDING_SYMBOL_MISMATCH")
         if event.time_ms <= previous_time:
             raise ValueError("V5_FUNDING_NOT_STRICTLY_ORDERED")
         previous_time = event.time_ms
