@@ -32,11 +32,14 @@ def report(root: Path, *, contest_id: int | None = None, limit: int = 10) -> str
         ).fetchall()
         if not history:
             return "No V4 paper contests recorded yet."
-        contest = (
-            conn.execute("SELECT * FROM contests WHERE contest_id=?", (contest_id,)).fetchone()
-            if contest_id is not None
-            else next((r for r in history if r["status"] in ("ACTIVE","REVIEW_REQUIRED")), history[0])
+        target = (
+            int(contest_id) if contest_id is not None
+            else int(next((r for r in history if r["status"] in ("ACTIVE","REVIEW_REQUIRED")),
+                          history[0])["contest_id"])
         )
+        contest = conn.execute(
+            "SELECT * FROM contests WHERE contest_id=?", (target,)
+        ).fetchone()
         if contest is None:
             return f"No paper contest with ID {contest_id}."
         cid = int(contest["contest_id"])
