@@ -119,10 +119,15 @@ Notification delivery is retried until successful and then deduplicated durably.
 Run the standalone live-paper control with `--selection v4`. It serves only the
 frozen model recorded by a successful gated paper promotion, checking artifact
 hashes against the stored review proof. No Champion means
-`V4_WAIT_FOR_APPROVED_PAPER_CHAMPION`, with no older-model fallback. A positive
-top-ranked opportunity produces one frozen proposal per completed live event;
-negative scores abstain. Quotes and proposals retain the existing 30-second
-freshness limit. Model replacement waits for the next event. Execution still
+`V4_WAIT_FOR_APPROVED_PAPER_CHAMPION`, with no older-model fallback. The
+highest finite-scored opportunity (including a negative raw ranking score)
+may produce one frozen proposal per completed live event, matching the paper
+contest's top-ranked-candidate selection. LightGBM LambdaRank scores are
+relative ranks, **not** after-cost profit forecasts: the proposal's
+`expected_after_cost_net_r` is null unless a separately validated
+calibration is implemented. Profitability remains assessed from real forward
+paper outcomes under the promotion gates. Quotes and proposals retain the
+existing 30-second freshness limit. Model replacement waits for the next event. Execution still
 owns spread, risk, daily limits, entry permission, and position management.
 V4 uses the existing LIVE/PAPER learned authority envelope with explicit V4
 generation, model digest, and approved contest attribution. It is forbidden in
