@@ -11,8 +11,10 @@ Existing V4 data, decisions and process state remain untouched.
   as confirmed. The exit fee is charged on the *exit* notional.
 - Initial modeled slippage: `0.0001` per side (1 basis point, 0.01%).
   This is an assumption to evaluate, not a claim about real fills.
-- Entry and exit **fill** prices already reflect bid/ask spread:
-  LONG buy ask / sell bid; SHORT sell bid / buy ask. Do not charge spread twice.
+- Entry and exit baseline prices already reflect bid/ask spread:
+  LONG buy ask / sell bid; SHORT sell bid / buy ask. These reference prices
+  are **before** separately modeled slippage. Do not charge spread twice or
+  pass slippage-adjusted fills into this version of the scorer.
 - The initial price stop must be exactly the *definition* of `-1R`:
   `1R_quote = abs(entry_fill - initial_stop) * quantity`.
   Subsequent exits can lose worse than -1R after fees, slippage and gaps.
@@ -26,6 +28,8 @@ Existing V4 data, decisions and process state remain untouched.
 - Contract counts settlements only **strictly inside** entry and exit
   timestamps. Exact-boundary settlement chronology is ambiguous and rejected
   pending exchange-evidence resolution.
+- Each scored record retains its entry/exit prices, initial stop, timestamps,
+  and all applied funding settlements for later audit.
 - The scorer assumes that the caller has independently verified price-path
   continuity, fill chronology and complete funding coverage. It does **not**
   prove those conditions or check which exit policy triggered.
