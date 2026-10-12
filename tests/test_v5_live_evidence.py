@@ -340,6 +340,42 @@ class BridgeTests(unittest.TestCase):
 
 
 class TransportTests(unittest.TestCase):
+    def test_routed_transport_buffers_snapshot_and_recovers_trade_range(self):
+        class Socket:
+            def __init__(self,url): self.market="/market/" in url
+            async def __aenter__(self): return self
+            async def __aexit__(self,*a): pass
+            def __aiter__(self): return self.messages()
+            async def messages(self):
+                if self.market:
+                    yield json.dumps({"data":trade()})
+                    await asyncio.sleep(.1)
+                    yield json.dumps({"data":trade(12,T+100)})
+                    await asyncio.sleep(.1)
+                else:
+                    yield json.dumps({"data":depth()})
+                    await asyncio.sleep(.05)
+                    yield json.dumps({"data":depth(u=101,pu=100,t=T+50)})
+                    await asyncio.Event().wait()
+        def rest(path,params):
+            if path=="/fapi/v1/depth":
+                return {"lastUpdateId":100,"T":T-100,
+                        "bids":[["99.9","2"]],"asks":[["100","2"]]}
+            self.assertEqual(params["fromId"],11)
+            return [trade(11,T+80)]
+        with tempfile.TemporaryDirectory() as td:
+            b=LiveEvidenceBridge(Path(td)/"v5"/"feed.db",symbols=["BTCUSDT"])
+            b.initialize()
+            with self.assertRaisesRegex(RuntimeError,"WSS_CLOSED"):
+                asyncio.run(run_session(b,rest=rest,connect=lambda url,**k:Socket(url),
+                                        clock=lambda:T+150))
+            self.assertEqual(b.feeds["BTCUSDT"]["agg"],12)
+            with b._connect() as c:
+                kinds=[json.loads(r[0])["kind"] for r in c.execute("SELECT event FROM journal")]
+            self.assertIn("DEPTH_SNAPSHOT",kinds)
+            self.assertIn("REST_AGG_RECOVERY",kinds)
+            self.assertFalse(b.feeds["BTCUSDT"]["synced"])
+
     def test_routed_streams_and_public_endpoint_allowlist(self):
         market,public=stream_urls(["BTCUSDT"])
         self.assertIn("/market/stream?streams=btcusdt@aggTrade",market)

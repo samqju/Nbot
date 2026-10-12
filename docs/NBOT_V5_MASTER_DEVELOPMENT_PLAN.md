@@ -229,7 +229,13 @@ Verified PR-head CI: [1,436 tests, OK](https://github.com/samqju/Nbot/actions/ru
 
 **Status: PROTOTYPE MERGED — [#36](https://github.com/samqju/Nbot/pull/36), merge SHA `bece0864648cc3bdce0d24dbf842bbb3ebd6552f`. NOT DEPLOYED.**
 
-Verified PR-head [CI run 38264782962](https://github.com/samqju/Nbot/actions/runs/38264782962): **1,456 tests passed, clean dots/OK**. Merged-main [CI run 38265101835](https://github.com/samqju/Nbot/actions/runs/38265101835) also passed the full regression suite. This milestone is **not fully complete**: WSS quote-only stop evidence, durable checkpointing, funding-coverage verification and real-time forward study are not delivered.
+Verified PR #36 head [CI run 38264782962](https://github.com/samqju/Nbot/actions/runs/38264782962): **1,456 tests passed, clean dots/OK**. Merged-main [CI run 38265101835](https://github.com/samqju/Nbot/actions/runs/38265101835) also passed the full regression suite. PR #38 now implements WSS quote-only stop evidence, checkpoints and public funding reconciliation. This milestone is **not fully complete**: prospective evidence validation, host performance and real-time forward study remain outstanding.
+
+PR #38 validation includes 28 new focused tests: routed transport/snapshot
+buffering, trade recovery, quote-only LONG/SHORT stops, depth/horizon watermarks,
+restart/partial recovery, failed writes/corruption/concurrent writers, permanent
+decision IDs, pending ledger retries and settlement funding cases. Latest PR-head
+full regression CI remains a release gate; no deployment or merge is claimed here.
 
 - [x] Implement research-only three-armed incremental tick state on a single shared entry and future market path.
 - [x] Require anchored consecutive aggregate IDs, monotonic timestamps, fresh executable quotes, closing horizon witness; errors make all three arms unscorable.

@@ -110,9 +110,9 @@ recovery/coverage; reconnect backoff applies. REST-heavy deployments still need
 an independently measured IP-weight scheduler before increasing shard count.
 
 The database has a 256 MiB admission budget checked before mutations; pending
-results cap at 100, retained funding range proofs cap at 100. The journal grows
-Each funding range is limited to 1,000 settlement events.
-on disk; it is not automatically pruned. Reaching a limit stops work without
+results cap at 100, retained funding range proofs cap at 100. Each funding range
+is limited to 1,000 settlement events. The journal grows on disk; it is not
+automatically pruned. Reaching a limit stops work without
 discarding evidence. Full bounded checkpoints per event prioritize correctness;
 1 GiB host throughput, WAL/disk budget, retention/export, memory/CPU pressure,
 funding publication timing, clock synchronization and prospective multi-day
