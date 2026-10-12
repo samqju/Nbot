@@ -7,7 +7,7 @@
 >
 > Repository: `samqju/Nbot`. Branch: `main`; new work goes through reviewed PRs.
 > First PR: [#30](https://github.com/samqju/Nbot/pull/30).
-> Last update: **2026-10-12**, Milestone 2 experimental selector PR #32 (in development).
+> Last update: **2026-10-12**, PR #32 merged and Milestone 2 prototype completion recorded in PR #33.
 >
 > **Safety invariant: Research / Paper only. No order authority.**
 > No change to Execution role, private Binance credentials or real-money order
@@ -44,7 +44,7 @@
 | V4 paper contest | RUNNING (legacy) | Gen-1 contest; no Champion; not promoted |
 | V4 raw and research DB | PRESERVE | `data/observation/v4` ~26 MiB at last preflight; never overwrite/delete |
 | V5 Milestone 1 | MERGED, NOT DEPLOYED | PR #30 merged as `2b6bc33acf31978459cbca105b3ea1979562df30`. 1,428 tests passed on PR head and merged main (run 38250307646) |
-| V5 Milestone 2 | PR OPEN / NOT DEPLOYED | PR #32 introduces read-only event adapter, direction-specific setup/abstention and bounded exploration; future metadata/depth and prospective validation still required |
+| V5 Milestone 2 | PROTOTYPE MERGED / NOT DEPLOYED | PR #32 merge `19eec7f9436f9cd1c3b2acae3dcc008d8d7f574d`; 1,436 tests passed on PR head; metadata/depth and prospective validation remain outstanding |
 | V5 deployed | NO | Neither new services nor V5 data collection started |
 | V5 champion | NONE | First generation must qualify, no baseline exception |
 | V5 order authority | NONE | Permanently isolated in the V5 research/paper scope |
@@ -180,7 +180,9 @@ not interchangeable.
 
 ### Milestone 2 — Explainable qualified entry and separate exploration
 
-**Status: PR OPEN — [#32](https://github.com/samqju/Nbot/pull/32). NOT DEPLOYED.**
+**Status: PROTOTYPE MERGED — [#32](https://github.com/samqju/Nbot/pull/32), merge SHA `19eec7f9436f9cd1c3b2acae3dcc008d8d7f574d`. NOT DEPLOYED.**
+
+Verified PR-head CI: [1,436 tests, OK](https://github.com/samqju/Nbot/actions/runs/38256910103). This does **not** close Milestone 2: point-in-time instrument metadata/depth and prospective validation are still pending. Merge-main CI must separately pass.
 
 - [x] Implement prototype strict directional entry families, independently of V4; exact setup thresholds frozen for future evaluation.
 - [x] Build pure candidate evaluation and abstaining capacity planner (no model or order authority).
@@ -426,6 +428,8 @@ diagnostics if tests fail. **No masking errors to achieve cosmetic silence.**
 | 2026-10-12 | Quiet runner must add repository root to sys.path | Direct invocation otherwise fails collection imports; corrected and green at 1,428 tests |
 | 2026-10-12 | PR #30 merged V5 milestone 1 foundation | Merge `2b6bc33`; safe, no VPS update, no V5 service running; document completion in PR #31 |
 | 2026-10-12 | Begin PR #32 V5 qualified-entry prototype | Clear directional setup, abstention, cost/liquidity gates and sampled near misses; no raw DB writes, no service installation, no claim of profitable thresholds |
+| 2026-10-12 | Merge PR #32 selector prototype | Merge `19eec7f`, 1,436 green PR-head tests; separate verified metadata/depth gate and prospective evaluation required before any V5 runtime |
+| 2026-10-12 | Record PR #32 merge in PR #33 | Handover document updated after milestone code change; V5 remains not deployed |
 
 ## Handover checklist for a fresh ChatGPT session
 
@@ -433,7 +437,7 @@ diagnostics if tests fail. **No masking errors to achieve cosmetic silence.**
   code was deployed on Observation VPS; last verified VPS still at `b1a3c4a`.
 - Confirm current services before suggesting any restart. A prior two-restart
   incident caused WSS path losses and 792 unresolved V4 outcomes.
-- Check PR #32 (V5 selector) and its CI before declaring Milestone 2 merged; verify metadata/depth limitations explicitly.
+- PR #32 prototype merged at `19eec7f`; verify merge-main CI and pending instrument-metadata/depth/forward-validation requirements before declaring Milestone 2 fully complete.
 - Identify next milestone by reading statuses, not by extrapolating chat.
 - Never claim V5 is collecting or learning until services are actually
   installed, started and observed.
