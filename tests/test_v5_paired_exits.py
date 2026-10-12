@@ -215,6 +215,24 @@ class PairedPolicyTests(unittest.TestCase):
                     "SELECT COUNT(DISTINCT digest) FROM v5_outcomes").fetchone()[0],3)
             lab.acknowledge_persisted("d1")
 
+    def test_pending_result_backpressure_preserves_second_path(self):
+        from unittest.mock import patch
+        lab=PairedExitLab()
+        lab.add(entry())
+        lab.add(entry(decision_id="d2",symbol="ETHUSDT"))
+        lab.ingest(tick(1000,DEADLINE,bid=100.4))
+        lab.ingest(tick(1000,DEADLINE,bid=100.4,symbol="ETHUSDT"))
+        with patch("nbot.observation.v5_paired_exits.MAX_PENDING_RESULTS",1):
+            self.assertIsNotNone(lab.finalize("d1",now_ms=DEADLINE,
+                                               funding_coverage_confirmed=True))
+            with self.assertRaisesRegex(RuntimeError,"BACKPRESSURE"):
+                lab.finalize("d2",now_ms=DEADLINE,
+                             funding_coverage_confirmed=True)
+            self.assertEqual(lab.active_count,1)
+            lab.acknowledge_persisted("d1")
+            self.assertIsNotNone(lab.finalize("d2",now_ms=DEADLINE,
+                                               funding_coverage_confirmed=True))
+
     def test_streaming_cost_does_not_retain_history(self):
         lab=PairedExitLab()
         lab.add(entry())
