@@ -447,7 +447,7 @@ def _v4_learning_snapshot(repo_root: Path) -> dict[str, Any] | None:
         "batch_size": batch_size,
         "training_schedule": schedule,
         "next_training_at": next_training_at,
-        "current_batch": (resolved // batch_size) + 1,
+        "current_batch": (resolved // 1000) + 1,
         "batch_progress_pct": schedule['training_progress_pct'],
         "ready_batches": ready_batches,
         "generation_state": state,
@@ -468,7 +468,7 @@ def _format_v4_learning(data: Mapping[str, Any]) -> str:
         f"Completed: {_e(data.get('resolved'))}/{_e(data.get('next_training_at'))} "
         f"({_e(data.get('batch_progress_pct'))}%)",
         f"Unresolved: {_e(data.get('unresolved'))}",
-        f"Batch: {_e(data.get('current_batch'))} | ready: "
+        f"Audit window: {_e(data.get('current_batch'))} | training-ready: "
         f"{_e(','.join(map(str, data.get('ready_batches') or [])) or 'none')}",
         f"Champion: {_e(state.get('champion_generation') or 'none')}",
         f"Challenger: {_e(state.get('challenger_generation') or 'none')}",
