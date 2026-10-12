@@ -7,7 +7,7 @@
 >
 > Repository: `samqju/Nbot`. Branch: `main`; new work goes through reviewed PRs.
 > First PR: [#30](https://github.com/samqju/Nbot/pull/30).
-> Last update: **2026-10-12**, V5 Milestone 2 market-quality bridge PR #34, pending CI/merge.
+> Last update: **2026-10-12**, PR #34 market-quality bridge merged, completion record PR #35.
 >
 > **Safety invariant: Research / Paper only. No order authority.**
 > No change to Execution role, private Binance credentials or real-money order
@@ -45,7 +45,7 @@
 | V4 raw and research DB | PRESERVE | `data/observation/v4` ~26 MiB at last preflight; never overwrite/delete |
 | V5 Milestone 1 | MERGED, NOT DEPLOYED | PR #30 merged as `2b6bc33acf31978459cbca105b3ea1979562df30`. 1,428 tests passed on PR head and merged main (run 38250307646) |
 | V5 Milestone 2 | PROTOTYPE MERGED / NOT DEPLOYED | PR #32 merge `19eec7f9436f9cd1c3b2acae3dcc008d8d7f574d`; 1,436 tests passed on PR head; metadata/depth and prospective validation remain outstanding |
-| V5 market-quality bridge | PR OPEN / NOT DEPLOYED | PR #34: parsed exchange rules, prospective depth quality and strict temporal snapshots; no operational activation |
+| V5 market-quality bridge | PROTOTYPE MERGED / NOT DEPLOYED | PR #34 merge `0ad04e711d79c46047fa952cf249f3f429976ada`; 1,441 tests passed on PR head; merged-main full regression succeeded ([run 38259054293](https://github.com/samqju/Nbot/actions/runs/38259054293)) |
 | V5 deployed | NO | Neither new services nor V5 data collection started |
 | V5 champion | NONE | First generation must qualify, no baseline exception |
 | V5 order authority | NONE | Permanently isolated in the V5 research/paper scope |
@@ -181,7 +181,7 @@ not interchangeable.
 
 ### Milestone 2 — Explainable qualified entry and separate exploration
 
-**Status: PROTOTYPE MERGED — [#32](https://github.com/samqju/Nbot/pull/32), merge SHA `19eec7f9436f9cd1c3b2acae3dcc008d8d7f574d`. NOT DEPLOYED.**
+**Status: PROTOTYPE MERGED — [#32](https://github.com/samqju/Nbot/pull/32), merge SHA `19eec7f9436f9cd1c3b2acae3dcc008d8d7f574d`; [#34](https://github.com/samqju/Nbot/pull/34) market-quality bridge merge SHA `0ad04e711d79c46047fa952cf249f3f429976ada`. NOT DEPLOYED.**
 
 Verified PR-head CI: [1,436 tests, OK](https://github.com/samqju/Nbot/actions/runs/38256910103). This does **not** close Milestone 2: point-in-time instrument metadata/depth and prospective validation are still pending. Merge-main CI must separately pass.
 
@@ -215,7 +215,7 @@ Verified PR-head CI: [1,436 tests, OK](https://github.com/samqju/Nbot/actions/ru
 - [x] Backward-compatible read-only candle/snapshot access to existing collector.
       Never mutate the collector's raw evidence.
 - [x] Version decision explanation/feature digest and candidate universe.
-- [x] Implement **opt-in credential-free public market-quality capture** for Binance exchangeInfo and depth with time-bounded parser; no collector mutation. (PR #34)
+- [x] Implement **opt-in credential-free public market-quality capture** for Binance exchangeInfo and depth with time-bounded parser; no collector mutation. PR #34 merged; [1,441 passing tests](https://github.com/samqju/Nbot/actions/runs/38258716067).
 - [ ] Persist independently proven provenance and capture exchange metadata contemporaneously with future V5 decision timestamps before considering Milestone 2 fully live-ready.
 - [x] Reject candidates without timely, matching and sufficiently deep **prospective** order-book snapshot; use a separately quoted $100 hypothetical probe, not a claimed live fill. (PR #34)
 - [ ] Develop and validate market correlation/exposure caps, stronger full-depth book checks, and independent end-to-end causal snapshot capture.
@@ -434,6 +434,7 @@ diagnostics if tests fail. **No masking errors to achieve cosmetic silence.**
 | 2026-10-12 | Merge PR #32 selector prototype | Merge `19eec7f`, 1,436 green PR-head tests; separate verified metadata/depth gate and prospective evaluation required before any V5 runtime |
 | 2026-10-12 | Record PR #32 merge in PR #33 | Handover document updated after milestone code change; V5 remains not deployed |
 | 2026-10-12 | Start PR #34 point-in-time market quality bridge | Public exchangeInfo PRICE_FILTER/LOT_SIZE/MIN_NOTIONAL, depth freshness, order-book sweep, fail-closed missing/stale evidence; not deployed, thresholds unproven |
+| 2026-10-12 | Merge PR #34 quality bridge; record in PR #35 | Merge `0ad04e7`; clean 1,441-test CI at PR head, merged-main 38259054293 verified green; deployment and historical depth inference prohibited |
 
 ## Handover checklist for a fresh ChatGPT session
 
@@ -441,7 +442,7 @@ diagnostics if tests fail. **No masking errors to achieve cosmetic silence.**
   code was deployed on Observation VPS; last verified VPS still at `b1a3c4a`.
 - Confirm current services before suggesting any restart. A prior two-restart
   incident caused WSS path losses and 792 unresolved V4 outcomes.
-- PR #32 prototype merged at `19eec7f` and merge-main CI passed. Inspect PR #34 before claiming V5 has verified exchange rules/depth; after merge, still require prospective capture persistence, correlation caps and true forward outcome testing.
+- PR #32 prototype merged at `19eec7f`. PR #34 public quality prototype merged at `0ad04e7` (main CI must be separately verified). The opt-in functions are **not** running: capture persistence, matched real-time event/metadata/depth provenance, portfolio correlation caps and prospective validation remain before V5 activation.
 - Identify next milestone by reading statuses, not by extrapolating chat.
 - Never claim V5 is collecting or learning until services are actually
   installed, started and observed.
