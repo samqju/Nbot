@@ -21,7 +21,7 @@ from .v5_paired_exits import (
     MAX_RECEIPT_DELAY_MS, HORIZON_CLOSE_GRACE_MS,
 )
 
-VERSION = "NBOT_V5_JOINT_EVIDENCE_V1"
+VERSION = "NBOT_V5_JOINT_EVIDENCE_V2"
 ORDER_AUTHORITY = "NONE"
 MAX_SYMBOLS = 20
 MAX_LEVELS = 5000
@@ -29,6 +29,9 @@ MAX_BUFFER = 2000
 MAX_DB_BYTES = 256 * 1024 * 1024
 MAX_FUNDING_EVENTS = 1000
 FUNDING_GRACE_MS = 60_000
+# bookTicker is event-driven, not a continuous heartbeat. When loss cannot
+# be distinguished from legitimate silence, reject scoring conservatively.
+MAX_BOOKTICKER_SILENCE_MS = 30_000
 
 
 def integer(value):
@@ -81,8 +84,11 @@ future quotes. bookTicker update IDs are NOT a consecutive trade sequence.
         path.joint_time = entry.entry_time_ms
         path.quote = None
         path.depth_watermark = None
+        path.ticker_last_time = entry.entry_quote_time_ms
+        path.ticker_events = 0
 
-    def event(self, symbol, row, receipt, *, trade=False, depth_watermark=None):
+    def event(self, symbol, row, receipt, *, trade=False, depth_watermark=None,
+              source=None):
         timestamp = integer(row["T"])
         for decision in tuple(self._by_symbol.get(symbol, ())):
             path = self._paths[decision]
@@ -91,6 +97,9 @@ future quotes. bookTicker update IDs are NOT a consecutive trade sequence.
             if (timestamp < path.joint_time or receipt < timestamp
                     or receipt - timestamp > MAX_RECEIPT_DELAY_MS):
                 path.invalidate("JOINT_EVENT_LATE_OR_REVERSED")
+                continue
+            if timestamp - path.ticker_last_time > MAX_BOOKTICKER_SILENCE_MS:
+                path.invalidate("BOOKTICKER_COVERAGE_GAP")
                 continue
             if timestamp <= path.entry.entry_time_ms:
                 path.invalidate("JOINT_ENTRY_BOUNDARY_AMBIGUOUS")
@@ -122,6 +131,9 @@ future quotes. bookTicker update IDs are NOT a consecutive trade sequence.
                                   horizon=timestamp >= path.deadline)
                     path.quote = quote
                 path.last_quote_update_id = row["u"]
+                if source == "bookTicker":
+                    path.ticker_last_time = timestamp
+                    path.ticker_events += 1
             path.joint_time = timestamp
             if depth_watermark:
                 path.depth_watermark = depth_watermark
@@ -131,6 +143,7 @@ future quotes. bookTicker update IDs are NOT a consecutive trade sequence.
             # Silence alone is not proof of continuous aggregate history.
             if (path.quote and path.quote[0] >= path.deadline
                     and path.last_trade_time_ms >= path.quote[0]
+                    and path.ticker_last_time >= path.deadline - MAX_BOOKTICKER_SILENCE_MS
                     and path.depth_watermark
                     and path.depth_watermark[0] >= path.last_quote_update_id
                     and path.depth_watermark[1] >= path.quote[0]):
@@ -145,7 +158,8 @@ future quotes. bookTicker update IDs are NOT a consecutive trade sequence.
                           **{k: getattr(p, k) for k in (
                               "last_agg_id", "last_trade_time_ms", "last_quote_update_id",
                               "events_seen", "horizon_witnessed", "gap_reason",
-                              "joint_time", "quote", "depth_watermark")}}
+                              "joint_time", "quote", "depth_watermark",
+                              "ticker_last_time", "ticker_events")}}
         return {"paths": paths, "completed": {
             k: [asdict(r) for r in rows] for k, rows in self._completed.items()}}
 
@@ -198,8 +212,12 @@ owners. On database failure in-memory state rolls back to the last commit.
     def _fresh():
         return {"agg": None, "trade": None, "bids": {}, "asks": {},
                 "depth_id": None, "synced": False, "buffer": [],
-                "ticker": None, "quote": None, "connected": False,
-                "trade_receipt": None, "quote_receipt": None}
+                "ticker": None, "quote": None, "depth_quote": None,
+                "connected": False, "trade_receipt": None,
+                "quote_receipt": None, "ticker_receipt": None,
+                "depth_receipt": None, "synced_since": None,
+                "source_receipts": {"aggTrade": None, "bookTicker": None,
+                                    "depthUpdate": None}}
 
     @contextmanager
     def _connect(self):
@@ -317,7 +335,11 @@ owners. On database failure in-memory state rolls back to the last commit.
             self.lab.invalidate_symbol(symbol, reason=reason)
             f = self.feeds[symbol]
             f.update(connected=False, synced=False, buffer=[], depth_id=None,
-                     bids={}, asks={}, quote=None, ticker=None)
+                     bids={}, asks={}, quote=None, ticker=None,
+                     depth_quote=None, ticker_receipt=None, depth_receipt=None,
+                     synced_since=None,
+                     source_receipts={"aggTrade": None, "bookTicker": None,
+                                      "depthUpdate": None})
         self._change({"kind": reason, "symbol": symbol}, action)
 
     def add(self, entry):
