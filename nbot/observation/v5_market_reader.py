@@ -10,12 +10,13 @@ from pathlib import Path
 import sqlite3
 from typing import Mapping
 
-from .v5_selection import Bar, Instrument, Observation, FIVE_MINUTES_MS, LOOKBACK
+from .v5_selection import Bar, DepthSnapshot, Instrument, Observation, FIVE_MINUTES_MS, LOOKBACK
 
 
 def read_completed_event(
     database_path: str | Path, *, event_open_ms: int, now_ms: int,
     instruments: Mapping[str, Instrument] | None = None,
+    depths: Mapping[str, DepthSnapshot] | None = None,
 ) -> tuple[Observation, ...]:
     """Return point-in-time event observations, or fail closed on incomplete event."""
     if event_open_ms < 0 or event_open_ms % FIVE_MINUTES_MS or now_ms < 0:
@@ -24,6 +25,7 @@ def read_completed_event(
     if not path.is_file():
         raise ValueError("V5_MARKET_DATABASE_MISSING")
     instruments = {} if instruments is None else dict(instruments)
+    depths = {} if depths is None else dict(depths)
     with sqlite3.connect(path.as_uri() + "?mode=ro", uri=True) as conn:
         conn.execute("PRAGMA query_only=ON")
         event = conn.execute(
@@ -81,5 +83,6 @@ def read_completed_event(
                                  for t,o,h,l,c,v in bars),
                 provenance_ok=True,
                 instrument=instruments.get(str(symbol)),
+                depth=depths.get(str(symbol)),
             ))
     return tuple(observations)
