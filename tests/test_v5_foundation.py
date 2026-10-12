@@ -28,6 +28,9 @@ class V5AccountingTests(unittest.TestCase):
         x = score()
         self.assertEqual(ORDER_AUTHORITY,"NONE")
         self.assertEqual(x.policy_version, VERSION)
+        self.assertEqual(x.symbol,"BTCUSDT")
+        self.assertEqual(x.entry_fill_price,100.0)
+        self.assertEqual(x.initial_stop_price,99.0)
         self.assertAlmostEqual(x.one_r_quote, 10.0)
         self.assertAlmostEqual(x.fees_quote, 1.0)  # 0.05% on each $1,000 notional
         self.assertAlmostEqual(x.slippage_quote, .2)  # 1 bp each side
@@ -46,6 +49,7 @@ class V5AccountingTests(unittest.TestCase):
     def test_funding_is_signed_and_only_on_proven_settlements(self):
         settlements = (FundingSettlement(symbol="BTCUSDT",time_ms=2000, rate=.001, mark_price=100),)
         self.assertAlmostEqual(score(funding_events=settlements).funding_quote, -1)
+        self.assertEqual(score(funding_events=settlements).funding_settlements,settlements)
         self.assertAlmostEqual(score(side="SHORT",initial_stop_price=101,
                                       funding_events=settlements).funding_quote, +1)
         self.assertAlmostEqual(score(funding_events=(FundingSettlement("BTCUSDT",2000,-.001,100),)).funding_quote, +1)
