@@ -156,6 +156,22 @@ class BridgeTests(unittest.TestCase):
         self.assertTrue(all(r.status=="UNSCORABLE"
                             for r in self.b.finalize("d1",now_ms=T+31_000)))
 
+    def test_auditor_p1_unobserved_crossing_then_recovery_stays_unscorable(self):
+        # Hypothetical missing stop crossing/reversal is NOT present in the
+        # captured ticker stream. The intervening 31s of missing coverage
+        # invalidates the path even after quotes apparently recover.
+        with patch("nbot.observation.v5_live_evidence.MAX_BOOKTICKER_SILENCE_MS",30_000):
+            self.b.ingest(trade(a=11,t=T+31_000),T+31_010)
+            self.assertEqual(self.b.lab._paths["d1"].gap_reason,
+                             "BOOKTICKER_COVERAGE_GAP")
+            self.b.ingest(quote(u=101,t=T+31_100,bid="99.9",ask="100"),
+                          T+31_110)
+            self.b.ingest(depth(u=101,pu=100,t=T+31_100,bid="99.9",
+                                ask="100"),T+31_120)
+        rows=self.b.finalize("d1",now_ms=T+31_200)
+        self.assertEqual({r.status for r in rows},{"UNSCORABLE"})
+        self.assertEqual({r.reason for r in rows},{"BOOKTICKER_COVERAGE_GAP"})
+
     def test_auditor_p1_strict_tick_coverage_gap_invalidates_even_if_trades_continue(self):
         with patch("nbot.observation.v5_live_evidence.MAX_BOOKTICKER_SILENCE_MS",30_000):
             self.b.ingest(trade(a=11,t=T+31_000),T+31_010)
