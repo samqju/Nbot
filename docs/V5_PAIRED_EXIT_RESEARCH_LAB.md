@@ -29,7 +29,12 @@ tick must have aggregate ID equal to the explicitly supplied last pre-entry
 anchor + 1, and every later ID must be contiguous.
 
 Quote timestamps must not be future, must be within two seconds of each
-trade, and quote update IDs must be nondecreasing. An explicit WSS disconnect,
+trade, trade receipt must be within two seconds, and quote update IDs must
+be nondecreasing. **Important limitation:** this prototype samples executable
+quotes alongside aggregate-trade ticks; an independent bookTicker update
+between trades could cross a stop without an aggregate-trade event. The future
+joint WSS feed must process *quote-only price crossings too* and preserve
+causal quote/trade ordering before any forward scoring or deployment. An explicit WSS disconnect,
 reconnect uncertainty, aggregate-ID gap, out-of-order event, incorrect symbol,
 stale quote or missing horizon witness makes **all three arms UNSCORABLE**,
 even if one policy already closed. That policy prevents preferentially
