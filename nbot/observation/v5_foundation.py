@@ -58,7 +58,7 @@ def _encoded(payload: dict) -> tuple[str, str]:
 class V5EvidenceStore:
     def __init__(self, path: str | Path = DEFAULT_LEDGER) -> None:
         self.path = Path(path)
-        if "v5" not in {part.lower() for part in self.path.parts}:
+        if self.path.resolve().parent.name.lower() != "v5":
             raise ValueError("V5_LEDGER_MUST_LIVE_IN_V5_DIRECTORY")
 
     def _connect(self) -> sqlite3.Connection:
