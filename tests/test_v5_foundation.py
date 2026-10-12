@@ -14,7 +14,7 @@ from nbot.observation.v5_foundation import V5EvidenceStore
 
 def score(**overrides):
     args = dict(
-        side="LONG", quantity=10, entry_fill_price=100,
+        symbol="BTCUSDT", side="LONG", quantity=10, entry_fill_price=100,
         exit_fill_price=100, initial_stop_price=99,
         entry_time_ms=1000, exit_time_ms=3000,
         funding_events=(), funding_coverage_confirmed=True,
@@ -44,23 +44,25 @@ class V5AccountingTests(unittest.TestCase):
         self.assertAlmostEqual(x.net_quote,18.812)
 
     def test_funding_is_signed_and_only_on_proven_settlements(self):
-        settlements = (FundingSettlement(time_ms=2000, rate=.001, mark_price=100),)
+        settlements = (FundingSettlement(symbol="BTCUSDT",time_ms=2000, rate=.001, mark_price=100),)
         self.assertAlmostEqual(score(funding_events=settlements).funding_quote, -1)
         self.assertAlmostEqual(score(side="SHORT",initial_stop_price=101,
                                       funding_events=settlements).funding_quote, +1)
-        self.assertAlmostEqual(score(funding_events=(FundingSettlement(2000,-.001,100),)).funding_quote, +1)
+        self.assertAlmostEqual(score(funding_events=(FundingSettlement("BTCUSDT",2000,-.001,100),)).funding_quote, +1)
         self.assertEqual(score(funding_events=()).funding_events_used, 0)
+        with self.assertRaisesRegex(ValueError,"SYMBOL_MISMATCH"):
+            score(funding_events=(FundingSettlement("ETHUSDT",2000,.001,100),))
 
     def test_missing_funding_coverage_fails_closed(self):
         with self.assertRaisesRegex(ValueError,"COVERAGE"):
             score(funding_coverage_confirmed=False)
         with self.assertRaisesRegex(ValueError,"BOUNDARY"):
-            score(funding_events=(FundingSettlement(1000,.001,100),))
+            score(funding_events=(FundingSettlement("BTCUSDT",1000,.001,100),))
         with self.assertRaisesRegex(ValueError,"ORDERED"):
-            score(funding_events=(FundingSettlement(2200,.001,100),
-                                  FundingSettlement(2100,.001,100)))
+            score(funding_events=(FundingSettlement("BTCUSDT",2200,.001,100),
+                                  FundingSettlement("BTCUSDT",2100,.001,100)))
         with self.assertRaisesRegex(ValueError,"NUMBER"):
-            FundingSettlement(2000,float("nan"),100)
+            FundingSettlement("BTCUSDT",2000,float("nan"),100)
 
     def test_initial_stop_and_chronology_are_validated(self):
         with self.assertRaisesRegex(ValueError,"STOP"):
@@ -134,6 +136,8 @@ class V5FoundationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             with self.assertRaisesRegex(ValueError,"V5_DIRECTORY"):
                 V5EvidenceStore(Path(td)/"v4"/"research_ledger.db")
+            with self.assertRaisesRegex(ValueError,"V5_DIRECTORY"):
+                V5EvidenceStore(Path(td)/"v5"/".."/"v4"/"research_ledger.db")
 
 
 if __name__ == "__main__":
