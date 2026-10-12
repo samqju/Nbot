@@ -220,8 +220,10 @@ def evaluate(observation: Observation, side: str, *, now_ms: int,
         now_ms - m.captured_at_ms > policy.max_snapshot_age_ms
     ):
         failures.append("SNAPSHOT_STALE_OR_FUTURE")
-    if not (_valid(m.bid, positive=True) and _valid(m.ask, positive=True)
-            and m.ask > m.bid):
+    if not (_valid(m.bid, positive=True) and _valid(m.ask, positive=True)) or (
+        _valid(m.bid, positive=True) and _valid(m.ask, positive=True)
+        and m.ask <= m.bid
+    ):
         failures.append("INVALID_BID_ASK")
     if not _valid(m.quote_volume_24h_usd) or (
         m.quote_volume_24h_usd < policy.min_24h_quote_volume_usd
@@ -361,28 +363,41 @@ def plan_event(
     exploration_candidates = [
         c for c in candidates if c.exploration_eligible
         and (c.symbol, c.side) not in active
-        and side_counts[c.side] < policy.max_positions_per_side
     ]
     remaining = max(0, vacancies - len(selected))
-    sample_size = min(policy.max_exploratory_positions, remaining,
-                      len(exploration_candidates))
-    # Min-hash selection: uniformly bounded sample of the eligible population.
-    # With k/n inclusion probability per event, not a fixed probability guessed
-    # before truncating by capacity.
-    sampling_p = (sample_size / len(exploration_candidates)
-                  if exploration_candidates else 0.0)
-    exploratory: list[Candidate] = []
-    for c in sorted(exploration_candidates,
-                    key=lambda x: _hash([VERSION,"EXPLORATION",event_open_ms,x.symbol,x.side])):
-        if len(exploratory) >= sample_size:
+    pools = {side: [c for c in exploration_candidates if c.side == side]
+             for side in ("LONG", "SHORT")}
+    allowance = {side: min(len(pools[side]), max(0, policy.max_positions_per_side
+                                             - side_counts[side]))
+                 for side in pools}
+    total_available = sum(allowance.values())
+    sample_size = min(policy.max_exploratory_positions, remaining, total_available)
+    # Allocate capacity between LONG and SHORT *before* sampling.
+    # Within each side, min-hash chooses k of n uniformly; logged probability
+    # k/n is therefore exact for the frozen side-stratified eligible population.
+    take = {side: 0 for side in pools}
+    for _ in range(sample_size):
+        options = [side for side in pools if take[side] < allowance[side]]
+        if not options:
             break
-        if side_counts[c.side] >= policy.max_positions_per_side:
-            continue
-        picked = replace(c, status="EXPLORATORY", reason="EXPLORATORY_NEAR_MISS",
-                         sampling_probability=sampling_p)
-        records[(c.symbol, c.side)] = picked
-        exploratory.append(picked)
-        side_counts[c.side] += 1
+        # Fractional-fair share relative to the available population.
+        winner = max(options, key=lambda side: (
+            allowance[side] / (take[side] + 1),
+            1 if side == "LONG" else 0,
+        ))
+        take[winner] += 1
+    exploratory: list[Candidate] = []
+    for side in ("LONG", "SHORT"):
+        pool = pools[side]
+        p = take[side] / len(pool) if pool else 0.0
+        ordered = sorted(pool, key=lambda x: _hash(
+            [VERSION, "EXPLORATION", event_open_ms, x.symbol, x.side]))
+        for c in ordered[:take[side]]:
+            picked = replace(c, status="EXPLORATORY",
+                             reason="EXPLORATORY_NEAR_MISS",
+                             sampling_probability=p)
+            records[(c.symbol, c.side)] = picked
+            exploratory.append(picked)
     return SelectionPlan(
         event_open_ms, VERSION,
         tuple(records[k] for k in sorted(records)), tuple(selected),
