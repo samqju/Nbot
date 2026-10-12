@@ -38,6 +38,15 @@ EXECUTION_TELEGRAM_COMMANDS: tuple[tuple[str, str], ...] = (
 )
 
 
+def execution_telegram_commands(profile: str) -> tuple[tuple[str, str], ...]:
+    if profile == 'live-paper':
+        return EXECUTION_TELEGRAM_COMMANDS + (
+            ('champion', 'Paper exam and explicit Champion approval'),
+            ('wss', 'Observation reconnect diagnosis'),
+        )
+    return EXECUTION_TELEGRAM_COMMANDS
+
+
 def operator_block_path(repo_root: Path, profile: str) -> Path:
     leaf = {"testnet-trade": "testnet", "live-paper": "paper", "live-trade": "real"}[profile]
     return Path(repo_root) / "runtime" / "execution" / leaf / OPERATOR_BLOCK_FILE
@@ -180,7 +189,7 @@ class ExecutionOperatorSurface:
 
     def start(self, *, prepared_status: str) -> None:
         self.dispatcher.start()
-        self.dispatcher.set_commands(EXECUTION_TELEGRAM_COMMANDS)
+        self.dispatcher.set_commands(execution_telegram_commands(self.profile))
         self.sync(recovered=True)
         snapshot = self.worker.state.snapshot
         # Some legacy runtime-wiring tests intentionally provide a minimal
@@ -618,11 +627,10 @@ class ExecutionOperatorSurface:
                 self.system_log.warning("OPERATOR_ENTRY_ENABLE source=TELEGRAM reconciliation=%s", result.status)
                 self.command_dispatcher.send_info("NEW ENTRIES ENABLED", f"Safety check: {html.escape(result.status)}")
             elif command == "/help":
-                body = "\n".join(f"/{name} - {description}" for name, description in EXECUTION_TELEGRAM_COMMANDS)
+                body = "\n".join(f"/{name} - {description}" for name, description in execution_telegram_commands(self.profile))
                 body += "\n\nReplies and alerts are posted to the configured channel. Only /enable and /disable change entry state."
                 if self.profile == 'live-paper':
-                    body += '\n/champion - Paper exam, gates, and explicit approve/reject commands. Promotion changes only the paper model role.'
-                    body += '\n/wss - Read-only Observation reconnect diagnosis.'
+                    body += '\n/champion shows exact approve/reject commands. Promotion changes only the paper model role.'
                 self.command_dispatcher.send_info("BOT COMMANDS", body)
             elif command:
                 self.command_dispatcher.send_warning("UNKNOWN COMMAND", f"{html.escape(command)}\nUse /help.")
