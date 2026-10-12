@@ -117,7 +117,7 @@ class V5DirectionalSelectionTests(unittest.TestCase):
             m=observations(kind="breakout",symbol=f"X{k}USDT")
             # Marginal directional candle: one of our recorded near misses.
             b=list(m.bars)
-            b[-1]=replace(b[-1],open=96,close=96.4,high=96.5,low=95.0,
+            b[-1]=replace(b[-1],open=95,close=96.4,high=96.5,low=94.8,
                           quote_volume=1_000_000)
             obs.append(replace(m,bars=tuple(b),ask=96.4,bid=96.38,selection_rank=k))
         a=plan_event(obs,event_open_ms=EVENT,now_ms=NOW)
