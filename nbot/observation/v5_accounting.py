@@ -105,7 +105,8 @@ def score_trade(
     """Score one closed virtual path with a frozen -1R initial price stop.
 
     This does NOT simulate an exit. The caller must provide a proven chronological
-    entry/exit path and bid/ask-side reference prices, plus complete funding\n    coverage. Prices include spread but NOT the separately modeled slippage.
+    entry/exit path and bid/ask-side reference prices, plus complete funding
+    coverage. Prices include spread but NOT the separately modeled slippage.
 
     Settlement boundary policy: events strictly AFTER entry and BEFORE exit are
     counted. A settlement exactly on an entry or exit needs an explicit event-order
