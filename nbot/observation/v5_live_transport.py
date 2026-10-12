@@ -82,7 +82,7 @@ async def run_session(bridge, *, rest=None, connect=None, clock=None):
         except asyncio.QueueFull as exc:
             raise RuntimeError("V5_WSS_BUFFER_OVERFLOW") from exc
 
-    async def reader(url):
+    async def reader(url, channel):
         nonlocal opened
         async with connect(url, max_queue=64, max_size=256 * 1024,
                            ping_interval=30, ping_timeout=30, open_timeout=10) as ws:
@@ -91,12 +91,22 @@ async def run_session(bridge, *, rest=None, connect=None, clock=None):
                 ready.set()
             async for message in ws:
                 # Overflow is an explicit integrity fault; never silently drop.
-                enqueue(("wss", json.loads(message), clock()))
+                # Retain the source socket identity; shared-queue activity
+                # must not conceal loss of a required individual stream.
+                enqueue(("wss", (channel, json.loads(message)), clock()))
         raise RuntimeError("V5_WSS_CLOSED")
 
     async def snapshot(s):
         payload = await asyncio.to_thread(rest, "/fapi/v1/depth", {"symbol": s, "limit": 1000})
         enqueue(("snapshot", (s, payload), clock()))
+
+    async def watchdog():
+        await ready.wait()
+        while True:
+            # A dedicated wall-clock check continues despite heavy traffic
+            # in the shared consumer queue. No SQLite write on healthy checks.
+            await asyncio.sleep(0.5)
+            enqueue(("watchdog", None, clock()))
 
     async def consume():
         await ready.wait()
@@ -104,12 +114,23 @@ async def run_session(bridge, *, rest=None, connect=None, clock=None):
             bridge.connected(s)
         while True:
             typ, payload, receipt = await asyncio.wait_for(queue.get(), timeout=30)
+            if typ == "watchdog":
+                bridge.check_source_coverage(receipt)
+                continue
             if typ == "snapshot":
                 s, data = payload
                 bridge.snapshot(s, data, receipt)
                 snapshots.remove(s)
                 continue
-            row = payload.get("data", payload)
+            channel, message = payload
+            row = message.get("data", message)
+            if not isinstance(row, dict):
+                raise ValueError("V5_WSS_EVENT_INVALID")
+            kind = row.get("e")
+            if channel not in ("market", "public") or (
+                    (channel == "market") != (kind == "aggTrade")) or (
+                    channel == "public" and kind not in ("bookTicker", "depthUpdate")):
+                raise ValueError("V5_WSS_SOURCE_ROUTING_INVALID")
             s = row.get("s")
             if s not in bridge.symbols:
                 raise ValueError("V5_WSS_SHARD_SYMBOL_MISMATCH")
@@ -122,13 +143,16 @@ async def run_session(bridge, *, rest=None, connect=None, clock=None):
                     if not recovered:
                         raise RuntimeError("V5_TRADE_RECOVERY_UNAVAILABLE")
                     bridge.connected(s)
-            bridge.ingest(payload, receipt)
+            bridge.ingest(message, receipt)
             if (row.get("e") == "depthUpdate" and
                     bridge.feeds[s]["depth_id"] is None and s not in snapshots):
                 snapshots.add(s)
                 tasks.append(asyncio.create_task(snapshot(s)))
 
-    tasks.extend(asyncio.create_task(reader(url)) for url in stream_urls(bridge.symbols))
+    market_url, public_url = stream_urls(bridge.symbols)
+    tasks.extend((asyncio.create_task(reader(market_url, "market")),
+                  asyncio.create_task(reader(public_url, "public")),
+                  asyncio.create_task(watchdog())))
     tasks.append(asyncio.create_task(consume()))
     try:
         # Include snapshot exceptions as they are created without swallowing them.
