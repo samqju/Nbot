@@ -129,6 +129,32 @@ class PairedPolicyTests(unittest.TestCase):
         self.assertEqual(by["TIME_EXIT_V1"].accounting.funding_events_used,1)
         self.assertEqual(by["INTEGER_TRAIL_V1"].accounting.funding_events_used,1)
 
+    def test_boundary_funding_uncertainty_rejects_entire_paired_sample(self):
+        lab=PairedExitLab()
+        lab.add(entry())
+        lab.ingest(tick(1000,ENTRY_TIME+1000,bid=102.2))
+        lab.ingest(tick(1001,DEADLINE,bid=101.2))
+        # The fixed-target arm closes exactly on a funding settlement.
+        # Its timing is ambiguous; no selective retention of other arms.
+        f=(FundingSettlement("BTCUSDT",ENTRY_TIME+1000,.001,100.0),)
+        rows=lab.finalize("d1",now_ms=DEADLINE,
+                          funding_events=f,funding_coverage_confirmed=True)
+        self.assertEqual({r.reason for r in rows},
+                         {"ACCOUNTING_OR_FUNDING_UNSCORABLE"})
+        self.assertTrue(all(r.accounting is None for r in rows))
+
+    def test_late_receipt_cannot_be_relabelled_as_live_evidence(self):
+        lab=PairedExitLab()
+        lab.add(entry())
+        future_receipt=replace(
+            tick(1000,ENTRY_TIME+1000,bid=100.4),
+            receipt_time_ms=ENTRY_TIME+1000+5000,
+        )
+        lab.ingest(future_receipt)
+        rows=lab.finalize("d1",now_ms=ENTRY_TIME+6000)
+        self.assertEqual({r.reason for r in rows},
+                         {"TICK_GAP_OR_STALE_QUOTE"})
+
     def test_corrupt_or_stale_quote_rejected_and_retransmission_safe(self):
         lab=PairedExitLab()
         lab.add(entry())
