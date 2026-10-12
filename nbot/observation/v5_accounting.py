@@ -66,7 +66,13 @@ class CostPolicy:
 @dataclass(frozen=True)
 class TradeAccounting:
     policy_version: str
+    symbol: str
     side: str
+    entry_time_ms: int
+    exit_time_ms: int
+    entry_fill_price: float
+    exit_fill_price: float
+    initial_stop_price: float
     quantity: float
     one_r_quote: float
     gross_quote: float
@@ -79,6 +85,7 @@ class TradeAccounting:
     funding_r: float
     net_r: float
     funding_events_used: int
+    funding_settlements: tuple[FundingSettlement, ...]
 
 
 def score_trade(
@@ -98,7 +105,7 @@ def score_trade(
     """Score one closed virtual path with a frozen -1R initial price stop.
 
     This does NOT simulate an exit. The caller must provide a proven chronological
-    entry/exit path and bid/ask-side fill prices, plus complete funding coverage.
+    entry/exit path and bid/ask-side reference prices, plus complete funding\n    coverage. Prices include spread but NOT the separately modeled slippage.
 
     Settlement boundary policy: events strictly AFTER entry and BEFORE exit are
     counted. A settlement exactly on an entry or exit needs an explicit event-order
@@ -128,7 +135,7 @@ def score_trade(
     settlements = tuple(funding_events)
     previous_time = -1
     funding = 0.0
-    used = 0
+    used_events: list[FundingSettlement] = []
     for event in settlements:
         if not isinstance(event, FundingSettlement):
             raise ValueError("V5_FUNDING_EVENT_INVALID")
@@ -141,7 +148,7 @@ def score_trade(
             raise ValueError("V5_FUNDING_BOUNDARY_AMBIGUOUS")
         if entry_time_ms < event.time_ms < exit_time_ms:
             funding -= direction * event.rate * event.mark_price * qty
-            used += 1
+            used_events.append(event)
 
     gross = direction * (exit_price - entry) * qty
     fees = qty * (entry * policy.entry_fee_rate + exit_price * policy.exit_fee_rate)
@@ -151,9 +158,11 @@ def score_trade(
     if not all(math.isfinite(v) for v in values):
         raise ValueError("V5_ACCOUNTING_OVERFLOW")
     return TradeAccounting(
-        policy.version, side, qty, risk_quote, gross, fees, slippage,
+        policy.version, symbol, side, entry_time_ms, exit_time_ms,
+        entry, exit_price, stop, qty, risk_quote, gross, fees, slippage,
         funding, net, gross / risk_quote, (fees + slippage) / risk_quote,
-        funding / risk_quote, net / risk_quote, used,
+        funding / risk_quote, net / risk_quote, len(used_events),
+        tuple(used_events),
     )
 
 
