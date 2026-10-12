@@ -45,7 +45,7 @@
 | V4 raw and research DB | PRESERVE | `data/observation/v4` ~26 MiB at last preflight; never overwrite/delete |
 | V5 Milestone 1 | MERGED, NOT DEPLOYED | PR #30 merged as `2b6bc33acf31978459cbca105b3ea1979562df30`. 1,428 tests passed on PR head and merged main (run 38250307646) |
 | V5 Milestone 2 | PROTOTYPE MERGED / NOT DEPLOYED | PR #32 merge `19eec7f9436f9cd1c3b2acae3dcc008d8d7f574d`; 1,436 tests passed on PR head; metadata/depth and prospective validation remain outstanding |
-| V5 market-quality bridge | PROTOTYPE MERGED / NOT DEPLOYED | PR #34 merge `0ad04e711d79c46047fa952cf249f3f429976ada`; 1,441 tests passed on PR head; merged-main CI in progress when recorded |
+| V5 market-quality bridge | PROTOTYPE MERGED / NOT DEPLOYED | PR #34 merge `0ad04e711d79c46047fa952cf249f3f429976ada`; 1,441 tests passed on PR head; merged-main full regression succeeded ([run 38259054293](https://github.com/samqju/Nbot/actions/runs/38259054293)) |
 | V5 deployed | NO | Neither new services nor V5 data collection started |
 | V5 champion | NONE | First generation must qualify, no baseline exception |
 | V5 order authority | NONE | Permanently isolated in the V5 research/paper scope |
@@ -434,7 +434,7 @@ diagnostics if tests fail. **No masking errors to achieve cosmetic silence.**
 | 2026-10-12 | Merge PR #32 selector prototype | Merge `19eec7f`, 1,436 green PR-head tests; separate verified metadata/depth gate and prospective evaluation required before any V5 runtime |
 | 2026-10-12 | Record PR #32 merge in PR #33 | Handover document updated after milestone code change; V5 remains not deployed |
 | 2026-10-12 | Start PR #34 point-in-time market quality bridge | Public exchangeInfo PRICE_FILTER/LOT_SIZE/MIN_NOTIONAL, depth freshness, order-book sweep, fail-closed missing/stale evidence; not deployed, thresholds unproven |
-| 2026-10-12 | Merge PR #34 quality bridge; record in PR #35 | Merge `0ad04e7`; clean 1,441-test CI at PR head, merged-main run 38259054293 not yet verified; deployment and historical depth inference prohibited |
+| 2026-10-12 | Merge PR #34 quality bridge; record in PR #35 | Merge `0ad04e7`; clean 1,441-test CI at PR head, merged-main 38259054293 verified green; deployment and historical depth inference prohibited |
 
 ## Handover checklist for a fresh ChatGPT session
 
