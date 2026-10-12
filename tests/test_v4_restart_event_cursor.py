@@ -32,6 +32,7 @@ class V4RestartEventCursorTests(unittest.TestCase):
         with patch.object(module, "detect_role", return_value=MachineRole.OBSERVATION), \
              patch.object(module, "get_profile", return_value=SimpleNamespace(name="live-paper")), \
              patch.object(module, "validate_role_profile"), \
+             patch.object(module, "observation_config_for_profile", return_value=object()), \
              patch.object(module, "EvidenceDatabase", return_value=object()), \
              patch.object(module, "_git_sha", return_value="a" * 40), \
              patch.object(module, class_name, return_value=worker), \
