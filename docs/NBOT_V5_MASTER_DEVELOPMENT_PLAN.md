@@ -43,7 +43,7 @@
 | V4 research factory | RUNNING (legacy) | 100 concurrent virtual paths; restarts can make paths unscorable |
 | V4 paper contest | RUNNING (legacy) | Gen-1 contest; no Champion; not promoted |
 | V4 raw and research DB | PRESERVE | `data/observation/v4` ~26 MiB at last preflight; never overwrite/delete |
-| V5 Milestone 1 | MERGED, NOT DEPLOYED | PR #30 merged as `2b6bc33acf31978459cbca105b3ea1979562df30`. 1,428 tests passed on PR head; merged-main verification pending |
+| V5 Milestone 1 | MERGED, NOT DEPLOYED | PR #30 merged as `2b6bc33acf31978459cbca105b3ea1979562df30`. 1,428 tests passed on PR head and merged main (run 38250307646) |
 | V5 deployed | NO | Neither new services nor V5 data collection started |
 | V5 champion | NONE | First generation must qualify, no baseline exception |
 | V5 order authority | NONE | Permanently isolated in the V5 research/paper scope |
@@ -172,7 +172,7 @@ not interchangeable.
 - [x] Write this extensive operational/development handover.
 - [x] Latest PR-head full CI was **green**: [1,428 tests, OK](https://github.com/samqju/Nbot/actions/runs/38249999802).
 - [x] Merge PR #30; merge SHA above. No independent human peer review claimed.
-- [ ] Verify merged-main full CI [run 38250307646](https://github.com/samqju/Nbot/actions/runs/38250307646) is green.
+- [x] Merged-main full CI [run 38250307646](https://github.com/samqju/Nbot/actions/runs/38250307646) is green (1,428 tests).
 - [ ] Plan safe VPS code-only pull at an appropriate time; NO restart.
 - **Acceptance:** green CI, immutable ledger tests, fee/funding tests,
   no order authority, V4 untouched. Merely merging does not deploy.
