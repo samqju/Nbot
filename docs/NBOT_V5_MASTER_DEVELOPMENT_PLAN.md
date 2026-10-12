@@ -232,7 +232,7 @@ Verified PR-head CI: [1,436 tests, OK](https://github.com/samqju/Nbot/actions/ru
 - [x] Require anchored consecutive aggregate IDs, monotonic timestamps, fresh executable quotes, closing horizon witness; errors make all three arms unscorable.
 - [x] Account independently for per-arm exit prices and signed funding through shared V5 accounting contract.
 - [x] Keep constant-memory per hypothesis and capacity 100; bound the pending persistence cache at 100 completed sets, rejecting overflow without discarding active state; append immutable three-arm outcomes with shared SHA-256 digest.
-- [ ] Integrate real WSS quote/trade event bridge, restart checkpoint and funding coverage proof before any live V5 feed.
+- [ ] Integrate real joint WSS quote/trade event bridge (including quote-only stop crossings between aggTrade ticks), restart checkpoint and funding coverage proof before any live V5 feed.
 
 - [x] Retain starting stop at -1R for **all** policy arms (prototype).
 - [x] Arm A: initial -1R stop, +2R target, fixed horizon (experimental).
