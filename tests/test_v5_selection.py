@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from nbot.observation.v5_selection import (
-    Bar, Instrument, Observation, SelectionPolicy, evaluate, plan_event,
+    Bar, DepthSnapshot, Instrument, Observation, SelectionPolicy, evaluate, plan_event,
     CAPACITY, VERSION, submit_order,
 )
 from nbot.observation.v5_market_reader import read_completed_event
@@ -38,9 +38,12 @@ def observations(kind="breakout", *, symbol="BTCUSDT", meta=True, cost_ok=True):
         bars.append(Bar(EVENT-(48-i)*300_000,op,high,low,close,volume))
     price = 98.5 if kind == "breakout" else 84.0 if kind == "downbreak" else 100.5 if kind == "range" else 100
     bid=price - (.015 if cost_ok else .4)
-    inst = Instrument(symbol,0.01,0.001,5.0,True, NOW-1_000) if meta else None
+    inst = Instrument(symbol,0.01,0.001,5.0,True, NOW-1_000,
+                      0.001,100.0,"a"*64) if meta else None
+    depth = DepthSnapshot(symbol,NOW-2_500,NOW-1_500,1234,
+                          ((bid,10.0),),((price,10.0),),"b"*64) if meta else None
     return Observation(symbol,EVENT,EVENT+300_000-1,NOW-3_000,
-                       bid,price,12_000_000,0.0001,1,tuple(bars),True,inst)
+                       bid,price,12_000_000,0.0001,1,tuple(bars),True,inst,depth)
 
 
 class V5DirectionalSelectionTests(unittest.TestCase):
@@ -80,6 +83,9 @@ class V5DirectionalSelectionTests(unittest.TestCase):
         self.assertIn("INSTRUMENT_RULES_MISSING",res.reason)
         self.assertFalse(res.exploration_eligible)
         from dataclasses import replace
+        missing_depth=replace(observations(),depth=None)
+        self.assertIn("DEPTH_MISSING",evaluate(missing_depth,"LONG",now_ms=NOW).reason)
+        from dataclasses import replace
         old=replace(observations(),captured_at_ms=NOW+1)
         self.assertIn("SNAPSHOT_STALE",evaluate(old,"LONG",now_ms=NOW).reason)
         b=list(observations().bars)
@@ -100,6 +106,22 @@ class V5DirectionalSelectionTests(unittest.TestCase):
         self.assertIn("INSTRUMENT_RULES_STALE",evaluate(stale,"LONG",now_ms=NOW).reason)
         zero_funding=replace(m,funding_rate=None)
         self.assertIn("FUNDING_SNAPSHOT",evaluate(zero_funding,"LONG",now_ms=NOW).reason)
+
+    def test_depth_validation_rejects_stale_mismatched_and_thin_books(self):
+        from dataclasses import replace
+        m=observations()
+        for replacement,expected in (
+            (replace(m.depth,captured_at_ms=NOW+1),"DEPTH_STALE"),
+            (replace(m.depth,bids=((m.bid-.1,10.0),)),"QUOTE_MISMATCH"),
+            (replace(m.depth,asks=((m.ask,0.0001),)),"NOTIONAL_INSUFFICIENT"),
+            (replace(m.depth,bids=((m.ask+.1,10.0),)),"DEPTH_CROSSED"),
+            (replace(m.depth,update_id=0),"DEPTH_STALE"),
+        ):
+            bad=replace(m,depth=replacement)
+            result=evaluate(bad,"LONG",now_ms=NOW)
+            self.assertIn(expected,result.reason)
+            self.assertFalse(result.qualified)
+            self.assertFalse(result.exploration_eligible)
 
     def test_duplicate_active_and_capacity_are_not_refilled(self):
         m=observations()
@@ -173,7 +195,8 @@ class V5ReadOnlyEvidenceTests(unittest.TestCase):
                                 for b in m.bars])
             before=p.read_bytes()
             result=read_completed_event(p,event_open_ms=EVENT,now_ms=NOW,
-                                        instruments={m.symbol:m.instrument})
+                                        instruments={m.symbol:m.instrument},
+                                        depths={m.symbol:m.depth})
             self.assertEqual(result,(m,))
             self.assertEqual(p.read_bytes(),before)
             self.assertEqual([r.side for r in plan_event(result,event_open_ms=EVENT,

@@ -7,7 +7,7 @@
 >
 > Repository: `samqju/Nbot`. Branch: `main`; new work goes through reviewed PRs.
 > First PR: [#30](https://github.com/samqju/Nbot/pull/30).
-> Last update: **2026-10-12**, PR #32 merged and Milestone 2 prototype completion recorded in PR #33.
+> Last update: **2026-10-12**, V5 Milestone 2 market-quality bridge PR #34, pending CI/merge.
 >
 > **Safety invariant: Research / Paper only. No order authority.**
 > No change to Execution role, private Binance credentials or real-money order
@@ -45,6 +45,7 @@
 | V4 raw and research DB | PRESERVE | `data/observation/v4` ~26 MiB at last preflight; never overwrite/delete |
 | V5 Milestone 1 | MERGED, NOT DEPLOYED | PR #30 merged as `2b6bc33acf31978459cbca105b3ea1979562df30`. 1,428 tests passed on PR head and merged main (run 38250307646) |
 | V5 Milestone 2 | PROTOTYPE MERGED / NOT DEPLOYED | PR #32 merge `19eec7f9436f9cd1c3b2acae3dcc008d8d7f574d`; 1,436 tests passed on PR head; metadata/depth and prospective validation remain outstanding |
+| V5 market-quality bridge | PR OPEN / NOT DEPLOYED | PR #34: parsed exchange rules, prospective depth quality and strict temporal snapshots; no operational activation |
 | V5 deployed | NO | Neither new services nor V5 data collection started |
 | V5 champion | NONE | First generation must qualify, no baseline exception |
 | V5 order authority | NONE | Permanently isolated in the V5 research/paper scope |
@@ -214,8 +215,10 @@ Verified PR-head CI: [1,436 tests, OK](https://github.com/samqju/Nbot/actions/ru
 - [x] Backward-compatible read-only candle/snapshot access to existing collector.
       Never mutate the collector's raw evidence.
 - [x] Version decision explanation/feature digest and candidate universe.
-- [ ] Supply authenticated point-in-time exchange instrument metadata; collector snapshots do not include tick/lot rules.
-- [ ] Add causal order-book depth proof and market correlation exposure caps beyond volume/spread proxies.
+- [x] Implement **opt-in credential-free public market-quality capture** for Binance exchangeInfo and depth with time-bounded parser; no collector mutation. (PR #34)
+- [ ] Persist independently proven provenance and capture exchange metadata contemporaneously with future V5 decision timestamps before considering Milestone 2 fully live-ready.
+- [x] Reject candidates without timely, matching and sufficiently deep **prospective** order-book snapshot; use a separately quoted $100 hypothetical probe, not a claimed live fill. (PR #34)
+- [ ] Develop and validate market correlation/exposure caps, stronger full-depth book checks, and independent end-to-end causal snapshot capture.
 - [ ] Independently evaluate thresholds and selection bias on fresh, unseen V5 observations.
 - **Acceptance:** deterministic fixture-based examples and negative cases,
   no raw data writes, no magic slot refill, complete reject reasons.
@@ -430,6 +433,7 @@ diagnostics if tests fail. **No masking errors to achieve cosmetic silence.**
 | 2026-10-12 | Begin PR #32 V5 qualified-entry prototype | Clear directional setup, abstention, cost/liquidity gates and sampled near misses; no raw DB writes, no service installation, no claim of profitable thresholds |
 | 2026-10-12 | Merge PR #32 selector prototype | Merge `19eec7f`, 1,436 green PR-head tests; separate verified metadata/depth gate and prospective evaluation required before any V5 runtime |
 | 2026-10-12 | Record PR #32 merge in PR #33 | Handover document updated after milestone code change; V5 remains not deployed |
+| 2026-10-12 | Start PR #34 point-in-time market quality bridge | Public exchangeInfo PRICE_FILTER/LOT_SIZE/MIN_NOTIONAL, depth freshness, order-book sweep, fail-closed missing/stale evidence; not deployed, thresholds unproven |
 
 ## Handover checklist for a fresh ChatGPT session
 
@@ -437,7 +441,7 @@ diagnostics if tests fail. **No masking errors to achieve cosmetic silence.**
   code was deployed on Observation VPS; last verified VPS still at `b1a3c4a`.
 - Confirm current services before suggesting any restart. A prior two-restart
   incident caused WSS path losses and 792 unresolved V4 outcomes.
-- PR #32 prototype merged at `19eec7f`; verify merge-main CI and pending instrument-metadata/depth/forward-validation requirements before declaring Milestone 2 fully complete.
+- PR #32 prototype merged at `19eec7f` and merge-main CI passed. Inspect PR #34 before claiming V5 has verified exchange rules/depth; after merge, still require prospective capture persistence, correlation caps and true forward outcome testing.
 - Identify next milestone by reading statuses, not by extrapolating chat.
 - Never claim V5 is collecting or learning until services are actually
   installed, started and observed.

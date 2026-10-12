@@ -83,3 +83,29 @@ add point-in-time instrument metadata and depth checks, simulate WSS
 paired-exit policies, validate cost gates and entry signal quality on
 **new** forward observations, then update the master roadmap before
 considering V5 deployment.
+
+
+## Milestone 2 quality bridge — prospective public snapshots (PR #34)
+
+The V2 selector contract requires **two independent, time-stamped inputs**:
+(1) exchangeInfo instrument rules and (2) public order-book depth. The
+collector's 24h volume and spread do NOT prove an order can be filled.
+
+A credential-free public Binance USD-M client may request exchangeInfo and
+depth, recording local started/finished times and SHA-256 source digests.
+`PRICE_FILTER.tickSize`, `LOT_SIZE.stepSize/minQty/maxQty`,
+`MIN_NOTIONAL.notional`, TRADING status and USDT PERPETUAL contract identity
+are validated; unsupported/missing filter fields fail closed.
+
+The depth checker verifies sorted, non-crossed bid/ask ladders, positive
+quantities, quote consistency within about one price tick, no future/stale
+capture or out-of-order capture relative to the market snapshot, and at
+least a hypothetical $100 USDT probe on **both** entry and exit sides,
+including a maximum 10bp estimated sweep impact. This is not a guaranteed
+fill, and is a **prototype threshold**, not proven profitability.
+
+The collector itself is NOT modified. V5 still lacks a scheduled capture
+service, persistent quality snapshot ledger, portfolio correlation exposure
+limit, funding settlement bridge and trade replay. V5 cannot yet operate
+as a live research factory. Old V4 observations cannot be retroactively
+endowed with depth or exchange rules captured later.

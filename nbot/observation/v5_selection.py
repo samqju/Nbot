@@ -15,7 +15,7 @@ from typing import Iterable
 
 from .v5_accounting import ENTRY_FEE_RATE, EXIT_FEE_RATE, ENTRY_SLIPPAGE_RATE, EXIT_SLIPPAGE_RATE
 
-VERSION = "NBOT_V5_DIRECTIONAL_SELECTOR_V1"
+VERSION = "NBOT_V5_DIRECTIONAL_SELECTOR_V2"
 ORDER_AUTHORITY = "NONE"
 FIVE_MINUTES_MS = 300_000
 LOOKBACK = 49
@@ -54,6 +54,20 @@ class Instrument:
     min_notional: float
     trading: bool
     captured_at_ms: int
+    min_qty: float = 0.0
+    max_qty: float | None = None
+    source_digest: str = ""
+
+
+@dataclass(frozen=True)
+class DepthSnapshot:
+    symbol: str
+    started_at_ms: int
+    captured_at_ms: int
+    update_id: int
+    bids: tuple[tuple[float, float], ...]
+    asks: tuple[tuple[float, float], ...]
+    source_digest: str
 
 
 @dataclass(frozen=True)
@@ -70,6 +84,7 @@ class Observation:
     bars: tuple[Bar, ...]
     provenance_ok: bool
     instrument: Instrument | None = None
+    depth: DepthSnapshot | None = None
 
 
 @dataclass(frozen=True)
@@ -81,6 +96,10 @@ class SelectionPolicy:
     max_abs_snapshot_funding_rate: float = 0.002
     max_snapshot_age_ms: int = 120_000
     max_instrument_age_ms: int = 86_400_000
+    max_depth_lag_ms: int = 10_000
+    max_depth_age_ms: int = 10_000
+    max_depth_impact_bps: float = 10.0
+    probe_notional_usd: float = 100.0
     min_stop_ticks: int = 3
     max_positions: int = CAPACITY
     max_exploratory_positions: int = EXPLORATION_CAP
@@ -97,7 +116,12 @@ class SelectionPolicy:
                   "max_modeled_entry_cost_r", "max_abs_snapshot_funding_rate"):
             if not _valid(getattr(self, k)) or float(getattr(self, k)) < 0:
                 raise ValueError("V5_SELECTION_THRESHOLD_INVALID")
-        if min(self.max_snapshot_age_ms, self.max_instrument_age_ms, self.min_stop_ticks) <= 0:
+        if (not _valid(self.max_depth_impact_bps) or self.max_depth_impact_bps < 0
+                or not _valid(self.probe_notional_usd, positive=True)):
+            raise ValueError("V5_SELECTION_THRESHOLD_INVALID")
+        if min(self.max_snapshot_age_ms, self.max_instrument_age_ms,
+               self.max_depth_lag_ms, self.max_depth_age_ms,
+               self.min_stop_ticks) <= 0:
             raise ValueError("V5_SELECTION_THRESHOLD_INVALID")
 
 
@@ -202,6 +226,73 @@ def _setup(bars: tuple[Bar, ...], side: str, atr: float, regime: str) -> tuple[s
     return None, bool(near)
 
 
+def _depth_problems(
+    market: Observation, *, now_ms: int, policy: SelectionPolicy
+) -> list[str]:
+    """Check independent bid+ask depth for a small hypothetical notional probe.
+
+    This is a quality *gate*, not an actual fill or a guarantee of execution.
+    """
+    inst, book = market.instrument, market.depth
+    if book is None or inst is None:
+        return ["DEPTH_MISSING"]
+    if book.symbol != market.symbol or not book.source_digest or len(book.source_digest) != 64:
+        return ["DEPTH_PROVENANCE_INVALID"]
+    if (type(book.started_at_ms) is not int or type(book.captured_at_ms) is not int
+            or type(book.update_id) is not int or book.update_id <= 0
+            or book.started_at_ms < market.event_close_ms
+            or book.started_at_ms < market.captured_at_ms
+            or book.captured_at_ms < book.started_at_ms
+            or book.captured_at_ms > now_ms
+            or now_ms - book.captured_at_ms > policy.max_depth_age_ms
+            or book.captured_at_ms - market.captured_at_ms > policy.max_depth_lag_ms):
+        return ["DEPTH_STALE_OR_FUTURE"]
+    if not book.bids or not book.asks or len(book.bids) > 100 or len(book.asks) > 100:
+        return ["DEPTH_LEVELS_INVALID"]
+    for levels, is_bid in ((book.bids, True), (book.asks, False)):
+        if any(not (_valid(price, positive=True) and _valid(qty, positive=True))
+               for price, qty in levels):
+            return ["DEPTH_LEVELS_INVALID"]
+        prices = [float(p) for p, _ in levels]
+        if any((prices[i] <= prices[i + 1] if is_bid
+                else prices[i] >= prices[i + 1])
+               for i in range(len(prices) - 1)):
+            return ["DEPTH_LEVELS_INVALID"]
+    if book.bids[0][0] >= book.asks[0][0]:
+        return ["DEPTH_CROSSED"]
+    if not (_valid(market.bid, positive=True) and _valid(market.ask, positive=True)):
+        return ["DEPTH_MARKET_QUOTE_MISMATCH"]
+    if (abs(book.bids[0][0] - market.bid) > inst.tick_size * 1.01
+            or abs(book.asks[0][0] - market.ask) > inst.tick_size * 1.01):
+        return ["DEPTH_MARKET_QUOTE_MISMATCH"]
+    # Probe $100 in underlying quantity, rounded up to legal lot step.
+    # Reject if even the minimum permitted order is above our probe, so
+    # the result is not misleadingly advertised as $100 market-depth proof.
+    import math
+    qty = math.ceil((policy.probe_notional_usd /
+                     ((market.bid + market.ask) / 2)) / inst.quantity_step) * inst.quantity_step
+    if (qty < inst.min_qty or
+            (inst.max_qty is not None and qty > inst.max_qty) or
+            qty * market.ask < inst.min_notional):
+        return ["DEPTH_PROBE_LOT_OR_NOTIONAL_INVALID"]
+    for levels, buy in ((book.asks, True), (book.bids, False)):
+        top = float(levels[0][0])
+        left, paid = qty, 0.0
+        for price, available in levels:
+            used = min(left, available)
+            paid += used * price
+            left -= used
+            if left <= max(1e-12, qty * 1e-10):
+                break
+        if left > max(1e-12, qty * 1e-10):
+            return ["DEPTH_NOTIONAL_INSUFFICIENT"]
+        vwap = paid / qty
+        adverse_bps = (vwap / top - 1 if buy else 1 - vwap / top) * 10_000
+        if adverse_bps > policy.max_depth_impact_bps:
+            return ["DEPTH_IMPACT_TOO_HIGH"]
+    return []
+
+
 def evaluate(observation: Observation, side: str, *, now_ms: int,
              policy: SelectionPolicy = SelectionPolicy()) -> Candidate:
     """One symbol+side has exactly one auditable evaluation, even when rejected."""
@@ -238,13 +329,19 @@ def evaluate(observation: Observation, side: str, *, now_ms: int,
         not _valid(inst.tick_size, positive=True)
         or not _valid(inst.quantity_step, positive=True)
         or not _valid(inst.min_notional)
-        or inst.min_notional < 0
+        or inst.min_notional < 0 or not _valid(inst.min_qty)
+        or inst.min_qty < 0 or (inst.max_qty is not None and (
+            not _valid(inst.max_qty, positive=True) or inst.max_qty < inst.min_qty))
+        or len(inst.source_digest) != 64
     ):
         failures.append("INSTRUMENT_RULES_MISSING_OR_INVALID")
     elif inst.captured_at_ms > now_ms or inst.captured_at_ms < 0 or (
         now_ms - inst.captured_at_ms > policy.max_instrument_age_ms
     ):
         failures.append("INSTRUMENT_RULES_STALE_OR_FUTURE")
+
+    if "INSTRUMENT_RULES_MISSING_OR_INVALID" not in failures:
+        failures.extend(_depth_problems(m, now_ms=now_ms, policy=policy))
 
     bars = m.bars
     if len(bars) != LOOKBACK or any(
@@ -263,6 +360,7 @@ def evaluate(observation: Observation, side: str, *, now_ms: int,
         "volume_24h": m.quote_volume_24h_usd, "funding": m.funding_rate,
         "universe_rank": m.selection_rank, "provenance": m.provenance_ok,
         "instrument": None if inst is None else vars(inst),
+        "depth": None if m.depth is None else vars(m.depth),
         "bars": [vars(bar) for bar in bars], "side": side, "v": VERSION,
     }
     # Invalid numerical evidence must not create an opaque/colliding feature ID.
