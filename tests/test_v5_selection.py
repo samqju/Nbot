@@ -182,6 +182,11 @@ class V5ReadOnlyEvidenceTests(unittest.TestCase):
                 db.execute("UPDATE event_provenance SET context_complete=0")
             with self.assertRaisesRegex(ValueError,"PROVENANCE"):
                 read_completed_event(p,event_open_ms=EVENT,now_ms=NOW)
+            with sqlite3.connect(p) as db:
+                db.execute("UPDATE event_provenance SET context_complete=1")
+                db.execute("DELETE FROM universe_membership WHERE symbol=?", (m.symbol,))
+            with self.assertRaisesRegex(ValueError,"UNIVERSE_INVALID"):
+                read_completed_event(p,event_open_ms=EVENT,now_ms=NOW)
 
 
 if __name__=="__main__":
