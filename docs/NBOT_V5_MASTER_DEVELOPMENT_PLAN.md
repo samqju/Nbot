@@ -339,7 +339,7 @@ not interchangeable.
       SQLite WAL consistency, WSS reconnect/evidence gaps.
 - **Acceptance:** repeatable disaster recovery and monitored dry run.
 
-### Milestone 9 — Safe cutover, forward collection and controlled operation
+### Milestone 9 — Safe Cutover, forward collection and controlled operation
 
 **Status: PLANNED; do NOT initiate before previous gates.**
 
@@ -412,6 +412,7 @@ diagnostics if tests fail. **No masking errors to achieve cosmetic silence.**
 | 2026-10-12 | Keep V5 development changes in PRs and roadmap updated alongside each | Preserve continuity beyond chat context window |
 | 2026-10-12 | Successful CI shows clean dots only; failure shows full logs | Test prints/noisy subprocess output should not create false impression; no hiding faults |
 | 2026-10-12 | PR #30 adds foundation, accounting, roadmap and CI infrastructure | Open pending final head CI; V4 and VPS untouched |
+| 2026-10-12 | Quiet runner must add repository root to sys.path | Direct invocation otherwise fails collection imports; full CI rerun required |
 
 ## Handover checklist for a fresh ChatGPT session
 
