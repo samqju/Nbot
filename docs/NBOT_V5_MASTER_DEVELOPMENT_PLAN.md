@@ -1,0 +1,427 @@
+# NBOT V5 — Master Development Plan and Progress Ledger
+
+> **Permanent handover document, updated in the same pull request as every V5 upgrade.**
+> This is the single source of truth for scope, implementation status, rejected
+> ideas, releases, validation gates, operational handovers, and pending work.
+> No assistant chat history is needed to reconstruct the development plan.
+>
+> Repository: `samqju/Nbot`. Branch: `main`; new work goes through reviewed PRs.
+> First PR: [#30](https://github.com/samqju/Nbot/pull/30).
+> Last update: **2026-10-12**, PR #30 revision (pre-merge).
+>
+> **Safety invariant: Research / Paper only. No order authority.**
+> No change to Execution role, private Binance credentials or real-money order
+> permissions is part of this roadmap. A future user-authorized live-execution
+> project requires a separately approved, independently assessed plan.
+
+## How to resume work after a new chat or context window
+
+1. Read **this entire document**, then
+   [the V5 accounting contract](V5_CLEAN_SLATE_FOUNDATION.md).
+2. Check latest merged `main`, latest open PR, CI status, and recent PR changes.
+3. Read **Current status** and **Milestone register** below.
+4. Before changing code, identify exactly one target milestone, its contracts,
+   tests, dependencies and roll-back procedure.
+5. On EVERY PR that changes `nbot/observation/v5_*`,
+   `tests/test_v5_*`, `deploy/observation/{run_v5_,v5_}*` or
+   `docs/V5_*`, update **this file in the same PR** (a CI gate checks).
+6. Change statuses and completion evidence only when truly verified. Never
+   call a PR "complete" when its checks are running, or claim deployed code
+   based merely on a GitHub merge.
+7. Preserve older entries in the Decision log; add new entries, do not rewrite
+   the rationale after the fact.
+8. If a VPS has not verified a deployment, explicitly label it **not deployed**.
+9. No environment may place an actual order without a separately approved
+   execution design and explicit user authorization.
+
+## Current status — 2026-10-12
+
+| Item | Status | Evidence / outstanding action |
+|---|---|---|
+| Legacy V4 main | IN PRODUCTION (Observation only) | `b1a3c4a` installed on Observation VPS; services active at last reported preflight |
+| V4 live collector | PRESERVE | 60-symbol configuration, do not interrupt |
+| V4 research factory | RUNNING (legacy) | 100 concurrent virtual paths; restarts can make paths unscorable |
+| V4 paper contest | RUNNING (legacy) | Gen-1 contest; no Champion; not promoted |
+| V4 raw and research DB | PRESERVE | `data/observation/v4` ~26 MiB at last preflight; never overwrite/delete |
+| V5 Milestone 1 | PR OPEN / CI REVIEW | PR #30 creates V5 standalone accounting and immutable ledger; adds quiet test runner and this roadmap |
+| V5 deployed | NO | Neither new services nor V5 data collection started |
+| V5 champion | NONE | First generation must qualify, no baseline exception |
+| V5 order authority | NONE | Permanently isolated in the V5 research/paper scope |
+
+Last reported Observation VPS: about 954 MiB RAM total, 444 MiB
+available, 1.9 GiB swap available, 90 GiB free disk. Resource numbers are
+observations, not future availability guarantees. Do not run another full
+100-position WSS factory in parallel indefinitely on a one-GB instance.
+
+### Previous research evidence (legacy V4, not V5 training data)
+
+- Initial 4,124 matured hypotheses: **-0.5224R average NET**,
+  **-0.0663R average GROSS**, **0.4561R average modeled costs**, 22.9%
+  positive net. 4,119 STOP and 5 HORIZON, where STOP also includes
+  profitable trailing exits.
+- Expensive low-ATR instruments can incur enormous fees expressed in R:
+  PAXG worst -32.244R NET but +26.941R GROSS and 59.185R modeled costs.
+  A cost-to-risk filter is worth studying but **not** sufficient: even the
+  <=0.15R modeled-cost cohort has -0.195R mean NET and -0.102R mean GROSS.
+- All seven setup families negative, matched technical setups historically
+  weaker than unmatched in unadjusted aggregate; this does NOT establish
+  causality or that every setup is unprofitable across future regimes.
+- Both LONG and SHORT averages approximately -0.52R in legacy research.
+- Gen-1 research validation -0.5582R / 25.0% positive / 8 validation events;
+  Gen-2 -0.7124R / 13.6% / 22 events; Gen-3 -0.5813R / 20.6% / 34.
+  Gen-1 was admitted to paper ONLY by a baseline exception; later models
+  rejected. Early Gen-1 forward paper: 22 trades, -6.729R cumulative,
+  -0.306R average, 18.2% positive. These metrics are snapshots, not live status.
+- No guarantee of profitability; V5 must demonstrate new after-cost
+  out-of-sample performance. V4 observations inform hypotheses and guardrails
+  only. Do not silently pool V4 rows into V5 training sets.
+
+## Design principles and non-negotiable invariants
+
+1. **Entry quality before volume.** Maximum 100 concurrently active V5
+   hypothesis *entries*, but never a quota: zero good opportunities means
+   zero qualified entries. Do not fill vacancies with invented "model only"
+   trades. Separately marked, bounded exploratory samples may observe
+   rejected ideas to learn about false positives/negatives.
+2. **Causality.** Features computed using only market evidence captured at
+   or before decision time, complete and provably point-in-time 5-minute
+   events. Never train on future features, leaked labels or overlapping
+   train/validation outcome horizons.
+3. **Independent labeling.** Model learns from gross/net returns and
+   structurally defined entry/exit policies. Retain measured losing examples.
+   Rejected candidates must be recorded with reason and sampling eligibility.
+4. **Truthful fills/costs.** LONG enters at ask / exits at bid; SHORT enters
+   at bid / exits at ask. Charge fees on actual entry and exit notionals.
+   Do not double-count spread or slippage. Funding is event-specific,
+   direction-signed; unproven funding coverage marks scoring unavailable.
+5. **Initial -1R stop.** Initial stop-loss price is frozen and risk amount
+   defined at entry for every exit-policy experiment. Prices may overshoot
+   stops and all-in net loss may exceed -1R.
+6. **Paired exit studies.** Same entry receives independently tracked
+   policies on one continuously proven WSS/aggTrade path, each scored after
+   costs, with clear accounting for fees, funding and any missing evidence.
+7. **No hidden hindsight.** Any threshold developed by inspecting current
+   legacy results must be evaluated as a new hypothesis on *fresh, prospective*
+   data, alongside a comparable baseline.
+8. **No-trade is valid.** A ranking score is not itself a profitability
+   forecast. Abstention requires validated expected-value/calibration logic
+   on held-out chronological data.
+9. **Immutable evidence.** Freeze selection reason, symbol, direction, event,
+   causal feature digest, initial risk, entry quote, alternative policies,
+   policy version, trade path quality, and settlement evidence.
+10. **Fail closed.** WSS gaps, stale/ambiguous snapshots, mismatched symbol,
+    missing funding coverage, restart path loss or decision-ID collision must
+    never be converted to a fictitious result. No deleting/restarting state
+    to manufacture better training counts.
+11. **No automatic promotions.** Candidate generations must pass research
+    qualification and separate forward paper testing. No first-generation
+    research exception. Champion requires explicit review.
+12. **No live orders.** V5 research and V5 paper components do not expose
+    usable order APIs and never inherit execution secrets. Preserve role
+    separation: Observation VPS vs Execution VPS.
+13. **Small host first.** Streaming O(active hypotheses) replay state,
+    bounded WSS shards, disk budgets, RAM/CPU ceilings, no huge in-memory
+    dataframe on the one-GB Observation VPS.
+14. **Reproducibility.** Every new policy version, trained artifact and
+    decision carries stable IDs/digests; repeatable tests and independent
+    audit queries, with full diagnostic errors and clean successful CI dots.
+
+## Milestone register — start to finish
+
+Status words: `PLANNED`, `IN PROGRESS`, `PR OPEN`,
+`MERGED`, `DEPLOYED`, `VERIFIED`, `BLOCKED`. These are
+not interchangeable.
+
+### Milestone 0 — Legacy investigation and safety baseline
+
+**Status: VERIFIED (analysis only, 2026-10-12).**
+
+- [x] Identify V4 candidate selector behavior: recognized setups and count
+      priority, 100/100 virtual hypothesis refill, LONG/SHORT independent.
+- [x] Review first three generations and initial forward-paper report.
+- [x] Audit research R gross/net, cost buckets, exit types, symbols, families.
+- [x] Confirm V4 collector and three main services reported active.
+- [x] Confirm GitHub main release and V4 databases not erased.
+- [ ] Independently reconcile worst low-ATR observations against the exact
+      raw candle, mark price, quote timestamp and min tick-size requirements.
+- **Gate to progress:** do not assume old V4 metrics are a V5 backtest.
+
+### Milestone 1 — Isolated V5 foundation, accounting and durable roadmap
+
+**Status: PR OPEN — PR [#30](https://github.com/samqju/Nbot/pull/30).**
+**Code not yet deployed.**
+
+- [x] New namespaced V5 research-only source module.
+- [x] V5 database path restricted to dedicated V5 folder;
+      import and construction cause no database writes.
+- [x] New immutable decision and multiple exit-outcome records;
+      exact retry idempotent; mismatched ID payload rejected.
+- [x] Versioned fee: 0.05% open, 0.05% close; initial modeled slippage
+      0.01% each side; price inputs include spread; no double charge.
+- [x] Signed, symbol-checked, chronological funding settlements requiring
+      explicit evidence that funding coverage is complete; boundary
+      ambiguities fail closed.
+- [x] Freeze initial -1R price stop for accounting, retain quantities,
+      entry/exit prices/times, gross/net/cost/funding R and settlement records.
+- [x] Order-authority stub raises; no exchange operations.
+- [x] Tests for fee-vs-R, LONG/SHORT, funding signs, ambiguous
+      boundaries, immutable ledger and path isolation.
+- [x] Quiet unittest runner: clean progress on passing tests; reproduce
+      captured stdout/stderr only when suite fails.
+- [x] CI gate requires this roadmap to change with every V5-related PR.
+- [x] Write this extensive operational/development handover.
+- [ ] Latest PR-head full CI must be **green** (not merely an ancestor).
+- [ ] Peer review/merge PR #30; record merge SHA and check result.
+- [ ] Plan safe VPS code-only pull at an appropriate time; NO restart.
+- **Acceptance:** green CI, immutable ledger tests, fee/funding tests,
+  no order authority, V4 untouched. Merely merging does not deploy.
+
+### Milestone 2 — Explainable qualified entry and separate exploration
+
+**Status: PLANNED. No implementation yet.**
+
+- [ ] Formalize entry families: continuation/pullback in trend,
+      level-breakout/retest, bounded mean-reversion/rejection.
+      Avoid selecting solely by count of overlapping indicators.
+- [ ] Define market prerequisites: complete observed 5m event, causal
+      4h history, valid bid<ask, stable symbol metadata and permissible
+      tick sizes, minimum volume/depth, spread/funding quality.
+- [ ] Define directional entry triggers that use no future candles.
+      LONG and SHORT get separate rationale, not automatic mirrored entry.
+- [ ] Define regime classification from closed candles (trend,
+      range, volatility/dispersion and market-relative context), with
+      explicit `UNKNOWN` class and no retrospective regime labels.
+- [ ] Candidate lifecycle: `SCANNED`, `QUALIFIED`,
+      `REJECTED` with reason, `EXPLORATORY`, `SELECTED`.
+- [ ] Implement **abstention**: no qualifying candidates => open none.
+      100 is a cap, not an obligated target. Preserve same-symbol/side
+      exclusivity within qualified research.
+- [ ] Explore separately and transparently with deterministic reproducible
+      sampling and capped concurrent experiments; log sampling probability
+      to understand selection bias.
+- [ ] Test candidates for repeated signals, BTC/macro correlation, unfair
+      symbol concentration and inadvertent setup leakage.
+- [ ] Backward-compatible read-only feature access to existing collector.
+      Never mutate the collector's raw evidence.
+- [ ] Version decision explanation/feature digest and candidate universe.
+- **Acceptance:** deterministic fixture-based examples and negative cases,
+  no raw data writes, no magic slot refill, complete reject reasons.
+
+### Milestone 3 — Path-complete paired exit-policy lab
+
+**Status: PLANNED.**
+
+- [ ] Retain starting stop at -1R for **all** policy arms.
+- [ ] Arm A: initial -1R stop, +2R target, fixed horizon (experimental).
+- [ ] Arm B: initial -1R stop, no target/trailing, fixed horizon.
+- [ ] Arm C: existing whole-R trailing, initial -1R stop, fixed horizon.
+- [ ] Use same entry, same quantity and same chronological verified
+      trade feed for every arm; no path reconstruction from early
+      stopped trade only.
+- [ ] Parameterized horizons only from prespecified experimental grid,
+      not tuned against the holdout.
+- [ ] Side-consistent fills at bid/ask; stop crosses on tick; handle
+      gap/jump, simultaneous triggers and exchange timestamp ambiguity.
+- [ ] Each arm has its own outcome, exit timestamp/reason, max favorable
+      and adverse excursion, initial risk, fees, slippage and funding.
+- [ ] Disconnected WSS, unproven trade ID sequence or restart interrupt
+      produce UNSCORABLE for affected arms.
+- [ ] Design WAL-safe restart/checkpoint for evidence integrity; do not
+      invent missed trade paths. Capacity for 100 entries with 3 exit arms.
+- [ ] Add memory/CPU pressure tests and fast bounded queue behavior.
+- **Acceptance:** deterministic, paired comparisons on identical future
+  market events and strict evidence-integrity tests.
+
+### Milestone 4 — Funding coverage bridge, risk economics and data audit
+
+**Status: PLANNED; base pure accounting contract exists in PR #30.**
+
+- [ ] Map collector's `funding_events` and `funding_sync_ranges`
+      to entry/exit time windows with symbol-specific completeness.
+- [ ] Verify settlement rate, event timestamp and mark price provenance.
+      Missing actual funding evidence is not zero funding.
+- [ ] Clarify equality at entry/exit funding boundaries with event-order
+      documentation and conservative fail-closed policy.
+- [ ] Cross-check price levels and minimum tick size/quantity filters.
+- [ ] Enforce prospective economic eligibility such as cost-to-risk ceiling,
+      with thresholds selected before forward test (0.15R and 0.30R are
+      examples, NOT approved optimal thresholds).
+- [ ] Record rejected candidates and reasons and compare high- vs
+      low-cost cohorts prospectively.
+- [ ] Exclude all unscorable/gapped paths from scored target labels and
+      separately report selection/evidence attrition.
+- **Acceptance:** complete end-to-end reconciliation with independently
+  computed fees and funding on deterministic multi-event cases.
+
+### Milestone 5 — Entry learner, severity-sensitive objectives and abstention
+
+**Status: PLANNED.**
+
+- [ ] Candidate features: frozen causal price, trend, volume,
+      spread, volatility, risk/cost and market-regime context.
+- [ ] Label direction+setup outcomes after costs in actual R, preserving
+      severe loss scale (do not collapse -0.6R and -32R into equivalent
+      undifferentiated "bad" categories).
+- [ ] Compare simple transparent baselines with regularized models;
+      start with interpretable gate plus LightGBM only if data justifies it.
+- [ ] Correct for setup overlap, multiple correlated simultaneous trades,
+      outcome-driven selection, class imbalance and symbol dominance.
+- [ ] Use group-by-market-event weighting and cluster sensitivity rather
+      than assuming every hypothesis is independent.
+- [ ] Train conditional forward policy for **select or abstain**; rank
+      score cannot be treated as a probability or expected return without
+      separate calibration.
+- [ ] Define training cadence by sufficient independent market periods and
+      complete outcomes, not a hard "always train after 1,000" rule.
+- [ ] Log complete training dataset hashes, purges, feature sets, model
+      hyperparameters, validation snapshots and random seeds.
+- **Acceptance:** stable offline/repeated validation, no leakage, no
+  optimistic in-sample profitability used to qualify.
+
+### Milestone 6 — Learned exit-policy selection and robust validation
+
+**Status: PLANNED.**
+
+- [ ] Train a selector for one of the *tested* fixed policy arms.
+- [ ] Distinguish entry quality from exit-policy quality; compare arm
+      distribution and tail loss, not just mean R.
+- [ ] Chronological, nested or walk-forward splits with four-hour
+      (or chosen horizon) purging/embargo and proof labels matured
+      before subsequent validation entries.
+- [ ] Hold out entire calendar days and regimes; test for stale-quote
+      and market-wide correlated-drawdown risk.
+- [ ] Include fee/slippage stress (+ cost, delayed fill, wide spread)
+      and adversarial sparse funding scenarios.
+- [ ] Pre-register admission gate: positive **after-cost** mean
+      and minimum positive-rate/coverage, enough validation events/days,
+      no catastrophic tail, no reliance on one symbol or one time block.
+      Final exact numerical thresholds to be approved before evaluation.
+- [ ] A candidate that fails any research gate is RESEARCH_REJECTED,
+      including Generation 1; no fallback BASELINE_READY bypass.
+- **Acceptance:** truly out-of-sample testing and frozen generated artifacts;
+  train/validation leakage and future availability tests.
+
+### Milestone 7 — Forward-only paper examinations and Champion governance
+
+**Status: PLANNED.**
+
+- [ ] Paper executor remains observation-only and cannot submit orders.
+- [ ] Freeze model artifact and all policy versions at paper start; rank
+      and conditional exit policy run as actually available in real time.
+- [ ] Paper decision may abstain; count opportunity windows and qualified
+      selections separately from completed trades.
+- [ ] Strict chronological independent paper data; enforce at least
+      multiple UTC days/regimes, enough LONG and SHORT trades where relevant,
+      profitable mean after costs, drawdown and severe-loss limits.
+- [ ] Compare paired champion/challenger on same frozen opportunities and
+      identical accounting.
+- [ ] Interrupted/restarted WSS paths UNSCORABLE; never impute wins.
+- [ ] Champion promotion **manual explicit approval** after full report;
+      no automatic promotion and no implicit Execution authority.
+- [ ] Review evidence against the pre-registered paper promotion criteria.
+- **Acceptance:** paper-run ledger, reviewer-facing gates and complete tests.
+
+### Milestone 8 — Operations, Telegram visibility and safety hardening
+
+**Status: PLANNED.**
+
+- [ ] Commands/status for V5 research candidates, rejection reasons,
+      experiment counts, selected entry/exit policy, after-cost metrics,
+      champion eligibility, data gaps and funding-coverage quality.
+- [ ] Display V4 and V5 independently to avoid mixing incompatible
+      versions; distinguish deployed SHA from GitHub HEAD.
+- [ ] Service unit/cgroup resource limits for one-GB host, idempotent
+      boot behavior, file ownership, file locks, full error reporting.
+- [ ] No command should arm live orders; `/champion` requires explicit
+      V5 review-gate configuration before enabling V5 status.
+- [ ] Quiet success-test output; full failed-test traces and captured logs.
+- [ ] Operational doctors, restart safety, cold start/mid-cycle faults,
+      SQLite WAL consistency, WSS reconnect/evidence gaps.
+- **Acceptance:** repeatable disaster recovery and monitored dry run.
+
+### Milestone 9 — Safe Cutover, forward collection and controlled operation
+
+**Status: PLANNED; do NOT initiate before previous gates.**
+
+- [ ] Verify backup plan and stable GitHub release with green CI.
+- [ ] Perform consistent **SQLite online backups** of V4 DBs including
+      WAL content, never raw `cp` of busy database alone. Hash manifests.
+- [ ] Inspect service state, active positions, WSS capture continuity,
+      DB sizes, permissions, locks and free RAM/disk before cutover.
+- [ ] Choose an explicit cutover window with user approval; stop/disable
+      legacy V4 Research/Paper/Training only when prepared to lose any
+      in-memory unscored paths; log unscorable outcomes, not fictitious trades.
+- [ ] **Do not stop the existing market collector**; preserve raw
+      point-in-time market truth and collector configuration.
+- [ ] Install new V5 services with explicit role identity and unique
+      paths, restart policies, startup cursor, resource limits, logs.
+- [ ] Verify first 5m cycle, qualified/rejected reporting, simultaneous
+      three-policy paths, funding event coverage and clean shutdown.
+- [ ] Compare baseline V4 performance only as a historical benchmark;
+      no reuse of V4 outcomes as V5 training without a new explicit
+      decision and leakage analysis.
+- [ ] Run prospective paper long enough to meet pre-registered evidence
+      gates; retain a no-champion state if performance remains negative.
+- [ ] Record actual deployed SHA, systemd unit hashes and backup locations.
+- **Acceptance:** observed V5 evidence health, no Execution activation,
+  no code/service/data ambiguity, no loss of raw collector coverage.
+
+### Milestone 10 — Independent decision on any future Execution project
+
+**Status: OUT OF SCOPE for V5.**
+
+- V5 research success does not imply automatic real-money permission.
+- Any future operational live-trading design requires explicit user
+  authorization, venue-specific controls, independent safety verification
+  and a separate architecture/PR/gate sequence. No assumptions today.
+
+## Verification and release requirements for every milestone PR
+
+Each PR must include all applicable items:
+
+- [ ] Roadmap update with actual status, changed/unchanged components,
+      new tests, dangers, pending dependencies and decision-log entry.
+- [ ] Immutable/versioned behavior; do not silently rewrite old outcomes.
+- [ ] Tests for normal flow, negative/invalid/future/missing evidence,
+      no orders, restart or duplicate identity, and economic corner cases.
+- [ ] Full CI green on **latest PR head**; merged-main CI also green.
+- [ ] Positive evidence that V4 was not modified inadvertently.
+- [ ] No deployed-worker restart unless approved at cutover.
+- [ ] Explicit deployment status, release SHA and rollback plan.
+- [ ] Changelog note for any changed fees, funding, eligibility or exits.
+- [ ] At next completed stage update this table; do not tick future gates.
+
+The pull-request workflow includes a `check_v5_roadmap.py` gate. It
+compares PR base and head and refuses V5 code/test changes without an
+accompanying edit to this document. The dedicated quiet test runner captures
+all test stdout/stderr, including subprocess prints and FD writes, while
+preserving actual unittest dot progress, error tracebacks and captured
+diagnostics if tests fail. **No masking errors to achieve cosmetic silence.**
+
+## Decision log (append-only)
+
+| Date | Decision | Why / implication |
+|---|---|---|
+| 2026-10-12 | V5 is clean-slate, separate from V4 | Legacy candidate/exit economics poor; keep old data as evidence, not V5 training |
+| 2026-10-12 | Retain LIVE observation collector | Working 60-symbol point-in-time collection; avoid WSS interruption |
+| 2026-10-12 | 100 research entries is a cap, not a quota | Strong directional entry qualification and valid no-trade outcome |
+| 2026-10-12 | Start every exit arm at -1R | Freeze risk economics; allow exit arm testing and eventual learning |
+| 2026-10-12 | 0.05% fee per side | User corrected 0.10% mistaken rate; 1bp/slippage side only an assumption |
+| 2026-10-12 | Fund from actual settlement evidence | Both direction and settlement chronology matter; no fabricated zero |
+| 2026-10-12 | No first-generation baseline qualification exception | Gen-1 V4 paper had already failed research economics |
+| 2026-10-12 | Keep V5 development changes in PRs and roadmap updated alongside each | Preserve continuity beyond chat context window |
+| 2026-10-12 | Successful CI shows clean dots only; failure shows full logs | Test prints/noisy subprocess output should not create false impression; no hiding faults |
+| 2026-10-12 | PR #30 adds foundation, accounting, roadmap and CI infrastructure | Open pending final head CI; V4 and VPS untouched |
+| 2026-10-12 | Quiet runner must add repository root to sys.path | Direct invocation otherwise fails collection imports; full CI rerun required |
+
+## Handover checklist for a fresh ChatGPT session
+
+- Confirm whether PR #30 merged, its merge commit SHA, head/main CI status,
+  and whether code was deployed on the Observation VPS.
+- Confirm current services before suggesting any restart. A prior two-restart
+  incident caused WSS path losses and 792 unresolved V4 outcomes.
+- Identify next milestone by reading statuses, not by extrapolating chat.
+- Never claim V5 is collecting or learning until services are actually
+  installed, started and observed.
+- Treat both RESEARCH and PAPER as no-order-authority, even if a Champion exists.
+- If a PR changed a V5 contract, update this document **in the same PR**.
