@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from nbot.observation.v4_operator import V4PaperOperator
+from nbot.observation.v4_paper_contest import V4PaperContestStore
 from nbot.observation.v4_recommendation import V4ChampionSource
 from nbot.observation.v4_promotion import connect, digest
 from nbot.communication.server import ObservationControlServer
@@ -36,6 +37,58 @@ class V4IntegrationTests(unittest.TestCase):
             with connect(self.root/old) as source, connect(self.operator.base/new) as dest:
                 source.backup(dest)
         return contest
+
+    def stage_unfinished_exam(self, *, head_to_head=False):
+        contest, _ = self.fixture.contest(head_to_head=head_to_head)
+        self.operator.base = self.root / 'data/observation/v4'
+        self.operator.base.mkdir(parents=True)
+        for old, new in [('contest.db', 'paper_contest.db'),
+                         ('ledger.db', 'paper_ledger.db'),
+                         ('generations.db', 'generations.db')]:
+            with connect(self.root / old) as source, connect(self.operator.base / new) as dest:
+                source.backup(dest)
+        return contest, V4PaperContestStore(self.operator.base / 'paper_contest.db')
+
+    def test_champion_status_shows_open_next_paper_trade_and_elapsed(self):
+        contest, store = self.stage_unfinished_exam()
+        entry_ms = fixtures.NOW - (75 * 60_000)
+        store.open_trade(decision_id='unsettled-13', contest_id=contest,
+            generation=1, event_open_ms=entry_ms - 1,
+            symbol='CFXUSDT', side='LONG', entry_time_ms=entry_ms,
+            entry_price=0.1, one_r_price=0.001)
+        with patch('nbot.observation.v4_operator.time.time',
+                   return_value=fixtures.NOW / 1000):
+            result = self.operator.status()
+        body = result['telegram_body']
+        self.assertIn('Gen-1 CHALLENGER: 0/100 scored', body)
+        self.assertIn('CFXUSDT LONG OPEN', body)
+        self.assertIn('elapsed 1h 15m', body)
+        self.assertIn('entry ', body)
+        self.assertEqual(result['document']['open_positions'][0]['symbol'], 'CFXUSDT')
+        self.assertEqual(result['order_authority'], 'NONE')
+        self.assertEqual(store.contest_model_status(contest, 1)['completed_trades'], 0)
+
+    def test_champion_status_says_none_when_no_paper_position(self):
+        self.stage_unfinished_exam()
+        result = self.operator.status()
+        self.assertIn('Gen-1 CHALLENGER: none open', result['telegram_body'])
+        self.assertEqual(result['document']['open_positions'], [])
+
+    def test_champion_status_lists_both_open_head_to_head_models(self):
+        contest, store = self.stage_unfinished_exam(head_to_head=True)
+        for generation, symbol, side in (
+            (1, 'BTCUSDT', 'SHORT'), (2, 'ETHUSDT', 'LONG')
+        ):
+            store.open_trade(decision_id=f'open-{generation}',
+                contest_id=contest, generation=generation, event_open_ms=300_000,
+                symbol=symbol, side=side, entry_time_ms=fixtures.NOW-90_000,
+                entry_price=100, one_r_price=1)
+        with patch('nbot.observation.v4_operator.time.time',
+                   return_value=fixtures.NOW / 1000):
+            result = self.operator.status()
+        self.assertIn('Gen-1 CHAMPION: BTCUSDT SHORT OPEN', result['telegram_body'])
+        self.assertIn('Gen-2 CHALLENGER: ETHUSDT LONG OPEN', result['telegram_body'])
+        self.assertEqual(len(result['document']['open_positions']), 2)
 
     def test_status_is_read_only_and_gives_exact_commands(self):
         contest = self.passing()
