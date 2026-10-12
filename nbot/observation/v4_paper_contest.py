@@ -7,7 +7,8 @@ Contest semantics:
 - After a Champion exists, each Challenger starts a fresh HEAD_TO_HEAD epoch.
 - Champion and Challenger have separate one-position paper books.
 - Both see the same completed five-minute candidate universe.
-- Each contest/model needs 100 completed scored trades before review.
+- Baseline exams need 100 trades; new head-to-head contests need 50 per model.
+- Existing contests retain the checkpoint frozen when they were created.
 - Interrupted WSS/process paths are unscorable, never fabricated.
 - Promotion is always an explicit review action; never automatic.
 """
@@ -30,6 +31,7 @@ from .redesign_runtime import V3ResearchRuntime
 from .selective_ml import ML_FEATURE_NAMES, augment_vector, _ml_imports
 from .v4_generation import V4GenerationStore
 from .v4_promotion import connect, promotion_report, rows as promotion_rows
+from .v4_policy import BASELINE_TRADES, HEAD_TO_HEAD_TRADES, contest_checkpoint
 from .v4_research import (
     HORIZON_MS,
     INTERVAL_MS,
@@ -160,6 +162,9 @@ class V4PaperContestStore:
             CREATE INDEX IF NOT EXISTS paper_trades_contest_model
               ON paper_trades(contest_id,generation,status,event_open_ms);
             """)
+            conn.execute('BEGIN IMMEDIATE')
+            if 'checkpoint_trades' not in {r[1] for r in conn.execute('PRAGMA table_info(contests)')}:
+                conn.execute('ALTER TABLE contests ADD COLUMN checkpoint_trades INTEGER NOT NULL DEFAULT 100')
 
     def admitted_generations(self) -> set[int]:
         self.initialize()
@@ -203,9 +208,9 @@ class V4PaperContestStore:
 
             cur = conn.execute(
                 """INSERT INTO contests(
-                    started_at_ms,champion_generation,challenger_generation,mode,status
-                ) VALUES(?,?,?,?, 'ACTIVE')""",
-                (int(now_ms), champion, challenger, mode),
+                    started_at_ms,champion_generation,challenger_generation,mode,status,checkpoint_trades
+                ) VALUES(?,?,?,?, 'ACTIVE',?)""",
+                (int(now_ms), champion, challenger, mode, BASELINE_TRADES if champion is None else HEAD_TO_HEAD_TRADES),
             )
             contest_id = int(cur.lastrowid)
 
@@ -294,6 +299,7 @@ class V4PaperContestStore:
             if row is None or row[2] != "OPEN":
                 return
             contest_id, generation = int(row[0]), int(row[1])
+            checkpoint=int(conn.execute('SELECT checkpoint_trades FROM contests WHERE contest_id=?',(contest_id,)).fetchone()[0])
             conn.execute(
                 """UPDATE paper_trades SET status='CLOSED',exit_time_ms=?,net_r=?,
                    mfe_r=?,mae_r=?,exit_reason=?,source_digest=?
@@ -317,7 +323,7 @@ class V4PaperContestStore:
             drawdown = max(float(m[2]), peak - realized)
             completed = int(m[3]) + 1
             positive = int(m[4]) + (1 if float(net_r) > 0 else 0)
-            model_status = "REVIEW_REQUIRED" if completed >= CHECKPOINT_TRADES else "EXAMINING"
+            model_status = "REVIEW_REQUIRED" if completed >= checkpoint else "EXAMINING"
             conn.execute(
                 """UPDATE contest_models SET realized_r=?,peak_realized_r=?,
                    max_drawdown_r=?,completed_trades=?,positive_trades=?,status=?
@@ -330,7 +336,7 @@ class V4PaperContestStore:
             pending = conn.execute(
                 """SELECT COUNT(*) FROM contest_models
                    WHERE contest_id=? AND completed_trades<?""",
-                (contest_id, CHECKPOINT_TRADES),
+                (contest_id, checkpoint),
             ).fetchone()[0]
             if int(pending) == 0:
                 conn.execute(
@@ -417,6 +423,7 @@ class V4PaperContestStore:
             for r in tail_rows
         }
         for model in model_rows:
+            checkpoint=contest_checkpoint(next(c for c in contests if c['contest_id']==model['contest_id']))
             key = (int(model["contest_id"]), int(model["generation"]))
             completed = int(model["completed_trades"])
             model["positive_rate"] = (
@@ -425,8 +432,8 @@ class V4PaperContestStore:
             model["balance_usd"] = (
                 float(model["starting_balance_usd"]) + float(model["realized_r"]) * RISK_USD
             )
-            model["checkpoint_trades"] = CHECKPOINT_TRADES
-            model["remaining_to_checkpoint"] = max(0, CHECKPOINT_TRADES - completed)
+            model["checkpoint_trades"] = checkpoint
+            model["remaining_to_checkpoint"] = max(0, checkpoint - completed)
             model["unscorable_trades"] = excluded.get(key, 0)
             model.update(tails.get(key, {
                 "worst_net_r": None, "mean_net_r": None, "long_trades": 0,
@@ -440,7 +447,7 @@ class V4PaperContestStore:
             "recent_contests": contests,
             "models": model_rows,
             "open_positions": open_rows,
-            "checkpoint_trades": CHECKPOINT_TRADES,
+            "checkpoint_trades": contest_checkpoint(contests[0]) if contests else BASELINE_TRADES,
             "order_authority": ORDER_AUTHORITY,
             "automatic_promotion": False,
         }
@@ -822,6 +829,7 @@ class V4PaperContest:
                     extras={
                         "v4_paper_contract": VERSION,
                         "contest_id": contest_id,
+                        "checkpoint_trades": self.store.status()['checkpoint_trades'],
                         "generation": generation,
                         "model_digest": model.model_digest,
                         "feature_vector": candidate.vector,
@@ -857,7 +865,7 @@ class V4PaperContest:
             "closed_this_cycle": closed,
             "opened_this_cycle": opened,
             "active_positions": len(self._active),
-            "checkpoint_trades": CHECKPOINT_TRADES,
+            "checkpoint_trades": self.store.status()['checkpoint_trades'],
             "order_authority": ORDER_AUTHORITY,
         }
 

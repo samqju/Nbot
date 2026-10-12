@@ -77,6 +77,10 @@ def _verified_trades(trades, record, admission, ledger, contest, now_ms):
         d, o = decision[0], outcomes[0]
         dp, op = json.loads(d["payload_json"]), json.loads(o["payload_json"])
         extra = dp.get("extras", {})
+        from .v4_policy import contest_checkpoint
+        checkpoint=contest_checkpoint(contest)
+        if extra.get('checkpoint_trades',100) != checkpoint:
+            raise ValueError('SCORED_CHECKPOINT_PROOF_MISMATCH')
         if (digest(dp) != d["digest"] or digest(op) != o["digest"]
                 or o["quality"] != "AGGTRADE_RESOLVED" or op.get("quality") != o["quality"]
                 or op.get("actual_execution") is not False
@@ -163,6 +167,15 @@ def promotion_report(contest_conn, generation_conn, ledger_conn, *, now_ms):
         report["failed_checks"] = ["NO_ACTIVE_CONTEST"]
         return report
     contest = contests[0]
+    from .v4_policy import contest_checkpoint
+    try:
+        checkpoint=contest_checkpoint(contest)
+    except (ValueError,TypeError):
+        report['failed_checks']=['CONTEST_CHECKPOINT_INVALID']
+        return report
+    report['policy']['checkpoint_trades']=checkpoint
+    if checkpoint == 50:
+        report['policy']['version']='NBOT_V4_PAPER_PROMOTION_V2'
     report["contest_id"] = contest["contest_id"]
     report["mode"] = contest["mode"]
     failed = report["failed_checks"]
@@ -202,8 +215,8 @@ def promotion_report(contest_conn, generation_conn, ledger_conn, *, now_ms):
                     or not math.isclose(cached["realized_r"], m["realized_r"], abs_tol=1e-8)
                     or not math.isclose(cached["max_drawdown_r"], m["max_drawdown_r"], abs_tol=1e-8)):
                 failed.append(f"{role}:CACHED_COUNTERS_MISMATCH")
-            if m["completed_trades"] != POLICY["checkpoint_trades"]:
-                failed.append(f"{role}:NEEDS_100_SCORED_TRADES")
+            if m["completed_trades"] != checkpoint:
+                failed.append(f"{role}:NEEDS_{checkpoint}_SCORED_TRADES")
             if role != "CHALLENGER":
                 continue
             gates = {

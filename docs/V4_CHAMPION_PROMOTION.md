@@ -1,20 +1,21 @@
 # Enforced V4 paper Champion promotion
 
-Reaching 100 scored trades makes a contest review-ready; it does not make a
+Reaching the contest's frozen scored-trade checkpoint makes it review-ready; it does not make a
 model Champion. `v4_paper_admin.py promote` rechecks all gates at the moment of
 promotion. There is no override flag and no automatic promotion.
 
 These are conservative engineering defaults for paper experiments, not a
 calibrated statistical significance test or proof of real-money profitability.
 They are versioned in `nbot/observation/v4_promotion.py` as
-`NBOT_V4_PAPER_PROMOTION_V1`. Changing them requires a reviewed code change;
+`NBOT_V4_PAPER_PROMOTION_V1` for 100-trade exams and `NBOT_V4_PAPER_PROMOTION_V2`
+for new 50-trade head-to-head contests. Changing them requires a reviewed code change;
 environment variables cannot lower them.
 
 ## Required evidence and performance
 
 | Requirement | Enforced threshold |
 |---|---|
-| Completed scored trades | Exactly 100 per examined model in this contest |
+| Completed scored trades | Baseline exams: 100. New head-to-head contests: 50 per model. Existing contests retain their original checkpoint. |
 | Open positions at review | None |
 | After-cost average | Challenger at least +0.10 R per trade |
 | Positive outcomes | Challenger at least 50% |
@@ -45,7 +46,7 @@ contests cannot replace fresh exam evidence.
 
 In addition to all absolute Challenger requirements:
 
-- Both models must have 100 scored trades from the current fresh contest.
+- Both models must reach the checkpoint frozen for the current fresh contest (50 for new head-to-head contests).
 - Challenger average net R must exceed Champion average by at least 0.10 R.
 - Challenger drawdown and worst outcome must be no worse than Champion's.
 - Both models must have entries in at least six common four-hour blocks.
@@ -63,7 +64,7 @@ When no Champion exists, the next research-qualified model runs a solo
 special research `BASELINE_READY` exemption; later generations still need
 `CHALLENGER_READY`. Every generation must pass the same paper promotion gates.
 
-An exam still stops opening positions at 100 scored trades. If its evidence is
+An exam stops opening positions at its frozen checkpoint. If its evidence is
 too short, one-sided, narrow, or unprofitable, waiting after the exam cannot
 manufacture eligibility. It remains review-required and cannot promote. The
 operator can reject it, allowing the next qualified generation to take its turn.

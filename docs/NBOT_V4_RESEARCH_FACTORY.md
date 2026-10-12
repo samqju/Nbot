@@ -1,6 +1,30 @@
 # NBOT V4 Handover — Final Architecture and Deployed State
 
-Last updated: 2026-10-11
+Last updated: 2026-10-12
+
+## Prospective cadence update
+
+From Gen-4 onward, every new generation requires 5,000 **additional scored
+research outcomes** beyond the previous trained generation's cutoff. Gen-1,
+Gen-2 and Gen-3 retain their original 1,000-outcome cadence. With the original
+cutoffs, targets are Gen-3 at 3,000, Gen-4 at 8,000, Gen-5 at 13,000 and Gen-6
+at 18,000. Research-rejected generations still count as trained generations.
+Interrupted/unresolved paths never count toward these targets. This is an
+outcome threshold, not a promised elapsed training time or exactly 5,000 usable
+training rows; causal filtering and event-diversity requirements still apply.
+
+The immutable 1,000-outcome research audit windows are retained. Intermediate
+windows are not separately trained after Gen-3; the trainer selects only its
+next 5,000-outcome cutoff, avoiding backlog catch-up generations. It continues
+using accumulated eligible history within the existing bounded dataset.
+`/learning` and `v4_status.py` show the authoritative next-generation target and
+remaining outcomes. Low-level research-cycle batch milestones describe the
+retained 1,000-outcome audit windows, not the new model-training cadence.
+
+New Champion-vs-Challenger contests require 50 scored trades per model.
+Baseline exams and existing contests remain at their frozen 100-trade target.
+All other promotion gates, including actual forward time coverage, remain in
+force. More training evidence does not replace forward paper evidence.
 
 ## Purpose
 
@@ -75,9 +99,9 @@ The permanent ML memory is the compact completed research record, not unlimited 
 
 ## Training cadence
 
-- **1,000 completed V4 virtual research trades = one retraining trigger.**
+- **Gen-1 through Gen-3: 1,000 additional scored research outcomes per generation. Gen-4 onward: 5,000 additional scored outcomes per generation.**
 - Reaching 1,000 does not automatically create a Challenger.
-- Each 1,000-trade batch trains a candidate generation.
+- Only the next scheduled training cutoff trains a candidate generation; intermediate audit windows remain evidence.
 - Candidate must pass protected research validation to become a Challenger.
 - Generation 1 is the first provisional baseline model.
 - Later generation numbering should use Gen-1 / Gen-2 / Gen-3 or V4_MODEL_GEN_001 style, avoiding old V1/V2 naming confusion.
@@ -103,8 +127,8 @@ A model can also qualify because it handles a newly observed important regime ma
 
 ## Champion vs Challenger
 
-- Primary paper comparison checkpoint: **100 completed strategy paper trades per model**.
-- 100 trades is a checkpoint, not an automatic promotion trigger.
+- New head-to-head checkpoint: **50 completed strategy paper trades per model**. Baseline and pre-existing exams retain 100.
+- The frozen trade target is a checkpoint, not an automatic promotion trigger.
 - Promotion should also require enough elapsed future time, independent market periods/regime diversity, after-cost performance, drawdown/tail behavior, consistency, and robustness.
 - Champion and Challenger may maintain separate realistic paper books.
 - They do not need identical entry timestamps; abstention and holding time are part of the strategy.
@@ -289,7 +313,7 @@ Contract:
 - once a Champion exists, each qualified Challenger starts a fresh `HEAD_TO_HEAD` epoch;
 - Champion and Challenger both start each head-to-head epoch at 0 completed contest trades;
 - old Champion results are never reused as its 100-trade proof against a new Challenger;
-- each model requires **100 completed scored paper trades** in that contest;
+- each model requires its frozen trade checkpoint: 100 for baseline/pre-existing contests, 50 for new head-to-head contests;
 - a model that reaches 100 first stops opening fresh paper positions while the other completes its checkpoint;
 - when all required models reach 100, contest state becomes `REVIEW_REQUIRED`;
 - promotion/rejection is explicit through `v4_paper_admin.py`;
@@ -400,7 +424,7 @@ The command listener continues to require both the configured command-chat ID an
 When V4 data exists, `/learning` reports only the useful V4 state:
 
 - active virtual research slots / 100;
-- completed outcomes and progress to the next 1,000-trade trigger;
+- completed outcomes and progress to the next scheduled generation cutoff;
 - unresolved count;
 - current batch / training-ready batch;
 - Champion and Challenger generation IDs;
@@ -433,7 +457,7 @@ Contract:
 - Gen-1 first runs a `BASELINE_EXAM` by itself;
 - after a Champion exists, every qualified Challenger starts a fresh `HEAD_TO_HEAD` epoch;
 - Champion and Challenger counters restart at zero for each head-to-head epoch so old Champion trades are not reused against a new Challenger;
-- each model must complete 100 scored paper trades in that contest before the contest becomes `REVIEW_REQUIRED`;
+- each model must reach its frozen checkpoint (100 baseline/pre-existing, 50 new head-to-head) before the contest becomes `REVIEW_REQUIRED`;
 - a model that reaches 100 first stops opening new paper trades while the other model finishes;
 - promotion is never automatic and does not grant live order authority;
 - explicit paper review uses `v4_paper_admin.py promote` or `reject` only after the contest is review-ready;

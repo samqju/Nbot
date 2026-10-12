@@ -37,7 +37,7 @@ class PromotionTests(unittest.TestCase):
             validation_positive=.6, qualification=qualification, now_ms=START-1)
         return type('Model', (), {'model_digest': artifact['model_digest'], 'qualification': qualification})()
 
-    def contest(self, head_to_head=False, generation=1):
+    def contest(self, head_to_head=False, generation=1, checkpoint=100):
         models = {1: self.generation(1)}
         if head_to_head or generation == 2:
             models[2] = self.generation(2)
@@ -46,14 +46,19 @@ class PromotionTests(unittest.TestCase):
         self.generations.set_state('champion_generation', champ)
         self.generations.set_state('challenger_generation', challenger)
         selected = {g: m for g, m in models.items() if g in {champ, challenger}}
-        return self.store.ensure_contest(champion_generation=champ, challenger_generation=challenger,
-                                         models=selected, now_ms=START), models
+        cid=self.store.ensure_contest(champion_generation=champ, challenger_generation=challenger,
+                                     models=selected, now_ms=START)
+        # Existing tests represent contests frozen under the legacy 100-trade policy.
+        with connect(self.store.path) as c:
+            c.execute('UPDATE contests SET checkpoint_trades=? WHERE contest_id=?',(checkpoint,cid))
+        return cid,models
 
     def trades(self, contest_id, model, generation=1, *, count=100, returns=None,
                spacing=HOUR, sides=None, regimes=None, evidence=True):
         # Seed immutable production-shaped evidence in one transaction per DB.
         # Store lifecycle/counter behavior is tested separately in test_v4_paper_contest.
         with connect(self.store.path) as book, connect(self.ledger.path) as ledger:
+            checkpoint=book.execute('SELECT checkpoint_trades FROM contests WHERE contest_id=?',(contest_id,)).fetchone()[0]
             realized = peak = drawdown = 0.
             positive = 0
             for i in range(count):
@@ -66,8 +71,8 @@ class PromotionTests(unittest.TestCase):
                 positive += net > 0
             book.execute("UPDATE contest_models SET completed_trades=?,positive_trades=?,realized_r=?,peak_realized_r=?,max_drawdown_r=?,status=? WHERE contest_id=? AND generation=?",
                          (count, positive, realized, peak, drawdown,
-                          'REVIEW_REQUIRED' if count >= 100 else 'EXAMINING', contest_id, generation))
-            if not book.execute('SELECT 1 FROM contest_models WHERE contest_id=? AND completed_trades<100', (contest_id,)).fetchone():
+                          'REVIEW_REQUIRED' if count >= checkpoint else 'EXAMINING', contest_id, generation))
+            if not book.execute('SELECT 1 FROM contest_models WHERE contest_id=? AND completed_trades<?', (contest_id,checkpoint)).fetchone():
                 book.execute("UPDATE contests SET status='REVIEW_REQUIRED' WHERE contest_id=?", (contest_id,))
 
     def _trade_fixture(self, book, ledger, contest_id, model, generation, i,
@@ -79,6 +84,7 @@ class PromotionTests(unittest.TestCase):
         net = returns(i) if returns else (-.2 if i % 4 == 0 else .4)
         key = f'{contest_id}-{generation}-{i}'
         extra = {'contest_id': contest_id, 'generation': generation, 'model_digest': model.model_digest,
+                 'checkpoint_trades':book.execute('SELECT checkpoint_trades FROM contests WHERE contest_id=?',(contest_id,)).fetchone()[0],
                  'order_authority': 'NONE', 'feature_vector': vector,
                  'v4_paper_contract': 'NBOT_V4_PAPER_CONTEST_V1'}
         if evidence:

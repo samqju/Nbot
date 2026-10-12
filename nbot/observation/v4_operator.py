@@ -31,7 +31,8 @@ class V4PaperOperator:
         if contest:
             lines.append(f"Contest {contest['contest_id']}: {contest['status']}")
             for model in models:
-                lines.append(f"Gen-{model['generation']} {model['role']}: {model['completed_trades']}/100 scored, {model['realized_r']:.3f}R")
+                from .v4_policy import contest_checkpoint
+                lines.append(f"Gen-{model['generation']} {model['role']}: {model['completed_trades']}/{contest_checkpoint(contest)} scored, {model['realized_r']:.3f}R")
         lines.append('Promotion gates: '+('PASS' if report['eligible'] else 'BLOCKED'))
         lines.extend(report.get('failed_checks', [])[:12])
         if ready:
