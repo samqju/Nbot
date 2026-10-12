@@ -2,6 +2,30 @@
 
 Last updated: 2026-10-11
 
+## Prospective cadence update
+
+From Gen-4 onward, every new generation requires 5,000 **additional scored
+research outcomes** beyond the previous trained generation's cutoff. Gen-1,
+Gen-2 and Gen-3 retain their original 1,000-outcome cadence. With the original
+cutoffs, targets are Gen-3 at 3,000, Gen-4 at 8,000, Gen-5 at 13,000 and Gen-6
+at 18,000. Research-rejected generations still count as trained generations.
+Interrupted/unresolved paths never count toward these targets. This is an
+outcome threshold, not a promised elapsed training time or exactly 5,000 usable
+training rows; causal filtering and event-diversity requirements still apply.
+
+The immutable 1,000-outcome research audit windows are retained. Intermediate
+windows are not separately trained after Gen-3; the trainer selects only its
+next 5,000-outcome cutoff, avoiding backlog catch-up generations. It continues
+using accumulated eligible history within the existing bounded dataset.
+`/learning` and `v4_status.py` show the authoritative next-generation target and
+remaining outcomes. Low-level research-cycle batch milestones describe the
+retained 1,000-outcome audit windows, not the new model-training cadence.
+
+New Champion-vs-Challenger contests require 50 scored trades per model.
+Baseline exams and existing contests remain at their frozen 100-trade target.
+All other promotion gates, including actual forward time coverage, remain in
+force. More training evidence does not replace forward paper evidence.
+
 ## Purpose
 
 This document is the continuity record for NBOT V4. It captures the architecture agreed with the user, what is already deployed on the Observation/Learning VPS, and what remains to be proven before later Champion/Challenger or live-trading stages.

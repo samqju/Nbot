@@ -1,4 +1,4 @@
-"""V4 model-generation registry and 1,000-result training trigger.
+"""V4 generation registry: 1,000 new outcomes initially, 5,000 from Gen-4.
 
 This is intentionally separate from the real-time research process.  Training
 may be CPU/RAM heavy; research/WSS capture must remain responsive.
@@ -252,16 +252,27 @@ class V4GenerationTrainer:
         self.ledger_path=Path(ledger_path); self.research_meta_path=Path(research_meta_path)
         self.store=V4GenerationStore(generation_path); self.store.initialize()
 
+    def schedule(self) -> dict[str,Any]:
+        from .v4_policy import training_schedule
+        with connect(self.store.path) as conn:
+            last=conn.execute('SELECT generation,batch_no FROM generations ORDER BY generation DESC LIMIT 1').fetchone()
+        resolved=0
+        if self.ledger_path.is_file():
+            with connect(self.ledger_path.resolve().as_uri()+'?mode=ro',uri=True) as conn:
+                resolved=int(conn.execute('SELECT COUNT(*) FROM matured_outcomes WHERE actual_execution=0').fetchone()[0])
+        return training_schedule(*(last or (0,0)), resolved=resolved)
+
     def ready_batches(self) -> list[int]:
         if not self.research_meta_path.is_file(): return []
         with connect(self.research_meta_path) as conn:
             rows=conn.execute("SELECT batch_no FROM v4_batches WHERE status='READY_FOR_TRAINING' ORDER BY batch_no").fetchall()
         done=self.store.existing_batches()
-        return [int(r[0]) for r in rows if int(r[0]) not in done]
+        target=self.schedule()['target_batch']
+        return [int(r[0]) for r in rows if int(r[0])==target and int(r[0]) not in done]
 
     def train_next(self) -> dict[str,Any]:
         ready=self.ready_batches()
-        if not ready: return {"status":"NO_READY_BATCH","version":VERSION}
+        if not ready: return {"status":"NO_READY_BATCH","version":VERSION,**self.schedule()}
         batch=ready[0]
         rows=load_rows(self.ledger_path,through_outcome=batch*BATCH_SIZE)
         groups=_groups(rows)
@@ -286,6 +297,8 @@ class V4GenerationTrainer:
         # the frozen active challenger merely because no Champion exists yet.
         qualification = _qualification_status(existing_generations, metrics)
         artifact={"version":VERSION,"research_version":RESEARCH_VERSION,"batch_no":batch,
+                  "research_outcome_cutoff":batch*BATCH_SIZE,
+                  "training_interval_outcomes":self.schedule()['training_interval_outcomes'],
                   "trained_at_ms":int(time.time()*1000),"training_cutoff_event_ms":train_groups[-1][0],
                   "feature_names":list(ML_FEATURE_NAMES),"ranking_model":model.model_to_string(),
                   "validation":metrics,"authority":AUTHORITY,"order_authority":"NONE",
@@ -310,4 +323,5 @@ class V4GenerationTrainer:
 
     def status(self) -> dict[str,Any]:
         return {"version":VERSION,"state":self.store.state(),"ready_batches":self.ready_batches(),
+                **self.schedule(),
                 "order_authority":"NONE"}

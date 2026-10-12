@@ -424,9 +424,14 @@ def _v4_learning_snapshot(repo_root: Path) -> dict[str, Any] | None:
         int(row["batch_no"]) for row in batches
         if row["status"] == "READY_FOR_TRAINING" and int(row["batch_no"]) not in trained_batches
     ]
-    batch_size = 1000
+    from nbot.observation.v4_policy import training_schedule
+    schedule=training_schedule(
+        (latest_generation or {}).get('generation',0),
+        (latest_generation or {}).get('batch_no',0),resolved=resolved)
+    ready_batches=[n for n in ready_batches if n==schedule['target_batch']]
+    batch_size = schedule['training_interval_outcomes']
     capacity = 100
-    next_training_at = ((resolved // batch_size) + 1) * batch_size
+    next_training_at = schedule['next_training_at']
     paper_review = None
     try:
         from nbot.observation.v4_operator import V4PaperOperator
@@ -440,9 +445,10 @@ def _v4_learning_snapshot(repo_root: Path) -> dict[str, Any] | None:
         "resolved": resolved,
         "unresolved": unresolved,
         "batch_size": batch_size,
+        "training_schedule": schedule,
         "next_training_at": next_training_at,
         "current_batch": (resolved // batch_size) + 1,
-        "batch_progress_pct": round((resolved % batch_size) * 100.0 / batch_size, 1),
+        "batch_progress_pct": schedule['training_progress_pct'],
         "ready_batches": ready_batches,
         "generation_state": state,
         "latest_generation": latest_generation,
@@ -476,6 +482,9 @@ def _format_v4_learning(data: Mapping[str, Any]) -> str:
             f"Validation: {_e(round(float(latest.get('validation_mean_net_r') or 0.0), 4))}R mean | "
             f"{_e(round(100.0 * float(latest.get('validation_positive_rate') or 0.0), 1))}% positive"
         )
+    schedule=data.get('training_schedule') or {}
+    if schedule:
+        lines.append(f"Next Gen-{schedule['next_generation']}: {schedule['new_scored_outcomes']}/{schedule['training_interval_outcomes']} new scored outcomes; {schedule['remaining_outcomes']} remaining")
     if cycle:
         lines.append(
             "Last 5m cycle: "
@@ -488,7 +497,8 @@ def _format_v4_learning(data: Mapping[str, Any]) -> str:
     if contest:
         lines.append(f"Paper contest {contest['contest_id']}: {_e(contest['status'])}")
         for model in paper.get('models') or []:
-            lines.append(f"Gen-{model['generation']}: {model['completed_trades']}/100 scored | {model['realized_r']:.3f}R")
+            from nbot.observation.v4_policy import contest_checkpoint
+            lines.append(f"Gen-{model['generation']}: {model['completed_trades']}/{contest_checkpoint(contest)} scored | {model['realized_r']:.3f}R")
         lines.append('Use /champion for promotion gates and approval commands.')
     lines.append("Order authority: NONE")
     return "\n".join(lines)
