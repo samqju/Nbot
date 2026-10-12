@@ -21,7 +21,7 @@ import time
 from typing import Any
 
 from .selective_ml import ML_FEATURE_NAMES, augment_vector, _ml_imports
-from .v4_research import BATCH_SIZE, VERSION as RESEARCH_VERSION
+from .v4_research import BATCH_SIZE, HORIZON_MS, INTERVAL_MS, VERSION as RESEARCH_VERSION
 from .v4_promotion import connect
 
 VERSION = "NBOT_V4_GENERATION_V1"
@@ -30,6 +30,7 @@ MODEL_PREFIX = "V4_MODEL_GEN_"
 MIN_EVENTS = 40
 VALIDATION_FRACTION = 0.20
 MAX_TRAIN_ROWS = 50_000
+MIN_PURGED_TRAIN_EVENTS = 20
 
 
 def _digest(value: Any) -> str:
@@ -200,6 +201,28 @@ def _groups(rows: list[ResearchRow]):
     return sorted(grouped.items())
 
 
+def _purge_training_groups(train_groups, valid_groups):
+    """Keep only training labels whose full research horizon precedes validation.
+
+    Entry decisions are made at the 5-minute candle boundary. The 4-hour
+    research horizon is an upper bound on their path duration. Additionally,
+    the recorded outcome must have matured before the first validation entry.
+    Grouping avoids splitting a single market event between train and valid.
+    Existing frozen generations are never rewritten by this new contract.
+    """
+    if not valid_groups:
+        return []
+    first_validation_entry_ms = int(valid_groups[0][0]) + INTERVAL_MS
+    result = []
+    for event_ms, event_rows in train_groups:
+        if int(event_ms) + INTERVAL_MS + HORIZON_MS > first_validation_entry_ms:
+            continue
+        eligible = [r for r in event_rows if r.matured_at_ms <= first_validation_entry_ms]
+        if len(eligible) >= 2:
+            result.append((event_ms, eligible))
+    return result
+
+
 def _matrix(groups, np):
     x=[]; y=[]; w=[]; sizes=[]; meta=[]
     for event,rows in groups:
@@ -282,6 +305,15 @@ class V4GenerationTrainer:
         train_groups,valid_groups=groups[:cut],groups[cut:]
         if len(valid_groups)<5:
             return {"status":"WAIT_FOR_VALIDATION_EVENTS","batch_no":batch}
+        # Guard against overlapping four-hour virtual paths and late-matured
+        # labels leaking market movements into the forward validation window.
+        train_groups = _purge_training_groups(train_groups, valid_groups)
+        if len(train_groups) < MIN_PURGED_TRAIN_EVENTS:
+            return {"status":"WAIT_FOR_PURGED_TRAIN_EVENTS","batch_no":batch,
+                    "purged_training_events":len(train_groups),
+                    "min_purged_training_events":MIN_PURGED_TRAIN_EVENTS,
+                    "validation_start_event_ms":valid_groups[0][0],
+                    "purge_horizon_ms":HORIZON_MS}
         lgb,np=_ml_imports()
         train=_matrix(train_groups,np); valid=_matrix(valid_groups,np)
         if not train[3] or not valid[3]:
@@ -300,6 +332,9 @@ class V4GenerationTrainer:
                   "research_outcome_cutoff":batch*BATCH_SIZE,
                   "training_interval_outcomes":self.schedule()['training_interval_outcomes'],
                   "trained_at_ms":int(time.time()*1000),"training_cutoff_event_ms":train_groups[-1][0],
+                  "validation_purge_contract":"FOUR_HOUR_HORIZON_AND_MATURITY_V1",
+                  "validation_purge_horizon_ms":HORIZON_MS,
+                  "validation_start_event_ms":valid_groups[0][0],
                   "feature_names":list(ML_FEATURE_NAMES),"ranking_model":model.model_to_string(),
                   "validation":metrics,"authority":AUTHORITY,"order_authority":"NONE",
                   "automatic_real_money_promotion":False}
