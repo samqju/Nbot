@@ -101,6 +101,8 @@ class V5DirectionalSelectionTests(unittest.TestCase):
         from dataclasses import replace
         m=observations(cost_ok=False)
         self.assertIn("SPREAD_TOO_WIDE",evaluate(m,"LONG",now_ms=NOW).reason)
+        # The wider spread is independently rejected by the depth-quote gate
+        # before setup evaluation, rather than allowed to qualify.
         m=observations()
         stale=replace(m,instrument=replace(m.instrument,captured_at_ms=NOW+1))
         self.assertIn("INSTRUMENT_RULES_STALE",evaluate(stale,"LONG",now_ms=NOW).reason)
@@ -143,7 +145,10 @@ class V5DirectionalSelectionTests(unittest.TestCase):
             b=list(m.bars)
             b[-1]=replace(b[-1],open=95,close=96.4,high=96.5,low=94.8,
                           quote_volume=1_000_000)
-            obs.append(replace(m,bars=tuple(b),ask=96.4,bid=96.38,selection_rank=k))
+            obs.append(replace(m,bars=tuple(b),ask=96.4,bid=96.38,
+                               depth=replace(m.depth,bids=((96.38,10.0),),
+                                             asks=((96.4,10.0),)),
+                               selection_rank=k))
         a=plan_event(obs,event_open_ms=EVENT,now_ms=NOW)
         b=plan_event(list(reversed(obs)),event_open_ms=EVENT,now_ms=NOW)
         self.assertEqual(a,b)
