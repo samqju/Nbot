@@ -7,7 +7,7 @@
 >
 > Repository: `samqju/Nbot`. Branch: `main`; new work goes through reviewed PRs.
 > First PR: [#30](https://github.com/samqju/Nbot/pull/30).
-> Last update: **2026-10-12**, PR #30 revision (pre-merge).
+> Last update: **2026-10-12**, milestone 1 merged, progress update PR #31.
 >
 > **Safety invariant: Research / Paper only. No order authority.**
 > No change to Execution role, private Binance credentials or real-money order
@@ -43,7 +43,7 @@
 | V4 research factory | RUNNING (legacy) | 100 concurrent virtual paths; restarts can make paths unscorable |
 | V4 paper contest | RUNNING (legacy) | Gen-1 contest; no Champion; not promoted |
 | V4 raw and research DB | PRESERVE | `data/observation/v4` ~26 MiB at last preflight; never overwrite/delete |
-| V5 Milestone 1 | PR OPEN / CI REVIEW | PR #30 creates V5 standalone accounting and immutable ledger; adds quiet test runner and this roadmap |
+| V5 Milestone 1 | MERGED, NOT DEPLOYED | PR #30 merged as `2b6bc33acf31978459cbca105b3ea1979562df30`. 1,428 tests passed on PR head; merged-main verification pending |
 | V5 deployed | NO | Neither new services nor V5 data collection started |
 | V5 champion | NONE | First generation must qualify, no baseline exception |
 | V5 order authority | NONE | Permanently isolated in the V5 research/paper scope |
@@ -148,8 +148,8 @@ not interchangeable.
 
 ### Milestone 1 — Isolated V5 foundation, accounting and durable roadmap
 
-**Status: PR OPEN — PR [#30](https://github.com/samqju/Nbot/pull/30).**
-**Code not yet deployed.**
+**Status: MERGED — PR [#30](https://github.com/samqju/Nbot/pull/30), merge SHA `2b6bc33acf31978459cbca105b3ea1979562df30`.**
+**Code not yet deployed to Observation VPS.**
 
 - [x] New namespaced V5 research-only source module.
 - [x] V5 database path restricted to dedicated V5 folder;
@@ -170,8 +170,9 @@ not interchangeable.
       captured stdout/stderr only when suite fails.
 - [x] CI gate requires this roadmap to change with every V5-related PR.
 - [x] Write this extensive operational/development handover.
-- [ ] Latest PR-head full CI must be **green** (not merely an ancestor).
-- [ ] Peer review/merge PR #30; record merge SHA and check result.
+- [x] Latest PR-head full CI was **green**: [1,428 tests, OK](https://github.com/samqju/Nbot/actions/runs/38249999802).
+- [x] Merge PR #30; merge SHA above. No independent human peer review claimed.
+- [ ] Verify merged-main full CI [run 38250307646](https://github.com/samqju/Nbot/actions/runs/38250307646) is green.
 - [ ] Plan safe VPS code-only pull at an appropriate time; NO restart.
 - **Acceptance:** green CI, immutable ledger tests, fee/funding tests,
   no order authority, V4 untouched. Merely merging does not deploy.
@@ -412,12 +413,13 @@ diagnostics if tests fail. **No masking errors to achieve cosmetic silence.**
 | 2026-10-12 | Keep V5 development changes in PRs and roadmap updated alongside each | Preserve continuity beyond chat context window |
 | 2026-10-12 | Successful CI shows clean dots only; failure shows full logs | Test prints/noisy subprocess output should not create false impression; no hiding faults |
 | 2026-10-12 | PR #30 adds foundation, accounting, roadmap and CI infrastructure | Open pending final head CI; V4 and VPS untouched |
-| 2026-10-12 | Quiet runner must add repository root to sys.path | Direct invocation otherwise fails collection imports; full CI rerun required |
+| 2026-10-12 | Quiet runner must add repository root to sys.path | Direct invocation otherwise fails collection imports; corrected and green at 1,428 tests |
+| 2026-10-12 | PR #30 merged V5 milestone 1 foundation | Merge `2b6bc33`; safe, no VPS update, no V5 service running; document completion in PR #31 |
 
 ## Handover checklist for a fresh ChatGPT session
 
-- Confirm whether PR #30 merged, its merge commit SHA, head/main CI status,
-  and whether code was deployed on the Observation VPS.
+- PR #30 is merged at `2b6bc33`. Check its merge-main CI and whether V5
+  code was deployed on Observation VPS; last verified VPS still at `b1a3c4a`.
 - Confirm current services before suggesting any restart. A prior two-restart
   incident caused WSS path losses and 792 unresolved V4 outcomes.
 - Identify next milestone by reading statuses, not by extrapolating chat.
