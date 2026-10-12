@@ -47,6 +47,11 @@ def main() -> int:
     )
     database = EvidenceDatabase(observation_config_for_profile(profile))
     contest = V4PaperContest(database, release_sha=_git_sha(root))
+    # A restarted contest must not replay the latest completed market event.
+    # That event's frozen paper decisions may already exist, while fresh WSS
+    # quotes yield a different immutable payload for the same decision ID.
+    # Wait for the next completed event instead; preserve all paper evidence.
+    contest.last_event_open_ms = _latest_complete_event(database)
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())

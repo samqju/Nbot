@@ -45,6 +45,11 @@ def main() -> int:
     validate_role_profile(repo_root=root,role=role,profile=profile,environment=os.environ)
     database=EvidenceDatabase(observation_config_for_profile(profile))
     factory=V4ResearchFactory(database,release_sha=_git_sha(root))
+    # Do not replay an already-completed market event after process restart.
+    # Decisions for that event may have been immutably recorded with live quotes
+    # by the previous process; a new quote would conflict with the same ID.
+    # Start opening new research paths only on a subsequently completed event.
+    factory.last_event_open_ms=_latest_complete_event(database)
     stop=threading.Event()
     signal.signal(signal.SIGTERM,lambda *_:stop.set())
     signal.signal(signal.SIGINT,lambda *_:stop.set())
