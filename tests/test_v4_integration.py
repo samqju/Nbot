@@ -99,6 +99,23 @@ class V4IntegrationTests(unittest.TestCase):
         self.assertEqual(first.proposal.profile, 'live-paper')
         self.assertIsNone(source.refresh(now_ms=NOW+30001, ttl_ms=30000).proposal)
 
+    def test_negative_v4_rank_score_still_proposes_and_is_not_expected_r(self):
+        contest = self.passing()
+        self.operator.review({'action':'approve','contest_id':contest,'generation':1})
+        source, _ = self.source()
+        candidate = SimpleNamespace(symbol='BTCUSDT', side='LONG', vector={'x':1})
+        source.scanner.scan = Mock(return_value=[candidate])
+        fake_model = Mock()
+        fake_model.score.return_value = -.25
+        with patch('nbot.observation.v4_paper_contest.FrozenGenerationModel', return_value=fake_model):
+            result = source.refresh(now_ms=NOW, ttl_ms=30000)
+        self.assertIsNotNone(result.proposal)
+        self.assertEqual(result.proposal.selection_score, -.25)
+        self.assertIsNone(result.proposal.expected_after_cost_net_r)
+        self.assertEqual(result.proposal.experiment_context['selection_score_kind'],
+                         'LIGHTGBM_LAMBDARANK_UNCALIBRATED')
+        self.assertFalse(result.proposal.experiment_context['expected_r_calibrated'])
+
     def test_tampered_approved_model_fails_closed(self):
         contest = self.passing()
         self.operator.review({'action':'approve','contest_id':contest,'generation':1})

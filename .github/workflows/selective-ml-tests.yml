@@ -3,6 +3,7 @@ name: selective-ml-tests
 on:
   push:
     branches:
+      - main
       - feature/selective-ml-v1
   pull_request:
     branches:

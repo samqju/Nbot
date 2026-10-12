@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import math
 from pathlib import Path
 import sqlite3
 
@@ -14,6 +13,7 @@ from .learned_recommendation import _execution_compatible_quotes
 from .recommendation import RecommendationSnapshot
 from .v4_promotion import connect, digest
 from .v4_research import V4CandidateScanner
+from .v4_selection import rank_candidates
 
 
 class V4ChampionSource:
@@ -84,11 +84,12 @@ class V4ChampionSource:
             self._model = FrozenGenerationModel(generation, record)
             self._model_identity = identity
         candidates = self.scanner.scan(event_open_ms=event_ms, now_ms=now_ms)
-        scored = [(self._model.score(candidate), candidate) for candidate in candidates]
-        scored.sort(key=lambda row: (-row[0], row[1].symbol, row[1].side))
+        # Mirror the frozen paper exam: negative ranker scores still rank
+        # candidates; their sign is not an after-cost profitability estimate.
+        scored = rank_candidates(self._model.score, candidates)
         proposal = None
-        reason = 'V4_NO_POSITIVE_CANDIDATE'
-        if scored and math.isfinite(scored[0][0]) and scored[0][0] > 0:
+        reason = 'V4_NO_SCORABLE_CANDIDATE'
+        if scored:
             score, candidate = scored[0]
             with self.database.connection() as c:
                 raw = c.execute('SELECT symbol,bid_price,ask_price,captured_at_ms FROM market_snapshots WHERE event_open_ms=? AND symbol=?', (event_ms, candidate.symbol)).fetchall()
@@ -106,14 +107,16 @@ class V4ChampionSource:
                     feature_version=CANONICAL_FEATURE_VERSION, selector_version='NBOT_V4_CHAMPION_TOP1_V1',
                     entry_authority=self.authority, exit_policy_version='INTEGER_R_STEP_CONTROL',
                     reference_price=(float(bid)+float(ask))/2, selection_score=score, selection_rank=1,
-                    expected_after_cost_net_r=score, source_digest=source_digest, model_digest=artifact['model_digest'],
+                    expected_after_cost_net_r=None, source_digest=source_digest, model_digest=artifact['model_digest'],
                     experiment_context={'authority_class':self.authority, 'economic_claim':False,
                         'research_evidence':False, 'selection_method':'V4_APPROVED_CHAMPION_TOP1',
                         'model_version':f'V4_MODEL_GEN_{generation:03d}', 'v4_generation':generation,
                         'approved_paper_contest_id':review_id, 'training_environment':'LIVE',
                         'inference_environment':'LIVE', 'execution_environment':'LIVE',
                         'reference_quote_environment':'LIVE', 'live_market_event_ms':event_ms,
-                        'prediction_target':'V4_AGGTRADE_INTEGER_R_PAPER_OUTCOME', 'order_authority':'NONE'})
+                        'prediction_target':'V4_AGGTRADE_INTEGER_R_PAPER_OUTCOME',
+                        'selection_score_kind':'LIGHTGBM_LAMBDARANK_UNCALIBRATED',
+                        'expected_r_calibrated':False, 'order_authority':'NONE'})
                 reason = None
             else:
                 reason = 'V4_FRESH_QUOTE_UNAVAILABLE'

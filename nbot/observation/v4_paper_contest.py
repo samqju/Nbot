@@ -14,7 +14,6 @@ Contest semantics:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import json
 import math
@@ -32,6 +31,7 @@ from .selective_ml import ML_FEATURE_NAMES, augment_vector, _ml_imports
 from .v4_generation import V4GenerationStore
 from .v4_promotion import connect, promotion_report, rows as promotion_rows
 from .v4_policy import BASELINE_TRADES, HEAD_TO_HEAD_TRADES, contest_checkpoint
+from .v4_selection import rank_candidates
 from .v4_research import (
     HORIZON_MS,
     INTERVAL_MS,
@@ -55,12 +55,6 @@ def _json(value: Any) -> str:
 
 def _digest(value: Any) -> str:
     return hashlib.sha256(_json(value).encode("utf-8")).hexdigest()
-
-
-@dataclass(frozen=True)
-class ScoredCandidate:
-    candidate: V4Candidate
-    score: float
 
 
 class FrozenGenerationModel:
@@ -729,17 +723,9 @@ class V4PaperContest:
                     )
                     continue
 
-                scored: list[ScoredCandidate] = []
-                for candidate in candidates:
-                    try:
-                        scored.append(ScoredCandidate(candidate, model.score(candidate)))
-                    except (KeyError, TypeError, ValueError):
-                        continue
-                scored.sort(
-                    key=lambda item: (
-                        -item.score, item.candidate.symbol, item.candidate.side
-                    )
-                )
+                # Match the eventual approved paper Execution rank selection.
+                # A raw LambdaRank score is not an expected after-cost return.
+                scored = rank_candidates(model.score, candidates)
                 if not scored:
                     self.store.record_decision(
                         contest_id, generation, event_open_ms, decision_id=None,
@@ -749,14 +735,14 @@ class V4PaperContest:
                     continue
 
                 winner = scored[0]
-                candidate = winner.candidate
+                candidate = winner[1]
                 quote = self.feed.wait_quotes(
                     (candidate.symbol,), timeout_seconds=2.0
                 ).get(candidate.symbol)
                 if quote is None:
                     self.store.record_decision(
                         contest_id, generation, event_open_ms, decision_id=None,
-                        symbol=candidate.symbol, side=candidate.side, score=winner.score,
+                        symbol=candidate.symbol, side=candidate.side, score=winner[0],
                         rank=1, action="ABSTAIN",
                         reason="FRESH_WSS_QUOTE_UNAVAILABLE", now_ms=now_ms,
                     )
@@ -767,7 +753,7 @@ class V4PaperContest:
                 if not (entry > 0 and one_r > 0 and math.isfinite(one_r)):
                     self.store.record_decision(
                         contest_id, generation, event_open_ms, decision_id=None,
-                        symbol=candidate.symbol, side=candidate.side, score=winner.score,
+                        symbol=candidate.symbol, side=candidate.side, score=winner[0],
                         rank=1, action="ABSTAIN",
                         reason="PAPER_RISK_GEOMETRY_INVALID", now_ms=now_ms,
                     )
@@ -797,14 +783,14 @@ class V4PaperContest:
                     model_id=f"V4_MODEL_GEN_{generation:03d}",
                     feature_digest=research_digest(candidate.vector),
                     ridge_score_r=None,
-                    ml_mean_r=winner.score,
+                    # These inherited V3 fields measure expected return in R.
+                    # V4 LambdaRank scores are NOT expected returns.
+                    ml_mean_r=None,
                     ml_lower_r=None,
-                    conservative_score_r=winner.score,
+                    conservative_score_r=None,
                     rank=1,
-                    runner_up_score_r=(scored[1].score if len(scored) > 1 else None),
-                    edge_gap_r=(
-                        winner.score - scored[1].score if len(scored) > 1 else None
-                    ),
+                    runner_up_score_r=None,
+                    edge_gap_r=None,
                     approved=True,
                     reason="V4_PAPER_TOP1",
                     bid=float(quote.bid),
@@ -834,6 +820,9 @@ class V4PaperContest:
                         "model_digest": model.model_digest,
                         "feature_vector": candidate.vector,
                         "selection_rank": candidate.selection_rank,
+                        "ranking_score": winner[0],
+                        "runner_up_ranking_score": scored[1][0] if len(scored) > 1 else None,
+                        "ranking_score_kind": "LIGHTGBM_LAMBDARANK_UNCALIBRATED",
                         "entry_price": entry,
                         "one_r_price": one_r,
                         "paper_starting_balance_usd": STARTING_BALANCE_USD,
@@ -843,7 +832,7 @@ class V4PaperContest:
                 )
                 self.store.record_decision(
                     contest_id, generation, event_open_ms, decision_id=decision_id,
-                    symbol=candidate.symbol, side=candidate.side, score=winner.score,
+                    symbol=candidate.symbol, side=candidate.side, score=winner[0],
                     rank=1, action="OPEN", reason="V4_PAPER_TOP1", now_ms=now_ms,
                 )
                 self.store.open_trade(

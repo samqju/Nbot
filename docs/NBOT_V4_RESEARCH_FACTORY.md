@@ -26,6 +26,28 @@ Baseline exams and existing contests remain at their frozen 100-trade target.
 All other promotion gates, including actual forward time coverage, remain in
 force. More training evidence does not replace forward paper evidence.
 
+## Forward-only ranking and validation hardening (proposed; deploy separately)
+
+- The same shared top-finite-score ordering is used by frozen V4 paper
+  competitions and approved V4 live-paper Execution recommendations. Raw
+  LightGBM LambdaRank scores can be negative; score sign does not predict
+  negative after-cost return and must not create a second entry policy.
+- The rank score remains in `selection_score`, while
+  `expected_after_cost_net_r` is explicitly null rather than a false
+  return forecast. Only separately calibrated outcome estimates may populate
+  that economic field in a future reviewed change.
+- Newly trained model generations use a chronological validation split with
+  a full four-hour research-path purge before the first validation entry.
+  Training records matured after that boundary are also excluded. If fewer
+  than 20 purged training event groups remain, the candidate is held back.
+  The immutable outcome cutoff still governs which history can be read.
+- This changes only *future training and V4 paper recommendation code*.
+  Existing Gen-1/2/3 artifacts, prior scores, active Gen-1 paper exam and
+  historical databases are not rewritten or retroactively rescored.
+- These changes in GitHub do not update running services. Only consider a
+  controlled runtime cutover after verifying the active paper paths and
+  protecting research continuity. No mainnet authorization follows.
+
 ## Purpose
 
 This document is the continuity record for NBOT V4. It captures the architecture agreed with the user, what is already deployed on the Observation/Learning VPS, and what remains to be proven before later Champion/Challenger or live-trading stages.
