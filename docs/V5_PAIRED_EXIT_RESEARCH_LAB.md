@@ -37,7 +37,10 @@ discarding losing arms or comparing partial post-exit paths.
 
 The lab always observes the shared path through four hours even if every
 arm has already stopped. Each state is O(1) memory and the lab caps entries
-at 100; this module contains no account access.
+at 100. Completed in-memory result sets are also capped at 100; when
+persistence stalls, a backpressure error retains the active finalizable
+path until earlier results are acknowledged. This module contains no
+account access.
 
 ## After-cost settlement
 
