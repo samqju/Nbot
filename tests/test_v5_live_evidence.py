@@ -53,6 +53,8 @@ class BridgeTests(unittest.TestCase):
         self.b.snapshot("BTCUSDT", {"lastUpdateId": 100, "T": T-100,
                                    "bids": [["99.9", "2"]],
                                    "asks": [["100", "2"]]}, T-70)
+        # Entry must have a real bookTicker anchor, not a depth-only quote.
+        self.b.ingest(quote(u=100,t=T-100,bid="99.9",ask="100"),T-60)
         self.b.add(entry())
 
     def tearDown(self):
@@ -84,6 +86,66 @@ class BridgeTests(unittest.TestCase):
         self.assertTrue(all(r.accounting.gross_r < -1 for r in rows))
         self.assertEqual(len({r.evidence_digest for r in rows}), 1)
         self.assertEqual(self.b.feeds["BTCUSDT"]["agg"], 11)
+
+    def test_auditor_p1_late_depth_cannot_overwrite_newer_entry_anchor(self):
+        # Reproduction: bookTicker 102 at T+100, then older depth 101 at
+        # T+50 arrives at T+120. Never admit a new SHORT at old depth 99.9.
+        self.b.ingest(quote(u=102,t=T+100,bid="98.5",ask="98.6"),T+110)
+        old = depth(u=101,pu=100,t=T+50,bid="99.9",ask="100")
+        with self.assertRaisesRegex(ValueError,"V5_DEPTH_BEHIND_TICKER"):
+            self.b.ingest(old,T+120)
+        self.assertFalse(self.b.feeds["BTCUSDT"]["connected"])
+        self.assertIsNone(self.b.feeds["BTCUSDT"]["quote"])
+        candidate=replace(entry("SHORT","stale-short"),entry_time_ms=T+130,
+                          entry_quote_time_ms=T+50,
+                          entry_bid=99.9,entry_ask=100.,anchor_agg_id=10)
+        with self.assertRaisesRegex(ValueError,"ANCHOR_UNPROVEN"):
+            self.b.add(candidate)
+        rows=self.b.finalize("d1",now_ms=T+130)
+        self.assertTrue(all(r.status=="UNSCORABLE" for r in rows))
+
+    def test_auditor_p1_no_bookticker_never_admits_or_scores(self):
+        path=Path(self.temp.name)/"v5"/"no-ticker.db"
+        bridge=LiveEvidenceBridge(path,symbols=["BTCUSDT"])
+        bridge.initialize()
+        bridge.connected("BTCUSDT")
+        bridge.ingest(trade(),T-80)
+        bridge.ingest(depth(),T-80)
+        bridge.snapshot("BTCUSDT",{"lastUpdateId":100,"T":T-100,
+                                   "bids":[["99.9","2"]],
+                                   "asks":[["100","2"]]},T-70)
+        self.assertIsNone(bridge.feeds["BTCUSDT"]["ticker"])
+        with self.assertRaisesRegex(ValueError,"ANCHOR_UNPROVEN"):
+            bridge.add(entry())
+        # Even a legacy/directly restored path cannot silently bypass
+        # the quote-source coverage gate at finalization.
+        bridge.lab.add(entry())
+        closing=depth(u=200,U=101,pu=100,t=END,bid="100.5",ask="100.6")
+        closing["b"].append(["99.9","0"])
+        closing["a"].append(["100","0"])
+        bridge.ingest(closing,END+15)
+        bridge.ingest(trade(11,END),END+20)
+        proof=bridge.reconcile_funding("BTCUSDT",T,END,lambda *a:[],
+                                      now_ms=END+FUNDING_GRACE_MS)
+        rows=bridge.finalize("d1",now_ms=END+FUNDING_GRACE_MS,
+                             funding_key=proof)
+        self.assertTrue(all(r.status=="UNSCORABLE" and r.accounting is None
+                            for r in rows))
+
+    def test_auditor_p1_per_symbol_bookticker_silence_not_masked_by_other_traffic(self):
+        self.b.ingest(trade(a=11,t=T+1000),T+1010)
+        self.b.ingest(depth(u=101,pu=100,t=T+1100,bid="99.9",ask="100"),
+                      T+1110)
+        feed=self.b.feeds["BTCUSDT"]
+        self.assertGreater(feed["source_receipts"]["aggTrade"],
+                           feed["source_receipts"]["bookTicker"])
+        self.assertGreater(feed["source_receipts"]["depthUpdate"],
+                           feed["source_receipts"]["bookTicker"])
+        with self.assertRaisesRegex(RuntimeError,"BOOKTICKER_SOURCE_SILENT"):
+            self.b.check_source_coverage(T+31_000)
+        self.assertFalse(feed["connected"])
+        self.assertTrue(all(r.status=="UNSCORABLE"
+                            for r in self.b.finalize("d1",now_ms=T+31_000)))
 
     def test_entry_anchor_cannot_predate_quote_capture_receipt(self):
         with self.assertRaisesRegex(ValueError,"LIVE_ANCHOR_UNPROVEN"):
@@ -227,7 +289,7 @@ class BridgeTests(unittest.TestCase):
         d=depth(u=101,pu=100,t=T+100,bid="99.8")
         d["b"].append(["99.9","0"])
         self.b.ingest(d,T+110)
-        self.assertEqual(self.b.feeds["BTCUSDT"]["quote"]["b"],"99.8")
+        self.assertEqual(self.b.feeds["BTCUSDT"]["depth_quote"]["b"],"99.8")
         self.b.ingest(d,T+110)
         with self.assertRaisesRegex(ValueError,"DUPLICATE_CONFLICT"):
             self.b.ingest({**d,"b":[["99.7","1"]]},T+110)
