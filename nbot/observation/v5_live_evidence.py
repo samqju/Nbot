@@ -27,6 +27,7 @@ MAX_SYMBOLS = 20
 MAX_LEVELS = 5000
 MAX_BUFFER = 2000
 MAX_DB_BYTES = 256 * 1024 * 1024
+MAX_FUNDING_EVENTS = 1000
 FUNDING_GRACE_MS = 60_000
 
 
@@ -79,8 +80,9 @@ future quotes. bookTicker update IDs are NOT a consecutive trade sequence.
         path.digest.update(_encode({"v": VERSION, "entry": asdict(entry)}))
         path.joint_time = entry.entry_time_ms
         path.quote = None
+        path.depth_watermark = None
 
-    def event(self, symbol, row, receipt, *, trade=False):
+    def event(self, symbol, row, receipt, *, trade=False, depth_watermark=None):
         timestamp = integer(row["T"])
         for decision in tuple(self._by_symbol.get(symbol, ())):
             path = self._paths[decision]
@@ -121,12 +123,17 @@ future quotes. bookTicker update IDs are NOT a consecutive trade sequence.
                     path.quote = quote
                 path.last_quote_update_id = row["u"]
             path.joint_time = timestamp
+            if depth_watermark:
+                path.depth_watermark = depth_watermark
             path.digest.update(_encode({"row": row, "receipt": receipt, "trade": trade}))
             path.events_seen += 1
             # A horizon quote needs a trade-stream watermark at or beyond it.
             # Silence alone is not proof of continuous aggregate history.
             if (path.quote and path.quote[0] >= path.deadline
-                    and path.last_trade_time_ms >= path.quote[0]):
+                    and path.last_trade_time_ms >= path.quote[0]
+                    and path.depth_watermark
+                    and path.depth_watermark[0] >= path.last_quote_update_id
+                    and path.depth_watermark[1] >= path.quote[0]):
                 path.horizon_witnessed = True
 
     def dump(self):
@@ -138,7 +145,7 @@ future quotes. bookTicker update IDs are NOT a consecutive trade sequence.
                           **{k: getattr(p, k) for k in (
                               "last_agg_id", "last_trade_time_ms", "last_quote_update_id",
                               "events_seen", "horizon_witnessed", "gap_reason",
-                              "joint_time", "quote")}}
+                              "joint_time", "quote", "depth_watermark")}}
         return {"paths": paths, "completed": {
             k: [asdict(r) for r in rows] for k, rows in self._completed.items()}}
 
@@ -152,7 +159,7 @@ future quotes. bookTicker update IDs are NOT a consecutive trade sequence.
             p.digest = _Chain(data["digest"])
             for name, value in data.items():
                 if name not in ("entry", "arms", "digest"):
-                    setattr(p, name, tuple(value) if name == "quote" and value else value)
+                    setattr(p, name, tuple(value) if name in ("quote", "depth_watermark") and value else value)
         for key, rows in state["completed"].items():
             output = []
             for row in rows:
@@ -460,7 +467,7 @@ owners. On database failure in-memory state rolls back to the last commit.
         f.update(depth_id=row["u"], synced=True, last_depth=row)
         r = {"T": row["T"], "u": row["u"], "b": bid, "a": ask}
         f["quote"] = r
-        self.lab.event(s, r, receipt)
+        self.lab.event(s, r, receipt, depth_watermark=(row["u"], row["T"]))
 
     def recover_trades(self, symbol, through_id, rest, *, max_pages=10):
         """Recover available IDs inclusively; never issue paired quote ticks.
@@ -520,6 +527,8 @@ owners. On database failure in-memory state rolls back to the last commit.
                     settlement = FundingSettlement(symbol, t, float(row["fundingRate"]),
                                                    float(row["markPrice"]))
                     events.append(asdict(settlement))
+                    if len(events) > MAX_FUNDING_EVENTS:
+                        raise ValueError("V5_FUNDING_EVENT_BUDGET_EXCEEDED")
                 if len(rows) < 1000:
                     return events
                 cursor = events[-1]["time_ms"] + 1

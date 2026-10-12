@@ -33,8 +33,9 @@ times or conflicting quotes at equal timestamps invalidate the entire paired
 sample instead of retrospectively sorting events or substituting future quotes.
 This deliberately sacrifices some coverage. An identical quote delivered by
 both sources cannot ratchet trailing state twice. A closing quote within the
-existing five-second horizon grace and an aggregate-stream transaction watermark
-at/after that quote are both needed. All arms need the whole shared horizon,
+existing five-second horizon grace, an aggregate-stream transaction watermark
+at/after that quote, and a synchronized depth ID/time watermark covering the
+closing quote are all needed. All arms need the whole shared horizon,
 even after early exits. Four-hour horizon, fees, slippage and initial -1R
 accounting remain unchanged. The old `PairedExitLab` tick contract is unchanged;
 `JointExitLab` uses its arm/accounting rules with a new versioned hash chain.
@@ -110,6 +111,7 @@ an independently measured IP-weight scheduler before increasing shard count.
 
 The database has a 256 MiB admission budget checked before mutations; pending
 results cap at 100, retained funding range proofs cap at 100. The journal grows
+Each funding range is limited to 1,000 settlement events.
 on disk; it is not automatically pruned. Reaching a limit stops work without
 discarding evidence. Full bounded checkpoints per event prioritize correctness;
 1 GiB host throughput, WAL/disk budget, retention/export, memory/CPU pressure,

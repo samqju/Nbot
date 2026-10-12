@@ -61,6 +61,7 @@ class BridgeTests(unittest.TestCase):
 
     def finish(self, events=()):
         self.b.ingest(quote(u=200, t=END, bid="100.5", ask="100.6"), END+10)
+        self.closing_depth()
         self.b.ingest(trade(a=11, t=END), END+20)
         def rest(path, params):
             self.assertEqual(path, "/fapi/v1/fundingRate")
@@ -68,6 +69,12 @@ class BridgeTests(unittest.TestCase):
         key = self.b.reconcile_funding("BTCUSDT", T, END, rest,
                                       now_ms=END+FUNDING_GRACE_MS)
         return self.b.finalize("d1", now_ms=END+FUNDING_GRACE_MS, funding_key=key)
+
+    def closing_depth(self,bid="100.5",ask="100.6"):
+        d=depth(u=200,U=101,pu=100,t=END,bid=bid,ask=ask)
+        d["b"].append(["99.9","0"])
+        d["a"].append(["100","0"])
+        self.b.ingest(d,END+15)
 
     def test_quote_only_stop_crossing_and_shared_path(self):
         self.b.ingest({"stream": "btcusdt@bookTicker", "data": quote()}, T+120)
@@ -255,6 +262,7 @@ class BridgeTests(unittest.TestCase):
 
     def test_horizon_complete_checkpoint_can_finish_funding_after_restart(self):
         self.b.ingest(quote(t=END,bid="100.1",ask="100.2"),END+10)
+        self.closing_depth("100.1","100.2")
         self.b.ingest(trade(11,END),END+20)
         b=LiveEvidenceBridge(self.path,symbols=["BTCUSDT"])
         b.initialize()
@@ -294,6 +302,8 @@ class BridgeTests(unittest.TestCase):
         self.b.ingest(quote(t=END,bid="100.1",ask="100.2"),END+10)
         self.assertIsNone(self.b.finalize("d1",now_ms=END))
         self.b.ingest(trade(11,END),END+20)
+        self.assertIsNone(self.b.finalize("d1",now_ms=END))
+        self.closing_depth("100.1","100.2")
         rows=self.b.finalize("d1",now_ms=END)
         self.assertEqual({r.reason for r in rows},{"FUNDING_COVERAGE_UNPROVEN"})
 
