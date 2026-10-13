@@ -101,6 +101,9 @@ def record_restart_hold_events(session, journal, cohort_digest, eligible,
     Never infer hypothetical trades or retroactive trade/quote health.
     Limit repair markers to 96 events; larger gaps require owner review.
     """
+    # A test or first-ever startup may not have created finality tables yet.
+    # Their schema is append-only; reinitialization never rewrites evidence.
+    FinalityQuarantine(session.ledger.db)
     previous=journal.latest_event()
     unfinished=session.ledger.db.execute("""
         SELECT event_open_ms FROM v5_wss_final_proof
