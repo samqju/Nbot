@@ -102,8 +102,27 @@ class FiftyMarketProofTests(unittest.TestCase):
         async def fake_listen(route,url,collector,policy,deadline,reached,faults,target):
             policy.on_connect(route)
             collector.connect(route)
+            if route == "public":
+                for symbol in collector.symbols:
+                    quote = json.dumps({
+                        "stream": symbol.lower()+"@depth5@500ms",
+                        "data": {"e": "depthUpdate", "E": target+INTERVAL_MS+10,
+                                 "s": symbol, "U": 1, "u": 2,
+                                 "b": [["99", "2"]], "a": [["101", "2"]]},
+                    })
+                    collector.consume("public", quote,
+                                      received_ms=target+INTERVAL_MS+1000)
             if route == "market":
                 selected = collector.symbols[:-1] if skip_last else collector.symbols
+                for symbol in collector.symbols:
+                    trade = json.dumps({
+                        "stream": symbol.lower()+"@aggTrade",
+                        "data": {"e": "aggTrade", "E": target+INTERVAL_MS+10,
+                                 "T": target+INTERVAL_MS+1,
+                                 "s": symbol, "a": 1, "p": "100", "q": "1"},
+                    })
+                    collector.consume("market", trade,
+                                      received_ms=target+INTERVAL_MS+1000)
                 for symbol in selected:
                     data = json.dumps({
                         "stream": symbol.lower()+"@kline_5m",
@@ -134,6 +153,8 @@ class FiftyMarketProofTests(unittest.TestCase):
         self.assertEqual(report["wss_final_symbol_count"], 50)
         self.assertEqual(report["cross_source_rest_match_count"], 50)
         self.assertEqual(report["sqlite_reopened_97_count"], 50)
+        self.assertEqual(report["sampled_symbols_with_quote_during_run"], 50)
+        self.assertEqual(report["sampled_symbols_with_trade_during_run"], 50)
         self.assertTrue(report["temporary_database_removed"])
         self.assertFalse(report["research_ready"])
         self.assertEqual(report["training_labels_created"], 0)
