@@ -1,0 +1,33 @@
+name: V5 isolated observation contract tests
+
+on:
+  push:
+    branches:
+      - v5-clean-restart-20261013
+    paths:
+      - "nbot/v5/**"
+      - "tests/test_v5_observation_contract.py"
+      - ".github/workflows/v5-isolated-observation.yml"
+  pull_request:
+    paths:
+      - "nbot/v5/**"
+      - "tests/test_v5_observation_contract.py"
+      - ".github/workflows/v5-isolated-observation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test synthetic-only V5 candidates and immutable ledger
+        run: python -m unittest -v tests.test_v5_observation_contract
