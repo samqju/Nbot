@@ -8,15 +8,55 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import resource
 import time
 from typing import Sequence
 
+from nbot.v5.observation_contract import INTERVAL_MS
+from nbot.v5.public_market import (
+    PublicMarketDataError, closed_event_from_server_time,
+    public_get, select_universe,
+)
 from nbot.v5.stream_buffer import BoundedObservationBuffer
 from nbot.v5.ws_contract import UnsafeStream, stream_urls
 
 MAX_SAMPLES_PER_ROUTE = 50_000
+MAX_SELECTION_SKEW_MS = 90_000
+
+
+def select_live_universe(*, top: int, getter=public_get, clock_ms=None) -> dict:
+    """Current eligible USD-M universe; 3 bounded public REST requests.
+
+    This output is a NOW-snapshot only: never use it to re-label history.
+    No private requests, writes, API credentials or trading authority.
+    """
+    if type(top) is not int or not 1 <= top <= 50:
+        raise PublicMarketDataError("V5_WSS_LIVE_TOP_INVALID")
+    clock_ms = clock_ms or (lambda: int(time.time() * 1000))
+    event_ms, server_ms = closed_event_from_server_time(getter("/fapi/v1/time"))
+    if abs(clock_ms() - server_ms) > MAX_SELECTION_SKEW_MS:
+        raise PublicMarketDataError("V5_WSS_SELECTION_CLOCK_SKEW")
+    exchange = getter("/fapi/v1/exchangeInfo")
+    ticker = getter("/fapi/v1/ticker/24hr")
+    eligible = select_universe(exchange, ticker, limit=top)
+    completed = clock_ms()
+    if completed < server_ms or completed - server_ms > MAX_SELECTION_SKEW_MS:
+        raise PublicMarketDataError("V5_WSS_SELECTION_TOO_OLD")
+    return {
+        "selection_version": "USDM_PERPETUAL_24H_QUOTE_VOLUME_V1",
+        "snapshot_server_ms": server_ms,
+        "snapshot_complete_ms": completed,
+        "reference_last_closed_event_ms": event_ms,
+        "eligible_symbols": eligible,
+        "universe_digest": hashlib.sha256(
+            json.dumps({"symbols": eligible, "asof": server_ms},
+                       sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest(),
+        "historical_eligibility_asserted": False,
+    }
+
 
 
 async def _sample(route: str, url: str, store: BoundedObservationBuffer,
@@ -114,18 +154,30 @@ async def run_probe(*, symbols: Sequence[str], seconds: int,
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Bounded read-only V5 WSS capacity probe")
-    parser.add_argument("--symbols", default="BTCUSDT,ETHUSDT",
-                        help="Comma-separated eligible futures symbols (1 to 50)")
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--symbols", default=None,
+                           help="Comma-separated eligible futures symbols (1 to 50)")
+    selection.add_argument("--top", type=int, default=None,
+                           help="Select top 1..50 CURRENT trading USDT perps by public REST")
     parser.add_argument("--seconds", type=int, default=10)
     parser.add_argument("--quote-mode", default="depth5@500ms",
                         choices=("bookTicker", "depth5@500ms"),
                         help="Public book snapshot speed: default top-five at 500ms")
     args = parser.parse_args(argv)
-    symbols = tuple(x.strip() for x in args.symbols.split(","))
     try:
+        snapshot = None
+        if args.top is not None:
+            snapshot = select_live_universe(top=args.top)
+            symbols = snapshot["eligible_symbols"]
+        else:
+            symbols = tuple(
+                x.strip() for x in (args.symbols or "BTCUSDT,ETHUSDT").split(",")
+            )
         result = asyncio.run(run_probe(symbols=symbols, seconds=args.seconds,
                                        quote_mode=args.quote_mode))
-    except (UnsafeStream, ValueError, RuntimeError) as exc:
+        if snapshot is not None:
+            result["selection"] = snapshot
+    except (UnsafeStream, PublicMarketDataError, ValueError, RuntimeError) as exc:
         print("V5_WSS_CAPACITY_HOLD:", str(exc))
         return 2
     print(json.dumps(result, sort_keys=True, indent=2))
