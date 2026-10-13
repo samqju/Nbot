@@ -22,6 +22,7 @@ class G1fServiceSpecTests(unittest.TestCase):
     def test_limits_and_no_self_restart(self):
         for required in (
             "Restart=no","MemoryMax=200M","CPUQuota=75%",
+            "ExecCondition=/home/ubuntu/nbot_v5_venv/bin/python -m nbot.v5.g1f_preflight",
             "NoNewPrivileges=true","ProtectSystem=strict",
             "ReadWritePaths=/home/ubuntu/nbot_v5_data",
             "PrivateTmp=true","UMask=0077",
