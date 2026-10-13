@@ -186,9 +186,11 @@ async def run_probe(
                 s: target in collector.final_opens[s]
                 for s in collector.symbols
             }
-            quotes = collector.store.coins
-            quote_count = sum(c.last_quote is not None for c in quotes.values())
-            trade_count = sum(c.last_trade is not None for c in quotes.values())
+            # On intentional socket shutdown the live last-quote/trade caches
+            # are cleared correctly. Count bounded per-symbol evidence seen
+            # earlier this probe, never call it ongoing source health.
+            quote_count = len(collector.seen_quote_symbols)
+            trade_count = len(collector.seen_trade_symbols)
             frames = {
                 "market": collector.stats["market_frames"],
                 "public": collector.stats["public_frames"],
@@ -228,6 +230,8 @@ async def run_probe(
         and final_count == len(all_symbols)
         and compare_count == len(all_symbols)
         and restarted_count == len(all_symbols)
+        and quote_count == len(all_symbols)
+        and trade_count == len(all_symbols)
         and not faults and not invalid_compares
     )
     return {
@@ -243,8 +247,8 @@ async def run_probe(
         "cross_source_mismatch": invalid_compares,
         "sqlite_reopened_97_count": restarted_count,
         "route_frames": frames,
-        "sampled_last_quotes_at_shutdown": quote_count,
-        "sampled_last_trades_at_shutdown": trade_count,
+        "sampled_symbols_with_quote_during_run": quote_count,
+        "sampled_symbols_with_trade_during_run": trade_count,
         "peak_rss_mib_approx": peak,
         "transport_policy": policy.status(),
         "temporary_database_removed": not dbpath.exists(),
