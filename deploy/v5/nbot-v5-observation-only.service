@@ -1,0 +1,44 @@
+# NBOT V5 G1f: observation-only, public Binance market data.
+# This unit is inert until explicitly installed/enabled after successful
+# isolated soak testing and legacy Observer shutdown verification.
+# NEVER reuse for real-money or paper execution.
+[Unit]
+Description=NBOT V5 Observation Only - WSS Finality and Candidate Journal
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/home/ubuntu/nbot_v5_sandbox/nbot/v5/g1f_runner.py
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/nbot_v5_sandbox
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ubuntu/nbot_v5_venv/bin/python -u -m nbot.v5.g1f_runner --db /home/ubuntu/nbot_v5_data/g1f_observe.sqlite --top 50 --max-seconds 0
+Restart=no
+TimeoutStopSec=45
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/nbot_v5_data
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryAccounting=true
+MemoryMax=200M
+TasksMax=80
+CPUAccounting=true
+CPUQuota=75%
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nbot-v5-observe-only
+
+[Install]
+WantedBy=multi-user.target
