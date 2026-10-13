@@ -1,6 +1,8 @@
 """Synthetic-only WSS routing and fail-closed feed safety tests."""
+import asyncio
 import json
 import unittest
+from unittest.mock import AsyncMock, patch
 
 from nbot.v5.observation_contract import INTERVAL_MS
 from nbot.v5.ws_contract import (
@@ -160,6 +162,33 @@ class V5WSSSafetyTests(unittest.TestCase):
         self.assertNotIn("BTCUSDT", state.last_closed_ms)
         with self.assertRaisesRegex(UnsafeStream, "DISCONNECTED_EVENT"):
             state.accept(parse("market", trade()))
+
+    def test_one_shot_probe_gates_both_routes_without_real_sockets(self):
+        from nbot.v5.ws_probe import run_probe
+        async def sample(route, url, symbols, *, seconds):
+            self.assertTrue(url.startswith("wss://fstream.binance.com/"))
+            self.assertEqual(seconds, 12)
+            return {"route": route, "connected": True, "received_frames": 4,
+                    "accepted_events": {"aggTrade": 3} if route == "market"
+                        else {"bookTicker": 4},
+                    "rejected_frames": {}}
+        with patch("nbot.v5.ws_probe._sample", side_effect=sample):
+            report = asyncio.run(run_probe(symbols=SYMBOLS, seconds=12))
+        self.assertEqual(report["result"], "PASS")
+        self.assertEqual(report["paper_trades"], 0)
+        self.assertFalse(report["service_started"])
+
+    def test_one_shot_probe_rejects_unhealthy_route(self):
+        from nbot.v5.ws_probe import run_probe
+        async def sample(route, url, symbols, *, seconds):
+            return {"route": route, "connected": True,
+                    "accepted_events": {} if route == "public"
+                        else {"aggTrade": 1}, "rejected_frames": {}}
+        with patch("nbot.v5.ws_probe._sample", side_effect=sample):
+            report = asyncio.run(run_probe(symbols=SYMBOLS, seconds=12))
+        self.assertEqual(report["result"], "HOLD")
+        with self.assertRaises(ValueError):
+            asyncio.run(run_probe(symbols=SYMBOLS, seconds=60))
 
 
 if __name__ == "__main__":
