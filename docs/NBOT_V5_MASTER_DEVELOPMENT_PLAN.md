@@ -7,7 +7,7 @@
 >
 > Repository: `samqju/Nbot`. Branch: `main`; new work goes through reviewed PRs.
 > First PR: [#30](https://github.com/samqju/Nbot/pull/30).
-> Last update: **2026-10-12**, paired-exit lab merged as PR #36; milestone progress recorded in PR #37.
+> Last update: **2026-10-12**, PR #38 two P1 audit fixes verified on code head `64abdc6f` ([1,490 regression tests passed](https://github.com/samqju/Nbot/actions/runs/38280766303)); second independent audit pending.
 >
 > **Safety invariant: Research / Paper only. No order authority.**
 > No change to Execution role, private Binance credentials or real-money order
@@ -34,7 +34,45 @@
 9. No environment may place an actual order without a separately approved
    execution design and explicit user authorization.
 
-## Current status — 2026-10-12
+## Current status — 2026-10-13
+
+**PR #38 V3 remediation supersedes the earlier path/funding certification claims
+below.** The second independent audit failed H1–H5 (missed 50ms stop,
+post-decision snapshot, reusable contradicted funding, premature horizon sealing,
+lost stop after failed persistence), plus M1 snapshot supervision and M2 admission
+race. The audited head was `9a8163c9c7d38cccdb2ae215746492e3d2898896`; its
+1,490-test CI ([38281033032](https://github.com/samqju/Nbot/actions/runs/38281033032))
+did not establish those missing properties. The supplied report is preserved in
+[NBOT_PR38_SECOND_INDEPENDENT_AUDIT.md](NBOT_PR38_SECOND_INDEPENDENT_AUDIT.md).
+
+V3 offers isolated **OBSERVED_STREAM** diagnostics only. Certified path scoring,
+training, Champion/promotion and complete-path performance claims are unavailable.
+Funding totals/net R stay unknown; two matching REST responses verify response
+agreement, not publication finality. Legacy SCORED rows retain their historical
+meaning and are excluded from certification. V1/V2 live checkpoints are rejected;
+start V3 at a new filename and preserve old evidence. No V4/VPS changes or orders.
+
+Implemented: atomic causal admission (all acquisition/snapshot/book-validation
+watermarks), provisional horizons with later quarantine, durable funding
+revocations, fail-closed persistence latch with explicit invalidating recovery,
+restart quarantine, supervised snapshot tasks/deadlines, byte-aware buffers,
+off-loop writes, chained event journaling with periodic checkpoints, atomic paired
+publication and explicit V5 connection closure. See
+[the actual architecture](V5_LIVE_EVIDENCE_BRIDGE.md) and
+[closure matrix and verification record](V5_PR38_REMEDIATION_AUDIT.md).
+
+Initial remediation verification: 90 focused V5 tests passed in 121.010s on an
+isolated Windows host. Full final-head regression/CI and fresh-agent review are
+tracked in the closure report; do not infer completion from this interim count.
+Desktop benchmark: 300 mutations, 20 symbols, 1,000 levels/side, no hypotheses;
+61.255 events/s, p95 18.017ms, p99 21.477ms, restart 0.120s, traced peak 1.085MB.
+This is not measured process RSS or a one-GB VPS acceptance result.
+
+**Next milestone:** independently review the reduced observed-research contract;
+then design bounded archive/rotation, shared-IP request budgets and authorized
+isolated multi-day capture/target-host resource acceptance. No available public
+feed proof currently unlocks complete-path ML labels. Certified learning remains
+blocked pending a technically sufficient new source/proof contract.
 
 | Item | Status | Evidence / outstanding action |
 |---|---|---|
@@ -47,6 +85,7 @@
 | V5 Milestone 2 | PROTOTYPE MERGED / NOT DEPLOYED | PR #32 merge `19eec7f9436f9cd1c3b2acae3dcc008d8d7f574d`; 1,436 tests passed on PR head; metadata/depth and prospective validation remain outstanding |
 | V5 market-quality bridge | PROTOTYPE MERGED / NOT DEPLOYED | PR #34 merge `0ad04e711d79c46047fa952cf249f3f429976ada`; 1,441 tests passed on PR head; merged-main full regression succeeded ([run 38259054293](https://github.com/samqju/Nbot/actions/runs/38259054293)) |
 | V5 Milestone 3 | PROTOTYPE MERGED / NOT DEPLOYED | PR #36 merge `bece0864648cc3bdce0d24dbf842bbb3ebd6552f`, 1,456 clean PR-head tests, no worker; requires joint WSS feed/checkpoints/funding coverage |
+| V5 live evidence/recovery | PR OPEN / NOT DEPLOYED | PR #38 implementation head `0f158bad7b869c45b3886977c2e086f6f20c8e39`: 1,485 clean regression tests passed ([run 38272931564](https://github.com/samqju/Nbot/actions/runs/38272931564)); routed WSS, quote-only exits, depth synchronization, REST trade recovery, checkpoints and public settlement reconciliation; later documentation-head CI must separately pass |
 | V5 deployed | NO | Neither new services nor V5 data collection started |
 | V5 champion | NONE | First generation must qualify, no baseline exception |
 | V5 order authority | NONE | Permanently isolated in the V5 research/paper scope |
@@ -228,13 +267,24 @@ Verified PR-head CI: [1,436 tests, OK](https://github.com/samqju/Nbot/actions/ru
 
 **Status: PROTOTYPE MERGED — [#36](https://github.com/samqju/Nbot/pull/36), merge SHA `bece0864648cc3bdce0d24dbf842bbb3ebd6552f`. NOT DEPLOYED.**
 
-Verified PR-head [CI run 38264782962](https://github.com/samqju/Nbot/actions/runs/38264782962): **1,456 tests passed, clean dots/OK**. Merged-main [CI run 38265101835](https://github.com/samqju/Nbot/actions/runs/38265101835) also passed the full regression suite. This milestone is **not fully complete**: WSS quote-only stop evidence, durable checkpointing, funding-coverage verification and real-time forward study are not delivered.
+Verified PR #36 head [CI run 38264782962](https://github.com/samqju/Nbot/actions/runs/38264782962): **1,456 tests passed, clean dots/OK**. Merged-main [CI run 38265101835](https://github.com/samqju/Nbot/actions/runs/38265101835) also passed the full regression suite. PR #38 now implements WSS quote-only stop evidence, checkpoints and public funding reconciliation. Its first independent review at `7d4fb915` found two blocking P1 defects: older depth quote overwrote newer bookTicker entry anchor; missing bookTicker source could still yield all three SCORED outcomes. **Do not merge** until corrected-head CI and second independent audit confirm these cases fail closed. This milestone is **not fully complete**: prospective evidence validation, host performance and real-time forward study remain outstanding.
+
+PR #38 validation includes 29 new focused tests: causal capture receipts, routed transport/snapshot
+buffering, trade recovery, quote-only LONG/SHORT stops, depth/horizon watermarks,
+restart/partial recovery, failed writes/corruption/concurrent writers, permanent
+decision IDs, pending ledger retries and settlement funding cases. Latest PR-head
+full regression CI remains a release gate. Implementation head `0f158bad` passed
+**1,485 tests, clean dots/OK**, including the roadmap gate, in
+[run 38272931564](https://github.com/samqju/Nbot/actions/runs/38272931564).
+This subsequent documentation-only revision requires its own latest-head CI;
+no deployment or merge is claimed here. The remediation adds independent stream source tracking, conservative ticker-coverage watchdog and exact reproductions, but does not prove all sub-30-second silent packet loss detectable.
 
 - [x] Implement research-only three-armed incremental tick state on a single shared entry and future market path.
 - [x] Require anchored consecutive aggregate IDs, monotonic timestamps, fresh executable quotes, closing horizon witness; errors make all three arms unscorable.
 - [x] Account independently for per-arm exit prices and signed funding through shared V5 accounting contract.
 - [x] Keep constant-memory per hypothesis and capacity 100; bound the pending persistence cache at 100 completed sets, rejecting overflow without discarding active state; append immutable three-arm outcomes with shared SHA-256 digest.
-- [ ] Integrate real joint WSS quote/trade event bridge (including quote-only stop crossings between aggTrade ticks), restart checkpoint and funding coverage proof before any live V5 feed.
+- [x] Implement opt-in joint WSS quote/trade bridge, quote-only stops, durable checkpoint and public settlement-range reconciliation in PR #38. See [contract and limits](V5_LIVE_EVIDENCE_BRIDGE.md).
+- [ ] Verify prospective host throughput, clock/stream behavior, funding publication timing and coverage before any VPS activation. PR #38 is not deployment or full Milestone 3 completion.
 
 - [x] Retain starting stop at -1R for **all** policy arms (prototype).
 - [x] Arm A: initial -1R stop, +2R target, fixed horizon (experimental).
@@ -251,8 +301,7 @@ Verified PR-head [CI run 38264782962](https://github.com/samqju/Nbot/actions/run
       and adverse excursion, initial risk, fees, slippage and funding.
 - [x] Interface: disconnected WSS, unproven trade ID sequence or restart interrupt
       produce UNSCORABLE for affected arms.
-- [ ] Design WAL-safe restart/checkpoint for evidence integrity; do not
-      invent missed trade paths. Capacity for 100 entries with 3 exit arms.
+- [x] Implement WAL/FULL atomic journal+checkpoint, preserved frozen arms and cursors, concurrent-writer rejection and durable pending results (PR #38). Restarts invalidate unfinished quote paths; REST recovers available aggregate IDs only, never historical quotes. Capacity remains 100 entries with 3 arms.
 - [ ] Add real-host memory/CPU pressure tests, durable pending-result queues and bounded WSS behavior. (Unit stream-memory and capacity tests in PR #36.)
 - **Acceptance:** deterministic, paired comparisons on identical future
   market events and strict evidence-integrity tests.
@@ -260,6 +309,13 @@ Verified PR-head [CI run 38264782962](https://github.com/samqju/Nbot/actions/run
 ### Milestone 4 — Funding coverage bridge, risk economics and data audit
 
 **Status: PLANNED; base pure accounting contract exists in PR #30.**
+
+PR #38 implements a separate credential-free public funding-history bridge:
+two exhaustive agreeing reads after publication grace, settled rate/time/charge
+mark provenance, per-arm coverage, boundary/duplicate/conflict rejection.
+This verifies venue settlement evidence for research; it does not verify private
+account cash income or integrate legacy collector funding tables. Host timing,
+schedule variations and prospective reconciliation remain acceptance gates.
 
 - [ ] Map collector's `funding_events` and `funding_sync_ranges`
       to entry/exit time windows with symbol-specific completeness.
@@ -423,6 +479,17 @@ all test stdout/stderr, including subprocess prints and FD writes, while
 preserving actual unittest dot progress, error tracebacks and captured
 diagnostics if tests fail. **No masking errors to achieve cosmetic silence.**
 
+## PR #38 independent audit — remediation gates
+
+- [x] First independent review at `7d4fb915` reproduced two merge-blocking P1 evidence defects.
+- [x] Code correction: depth may not replace a newer bookTicker executable entry anchor; reject reversed/cross-source evidence and enforce two-source agreement for new admission.
+- [x] Code correction: require ticker evidence for admission and horizon; track per-symbol, per-event-source receipts; transport keeps socket identity and uses a watchdog independent of busy queue traffic.
+- [x] Add reproductions for stale SHORT entry, zero-bookTicker candidate, masked ticker silence, strict event-gap invalidation and apparent quote recovery after missing coverage.
+- [x] Corrected code head `64abdc6f` passed [1,490-test full CI](https://github.com/samqju/Nbot/actions/runs/38280766303) with clean dots/OK and no operator noise; final docs-only revision gets its own CI.
+- [ ] Perform **a second independent read-only audit** of corrected SHA; require both original P1 defects to be irreproducible before merge.
+- [ ] Independently validate real Binance event timing, brief quote losses that evade silence watchdog, resource usage and settlement finality on isolated host. Until that acceptance, no live V5 scoring or VPS deployment.
+- [ ] Merge PR #38 only after the second review and green latest SHA CI, then verify merged-main CI; keep V4 untouched.
+
 ## Decision log (append-only)
 
 | Date | Decision | Why / implication |
@@ -446,6 +513,8 @@ diagnostics if tests fail. **No masking errors to achieve cosmetic silence.**
 | 2026-10-12 | Merge PR #34 quality bridge; record in PR #35 | Merge `0ad04e7`; clean 1,441-test CI at PR head, merged-main 38259054293 verified green; deployment and historical depth inference prohibited |
 | 2026-10-12 | Start PR #36 paired exit research lab | Same full 4h continuous path for three arms, no fake horizon fill, prospective funding proof contract, immutable outcome ledger; NO VPS changes |
 | 2026-10-12 | Merge PR #36 paired-exit prototype; record status in PR #37 | Merge `bece0864`, 1,456 green clean tests on PR head; quote-only crossings, actual WSS integration, funding proofs and state continuity remain; no V5 deployment |
+| 2026-10-12 | Start PR #38 public live evidence and recovery bridge | Joint routed WSS and quote-only stops; bounded atomic WAL checkpoints and durable pending outcomes; REST aggregate recovery cannot repair missing historical quotes; public settled funding is research evidence, not account income; V4/VPS/order authority unchanged |
+| 2026-10-12 | Verify PR #38 implementation CI | Head `0f158bad`, run 38272931564: 1,485 tests passed, clean dots/OK; 29 new tests including routed transport/recovery, depth horizon watermarks and causal capture receipt; record evidence in this documentation-only revision and recheck latest-head CI; not merged or deployed |
 
 ## Handover checklist for a fresh ChatGPT session
 
@@ -454,9 +523,25 @@ diagnostics if tests fail. **No masking errors to achieve cosmetic silence.**
 - Confirm current services before suggesting any restart. A prior two-restart
   incident caused WSS path losses and 792 unresolved V4 outcomes.
 - PR #32 prototype merged at `19eec7f`. PR #34 public quality prototype merged at `0ad04e7` (main CI must be separately verified). The opt-in functions are **not** running: capture persistence, matched real-time event/metadata/depth provenance, portfolio correlation caps and prospective validation remain before V5 activation.
-- PR #36 experimental paired-exit prototype merged at `bece0864`. Next: integrate a **joint WSS quote+aggTrade causal feed**, including quote-only price crossings, durably preserve evidence through restarts, verify funding coverage and test on new data; do not activate current pure replay prototype.
+- PR #36 experimental paired-exit prototype merged at `bece0864`. PR #38 adds the opt-in **joint WSS quote+aggTrade bridge**, quote-only crossings, checkpoints, aggregate recovery and public funding proof. Review [V5_LIVE_EVIDENCE_BRIDGE.md](V5_LIVE_EVIDENCE_BRIDGE.md) and latest-head CI. Next: independently measure resource budgets, funding publication timing, clock/stream integrity and prospective coverage. No service or VPS activation occurred; missed historical quotes remain unrecoverable.
 - Identify next milestone by reading statuses, not by extrapolating chat.
 - Never claim V5 is collecting or learning until services are actually
   installed, started and observed.
 - Treat both RESEARCH and PAPER as no-order-authority, even if a Champion exists.
 - If a PR changed a V5 contract, update this document **in the same PR**.
+
+## 2026-10-13 decision-log addendum — PR #38 V3 remediation
+
+The earlier milestone checkboxes record historical prototype work, not current
+certification. A watchdog, depth-ID chain, horizon witness and agreeing funding
+responses did not prove quote-path or settlement finality. V3 deliberately removes
+unsupported certified scoring rather than tuning liveness to hide that limitation.
+
+| Date | Decision | Why / implication |
+|---|---|---|
+| 2026-10-13 | Keep PR #38 open, unmerged and undeployed | User authorizes corrections/push only; independent review and latest CI remain gates |
+| 2026-10-13 | Version observed versus certified evidence | Received bytes and reproducible simulations do not establish all actual market movements |
+| 2026-10-13 | Disable certified V5 training/promotion consumers | Every current classification, including legacy SCORED and forged CERTIFIED_PATH, is rejected by the guard |
+| 2026-10-13 | Retain immutable diagnostics with append-only revocation | Funding contradiction, late within-window evidence, uncertain restart and persistence recovery can veto all dependent arms without deleting history |
+| 2026-10-13 | Journal inputs and checkpoint periodically | Avoid whole-shard serialization on each WSS event while verifying replay/head/checkpoint consistency |
+| 2026-10-13 | Resource improvement is not deployment approval | Byte limits and desktop benchmark do not establish representative one-GB sustained capture capacity |

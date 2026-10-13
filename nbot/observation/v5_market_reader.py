@@ -7,6 +7,7 @@ be supplied as authenticated, point-in-time metadata by a later bridge.
 from __future__ import annotations
 
 from pathlib import Path
+from contextlib import closing
 import sqlite3
 from typing import Mapping
 
@@ -26,7 +27,7 @@ def read_completed_event(
         raise ValueError("V5_MARKET_DATABASE_MISSING")
     instruments = {} if instruments is None else dict(instruments)
     depths = {} if depths is None else dict(depths)
-    with sqlite3.connect(path.as_uri() + "?mode=ro", uri=True) as conn:
+    with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as conn:
         conn.execute("PRAGMA query_only=ON")
         event = conn.execute(
             """SELECT e.event_close_ms,e.captured_at_ms,e.status,

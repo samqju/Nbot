@@ -6,6 +6,7 @@ no training or paper contest admission. All writes are opt-in via initialize().
 from __future__ import annotations
 
 from dataclasses import asdict
+from contextlib import contextmanager, nullcontext
 import hashlib
 import json
 from pathlib import Path
@@ -61,17 +62,36 @@ class V5EvidenceStore:
         if self.path.resolve().parent.name.lower() != "v5":
             raise ValueError("V5_LEDGER_MUST_LIVE_IN_V5_DIRECTORY")
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self):
         conn = sqlite3.connect(str(self.path), timeout=30)
-        conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("PRAGMA busy_timeout=30000")
-        return conn
+        try:
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("PRAGMA busy_timeout=30000")
+            conn.execute("PRAGMA synchronous=FULL")
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def initialize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(_SCHEMA)
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS v5_observed_pairs (
+                    decision_id TEXT PRIMARY KEY,
+                    contract TEXT NOT NULL, authority_path TEXT NOT NULL,
+                    payload_json TEXT NOT NULL, digest TEXT NOT NULL,
+                    FOREIGN KEY(decision_id) REFERENCES v5_decisions(decision_id));
+                CREATE TRIGGER IF NOT EXISTS v5_observed_no_update
+                    BEFORE UPDATE ON v5_observed_pairs
+                    BEGIN SELECT RAISE(ABORT,'IMMUTABLE_V5_OBSERVATION'); END;
+                CREATE TRIGGER IF NOT EXISTS v5_observed_no_delete
+                    BEFORE DELETE ON v5_observed_pairs
+                    BEGIN SELECT RAISE(ABORT,'IMMUTABLE_V5_OBSERVATION'); END;
+            """)
             for key, value in (
                 ("version", VERSION),
                 ("accounting_version", ACCOUNTING_VERSION),
@@ -140,6 +160,7 @@ class V5EvidenceStore:
         self, *, decision_id: str, exit_policy_id: str,
         evidence_digest: str, result: TradeAccounting | None,
         unscorable_reason: str | None = None,
+        _connection=None,
     ) -> None:
         if not all((decision_id, exit_policy_id, evidence_digest)):
             raise ValueError("V5_OUTCOME_IDENTITY_INVALID")
@@ -161,13 +182,25 @@ class V5EvidenceStore:
             "accounting": accounting,
         }
         raw, digest = _encoded(payload)
-        with self._connect() as conn:
+        with (self._connect() if _connection is None else nullcontext(_connection)) as conn:
             self._append(
                 conn, table="v5_outcomes",
                 key=(decision_id,exit_policy_id),
                 columns=("decision_id","exit_policy_id","status","payload_json","digest"),
                 values=(decision_id,exit_policy_id,status,raw,digest), digest=digest,
             )
+
+    def record_legacy_pair(self, results):
+        """Atomic legacy mechanical fixture publication; not certified evidence."""
+        with self._connect() as conn:
+            conn.execute('BEGIN IMMEDIATE')
+            for result in results:
+                self.record_outcome(decision_id=result.decision_id,
+                                    exit_policy_id=result.policy_id,
+                                    evidence_digest=result.evidence_digest,
+                                    result=result.accounting,
+                                    unscorable_reason=result.reason if result.status=='UNSCORABLE' else None,
+                                    _connection=conn)
 
     def status(self) -> dict:
         if not self.path.is_file():
@@ -181,9 +214,77 @@ class V5EvidenceStore:
         return {
             "version": VERSION, "decisions": d,
             "scored": results.get("SCORED",0),
+            "legacy_scored": results.get("SCORED",0), "certified": 0,
             "unscorable": results.get("UNSCORABLE",0),
             "order_authority": ORDER_AUTHORITY,
         }
+
+    def record_observed_pair(self, results, *, authority):
+        """One atomic append for all arms; legacy outcomes are never rewritten."""
+        from .v5_evidence_trust import CONTRACT
+        from .v5_paired_exits import EXIT_POLICIES
+        from .v5_live_evidence import LiveEvidenceBridge
+        if (not isinstance(authority, LiveEvidenceBridge) or not authority.ready
+                or authority.integrity_fault is not None or len(results) != 3
+                or {r.policy_id for r in results} != set(EXIT_POLICIES)
+                or len({r.decision_id for r in results}) != 1
+                or len({r.evidence_digest for r in results}) != 1
+                or len({r.status for r in results}) != 1
+                or any(r.evidence_contract != CONTRACT or r.accounting is not None
+                       or r.status not in {'OBSERVED_STREAM','UNSCORABLE','REVOKED'}
+                       or r.evidence_class != r.status or r.proof is not None
+                       for r in results)):
+            raise ValueError('V5_OBSERVED_PAIR_CONTRACT_INVALID')
+        decision = results[0].decision_id
+        # Original immutable diagnostic survives later revocation. Consumers
+        # resolve the append-only authority overlay on every read.
+        with authority._lock:
+            if tuple(results) != authority.lab._completed.get(decision):
+                raise ValueError('V5_PAIR_NOT_CURRENT_FINALIZED_RESULT')
+            raw, digest = authority.published_pair(decision)
+            entry = authority.published_entry(decision)
+            with self._connect() as conn:
+                linked = conn.execute('SELECT symbol,side FROM v5_decisions WHERE decision_id=?',(decision,)).fetchone()
+                if linked != (entry['symbol'],entry['side']):
+                    raise ValueError('V5_PAIR_DECISION_PROVENANCE_MISMATCH')
+                conn.execute('INSERT OR IGNORE INTO v5_observed_pairs VALUES(?,?,?,?,?)',
+                             (decision, CONTRACT, str(authority.path.resolve()), raw, digest))
+                old = conn.execute('SELECT digest FROM v5_observed_pairs WHERE decision_id=?',
+                                   (decision,)).fetchone()
+                if old[0] != digest:
+                    raise ValueError('V5_IMMUTABLE_ID_REUSED_WITH_DIFFERENT_PAYLOAD')
+
+    def observed_pairs(self, *, authority):
+        """Diagnostic consumer: missing/wrong/faulted authority fails closed."""
+        from .v5_evidence_trust import CONTRACT
+        from .v5_live_evidence import LiveEvidenceBridge
+        if (not isinstance(authority, LiveEvidenceBridge) or not authority.ready
+                or authority.integrity_fault is not None):
+            raise ValueError('V5_REVOCATION_AUTHORITY_UNAVAILABLE')
+        output = []
+        with authority._lock, self._connect() as conn:
+            for decision, contract, path, raw, digest in conn.execute('SELECT * FROM v5_observed_pairs'):
+                if contract != CONTRACT or path != str(authority.path.resolve()):
+                    raise ValueError('V5_REVOCATION_AUTHORITY_MISMATCH')
+                if hashlib.sha256(raw.encode()).hexdigest() != digest:
+                    raise ValueError('V5_OBSERVED_PAIR_CORRUPT')
+                if (raw,digest) != authority.published_pair(decision):
+                    raise ValueError('V5_PAIR_PROVENANCE_MISMATCH')
+                entry = authority.published_entry(decision)
+                linked = conn.execute('SELECT symbol,side FROM v5_decisions WHERE decision_id=?',(decision,)).fetchone()
+                if linked != (entry['symbol'],entry['side']):
+                    raise ValueError('V5_PAIR_DECISION_PROVENANCE_MISMATCH')
+                payload = json.loads(raw)
+                revoked = authority.revocations(decision)
+                payload['effective_class'] = 'REVOKED' if revoked else payload['arms'][0]['evidence_class']
+                payload['revocations'] = revoked
+                output.append(payload)
+        return output
+
+    def certified_pairs(self, *, purpose='TRAINING'):
+        """No legacy SCORED or observed row qualifies for complete-path use."""
+        from .v5_evidence_trust import require_certified_sample
+        require_certified_sample(None, purpose=purpose)
 
     def submit_order(self, *_args, **_kwargs):
         raise RuntimeError("V5_HAS_NO_ORDER_AUTHORITY")
