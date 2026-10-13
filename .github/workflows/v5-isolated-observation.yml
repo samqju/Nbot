@@ -14,6 +14,7 @@ on:
       - "tests/test_v5_ws_selection.py"
       - "tests/test_v5_candle_ledger.py"
       - "tests/test_v5_candle_ledger_probe.py"
+      - "tests/test_v5_observation_continuity.py"
       - ".github/workflows/v5-isolated-observation.yml"
   pull_request:
     paths:
@@ -26,6 +27,7 @@ on:
       - "tests/test_v5_ws_selection.py"
       - "tests/test_v5_candle_ledger.py"
       - "tests/test_v5_candle_ledger_probe.py"
+      - "tests/test_v5_observation_continuity.py"
       - ".github/workflows/v5-isolated-observation.yml"
   workflow_dispatch:
 
@@ -44,4 +46,4 @@ jobs:
         with:
           python-version: "3.12"
       - name: Test synthetic-only V5 candidates and immutable ledger
-        run: python -m unittest -v tests.test_v5_observation_contract tests.test_v5_pattern_adapter tests.test_v5_public_market tests.test_v5_ws_contract tests.test_v5_stream_buffer tests.test_v5_ws_selection tests.test_v5_candle_ledger tests.test_v5_candle_ledger_probe
+        run: python -m unittest -v tests.test_v5_observation_contract tests.test_v5_pattern_adapter tests.test_v5_public_market tests.test_v5_ws_contract tests.test_v5_stream_buffer tests.test_v5_ws_selection tests.test_v5_candle_ledger tests.test_v5_candle_ledger_probe tests.test_v5_observation_continuity
