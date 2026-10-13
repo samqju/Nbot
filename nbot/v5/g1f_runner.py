@@ -113,6 +113,9 @@ class ObservationOnlyRunner:
                     "committed_events":0,"restart_missing_events":0,
                     "reconnect_attempts":0}
         self.last_log=time.monotonic()
+        self.route_window_started={"market":time.monotonic(),
+                                   "public":time.monotonic()}
+        self.route_window_frames={"market":0,"public":0}
 
     def fault(self, reason):
         self.failed_reason=str(reason)[:150]
@@ -201,7 +204,6 @@ class ObservationOnlyRunner:
         except ImportError as exc:
             self.fault("G1F_WSS_DEPENDENCY_NOT_INSTALLED")
             return
-        tries=0
         while not self.stop.is_set() and time.monotonic()<deadline:
             connected=False
             try:
@@ -213,7 +215,6 @@ class ObservationOnlyRunner:
                     session.connect(route)
                     self.policy.on_connect(route)
                     connected=True
-                    tries=0
                     # Fresh socket does not reset trade/quote source continuity.
                     if self.interrupted and route=="market":
                         now=await asyncio.to_thread(self.getter,"/fapi/v1/time")
@@ -226,7 +227,11 @@ class ObservationOnlyRunner:
                         except asyncio.TimeoutError:
                             continue
                         self.stats[route+"_frames"]+=1
-                        if self.stats[route+"_frames"]>MAX_FRAMES_PER_5M*2:
+                        if time.monotonic()-self.route_window_started[route]>=300:
+                            self.route_window_started[route]=time.monotonic()
+                            self.route_window_frames[route]=0
+                        self.route_window_frames[route]+=1
+                        if self.route_window_frames[route]>MAX_FRAMES_PER_5M:
                             raise EvidenceHold("G1F_WSS_FRAME_CAP")
                         classified=session.consume(
                             route,frame,received_ms=wall_ms())
@@ -244,10 +249,6 @@ class ObservationOnlyRunner:
                 self.interrupted=True
                 self.policy.on_disconnect(route,"WSS_CONNECTION_FAULT")
                 self.stats["reconnect_attempts"]+=1
-                tries+=1
-                if tries>3:
-                    self.fault(route+"_RETRY_BUDGET_EXHAUSTED")
-                    break
                 try:
                     wait=self.policy.retry_delay(route)
                 except FeedRecoveryHold as error:
