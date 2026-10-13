@@ -40,6 +40,10 @@ class ObservationContinuity:
             for route in self.sources.ROUTES
         }
         self.stats = Counter()
+        # Bounded, ephemeral "seen once this run" evidence. Deliberately
+        # not a quote/trade continuity or freshness certification.
+        self.seen_quote_symbols: set[str] = set()
+        self.seen_trade_symbols: set[str] = set()
         self.final_opens: dict[str, list[int]] = {s: [] for s in self.symbols}
 
     def close(self) -> None:
@@ -153,8 +157,12 @@ class ObservationContinuity:
         )
         if kind == "aggTrade":
             self.stats["trade_updates"] += 1
+            if classification == "TRADE_CURSOR_ADVANCED":
+                self.seen_trade_symbols.add(symbol)
         elif kind in ("bookTicker", "depth5@500ms"):
             self.stats["sampled_quote_updates"] += 1
+            if classification == "QUOTE_LATEST_REPLACED":
+                self.seen_quote_symbols.add(symbol)
         return classification
 
     def gate(self, symbol: str, *, event_open_ms: int,
@@ -204,6 +212,8 @@ class ObservationContinuity:
             "result": "OBSERVATION_ONLY",
             "symbols": state,
             "totals": dict(self.stats),
+            "quote_symbols_ever_seen_this_probe": len(self.seen_quote_symbols),
+            "trade_symbols_ever_seen_this_probe": len(self.seen_trade_symbols),
             "ring": self.store.describe(),
             "source_epochs": self.sources.overview(),
             "research_ready": False,
