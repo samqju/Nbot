@@ -73,13 +73,13 @@ def _evidence_reasons(
 ) -> list[str]:
     if evidence is None:
         return [f"{prefix}_MISSING"]
+    reasons = [f"{prefix}_{reason}" for reason in evidence.quality_issues]
     if any(type(v) is not int or v < 0 for v in (
         evidence.last_closed_bar_open_ms,
         evidence.source_max_bar_open_ms,
         evidence.observed_at_ms,
     )):
-        return [f"{prefix}_INVALID_TIMESTAMPS"]
-    reasons = [f"{prefix}_{reason}" for reason in evidence.quality_issues]
+        return reasons + [f"{prefix}_INVALID_TIMESTAMPS"]
     if evidence.last_closed_bar_open_ms != event_open_ms:
         reasons.append(f"{prefix}_CANDLE_MISSING_OR_STALE")
     if evidence.source_max_bar_open_ms != event_open_ms:
