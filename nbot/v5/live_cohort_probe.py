@@ -123,13 +123,15 @@ def _get_96(symbol: str, last_open: int, getter=public_get):
 
 async def run_probe(
     *, top: int = 50, seconds: int = 338, getter=public_get,
+    clock_ms=None,
 ) -> dict:
     if type(top) is not int or not 2 <= top <= 50:
         raise EvidenceHold("V5_G1E_LIMIT_INVALID")
     if type(seconds) is not int or not 90 <= seconds <= MAX_SECONDS:
         raise EvidenceHold("V5_G1E_DURATION_INVALID")
+    clock_ms = clock_ms or (lambda: int(time.time()*1000))
     event, server_time = closed_event_from_server_time(getter("/fapi/v1/time"))
-    if abs(int(time.time()*1000)-server_time) > 90_000:
+    if abs(clock_ms()-server_time) > 90_000:
         raise EvidenceHold("V5_G1E_CLOCK_SKEW")
     selected = select_universe(
         getter("/fapi/v1/exchangeInfo"), getter("/fapi/v1/ticker/24hr"),
@@ -158,7 +160,7 @@ async def run_probe(
                     rows = _get_96(symbol, event, getter)
                     label, written = collector.restore_rest(
                         symbol, rows, event_open_ms=event,
-                        observed_ms=int(time.time()*1000),
+                        observed_ms=clock_ms(),
                     )
                     if label != "BOOTSTRAPPED" or written != HISTORY:
                         raise EvidenceHold("V5_G1E_BOOTSTRAP_WRONG_LENGTH")
@@ -169,7 +171,7 @@ async def run_probe(
             if initial == len(collector.symbols) and not faults:
                 print("G1E_INITIAL_96_BAR_COHORT",
                       initial, "target_ms", target, flush=True)
-                if int(time.time()*1000) >= target + INTERVAL_MS:
+                if clock_ms() >= target + INTERVAL_MS:
                     faults.append("BOOTSTRAP_EVENT_WAS_ALREADY_MISSED")
                 else:
                     finish = asyncio.Event()
@@ -202,7 +204,7 @@ async def run_probe(
                         rows = _get_96(symbol, target, getter)
                         status, added = collector.ledger.synchronize_asof_rest(
                             symbol, rows, event_open_ms=target,
-                            observed_ms=int(time.time()*1000),
+                            observed_ms=clock_ms(),
                         )
                         if status != "MATCHED" or added:
                             raise EvidenceHold("V5_G1E_SOURCE_PROOF_NOT_EXACT")
