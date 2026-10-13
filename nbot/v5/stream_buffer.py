@@ -40,8 +40,9 @@ class BoundedObservationBuffer:
     recovery approval are future, separately tested milestones.
     """
 
-    def __init__(self, symbols: Sequence[str]) -> None:
-        stream_urls(symbols)  # Existing whitelist, 1..50, validates syntax.
+    def __init__(self, symbols: Sequence[str], *, quote_mode: str = "bookTicker") -> None:
+        stream_urls(symbols, quote_mode=quote_mode)  # Validate 1..50, dedicated routes.
+        self.quote_mode = quote_mode
         self.eligible = tuple(sorted(symbols))
         self.all_symbols = tuple(sorted(set(symbols) | {"BTCUSDT"}))
         if len(self.all_symbols) > MAX_SYMBOLS + 1:
@@ -111,7 +112,9 @@ class BoundedObservationBuffer:
         symbol = parsed["symbol"]
         coin = self.coins[symbol]
         kind = parsed["kind"]
-        if kind == "bookTicker":
+        if kind in ("bookTicker", "depth5@500ms"):
+            if kind != self.quote_mode:
+                raise UnsafeStream("V5_BUFFER_WRONG_QUOTE_SOURCE")
             if not self.health.public_connected:
                 raise UnsafeStream("V5_BUFFER_QUOTE_SOCKET_DISCONNECTED")
             update_id = parsed["update_id"]
@@ -203,6 +206,7 @@ class BoundedObservationBuffer:
             "symbol_count": len(self.all_symbols),
             "closed_candle_capacity_per_symbol": HISTORY,
             "total_candles_retained": sum(len(c.closed_candles) for c in self.coins.values()),
+            "quote_mode": self.quote_mode,
             "latest_quotes_retained": sum(c.last_quote is not None for c in self.coins.values()),
             "latest_trades_retained": sum(c.last_trade is not None for c in self.coins.values()),
             "event_counts": dict(self.totals),
