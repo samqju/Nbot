@@ -79,6 +79,7 @@ class FiftyMarketProofTests(unittest.TestCase):
         # Construct a consistent real-format REST snapshot around the current
         # wall-clock event, then inject mock final WSS closes for every coin.
         now_ms = int(time.time()*1000)
+        virtual_clock = {"now": now_ms}
         event = (now_ms//INTERVAL_MS - 1)*INTERVAL_MS
         calls = {}
         def get(path, params=None):
@@ -116,12 +117,14 @@ class FiftyMarketProofTests(unittest.TestCase):
                     })
                     collector.consume("market", data,
                                       received_ms=target+INTERVAL_MS+1000)
+                virtual_clock["now"] = target + INTERVAL_MS + 1500
             collector.disconnect(route)
             policy.on_disconnect(route)
 
         with patch("nbot.v5.live_cohort_probe._listen",
                    side_effect=fake_listen):
-            return asyncio.run(run_probe(top=50, seconds=110, getter=get))
+            return asyncio.run(run_probe(top=50, seconds=110, getter=get,
+                                         clock_ms=lambda: virtual_clock["now"]))
 
     def test_50_market_synthetic_cross_source_exact_match_and_reopen(self):
         report = self._fake()
