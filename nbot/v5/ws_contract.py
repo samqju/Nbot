@@ -108,6 +108,10 @@ def decode_frame(
             or name != f"{symbol.lower()}@{stream_kind}"
             or data.get("s") != symbol):
         raise UnsafeStream("V5_WSS_STREAM_OR_SYMBOL_MISMATCH")
+    if "st" in data and (type(data["st"]) is not int or data["st"] != 1):
+        raise UnsafeStream("V5_WSS_NOT_USDM_CONTRACT")
+    if "ps" in data and data["ps"] != symbol:
+        raise UnsafeStream("V5_WSS_PAIR_SYMBOL_MISMATCH")
     expected_type = ("kline" if stream_kind == "kline_5m" else
                      "depthUpdate" if stream_kind == "depth5@500ms" else stream_kind)
     if data.get("e") != expected_type:
