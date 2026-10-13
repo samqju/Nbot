@@ -172,6 +172,13 @@ class FiftyMarketProofTests(unittest.TestCase):
         report = self._fake(mismatch=True)
         self.assertEqual(report["result"], "HOLD")
         self.assertTrue(any("BTCUSDT" in x for x in report["cross_source_mismatch"]))
+        details = report["cross_source_mismatch_details"]
+        self.assertTrue(any(
+            d["symbol"] == "BTCUSDT"
+            and d["first_source"] == "WSS_FINAL"
+            and "close" in d["changed_fields"]
+            for d in details
+        ))
         self.assertLess(report["cross_source_rest_match_count"], 50)
         self.assertFalse(report["research_ready"])
 
