@@ -50,8 +50,8 @@ class V5WSSSafetyTests(unittest.TestCase):
             "wss://fstream.binance.com/market/stream?streams="))
         self.assertTrue(plan["public"].startswith(
             "wss://fstream.binance.com/public/stream?streams="))
-        self.assertIn("btcusdt%40aggTrade", plan["market"])
-        self.assertIn("btcusdt%40bookTicker", plan["public"])
+        self.assertIn("btcusdt@aggTrade", plan["market"])
+        self.assertIn("btcusdt@bookTicker", plan["public"])
         self.assertNotIn("bookTicker", plan["market"])
         self.assertNotIn("aggTrade", plan["public"])
         self.assertNotIn("/private/", str(plan))
