@@ -59,6 +59,23 @@ class FinalityQuarantine:
     def __init__(self, db: sqlite3.Connection):
         self.db = db
         db.executescript("""
+            CREATE TABLE IF NOT EXISTS v5_wss_final_proof (
+                symbol TEXT NOT NULL,
+                event_open_ms INTEGER NOT NULL,
+                received_ms INTEGER NOT NULL,
+                candle_json TEXT NOT NULL,
+                candle_sha TEXT NOT NULL,
+                policy TEXT NOT NULL,
+                PRIMARY KEY(symbol,event_open_ms)
+            );
+            CREATE TRIGGER IF NOT EXISTS v5_wss_proof_no_update
+                BEFORE UPDATE ON v5_wss_final_proof BEGIN
+                    SELECT RAISE(ABORT,'V5_WSS_PROOF_IMMUTABLE');
+            END;
+            CREATE TRIGGER IF NOT EXISTS v5_wss_proof_no_delete
+                BEFORE DELETE ON v5_wss_final_proof BEGIN
+                    SELECT RAISE(ABORT,'V5_WSS_PROOF_IMMUTABLE');
+            END;
             CREATE TABLE IF NOT EXISTS v5_finality_checks (
                 check_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 symbol TEXT NOT NULL,
@@ -121,6 +138,22 @@ class FinalityQuarantine:
                 END;
         """)
 
+    def record_wss_final(
+        self, symbol: str, event_open_ms: int,
+        *, received_ms: int, candle: Sequence,
+    ) -> None:
+        bar=_row(candle)
+        if (bar[0] != event_open_ms or type(received_ms) is not int
+                or received_ms < event_open_ms + INTERVAL_MS):
+            raise ValueError("V5_FINALITY_WSS_NOT_CLOSED")
+        with self.db:
+            self.db.execute("""
+                INSERT INTO v5_wss_final_proof
+                (symbol,event_open_ms,received_ms,candle_json,candle_sha,policy)
+                VALUES (?,?,?,?,?,?)
+            """,(symbol,event_open_ms,received_ms,
+                 json.dumps(bar,separators=(",",":")),fingerprint(bar),POLICY))
+
     def quarantine(self, symbol: str, event_open_ms: int, reason: str,
                    *, observed_ms: int, evidence_sha: str) -> None:
         if not symbol or not reason or len(reason) > 100:
@@ -165,6 +198,19 @@ class FinalityQuarantine:
                 raise ValueError("V5_FINALITY_NONMONOTONIC_CHECK_TIME")
         changed = tuple(FIELDS[i-1] for i in range(1,6) if wss[i] != rest[i])
         ws_sha, rs_sha = fingerprint(wss), fingerprint(rest)
+        saved=self.db.execute("""
+            SELECT candle_sha FROM v5_wss_final_proof
+            WHERE symbol=? AND event_open_ms=?
+        """,(symbol,event_open_ms)).fetchone()
+        if saved is not None and saved[0] != ws_sha:
+            raise ValueError("V5_FINALITY_WSS_PROOF_CHANGED")
+        old_wss=self.db.execute("""
+            SELECT wss_sha FROM v5_finality_checks
+            WHERE symbol=? AND event_open_ms=?
+            ORDER BY check_id LIMIT 1
+        """,(symbol,event_open_ms)).fetchone()
+        if old_wss and old_wss[0] != ws_sha:
+            raise ValueError("V5_FINALITY_WSS_CHECK_SOURCE_CHANGED")
         prior_rest = self.db.execute("""
             SELECT rest_sha FROM v5_finality_checks
             WHERE symbol=? AND event_open_ms=?
