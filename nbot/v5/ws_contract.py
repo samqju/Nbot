@@ -43,8 +43,8 @@ def stream_urls(eligible_symbols: Sequence[str]) -> dict[str, str]:
               for s in symbols for stream in ("aggTrade", "kline_5m")]
     public = [f"{s.lower()}@bookTicker" for s in symbols]
     return {
-        "market": WSS_HOST + _MARKET + "?" + urlencode({"streams": "/".join(market)}),
-        "public": WSS_HOST + _PUBLIC + "?" + urlencode({"streams": "/".join(public)}),
+        "market": WSS_HOST + _MARKET + "?" + urlencode({"streams": "/".join(market)}, safe="@/"),
+        "public": WSS_HOST + _PUBLIC + "?" + urlencode({"streams": "/".join(public)}, safe="@/"),
     }
 
 
