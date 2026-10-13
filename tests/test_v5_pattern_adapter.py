@@ -139,9 +139,19 @@ class V5PatternAdapterTests(unittest.TestCase):
                 self.assertEqual(result["patterns"]["EMA_CROSS_V1"], "UNAVAILABLE")
 
     def test_future_observation_timestamp_abstains(self):
-        result = evaluate(observed=DECISION + 1)
+        data = sources()
+        data[SYMBOLS[0]] = bars(jump=5., last_volume=30.)
+        result = evaluate(candles=data, observed=DECISION + 1)
         self.assertTrue(all(r["status"] == "UNSCORABLE" for r in result))
         self.assertTrue(all(not r["btc_context_valid"] for r in result))
+        self.assertEqual(row(result)["patterns"]["DONCHIAN_BREAKOUT_V1"], "UNAVAILABLE")
+
+    def test_malformed_candle_row_fails_closed_without_crashing(self):
+        data = sources()
+        data[SYMBOLS[0]][-1] = "BROKEN_ROW"
+        observed = row(evaluate(candles=data))
+        self.assertEqual(observed["status"], "UNSCORABLE")
+        self.assertIn("SYMBOL_CANDLE_SHAPE_INVALID", observed["reason_codes"])
 
     def test_too_few_simultaneous_markets_abstains(self):
         short_universe = SYM = tuple(f"COIN{i:02d}USDT" for i in range(9))
