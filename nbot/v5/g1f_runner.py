@@ -143,6 +143,28 @@ class ObservationOnlyRunner:
             await rest_seed(session,symbols,event,getter=self.getter)
             # Previous recorded events are not silently skipped on restart.
             previous=journal.latest_event()
+            unfinished=session.ledger.db.execute("""
+                SELECT event_open_ms FROM v5_wss_final_proof
+                WHERE event_open_ms NOT IN (
+                    SELECT event_open_ms FROM g1f_event_manifest
+                )
+                UNION
+                SELECT event_open_ms FROM v5_finality_checks
+                WHERE event_open_ms NOT IN (
+                    SELECT event_open_ms FROM g1f_event_manifest
+                )
+                UNION
+                SELECT open_ms FROM candle_rows
+                WHERE first_source='WSS_FINAL'
+                  AND open_ms NOT IN (
+                      SELECT event_open_ms FROM g1f_event_manifest
+                  )
+                ORDER BY event_open_ms
+            """).fetchall()
+            if unfinished and unfinished[0][0]>event:
+                raise EvidenceHold("G1F_RESTART_FUTURE_SOURCE_EVENT")
+            if previous is None and unfinished:
+                previous=unfinished[0][0]-INTERVAL_MS
             if previous is not None and previous<event:
                 missing=(event-previous)//INTERVAL_MS
                 if missing>MAX_CATCHUP_EVENTS:
