@@ -21,6 +21,7 @@ on:
       - "tests/test_v5_finality_remediation_probe.py"
       - "tests/test_v5_g1f_journal.py"
       - "tests/test_v5_g1f_engine.py"
+      - "tests/test_v5_g1f_runner.py"
       - ".github/workflows/v5-isolated-observation.yml"
   pull_request:
     paths:
@@ -40,6 +41,7 @@ on:
       - "tests/test_v5_finality_remediation_probe.py"
       - "tests/test_v5_g1f_journal.py"
       - "tests/test_v5_g1f_engine.py"
+      - "tests/test_v5_g1f_runner.py"
       - ".github/workflows/v5-isolated-observation.yml"
   workflow_dispatch:
 
@@ -58,4 +60,4 @@ jobs:
         with:
           python-version: "3.12"
       - name: Test synthetic-only V5 candidates and immutable ledger
-        run: python -m unittest -v tests.test_v5_observation_contract tests.test_v5_pattern_adapter tests.test_v5_public_market tests.test_v5_ws_contract tests.test_v5_stream_buffer tests.test_v5_ws_selection tests.test_v5_candle_ledger tests.test_v5_candle_ledger_probe tests.test_v5_observation_continuity tests.test_v5_g1e_cohort tests.test_v5_source_epochs tests.test_v5_finality_quarantine tests.test_v5_finality_remediation_probe tests.test_v5_g1f_journal tests.test_v5_g1f_engine
+        run: python -m unittest -v tests.test_v5_observation_contract tests.test_v5_pattern_adapter tests.test_v5_public_market tests.test_v5_ws_contract tests.test_v5_stream_buffer tests.test_v5_ws_selection tests.test_v5_candle_ledger tests.test_v5_candle_ledger_probe tests.test_v5_observation_continuity tests.test_v5_g1e_cohort tests.test_v5_source_epochs tests.test_v5_finality_quarantine tests.test_v5_finality_remediation_probe tests.test_v5_g1f_journal tests.test_v5_g1f_engine tests.test_v5_g1f_runner
