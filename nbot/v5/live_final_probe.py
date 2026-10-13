@@ -29,7 +29,7 @@ MAX_SECONDS = 340
 MAX_FRAMES = 60_000
 
 
-async def _listen(route, socket_url, session, deadline, finished, bad):
+async def _listen(route, socket_url, session, deadline, finished, bad, target):
     try:
         from websockets.asyncio.client import connect
     except ImportError as exc:
@@ -127,9 +127,9 @@ async def run_probe(*, top: int = 2, seconds: int = 335,
                 deadline = time.monotonic() + seconds
                 await asyncio.gather(
                     _listen("market", urls["market"], session,
-                            deadline, finished, issues),
+                            deadline, finished, issues, target),
                     _listen("public", urls["public"], session,
-                            deadline, finished, issues),
+                            deadline, finished, issues, target),
                 )
             # After disconnect all source-health/certification should HOLD.
             results = session.snapshot(
