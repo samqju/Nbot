@@ -267,6 +267,68 @@ class CandleEvidenceLedger:
                          _sha({"wss_final": bar, "event_ms": event["event_ms"]}))
         return "APPENDED_WSS_FINAL"
 
+    def synchronize_asof_rest(
+        self, symbol: str, rows: Sequence[list], *,
+        event_open_ms: int, observed_ms: int,
+    ) -> tuple[str, int]:
+        """Compare closed candles across restart and recover ONLY candle gaps.
+
+        Requires a full 96-candle overlapping snapshot. All previously seen
+        OHLCV must match exactly, even if the snapshot only rechecks part of
+        long-running ledger history. Future, nonoverlap and conflicts HOLD.
+        Never clears trade/quote/cohort health.
+        """
+        self._valid_event(symbol, event_open_ms, observed_ms)
+        try:
+            candles = tuple(_row(x) for x in decode_klines(
+                rows, event_open_ms=event_open_ms,
+            ))
+        except (ValueError, TypeError, OverflowError) as exc:
+            raise EvidenceHold("V5_LEDGER_ASOF_REST_INVALID") from exc
+        last = self._last(symbol)
+        if last is None:
+            return "BOOTSTRAPPED", self.bootstrap_rest(
+                symbol, rows, event_open_ms=event_open_ms, observed_ms=observed_ms,
+            )
+        if "SOURCE_CONFLICT" in self._open_gates(symbol):
+            raise EvidenceHold("V5_LEDGER_ASOF_SOURCE_CONFLICT")
+        if event_open_ms < last:
+            raise EvidenceHold("V5_LEDGER_ASOF_REWIND")
+        if candles[0][0] > last:
+            raise EvidenceHold("V5_LEDGER_ASOF_OVERLAP_REQUIRED")
+        matches = [
+            x for x in candles
+            if x[0] <= last and self._stored(symbol, x[0]) is not None
+        ]
+        if not matches or matches[-1][0] != last:
+            raise EvidenceHold("V5_LEDGER_ASOF_CURSOR_MISSING")
+        mismatch = [
+            bar[0] for bar in matches
+            if self._stored(symbol, bar[0]) != bar
+        ]
+        if mismatch:
+            with self.db:
+                self._gate(symbol, "SOURCE_CONFLICT", "OPEN", _sha({
+                    "asof_rest_conflict": mismatch,
+                }))
+            raise EvidenceHold("V5_LEDGER_ASOF_SOURCE_MISMATCH")
+        if event_open_ms == last:
+            if "CANDLE_GAP" in self._open_gates(symbol):
+                raise EvidenceHold("V5_LEDGER_ASOF_GAP_UNRESOLVED")
+            return "MATCHED", 0
+        proof = _sha({
+            "restart_detected": last,
+            "rest_end": event_open_ms,
+            "overlap_start": candles[0][0],
+        })
+        with self.db:
+            self._gate(symbol, "CANDLE_GAP", "OPEN", proof)
+        inserted = self.reconcile_rest_gap(
+            symbol, rows, event_open_ms=event_open_ms,
+            observed_ms=observed_ms,
+        )
+        return "REST_CANDLE_RECOVERED", inserted
+
     def reconcile_rest_gap(self, symbol: str, rows: Sequence[list], *,
                            event_open_ms: int, observed_ms: int) -> int:
         """Reconcile historical candle gaps only, never trade/quote/cohort gaps.
