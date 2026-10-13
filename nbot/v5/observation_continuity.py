@@ -8,12 +8,14 @@ from __future__ import annotations
 
 from collections import Counter
 from pathlib import Path
+import time
 from typing import Callable, Mapping, Sequence
 
 from nbot.v5.candle_ledger import CandleEvidenceLedger, EvidenceHold
 from nbot.v5.observation_contract import INTERVAL_MS
 from nbot.v5.public_market import HISTORY, public_get
 from nbot.v5.stream_buffer import BoundedObservationBuffer
+from nbot.v5.source_epochs import SourceEpochAudit
 from nbot.v5.ws_contract import UnsafeStream, decode_frame, stream_urls
 
 
@@ -31,6 +33,12 @@ class ObservationContinuity:
         self.symbols = tuple(sorted(set(symbols) | {"BTCUSDT"}))
         self.store = BoundedObservationBuffer(symbols, quote_mode=quote_mode)
         self.ledger = CandleEvidenceLedger(path)
+        self.sources = SourceEpochAudit(self.ledger.db)
+        self.sources.recover_unclosed(at_ms=int(time.time()*1000))
+        self.generations = {
+            route: (self.sources.latest(route) or (0, "NEVER"))[0]
+            for route in self.sources.ROUTES
+        }
         self.stats = Counter()
         self.final_opens: dict[str, list[int]] = {s: [] for s in self.symbols}
 
@@ -44,10 +52,31 @@ class ObservationContinuity:
         self.close()
 
     def connect(self, route: str) -> None:
+        if route not in self.sources.ROUTES:
+            raise EvidenceHold("V5_G1E_ROUTE_INVALID")
+        if (self.store.health.market_connected if route == "market"
+                else self.store.health.public_connected):
+            raise EvidenceHold("V5_G1E_ALREADY_CONNECTED")
+        generation = self.generations[route] + 1
+        self.sources.append(
+            route, generation, "CONNECTED", at_ms=int(time.time()*1000),
+        )
+        self.generations[route] = generation
         self.store.connect(route)
 
     def disconnect(self, route: str) -> None:
+        if route not in self.sources.ROUTES:
+            raise EvidenceHold("V5_G1E_ROUTE_INVALID")
+        was_connected = (
+            self.store.health.market_connected if route == "market"
+            else self.store.health.public_connected
+        )
         self.store.disconnect(route)
+        if was_connected:
+            self.sources.append(
+                route, self.generations[route], "DISCONNECTED",
+                at_ms=int(time.time()*1000),
+            )
 
     def restore_rest(self, symbol: str, payload: Sequence[list], *,
                      event_open_ms: int, observed_ms: int) -> tuple[str, int]:
@@ -176,6 +205,7 @@ class ObservationContinuity:
             "symbols": state,
             "totals": dict(self.stats),
             "ring": self.store.describe(),
+            "source_epochs": self.sources.overview(),
             "research_ready": False,
             "training_labels_created": 0,
             "order_authority": "NONE",
