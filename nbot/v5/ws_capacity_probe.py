@@ -65,11 +65,12 @@ async def _sample(route: str, url: str, store: BoundedObservationBuffer,
             "duration_seconds": round(time.monotonic() - beginning, 2)}
 
 
-async def run_probe(*, symbols: Sequence[str], seconds: int) -> dict:
+async def run_probe(*, symbols: Sequence[str], seconds: int,
+                    quote_mode: str = "bookTicker") -> dict:
     if not 8 <= seconds <= 20:
         raise ValueError("V5_CAPACITY_DURATION_INVALID")
-    store = BoundedObservationBuffer(symbols)
-    urls = stream_urls(symbols)
+    store = BoundedObservationBuffer(symbols, quote_mode=quote_mode)
+    urls = stream_urls(symbols, quote_mode=quote_mode)
     started = time.monotonic()
     market, public = await asyncio.gather(
         _sample("market", urls["market"], store, seconds=seconds),
@@ -97,6 +98,7 @@ async def run_probe(*, symbols: Sequence[str], seconds: int) -> dict:
         "eligibility_count": len(symbols),
         "total_symbols_including_btc": len(store.all_symbols),
         "seconds_requested": seconds,
+        "quote_mode": quote_mode,
         "total_elapsed_seconds": round(time.monotonic() - started, 2),
         "routes": [market, public],
         "buffer": summary,
@@ -115,10 +117,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--symbols", default="BTCUSDT,ETHUSDT",
                         help="Comma-separated eligible futures symbols (1 to 50)")
     parser.add_argument("--seconds", type=int, default=10)
+    parser.add_argument("--quote-mode", default="depth5@500ms",
+                        choices=("bookTicker", "depth5@500ms"),
+                        help="Public book snapshot speed: default top-five at 500ms")
     args = parser.parse_args(argv)
     symbols = tuple(x.strip() for x in args.symbols.split(","))
     try:
-        result = asyncio.run(run_probe(symbols=symbols, seconds=args.seconds))
+        result = asyncio.run(run_probe(symbols=symbols, seconds=args.seconds,
+                                       quote_mode=args.quote_mode))
     except (UnsafeStream, ValueError, RuntimeError) as exc:
         print("V5_WSS_CAPACITY_HOLD:", str(exc))
         return 2
