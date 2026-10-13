@@ -84,6 +84,25 @@ class FinalityQuarantine:
             );
             CREATE UNIQUE INDEX IF NOT EXISTS v5_quarantine_unique
                 ON v5_quarantine_events(symbol,event_open_ms,reason);
+            CREATE TABLE IF NOT EXISTS v5_directional_evidence (
+                evidence_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                event_open_ms INTEGER NOT NULL,
+                direction TEXT NOT NULL CHECK(direction IN ('LONG','SHORT')),
+                evidence_state TEXT NOT NULL
+                    CHECK(evidence_state IN ('VERIFIED_OBSERVE_ONLY','UNSCORABLE')),
+                reasons_json TEXT NOT NULL,
+                policy TEXT NOT NULL,
+                UNIQUE(symbol,event_open_ms,direction)
+            );
+            CREATE TRIGGER IF NOT EXISTS v5_direction_no_update
+                BEFORE UPDATE ON v5_directional_evidence BEGIN
+                    SELECT RAISE(ABORT,'V5_DIRECTIONAL_IMMUTABLE');
+            END;
+            CREATE TRIGGER IF NOT EXISTS v5_direction_no_delete
+                BEFORE DELETE ON v5_directional_evidence BEGIN
+                    SELECT RAISE(ABORT,'V5_DIRECTIONAL_IMMUTABLE');
+            END;
             CREATE TRIGGER IF NOT EXISTS v5_finality_no_update
                 BEFORE UPDATE ON v5_finality_checks BEGIN
                     SELECT RAISE(ABORT,'V5_FINALITY_IMMUTABLE');
@@ -186,6 +205,51 @@ class FinalityQuarantine:
             SELECT reason FROM v5_quarantine_events
             WHERE symbol=? AND event_open_ms=? ORDER BY reason
         """, (symbol,event_open_ms)))
+
+    def finalize_directional_observations(
+        self, symbols: Sequence[str], event_open_ms: int,
+        *, min_valid: int = 10, min_fraction: float = 0.8,
+    ) -> dict:
+        """Write one immutable LONG and SHORT *observation* state per coin.
+
+        This is NOT an executable or training label. Must have all three
+        independent REST stages for every coin; partial evidence HOLD.
+        BTC failure or subthreshold cohort makes *all* directions UNSCORABLE.
+        """
+        status = self.evidence_status(
+            symbols,event_open_ms,min_valid=min_valid,min_fraction=min_fraction,
+        )
+        for symbol in symbols:
+            count = self.db.execute("""
+                SELECT COUNT(*) FROM v5_finality_checks
+                WHERE symbol=? AND event_open_ms=?
+            """, (symbol,event_open_ms)).fetchone()[0]
+            if count != len(STAGES):
+                raise ValueError("V5_FINALITY_EVENT_NOT_MATURED")
+        accepted = (
+            set(status["verified_symbols"])
+            if status["evidence_cohort_eligible_for_future_review"] else set()
+        )
+        with self.db:
+            for symbol in symbols:
+                issues = list(self.reasons(symbol,event_open_ms))
+                if not status["btc_verified"]:
+                    issues.append("BTC_CONTEXT_UNVERIFIED")
+                if not status["evidence_cohort_eligible_for_future_review"]:
+                    issues.append("COHORT_COVERAGE_INSUFFICIENT")
+                state = ("VERIFIED_OBSERVE_ONLY"
+                         if symbol in accepted else "UNSCORABLE")
+                for direction in ("LONG","SHORT"):
+                    self.db.execute("""
+                        INSERT INTO v5_directional_evidence
+                        (symbol,event_open_ms,direction,evidence_state,
+                         reasons_json,policy) VALUES (?,?,?,?,?,?)
+                    """, (symbol,event_open_ms,direction,state,
+                          json.dumps(sorted(set(issues))),POLICY))
+        return {
+            **status, "recorded_directional_observations": len(symbols)*2,
+            "research_ready": False, "order_authority": "NONE",
+        }
 
     def evidence_status(self, symbols: Sequence[str], event_open_ms: int,
                         *, min_valid: int = 10,
