@@ -1,15 +1,17 @@
 # NBOT V5 — Market Intelligence, Strategy Alignment and Learning Roadmap
 
-**Document version:** 1.0  
+**Document version:** 1.1  
 **Date:** 2026-10-13 (IST)  
 **Owner:** NBOT project owner  
 **Repository:** samqju/Nbot  
 **Publication:** New document on GitHub main; a separate local copy in Downloads root  
 **Forensic reference:** V4 source at commit b1a3c4a8d2a82c994669df7adb0d345e0415ffbf  
-**Status:** **V5 ARCHITECTURE PROPOSED / DESIGN WORK AUTHORIZED; implementation, migration, services, trading and deployment NOT authorized by this document.**  
+**Status:** **V5 TARGET ARCHITECTURE REFINED BY OWNER DISCUSSION; documentation/design only. No implementation, migration, service or trading deployment authorized.**  
 **Related governance:** Existing V4-R2 F0 roadmap controls evidence preservation and changes to running systems. This V5 document is the architecture-design successor, **not** an automatic amendment to F0 operations.
 
 > **Project north star:** Understand BTC and broader market conditions; classify each coin's latest price action and market structure; detect applicable strategies; learn whether a given strategy and LONG/SHORT direction works under those conditions; evaluate after-cost return and uncertainty; **trade selectively or abstain**. Filling a trading quota is never an objective.
+
+> **Authoritative v1.1 lifecycle amendment:** §§17–26 define the owner's chosen two-VPS responsibilities, ~50-coin research universe, 2,000-matured training checkpoints, paper Champion/Challenger competition on one shared market period, and future three-portfolio live mirror. They supersede any earlier simplified lifecycle or paper-only service diagrams, **not** the F0 safety gates.
 
 ---
 
@@ -227,7 +229,7 @@ A positive average in an in-sample retrospective is **not** a pass. Require robu
 
 **Risk requirements:** per-position risk caps; global drawdown kill-switch; daily exposure budget; adverse BTC shock protection only if test-qualified; reduce/abstain on missing BTC feed or stale quotes; fail closed on desync and reconnect; funding/fee changes; extreme spread/illiquidity; order/position reconciliation if real execution is ever separately authorized.
 
-**No real orders in V5 roadmap phases.** A future execution proposal requires a new explicit approval scope, full security/operational review and independent evidence.
+**No real orders in V5 development or paper-evaluation phases.** A distinct future live architecture (§21) is documented for design continuity only; it requires independent execution-security review, risk controls and explicit owner authorization, none of which is provided here.
 
 ## 9. New failure-hunt: investigate beyond selection, ordered by impact
 
@@ -477,3 +479,226 @@ For every implementation plan, link source/test/evidence under an immutable expe
 ### Change log
 
 - **v1.0 — 2026-10-13:** New V5 regime-aware candidate intelligence and BTC-conditioned strategy-learning architecture; reconciled V4 empirical failures and limitations; established phased acceptance gates, F0 dependency, abstain-first policy, learning/regression controls, no-live-authority boundary; published separately from existing V4-R2/F0 roadmap.
+- **v1.1 — 2026-10-13:** Added owner-selected two-VPS lifecycle and 2,000-matured research training checkpoints; initial paper baseline Champion; dual independent paper portfolios in one Execution engine; same-forward-market 100-trade review checkpoint, fairness and promotion; and explicitly future three-portfolio live/paper-mirror model with distinct order authority and safety approvals. See §§17–26.
+
+
+---
+
+## 17. V5-ADR-010 — Owner-selected two-VPS lifecycle and model competition (v1.1 authoritative amendment)
+
+**Design status on 2026-10-13:** The owner and assistant agreed on the intended V5 design in discussion. This section **supersedes earlier conceptual descriptions of the model lifecycle, portfolio architecture and promotion workflow** wherever they differ; it does **not** supersede older forensic evidence, F0 permissions or G0–G10 safeguards. It is a **design decision**, not a functioning deployment or a claim of positive expectancy.
+
+**Simplified loop:** **Observe → collect 2,000 trustworthy matured virtual research outcomes → train → validate → designate the first eligible paper-only baseline Champion → continue observing → train the next frozen Challenger after 2,000 further matured outcomes → compare Champion and Challenger on a common forward period with independent paper portfolios → retain, reject or recommend promotion → repeat.**
+
+**Infrastructure separation:**
+
+| Role | Observation/Learning VPS (“brain”) | Execution VPS (“executor”) |
+|---|---|---|
+| Public BTC+market context, coin-regime and 24 pattern detection | Owns source acquisition, canonical features, complete eligible candidate universe | May independently receive public market data solely to validate quotes and simulate/execute fills |
+| Virtual research and full eligible-candidate counterfactual outcomes | Owns research ledger and label maturation | Does **not** train or invent research counterfactual labels |
+| Training, validation, model artifacts, frozen Champion/Challenger inference | Owns models, eligibility/ranking, per-model recommendations, offline challenger training and outcome review | Does not retrain, choose winning model, or override model scores |
+| Paper trade placement, risk and accounting | Sends version-locked paper recommendations, receives evidence and portfolio outcomes | Owns safety validation, paper entry/exit simulation, two separate paper books, trade outcomes and idempotence |
+| Promotion | Evaluates comparable forward results, recommends retain/replace/suspend with evidence | Applies approved **paper model routing** only after authenticated, explicit authorization; no model self-promotion |
+| Future live | Still produces only controlled, versioned Champion proposals; no Binance private order credentials | Only permitted service that could ever hold separately approved live order authority; separate real-order safety gate |
+
+The Observation VPS **continues research while the Champion trades in paper mode**. Training must be offline/bounded and may not starve live market-data ingestion. Paper execution stays on the Execution VPS; virtual learning experiments stay on Observation. Both servers must safely tolerate the other being unavailable; an outage causes **fail-closed abstention**, not fallback to stale proposals.
+
+**Keep the simple mental model:** Observation chooses *what might be worth trading*; Execution independently decides *whether it is safe and executable* and records what happened. The Champion/Challenger comparison is based on the Execution VPS's separately recorded outcomes, not predictions manufactured by the Observation VPS.
+
+## 18. V5-ADR-011 — Top-50 observation universe and initial research cycle
+
+### 18.1 Dynamic observation universe
+
+- Observe **approximately 50 eligible, liquid coins** selected using point-in-time liquidity/volume/spread/market-quality requirements, **plus mandatory BTC market context**. Explicitly decide and version whether BTC itself consumes one of the 50 candidate slots; do not silently change the universe denominator.
+- The 50-coin target is an **observation and eligible-candidate budget**, **not** 50 automatic paper trades or 50 mandatory open research positions. Document additions/removals and point-in-time membership; do not select tomorrow's winners using tomorrow's volume.
+- Every completed five-minute event evaluates BTC conditions, breadth, each coin's market structure, possible LONG and SHORT hypothesis, matched strategies and estimated transaction costs.
+- Research may **observe, classify, or virtually simulate** valid setup/direction candidates whether or not the eventual Champion would trade them. Preserve the full eligible denominator and separate nontrade observations from fully matured virtual trades. Do not claim 2,000 independent samples from 2,000 correlated symbol/direction/strategy variants.
+
+### 18.2 2,000-outcome training checkpoint — explicit proposed policy
+
+- **First training checkpoint:** collect **2,000 fully matured, source-verifiable virtual research outcomes** with immutable entry/risk/exit and modeled costs. This is a proposed generation threshold **not** a proof of sample sufficiency.
+- Only **SCORED, chronologically complete** outcomes count toward 2,000. **PENDING, UNRESOLVED, censored and unverifiable** outcomes remain in denominators and must not be invented as wins or losses.
+- Duplicate tags on one trade count as **one** outcome. Multiple simultaneous symbol/sides can be informative but are dependent; retain event IDs and BTC regime blocks for effective-sample-size checks.
+- Declare **minimum independent market-event count, time-span, regime diversity and per-side coverage** in the experiment protocol before any first training sample is evaluated. If 2,000 rows arrive from effectively one regime, **HOLD**, accumulate more diverse evidence.
+- Train with all **allowed prior matured historical data** using an immutable cutoff; after each additional **2,000 newly matured outcomes** propose the next Challenger, not necessarily train solely on the newest 2,000. Never train with competition-period labels while evaluating that competition.
+- Every label needs the decision-time BTC/coin regime, side, named pattern tags, quote/cost/risk geometry, fill-evidence grade, and exact exit policy. The learning goal is **conditional after-cost economic performance and uncertainty**, not price memorization or a pure rank score.
+- If the universe or historical labels cannot be recovered reliably, **HOLD training**; do not substitute a selected-only historical sample for the complete eligible population without explicitly restricting claims.
+
+### 18.3 First model and first paper Champion
+
+- A first trained model is a **Challenger candidate**, not automatically a worthwhile Champion because a counter passed 2,000.
+- It must pass schema/source gates, purged chronological validation, positive-net confidence criteria *or an explicitly approved benchmark-only exploratory exception*, safety tests and no-trade behavior. Specify the quantitative rule before looking at its validation outcomes.
+- If accepted, name it **baseline Champion 1** with **paper-only** routing to the Execution VPS. It can abstain from every event. **“Champion” means incumbent benchmark, not validated profitable or live-authorized system.**
+- If initial validation fails, retain **NO_MODEL / NO_TRADE** and gather more research; do not force the first model into paper execution.
+- Freeze exact model SHA, training-data cutoff, feature/setup/regime versions, cost method, decision thresholds and paper risk limits before paper activation.
+
+## 19. V5-ADR-012 — Two paper portfolios on one Execution VPS during competitions
+
+**Recommended default:** one audited paper-execution service capable of maintaining **two logically and financially isolated portfolio books**. Separate processes may be justified by reliability tests, but duplicating the entire trading/market-feed stack is not required merely to keep two paper books.
+
+- **Portfolio A:** Champion Paper.
+- **Portfolio B:** Challenger Paper.
+- Both receive model-specific recommendations independently computed on Observation from the **same frozen eligible event stream** and identical point-in-time BTC/coin features.
+- Each may select different coins, opposite or matching directions, different strategies, stop/exit levels, or **ABSTAIN**. Neither book blocks an identical symbol in the other; same-book position/risk constraints still apply.
+- Both books use the **same starting equity, comparable risk-normalization, fees/slippage/funding model, fresh quote validity rules, position limits, and common market timeline**; their actual exposures and number of trades may differ because selection differs.
+- Execution separately validates **each** proposal's freshness, idempotence, side, initial risk, cost/risk, symbol availability and global book limits. Reject reasons are immutable and forwarded with outcomes.
+- Book A and B cannot transfer balance, share open positions or fund losses, and must not share portfolio-specific fill/accounting state. Deterministic path/cost simulations can reuse market data while preserving book isolation.
+- Paper fill evidence is labeled **simulated**; no exchange execution or actual PnL is claimed.
+
+**Service API (versioned, illustrative):** Every recommendation carries \`experiment_id\`, \`contest_id\` (nullable for baseline), \`model_id\` and SHA, \`portfolio_id\`, \`event_id\`, \`as_of_ms\`, \`expires_at_ms\`, \`symbol\`, \`side\`, \`strategy_tag_ids\`, \`btc_regime_version\`, \`coin_structure_version\`, \`expected_after_cost_net_r\`, confidence, \`entry_quote_reference\`, stop/risk envelope, execution-policy version, sequence number and unique idempotency key. **Paper abstentions and risk vetoes have their own records.** Use authenticated mTLS/signed channels or equivalent with replay prevention; never allow requests to grant a higher execution authority than their authenticated portfolio.
+
+## 20. V5-ADR-013 — Fair Champion–Challenger 100-trade checkpoint
+
+**Owner's intended benchmark:** approximately **100 paper trades per model** during a Champion-vs-Challenger competition. **Refinement for fairness:** Do not independently end the Champion's study at its 100th completed trade and the Challenger's at some other market date. Both must be compared under one frozen, **shared forward UTC event/time period**.
+
+### 20.1 Competition initialization
+
+1. Select the next **already independently validated** Challenger and freeze its model, features, strategy/risk policy and training cutoff. Keep the incumbent Champion unchanged.
+2. Establish identical paper account starting equity/risk budget and **common start event**. Record fixed fee/slip/funding/latency assumptions, position and concurrency rules, contest rule version, maximum acceptable drawdown and review criteria.
+3. Start both books simultaneously. At each new event, Observation independently scores the exact same eligible universe with each frozen model and emits zero or more recommendations; Execution separately evaluates each book.
+4. Account for closed positions, rejected/abstained opportunities, equity curve, costs, drawdown, risk exposure and portfolio time-in-market. Unresolved outcomes are not fabricated.
+5. **Proposed initial checkpoint:** at least **100 verifiably settled paper trades per model**, **plus minimum shared evaluation-event/time exposure** and enough independent BTC/market regimes as predeclared. The exact lower confidence bound, minimum duration and maximum contest horizon must be frozen **before** the competition starts.
+6. If either model abstains so often that it has fewer than 100 trades, **do not force trades**. Extend only within the prespecified maximum observation window, then report an **inconclusive / low-activity / abstention-sensitive** outcome; there is no automatic replacement.
+7. Both continue to the **same common endpoint**, with prescribed disposition for positions still open. Do not silently give one model more favorable post-cutoff price data.
+8. Do not let competition profits/labels train or tune **either** frozen competitor while its contest is still running; later challengers get a separate versioned training cutoff.
+
+### 20.2 Evaluation and promotion
+
+Compare **realized after-cost net return on the same initial capital and window**, profit factor/expectancy only when statistically meaningful, max drawdown, volatility/drawdown-adjusted risk, tail losses, capital utilization, correlated BTC exposure, number of closed trades, percentage of abstentions, quote quality, rejection rate and uncertainty by independent market-event blocks.
+
+| Evidence result | Policy |
+|---|---|
+| Challenger convincingly outperforms incumbent under predeclared after-cost/risk/uncertainty gates, and candidate quality + operational integrity pass | **RECOMMEND paper Champion replacement**; await separate explicit owner approval |
+| Champion better | **RETAIN** incumbent; retire/archive Challenger |
+| Both lose, confidence intervals overlap substantially, missingness excessive, or data integrity questionable | **HOLD / REVIEW / SUSPEND paper entries as needed**; never promote “least bad” as if profitable |
+| Challenger earns more gross profit by extreme leverage, concentration, risk/fee assumption or unfairly different time exposure | **REJECT or HOLD** according to predeclared risk policy |
+| Either side has market-feed gap, model-version drift, duplicated actions, unscorable exit or mismatched UTC chronology | **FAIL CLOSED**; stop that evaluation cohort, label as unscorable and investigate |
+
+**Why shared window matters:** Models may choose **different symbols, directions, setup strategies and trade frequencies**, so same-timestamp opportunity exposure is necessary. A “first 100 fills each” comparison without a common window would select different BTC regimes and bias the outcome. The first 100 trades are **a review milestone, not a guaranteed adequate statistical sample**.
+
+**Promotion governance:** Observation generates a signed evidence packet and *proposal*, but cannot secretly replace an Execution portfolio's model mapping. Human owner approval and a reviewed atomic paper-routing cutover with rollback are mandatory. A winning paper Challenger never acquires Binance real-order permission automatically.
+
+## 21. V5-ADR-014 — Future LIVE phase: three independent portfolios
+
+**This is a future design requirement only.** Live Binance trading remains **NOT AUTHORIZED**, and nothing in this roadmap requests live-API access, secret keys, transfers, leverage, or production order capability.
+
+When and only when independent prospective paper evidence, security, exchange execution controls and owner authorization eventually permit real-money Champion trading, keep **three** independently accounted portfolios:
+
+| Portfolio | Model | Authority | Purpose |
+|---|---|---|---|
+| **Champion Live** | Only explicitly owner-approved Champion | Actual Binance orders, under a separate least-privilege live execution engine and kill switches | Measure actual fills/fees/funding/slippage, balance, order outcomes and risk |
+| **Champion Paper Mirror** | Identical frozen Champion proposals and timestamps | Paper simulation only, **no** exchange orders | Paired “same signal, live vs paper” execution-quality counterfactual |
+| **Challenger Paper** | Frozen Challenger | Paper simulation only, **no** exchange orders | Model/strategy comparison under the **same paper-account assumptions** as Champion Paper |
+
+**Three essential comparisons:**
+
+1. **Champion Live vs Champion Paper Mirror:** Execution fidelity, e.g., bid/ask slip, maker/taker fee, funding, latency, partial fills, rejections, realized net, adverse selection; no interpretation that paper can reproduce every live fill. The paper mirror should record the same Champion decision requests and timestamps, including live refusal/no-fill as distinct outcomes, to prevent survivor-only “filled trade” comparisons.
+2. **Champion Paper vs Challenger Paper:** **Primary model promotion test**, because both are controlled simulations on the same future events, same modeled execution standard and comparable capital. They may trade different coins/sides and have different turnover.
+3. **Champion Live vs Challenger Paper:** An informative **operational** comparison, **not** the sole causal basis to replace models. Actual live costs differ and Challenger's live fill behavior is unobserved; require an appropriately conservative estimate of deployment costs.
+
+**Safety and approval:** During a contest the existing live Champion stays frozen. The Challenger never has live order permission or secrets. Even if Challenger wins the paper competition, **paper-promotion and live-authority change are two separate approvals** with human sign-off, exchange position/order reconciliation, risk-budget check, rollback and possible small-scope live canary. A live Champion losing money can be suspended by the independently authorized safety guardian **without needing a winning Challenger**.
+
+**Security:** Only Execution may hold future Binance credentials. Observation's proposals cannot request a “live” escalation. Live and paper portfolios have distinct permissions, ledger IDs, balances and audit trails; never let a paper-book software bug cause a live order or share the same irreversible order submission method.
+
+## 22. V5-ADR-015 — Minimal coherent lifecycle state machine
+
+Keep the public lifecycle understandable; retain safety complexity under explicit states.
+
+~~~text
+OBSERVE_AND_RESEARCH
+  -> 2000_MATURED_VALID_LABELS (with effective-sample/regime-coverage review)
+  -> TRAIN_CANDIDATE
+  -> LEAKAGE_FREE_VALIDATE
+  -> [REJECT and keep researching | APPROVE_INITIAL_PAPER_BASELINE]
+  -> CHAMPION_PAPER_ACTIVE (can ABSTAIN)
+  -> +2000_NEW_MATURED_LABELS
+  -> TRAIN_AND_FREEZE_CHALLENGER
+  -> INDEPENDENT_VALIDATION
+  -> [REJECT | START_SHARED_FORWARD_CONTEST]
+  -> CHAMPION_PAPER + CHALLENGER_PAPER (same market period)
+  -> >=100_VERIFIED_SETTLED_TRADES_EACH + coverage/window gate
+  -> REVIEW [RETAIN | PAPER_PROMOTE_WITH_OWNER_APPROVAL | HOLD/SUSPEND]
+  -> RETURN_TO_OBSERVE_AND_RESEARCH
+
+FUTURE_LIVE_GATE (explicit distinct approval, never implicit)
+  -> CHAMPION_LIVE + CHAMPION_PAPER_MIRROR + CHALLENGER_PAPER
+  -> PAPER_VS_PAPER model review; LIVE_VS_ITS_PAPER execution diagnostics
+  -> LIVE_CHAMPION_SWAP only after separate authority/risk/rollback approval
+~~~
+
+**Allowed abstention at EVERY decision step.** The “2,000” and “100” are **design checkpoints** subject to independently defined coverage/uncertainty and max-duration criteria, not promises of profitability or automatic permission to deploy.
+
+## 23. V5-ADR-016 — Service contracts, outages, accounting and source of truth
+
+### 23.1 Message ownership
+
+- **Observation → Execution:** signed versioned recommendation batches per \`model_id\` and portfolio, including explicit ABSTAIN; immutable event source reference, expiry and idempotency.
+- **Execution → Observation:** immutable acceptance/rejection/paper-fill, paper stop/exit/unresolved and independent portfolio/equity reports. Later, if live permission ever exists, actual exchange-confirmed order/fill/cancel and cash/funding accounting are separate evidence channels.
+- **Observation review:** can propose freeze/retain/promote; cannot rewrite Execution accounting or grant itself credentials.
+- **Owner control plane:** explicit approval and logging for each deployment, cold-backup/resume, portfolio promotion, and future real-money authority.
+
+### 23.2 Critical failure responses
+
+- **Observation unavailable:** Execution must reject stale pending recommendations and follow a documented conservative open-position management/timeout policy; no fabricated new picks.
+- **Execution unavailable:** Observation records **recommendation attempted / delivery unknown** separately from accepted actions. Never backfill simulated fills and call them delivered paper orders.
+- **Duplicate/reordered deliveries or clock skew:** sequence, idempotency, expiry, event identity and signed model version fail closed.
+- **Gap/stale BTC feed:** no silently substituted BTC-zero features; tag market context unknown and abstain until valid again.
+- **Research 2,000 counter ambiguous:** count only strictly matured, unique, economically labeled outcomes; avoid duplicated tags, overlapping same-event pseudo-independent observations and unexpected data cutoffs.
+- **Contest partial outages:** hold or restart under frozen prespecified policy; always disclose different valid event counts and effective sample size.
+- **Capital/accounting differences:** normalize account equity/risk on the same time baseline, not simply mean R of a different trade count. R-based diagnostics remain supplementary.
+- **Paper/live mirror mismatch:** report paired intent, simulated entry, actual exchange ack, partial/no fill, actual fees/funding and liquidation/stop behavior without imputing hypothetical exchange fills.
+
+### 23.3 Model artifact & promotion records
+
+Store complete artifact hash, training cutoff, immutable candidate-population/feature/pattern/BTC regime versions, blinded holdout ID, contest population/start/end timestamps, both paper portfolio risk settings, realized equity series, evaluation/uncertainty report, owner authorization and rollback target. Version changes require a new contest; never edit a competitor in place.
+
+## 24. Implementation milestones amended by this v1.1 decision
+
+The original **G0–G10** roadmap remains the safety/qualification backbone. The following concrete acceptance conditions are **added**, not substituted:
+
+| Existing phase | V1.1 design deliverable | Acceptance before proceeding |
+|---|---|---|
+| G0 — scope | Signed ADR-010–016; role and data-flow diagram; initial paper-only authority matrix | User approves documentation scope; no live action |
+| G1 — evidence integrity | F0 independent backup/restore + feed and restart fail-closed behavior | Other F0 workstream certifies; **no presumed completed backup or permission to restart** |
+| G2 — full candidate universe | Approximate 50-coin + BTC eligibility, two-sided observed denominator, virtual research labeling | Chronological valid labels, full/censored case accounting |
+| G3/G4 — BTC/pattern + cost labels | Regime-conditional structure, side, 24 detectors, BTC relative availability test and costs | Positive/synthetic cases, all timestamps known, robust absent-data states |
+| G5 — baseline science | 2,000 verified outcome threshold, effective-sample and coverage contract, no-trade economic baseline | Experiment design frozen before validation |
+| G6 — models | Initial baseline Champion gate; next frozen Challenger after 2,000 **additional** matured labels | Purged untouched validation and model/version immutability |
+| G7 — paper execution | One engine, **two isolated book ledgers** with per-model recommendation authentication | Same market ticks, independent balances and risk, zero-trade veto |
+| G8 — forward comparison | Both paper books share start/end window and proposed >=100 settled trades each when possible | Predeclared max duration, independent-event coverage, event-blocked uncertainty and fair drawdown/equity comparison |
+| G9 — promotion | Owner-signed retain/reject/paper replace; explicit live-stage gating | No autonomous live authority; rollback tested |
+| G10 — continued learning | Repeatable newly matured evidence and challenger formation | No leakage from running contest, no automatic model activation |
+| **FUTURE, separate live gate** | Champion Live + Champion Paper Mirror + Challenger Paper | Owner live permission and independently verified exchange/risk controls, separate from any paper victory |
+
+**Revised immediate V5 design build order:** (1) freeze two-VPS architecture, complete candidate-event contract and portfolio IDs; (2) confirm F0 evidence backup/integrity status with the other chat, without touching its files; (3) specify BTC/50-coin/regime and virtual research labels; (4) design 2,000-matured learning contract and leak-free training cutoffs; (5) specify single dual-book paper executor and idempotent recommendation/outcome protocol; (6) predeclare fair shared-forward 100-trade checkpoint, max window and promotion; (7) design future three-portfolio live mirror **without enabling live functions**.
+
+## 25. Acceptance tests added for lifecycle and future live mode
+
+- [ ] 50 monitored coins do **not** automatically cause 50 paper positions; even with hundreds of matches, ABSTAIN is respected.
+- [ ] Different BTC regimes and coin-pattern/side tags are preserved on both **chosen and unchosen** eligible candidates.
+- [ ] Two correlated rule tags on one virtual trade do not count as two of 2,000 outcomes.
+- [ ] Unresolved/restart-gap/missing quote outcomes do not count toward the 2,000 maturations.
+- [ ] Insufficient regime/event diversity after 2,000 labels holds training eligibility without fabricating independent samples.
+- [ ] First model fails independent validation => no forced baseline Champion trade.
+- [ ] Additional 2,000 *newly matured* labels triggers only Challenger **eligibility**, not automatic admission or promotion.
+- [ ] Champion and Challenger choose different symbol/direction/strategy on same 5-minute event; both books settle independently.
+- [ ] Champion and Challenger both choose same coin+side; duplicate orders are prevented **within each book**, not incorrectly blocked across books.
+- [ ] Champion abstains / Challenger trades: shared common-window risk/equity statistics remain valid.
+- [ ] One competitor cannot get a more favorable event period just by completing 100 trades first.
+- [ ] A 100-trade checkpoint with overlapping or inconclusive evidence => HOLD, not automatic promotion.
+- [ ] Only one paper-execution service is needed for independent dual-book accounting; isolated fault in book B does not corrupt A or real orders.
+- [ ] Stale, duplicate, late, altered-model or unauthorized portfolio recommendation fails closed.
+- [ ] Observational service outage does not produce stale/double paper entries.
+- [ ] Model competition does not use its own outcome labels to retrain either frozen competitor.
+- [ ] Both portfolios lose to NO-TRADE => no presumption the less-negative one is profitable.
+- [ ] Live mode absent in default V5 build; public market research never requires Binance order credentials.
+- [ ] Future Champion Live and Champion Paper Mirror receive **same frozen Champion intent** and log paired decision/fill/no-fill.
+- [ ] Future Challenger Paper has zero permission to place a real Binance order.
+- [ ] Winning paper Challenger **cannot automatically replace live Champion**.
+- [ ] Rollback, reconciliation and independent live shutdown remain controlled by Execution and explicitly authorized owner gates.
+- [ ] GitHub documentation update cannot start any VPS systemd service, resume timers or modify F0 backup state.
+
+## 26. V1.1 change record and next-chat authority
+
+- **2026-10-13 / v1.1:** Owner discussion accepted the conceptual two-VPS separation: Observation owns market intelligence, 24 pattern detections, about 50 coin observation, virtual research, 2,000-matured training cohorts, inference and champion/challenger model development; Execution owns one two-book paper engine and realistic fills/accounting; Observation evaluates unbiased common-forward competitions with a proposed 100-trade-per-model review checkpoint; owner's explicit approval controls paper promotion. A future, separately approved live architecture has **Champion Live + Champion Paper Mirror + Challenger Paper** with paper-vs-paper for model selection and live-vs-paper for execution diagnostics. No F0 operational permission, live authority, profitability evidence, source merge or deployment follows from this documentation.
+- **Next chat starting point:** Treat sections **17–26** as the authoritative lifecycle/portfolio refinement, together with foundational evidence, G0–G10 and no-order rules in §§1–16. Start by reviewing source and drafting a **minimal executable design/specification and acceptance tests**, but **do not start coding, touch services, create VPS backups, promote a model or grant real-money authority** until the owner grants the specific scoped permission and independent F0 gates permit it.
