@@ -1,6 +1,6 @@
 # NBOT V5 — Market Intelligence, Strategy Alignment and Learning Roadmap
 
-**Document version:** 1.8  
+**Document version:** 1.9  
 **Date:** 2026-10-13 (IST)  
 **Owner:** NBOT project owner  
 **Repository:** samqju/Nbot  
@@ -827,3 +827,22 @@ The original **G0–G10** roadmap remains the safety/qualification backbone. The
 **Status:** Design and live public-data connectivity PASS for specified scopes; V5 VPS sandbox checkout and execution **NOT YET PERFORMED** at this entry; every old NBOT service remains intentionally stopped until owner authorizes a specifically named new service. No automatic startup or service migration.
 
 **Change record — v1.8 / 2026-10-13:** Recorded owner-provided live 12/12 candle test and staged isolated V5 one-shot smoke plan. No VPS changes made by assistant.
+
+
+---
+
+## 34. V1.9 Primary WSS architecture and secondary REST recovery — offline PASS, 2026-10-13
+
+**Owner decision:** Primary continuous Observation/Learning VPS market ingestion will be Binance USDⓈ-M Futures **WebSocket streams (WSS)**, not frequent REST polling. REST is an explicitly bounded secondary path for initial symbol-universe eligibility/snapshot, initial 96 closed-five-minute candles per coin, occasional independent source reconciliation, and approved historical gap recovery. REST must never substitute a reconstructed executable spread, quote freshness, missing trades, or presumed fills. On unresolved stream continuity, missing quote or trade source, or uncertain market history the bot will **abstain** and retain observable UNSCORABLE research states. No existing V4 daemon is authorized for restart; main branch and Execution VPS unchanged.
+
+**Verified exchange routing (official Binance documentation last modified 2026-10-13):** USD-M market WSS is `wss://fstream.binance.com/market/stream?streams=...` for `<symbol>@aggTrade` and `<symbol>@kline_5m`; independent public WSS is `wss://fstream.binance.com/public/stream?streams=...` for `<symbol>@bookTicker`. These are different routed sockets, not one legacy unrouted endpoint; private/user streams are excluded from Observation. Supported server behavior includes 24-hour connection rotation, ping/pong and inbound message/connection limits; the production client must implement tested reconnect, backoff, bounded queues, per-socket liveness and explicit validated new cohorts. Source: `https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/websocket-market-streams/Connect` and `.../Important-WebSocket-Change-Notice` (both checked October 13).
+
+**New isolated files:** `nbot/v5/ws_contract.py` encodes canonical public/market combined subscription URLs for the eligible 1–50 symbols plus BTCUSDT context. It has a strictly bounded event-envelope/parser contract for public bookTicker, aggTrade and 5m kline states, with timestamp, symbol, nonfinite price/volume, crossed-book and kline-finality refusal. `FeedStatus` tracks independent market/public connectivity, quotes, trades, candle cursors, sticky missing-trade IDs, and leaves prospective cohort validity **false until separately verified by a future module**; no automatic recovery or trading authority is implied by connection alone. A connect/disconnect invalidates the affected feed; future claims of full continuity require additional engineering. `nbot/v5/ws_probe.py` is a bounded **manual only**, 8–30 second, 1–3 coin public WSS route smoke script; connects to the two public-only endpoints, validates incoming frames, counts quote/trade/kline evidence, reports PASS/HOLD with refusal reasons, and writes no databases. It requires the existing pinned Python `websockets` dependency present on VPS, but does not install it. No daemon has been created or started.
+
+**Evidence:** GitHub Actions isolated test run `38407891203` `https://github.com/samqju/Nbot/actions/runs/38407891203` on commit `dbcad49225a24f4f88126dc7c3bedb0a1537c33d` completed SUCCESS, 48/48 Python tests: previous 36 and 12 new WSS validation tests (route splitting, complete stream names, both-source gates, BTC inclusion, invalid/late frame handling, completed-candle-only semantics, sticky trade-gap rejection, reconnect/cohort invalidation, and bounded manual-probe mock). The same CI validated WSS module code and simulated probe only; **no live WSS network test yet**.
+
+**Current gate:** Existing owner-run 12/12 live REST diagnostic PASS and actual V5 one-shot REST `24 observed / 0 unscorable / 76 pattern matches / 0 trades` are independently owner-reported. New WSS framing is tested offline only. This research observation is not proof of correct live source continuity, profitable setups, settled trades or model-training milestones. Neither WSS nor REST is currently a running continuous V5 service.
+
+**Next user-controlled sandbox stage:** Update only `/home/ubuntu/nbot_v5_sandbox` to an exact pinned V5 commit from the clean GitHub branch after verifying no local changes and all V4 services remain inactive; rerun the full 48-test suite; run the bounded `python3 -m nbot.v5.ws_probe --symbols BTCUSDT,ETHUSDT --seconds 12` against real routed public/market WSS. It must write no DB and have no order authority. Collect stdout and classify any missing dependency, WSS error, malformed frame or unhealthy route as HOLD, then repair offline. Do **not** start V4 or any V5 systemd service. Subsequent milestone: low-resource streaming runtime with feed-generation continuity, message loss detection, REST-assisted historical candle reconciliation, durable event ledger and restart safety before unattended service start.
+
+**Change record — v1.9 / 2026-10-13:** Owner's WSS-primary/REST-secondary choice explicitly frozen; correct October 2026 Binance market/public endpoint routing incorporated; 48 synthetic tests passed; next live PuTTY WSS validation authorized only as a bounded manual sandbox check.
