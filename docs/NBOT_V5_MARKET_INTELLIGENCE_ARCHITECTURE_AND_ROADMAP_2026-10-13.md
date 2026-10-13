@@ -1,6 +1,6 @@
 # NBOT V5 — Market Intelligence, Strategy Alignment and Learning Roadmap
 
-**Document version:** 1.5  
+**Document version:** 1.6  
 **Date:** 2026-10-13 (IST)  
 **Owner:** NBOT project owner  
 **Repository:** samqju/Nbot  
@@ -774,3 +774,22 @@ The original **G0–G10** roadmap remains the safety/qualification backbone. The
 **Laptop sync status:** GitHub roadmap v1.5 is authoritative. Desktop Commander listed Sameer-Laptop **Offline** at the time of update, so synchronization of this newest roadmap to Downloads could not be verified and must be completed when that device reconnects. The laptop F: verified historical archive was not accessed or modified. No owner action required on PuTTY for this offline code gate.
 
 **Change record — v1.5 / 2026-10-13:** Complete 24 original pattern rule integration with real synthetic candle computations and separate BTC context, observe-only safety tests 22/22 PASS; record explicit limitations and pending real-feed reliability gate.
+
+
+---
+
+## 31. V1.6 Binance public read-only market snapshot reader — MOCKED CI PASS, 2026-10-13
+
+**Approved clean branch only:** `v5-clean-restart-20261013`; neither GitHub main nor running VPS source changed. Added `nbot/v5/public_market.py` and `tests/test_v5_public_market.py`; extended `.github/workflows/v5-isolated-observation.yml` to run the new tests. Last independently inspected CI commit `dd6b9cdef349175d882a9c96730299606cf73ebf`. GitHub Actions `https://github.com/samqju/Nbot/actions/runs/38405515406` **SUCCESS: 36 of 36 Python 3.12 tests PASS**, representing 8 candidate contract + 14 pattern adapter + 14 public-reader tests. **These tests use mocked Binance responses and perform no live networking**. They prove behavior under tested fixtures, not external connectivity or production correctness.
+
+**Public read-only API:** `https://fapi.binance.com`, standard-library HTTPS GET, hard-allowed routes only `/fapi/v1/time`, `/fapi/v1/exchangeInfo`, `/fapi/v1/ticker/24hr` and `/fapi/v1/klines`; no API keys, private endpoints, order modules, websockets, database writes or background service. Fixed per-request timeout, finite bounded response size, errors fail conservatively without retries. Official market-data API reference: `https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data` (endpoints and weights subject to Binance changes).
+
+**One-shot snapshot contract:** A completed 5-minute market event is derived from Binance's public time response, never the currently forming candle. Market eligibility is an event-observed **current** snapshot of Binance USDⓈ-M USDT-quoted/USDT-margined `TRADING` `PERPETUAL` symbols, sorted deterministically by latest retrieved 24-hour `quoteVolume`; request up to 50 eligible symbols (initial manual diagnostic defaults to 12). BTCUSDT is always retrieved separately for context even if outside the selected top-N. Each symbol requests exactly 96 previous 5-minute candles bounded explicitly by `startTime` and `endTime`; open time, close time, OHLCV, contiguity, completeness and time-closure are validated. Strict Binance-time versus machine-clock checks and refusal if the probe crosses into the next event prevent stale decisions. Incomplete symbol data stays visible as UNSCORABLE; missing BTC makes all outputs UNSCORABLE. All outputs are summary-only, `OBSERVATION_ONLY_NO_ORDERS`, `order_authority=NONE`, paper trades 0.
+
+**Limitations:** 24-hour volume is a liquid-market proxy, not a final depth/spread/funding safety policy; observed eligibility is NOT retrospectively claimed for earlier market events. Real-time quote/trade source health (F0), as-of eligibility traceability, bounded retries/backoff, late-event coverage, durable event/candidate append-only ledger, and low-RAM/CPU soak tests remain undone. Zero real-world networking was performed by CI. No inference, trading, position accounting, model training or 2,000 mature label counting is present. The observation service is **not authorized to run**, and old V4 services must remain stopped.
+
+**Next owner-run diagnostic gate, read-only:** Run a limited Python HTTPS GET check in Observation VPS PuTTY for the official public Binance server time and 5-minute BTCUSDT candles, with timeout and bounded output, no checkout modification, secrets, database or systemd commands. The owner sends the output; only a successful real-VPS response supports "live connectivity PASS". Then perform a separate narrowly scoped one-shot V5 module deployment/replay evaluation before any data collection service or startup, with explicit approval.
+
+**Laptop roadmap mirror:** The previous v1.5 document had not been synchronized after Desktop Commander outage. Sync v1.6 to `C:\Users\Sam\Downloads\NBOT_V5_MARKET_INTELLIGENCE_ARCHITECTURE_AND_ROADMAP_2026-10-13.md` only after verifying connection and GitHub source. The historical verified archive on F: is not altered.
+
+**Change record — v1.6 / 2026-10-13:** Market data REST contract & mocks 36/36 PASS; operational live-VPS API reachability not yet tested; service restarts, data writes and trading forbidden.
