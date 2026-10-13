@@ -19,7 +19,7 @@ from nbot.v5.observation_contract import (
     build_candidate_records,
 )
 
-DETECTOR_VERSION = "NBOT_V5_24_PATTERN_ADAPTER_V1"
+DETECTOR_VERSION = "NBOT_V5_24_PATTERN_ADAPTER_V1:" + rules.CATALOG_DIGEST
 MIN_HISTORY = 49
 MAX_HISTORY = 96
 MIN_CROSS_SECTION = 10
@@ -48,7 +48,7 @@ def _audit_candles(candles: Sequence[tuple] | None, event_open_ms: int) -> _Audi
         return _Audit(None, -1, -1, "HISTORY_OVER_LIMIT")
     out = []
     for candle in candles:
-        if len(candle) != 6:
+        if not isinstance(candle, (tuple, list)) or len(candle) != 6:
             return _Audit(None, -1, -1, "CANDLE_SHAPE_INVALID")
         t, *numbers = candle
         if type(t) is not int or t < 0 or t % INTERVAL_MS:
@@ -198,9 +198,8 @@ def build_observations_from_closed_candles(
         for symbol in (set(universe) | {"BTCUSDT"})
     }
     btc = audits["BTCUSDT"]
-    btc_good = btc.issue is None and (
-        event_open_ms + INTERVAL_MS <= observed_at_ms <= decision_at_ms
-    )
+    time_valid = event_open_ms + INTERVAL_MS <= observed_at_ms <= decision_at_ms
+    btc_good = btc.issue is None and time_valid
     valid = {symbol: audit.bars for symbol in universe
              if (audit := audits[symbol]).bars is not None}
     # Require broad contemporaneous coverage before assigning ranks/proxy tags.
@@ -234,7 +233,7 @@ def build_observations_from_closed_candles(
         by_side: dict[str, dict] = {}
         if audit.bars is not None and not cross_good:
             issues += ("CROSS_SECTION_INCOMPLETE",)
-        if audit.bars is not None and cross_good:
+        if audit.bars is not None and cross_good and time_valid:
             for side in SIDES:
                 vector = _proxies(symbol, audit.bars, btc.bars if btc_good else None,
                                   side, raw_1h, vol)
