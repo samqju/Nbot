@@ -1,9 +1,10 @@
-"""V5 paired exit-policy *research lab*, driven by certified future trade+quote ticks.
+"""Legacy V5 paired mechanical lab, driven by caller-supplied trade+quote ticks.
 
 One entry, one streaming chronological evidence digest, three independent
 exit-policy states. No exchange client, no order authority, no background
 services. The shared path MUST remain valid through the entire horizon,
-even when all experimental policy arms exit early.
+even when all experimental policy arms exit early. Its historical SCORED status
+is not a completeness certificate. The V3 certified consumer rejects these rows.
 """
 from __future__ import annotations
 
@@ -150,6 +151,10 @@ class ArmResult:
     events_seen: int
     evidence_digest: str
     accounting: TradeAccounting | None
+    evidence_contract: str | None = None
+    evidence_class: str | None = None
+    observed_accounting: dict | None = None
+    proof: dict | None = None
 
 
 @dataclass
@@ -374,11 +379,11 @@ class PairedExitLab:
 
 
 def persist_to_v5_ledger(store: object, results: tuple[ArmResult, ...]) -> None:
-    """Idempotent append per policy, using V5's immutable ledger contract.
+    """Atomic idempotent legacy paired append; never a trust certification.
 
     Caller must initialize the ledger and first record the frozen decision.
-    A mid-write exception is retried using identical rows; this is NOT an
-    atomic cross-policy transaction, so never acknowledge before all succeed.
+    A mid-write exception rolls back all rows. Live V3 observations use their
+    separate atomic paired table and revocation authority.
     """
     from .v5_foundation import V5EvidenceStore
     if (not isinstance(store, V5EvidenceStore) or len(results) != len(EXIT_POLICIES)
@@ -389,14 +394,7 @@ def persist_to_v5_ledger(store: object, results: tuple[ArmResult, ...]) -> None:
                    or (r.status == "SCORED") != (r.accounting is not None)
                    for r in results)):
         raise ValueError("V5_PAIRED_PERSISTENCE_CONTRACT_INVALID")
-    for result in results:
-        store.record_outcome(
-            decision_id=result.decision_id,
-            exit_policy_id=result.policy_id,
-            evidence_digest=result.evidence_digest,
-            result=result.accounting,
-            unscorable_reason=result.reason if result.status == "UNSCORABLE" else None,
-        )
+    store.record_legacy_pair(results)
 
 
 def submit_order(*_args, **_kwargs):

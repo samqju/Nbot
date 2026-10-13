@@ -1,154 +1,163 @@
-# V5 public live evidence and recovery bridge (PR #38)
+# V5 public evidence bridge — V3 observed research contract
 
-Research only. Order authority **NONE**. Not deployed. No V4 source,
-collector, databases, services, VPS configuration or execution secrets change.
-No selector worker or automatic admission/promotion is installed by this PR.
+Research only. Order authority **NONE**. Not deployed. V4 code, databases,
+collectors, services and execution configuration are unchanged. Imports may load
+inert collector definitions; import/construction perform no network or database
+writes. Initialization and capture are explicit operations.
 
-## Evidence contract
+This document supersedes V2 at PR #38 head
+`9a8163c9c7d38cccdb2ae215746492e3d2898896`. Historical statuses/bytes remain
+historical; no `SCORED` row is upgraded to certified evidence.
 
-`v5_live_transport` opens two explicitly routed Binance USD-M connections per
-bounded shard (maximum 20 symbols): `/market` aggTrade and `/public` bookTicker
-plus diff depth at 100ms. These paths follow the current
-[Binance connection contract](https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/websocket-market-streams/Connect).
-The WebSocket library handles ping/pong. A connection close, buffer overflow,
-30-second shard silence, late receipt, malformed message or depth sequence
-fault invalidates affected paths. Reconnect backs off to 60 seconds. The
-bounded queue (2,000), socket queue (64), payload limit (256 KiB), depth buffer
-(2,000), and book level cap (5,000 per side) fail closed on overflow.
+## Trust classification and consumers
 
-Trade IDs must be consecutive, transaction timestamps monotonic. Exact last
-trade/quote/depth retransmissions are idempotent; conflicting identities fail.
-bookTicker update IDs can jump normally: they are **not** aggregate IDs and
-do not prove consecutive quote history. Prospective quote quality rests on an
-uninterrupted observed WSS session plus independently synchronized depth
-`pu` continuity, not a claim that every exchange matching-engine mutation is
-published. The 100ms depth stream is itself aggregated. Silent per-symbol feed
-loss without an observable protocol fault remains a venue/transport limitation;
-this bridge is not an independently certified lossless exchange archive.
+Live storage: `NBOT_V5_JOINT_EVIDENCE_V3`. Classification:
+`NBOT_V5_EVIDENCE_TRUST_V3`.
 
-Quote-only changes drive LONG exits at bid and SHORT exits at ask, including
-stops and trailing updates between trades. Trades establish sequence evidence;
-they do not fabricate executable quotes. Across sockets, reversed transaction
-times or conflicting quotes at equal timestamps invalidate the entire paired
-sample instead of retrospectively sorting events or substituting future quotes.
-This deliberately sacrifices some coverage. An identical quote delivered by
-both sources cannot ratchet trailing state twice. A closing quote within the
-existing five-second horizon grace, an aggregate-stream transaction watermark
-at/after that quote, and a synchronized depth ID/time watermark covering the
-closing quote are all needed. All arms need the whole shared horizon,
-even after early exits. Four-hour horizon, fees, slippage and initial -1R
-accounting remain unchanged. The old `PairedExitLab` tick contract is unchanged;
-`JointExitLab` uses its arm/accounting rules with a new versioned hash chain.
+| Class | Meaning | Complete-path consumer eligibility |
+|---|---|---|
+| RECEIVED_EVIDENCE | Validated event durably accepted into the journal | None by itself |
+| OBSERVED_STREAM | Provisional simulation over received observations | Prohibited |
+| CERTIFIED_PATH | Requires sufficient path, ordering, provenance and funding proofs | Unavailable: no validator exists |
+| UNSCORABLE | Known integrity/causal/ordering failure prevents simulation | Prohibited |
+| REVOKED | Append-only quarantine overrides an earlier conclusion | Prohibited |
 
-## Depth and recovery
+`require_certified_sample` rejects **every** sample for TRAINING, CHAMPION,
+PROMOTION and PERFORMANCE. `V5EvidenceStore.certified_pairs` enforces that guard.
+Caller-supplied booleans/status/proof dictionaries cannot enable certification.
+No V5 learner/promotion integration exists; V3/V4 consumers read their own storage
+and remain unchanged. Future V5 consumers must use this boundary. Direct SQL
+extraction is not a supported training interface.
 
-Buffer diff events before the REST snapshot. Drop events with `u < snapshot
-lastUpdateId`; the first accepted event must satisfy `U <= lastUpdateId <= u`.
-Every subsequent event must have `pu == previous u`. Quantities are absolute;
-zero removes a level, including absent levels. A missed bridge, exhausted or
-crossed book, overflow or `pu` break requires resynchronization.
-See [Binance local book rules](https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/websocket-market-streams/How-to-manage-a-local-order-book-correctly).
-A limited snapshot does not certify unlimited depth or a real fill.
+The legacy tick lab and V1 ledger retain their mechanical contract and `SCORED`
+terminology, not a complete-path proof. `legacy_scored` and `certified=0` make
+that explicit; the compatible `scored` count is not a performance claim.
+`JointExitLab.finalize` cannot use inherited legacy scoring.
 
-`recover_trades` uses public GET `/fapi/v1/aggTrades`, inclusive `fromId`, limit
-1,000, and a finite page budget. Every contiguous page and cursor commit
-durably; unavailable/empty history returns incomplete, bad sequences fail.
-[Binance documents limited recent history availability](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data).
-During reconnection the first new WSS ID bounds the missing range. Recovery
-restores available trade evidence only. **Current REST depth/bookTicker
-snapshots cannot recover missed historical book quotes.** Already affected
-paired paths stay UNSCORABLE after trade recovery and new book synchronization.
+## Provenance, completeness, ordering and entry causality
 
-## Durability and funding
+Two public USD-M connections carry `/market` aggTrade and `/public` individual
+bookTicker/diff depth. Routing is checked; sources remain distinct. Aggregate
+IDs and book IDs are different sequences. Quotes price LONG exits at bid and
+SHORT exits at ask. Stops retain overshoots; trailing updates activate on the
+next observation. A/B/C share one frozen entry/risk/quantity and digest.
 
-Explicit initialization creates a separate V5 SQLite database in WAL mode with
-FULL synchronous commits. Each mutation commits an immutable audit event and a
-checksummed checkpoint atomically. Checkpoints freeze entries, arm states,
-resumable evidence digests, aggregate cursors, funding proofs and bounded pending
-results. A compare-and-swap sequence rejects concurrent writers. Database errors
-restore in-memory state to the previous commit; corruption/contract mismatch
-raises, never resets the database. Restart retains all frozen state but marks
-unfinished horizons PROCESS_RESTART because absent quotes are not recoverable.
-Previously horizon-complete paths and completed pending results retain their
-evidence. Ledger writes retry immutable per-arm outcomes; the durable pending
-set is acknowledged only after all writes succeed.
+Consecutive received aggregate IDs, depth `pu` continuity, matching top prices,
+source liveness and open sockets cannot prove all intermediate quotes were
+published/delivered. A 50ms stop/recovery can disappear inside one depth
+interval. Delivered and omitted histories retain different observed results;
+neither qualifies as certified. REST snapshots and aggregate recovery cannot
+recover historical bid/ask movements.
 
-Funding reconciliation exhausts two independently requested, identical public
-`/fapi/v1/fundingRate` histories over an explicit symbol/time range, queried at
-least 60 seconds after its end. It retains settled rate, funding timestamp and
-the mark associated with that charge. No projected markPrice rate, guessed
-eight-hour schedule, current mark substitution, incomplete pagination or
-network failure establishes coverage. Wrong symbols, invalid marks/rates,
-duplicates, contradictory overlapping ranges, unsettled windows and boundary
-ambiguity fail closed. Special/multiple same-time rate types cannot be scored
-under V1's strictly ordered accounting contract. Empty funding is accepted only
-when both completed historical queries agree. Public history is authoritative
-venue research evidence, subject to publication/revision risk; agreement is not
-proof of private account cash settlement. This credential-free bridge never
-queries account income. No actual account position or cash payment is claimed.
+Joint transaction times must not reverse; local receipts cannot reverse.
+Equal-time conflicting prices invalidate the sample. Exact current duplicates
+are idempotent. Independent socket skew may reject legitimate paths. These are
+conservative local assumptions, not an exchange-wide total ordering guarantee.
 
-Each paired arm uses its own exit window and the existing LONG-pays/SHORT-receives
-sign convention. The range proof joins the outcome evidence hash. Missing proof
-makes scoring unavailable. See
-[Binance funding history fields and pagination](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data).
+Admission validates and mutates under one bridge RLock and durable CAS. Checks
+cover connection/sync, IDs, quote/trade receipts, depth age, snapshot completion,
+book availability and evidence-validation availability before decision time.
+Production availability includes the actual clock after durable acceptance.
+Synthetic tests inject accelerated clocks explicitly. Later snapshots never
+backdate entry eligibility.
 
-## Manual use and outstanding gates
+## Provisional horizons and funding lifecycle
 
-The callable bridge accepts frozen, proven live anchors, ingests events,
-reconciles funding, finalizes and durably acknowledges ledger writes. It rejects
-entry timestamps before actual trade/quote capture receipt (including snapshot
-completion). Exchange transaction time alone cannot prove availability. It does not
-select entries. The standalone capture command is explicitly opt-in:
+A closing quote with trade/depth observations witnesses an observed horizon;
+it does not close the evidence window. Further relevant events still pass
+ordering/contradiction checks. Published outcomes are observed diagnostics.
+Any later received event within a published interval, including closing grace,
+causes conservative quarantine, even if a retransmission might be harmless.
+No conclusive Binance closing watermark is assumed.
 
-```text
-python deploy/observation/run_v5_live_evidence.py --research-only --symbols BTCUSDT ETHUSDT
-```
+Funding journal states: PENDING request; VERIFIED_RESPONSE_AGREEMENT under
+`TWO_EXHAUSTED_HISTORY_RESPONSES` version 1; CONTRADICTED then REVOKED in one
+durable invalidation event. Verification means only response agreement, never
+completeness/finality/private cash settlement. Superseding a revoked range is
+unsupported and requires a newly reviewed proof contract.
 
-Do not run this on the production VPS before the roadmap's resource/cutover
-approval gates. There is no installed service. Public REST uses allowlisted GET
-paths and parameters, rejects redirects, caps responses at 2 MiB and times out
-after 10 seconds. HTTP errors (including rate limits) never become successful
-recovery/coverage; reconnect backoff applies. REST-heavy deployments still need
-an independently measured IP-weight scheduler before increasing shard count.
+Empty responses never establish zero funding. Each arm reports known signed
+settlement observations over its own exit interval, separately from gross,
+fees and modeled slippage. Total funding, funding R, net quote and net R are
+**null**. Boundary settlements are unscorable. Revised overlapping responses
+revoke prior proof use and conservatively quarantine symbol-dependent samples,
+including pending and acknowledged ledger writes.
 
-The database has a 256 MiB admission budget checked before mutations; pending
-results cap at 100, retained funding range proofs cap at 100. Each funding range
-is limited to 1,000 settlement events. The journal grows on disk; it is not
-automatically pruned. Reaching a limit stops work without
-discarding evidence. Full bounded checkpoints per event prioritize correctness;
-1 GiB host throughput, WAL/disk budget, retention/export, memory/CPU pressure,
-funding publication timing, clock synchronization and prospective multi-day
-coverage must be measured before deployment. There is no claim of production
-readiness or profitable entry thresholds.
+## Journal, faults, restart, paired publication and migration
 
-Rollback: leave the opt-in module unused or revert this PR; retain V5 evidence
-files for audit. No V4 rollback, collector restart or VPS action is needed.
+Accepted mutations append complete inputs to a SHA-256 chained SQLite journal
+and durable head under `BEGIN IMMEDIATE`, WAL/FULL and sequence CAS. WSS events
+checkpoint every 128 commits; controls checkpoint immediately. Rollback copies
+only the affected book plus bounded lab/funding state. Tail replay applies
+recorded operations without network calls. Startup validates the complete
+bounded journal, head, checkpoint checksum/chain and revocation overlay.
 
-## Independent audit remediation — PR #38 (second-review gate)
+Storage failure latches a nonrollbackable integrity fault and failed-event
+identity. Ingest, admission, reconnect, finalization and publication are blocked.
+Cleanup failure cannot clear the latch. `recover_integrity` explicitly records
+the fault, quarantines identities, invalidates paths and requires fresh sync;
+it does not claim exact missing-event replay. Failed recovery retains the latch.
 
-The first independent audit reproduced two **P1 false-scoring defects**.
-The corrected V2 evidence contract now requires an observed bookTicker
-before any admission, preserves separate bookTicker-selected entry quotes
-and depth-book quotes, and refuses to allow a depth packet with older
-transaction time or update ID to replace newer ticker evidence. Conflicts
-invalidate the feed and every affected active virtual hypothesis. New
-entries require the latest ticker and reconstructed depth top-of-book to
-agree in both price and ordering.
+No trustworthy clean source-close barrier exists across process death. Startup
+quarantines prior identities and invalidates all active paths, even horizon
+witnesses. Frozen diagnostics survive with revoked effective eligibility.
+Corruption/contract mismatch fails closed, never resets storage. Stale owners
+are rejected. Checksums detect corruption, not a malicious DB owner recomputing
+all hashes.
 
-The transport preserves socket identity (`market` versus `public`), rejects
-misrouted events, and runs a source-specific bookTicker watchdog independent
-of shared queue traffic. Each symbol tracks `aggTrade`, `depthUpdate` and
-`bookTicker` receipts separately. Continuous paired scoring is contingent on
-fresh bookTicker evidence; if it goes silent for longer than 30 seconds,
-active paths fail closed. An unproven ticker path cannot be repaired by REST
-or a subsequent depth snapshot. Genuine exchange silence is also conservatively
-classified as uncertain rather than turned into a valid result.
+The foundation adds `v5_observed_pairs` beside unchanged V1 tables. One atomic
+immutable row holds all three arms with matching identities/digest. Legacy
+paired publication also uses one transaction. Acknowledgment follows commit.
+Append-only bridge revocations override immutable ledger bytes on every
+diagnostic read. A matching initialized, current, nonfaulted authority is
+required; missing/stale authority fails closed. Raw exports without this overlay
+are not current reports or eligible datasets.
 
-**Limitation:** Binance bookTicker has no guaranteed every-message historical
-replay or per-symbol heartbeat. The 30-second watchdog is a conservative
-liveness threshold, **not a cryptographic proof of uninterrupted bookTicker
-coverage**. An undetected lost crossing within that interval may remain
-possible. Real-market acceptance must assess this limitation against an
-independent captured quote reference before declaring deployed scoring safe.
-Historical V1 checkpoints deliberately cannot be resumed by the new V2
-contract; the new research component has not been deployed.
+V1/V2 live checkpoints are rejected. Preserve them with old versioned code for
+audit; use a **new filename** for V3, e.g. `live_evidence_v3.db`. No automatic
+status rewrite or certified import exists. Moving bridge/ledger files must
+preserve the authority binding or use a reviewed migration. Never delete
+journals to fit storage.
+
+## Resources and remaining acceptance
+
+Transport bounds: 256 queue items, 2MiB raw queue bytes, 64KiB messages, eight
+library slots per socket, 2MiB buffered depth per symbol, 5,000 levels per side,
+20 symbols per shard. Raw byte limits do not measure Python RSS. Overflow or
+more than two seconds of processing backlog fails closed. SQLite work is off
+the event loop; cancellation awaits an in-flight mutation before cleanup.
+An unresponsive filesystem cannot be bounded by an asyncio timer.
+
+All tasks have owners and exception callbacks. Snapshot failures propagate;
+startup/resync deadline is 15 seconds. Coverage checks run outside FIFO traffic
+under the bridge lock. The 30-second ticker-silence threshold rejects uncertainty
+but never proves completeness. Rotation at 23 hours invalidates before retry.
+Actual venue ping/rotation behavior remains unverified.
+
+PublicRest allowlists unsigned GET, rejects redirects, bounds response/network
+time, reserves conservative weights and observes HTTP cooldowns. Shared V5
+RequestBudget objects can coordinate shards. Default budgets do not open V4
+budget DBs. Shared-IP/collector and cross-process funding quotas remain gates.
+
+Database+WAL cap is 256MiB; reaching it latches capture closed. Retention never
+deletes history. Funding ranges cap at 100 and settlements at 1,000/range;
+active/pending pairs cap at 100 each. Reviewed export/rotation remains required.
+One-book rollback and bounded lab copies still cost time: this is not a fully
+incremental materialized-book engine or a proven one-GB deployment.
+
+Run the offline benchmark with
+`python deploy/observation/benchmark_v5_evidence.py --events 300`. It reports
+desktop timing, traced allocations, disk and restart measurements, not VPS
+capacity. Manual capture needs separately approved isolated observed-research
+scope. No command enables certified scoring, installs services or orders.
+
+## Official sources checked 2026-10-13
+
+- [Connection routing](https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/websocket-market-streams/Connect): public/market split and combined URLs.
+- [Public streams](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/ws-streams/public): ticker update ID/time fields; depth aggregation intervals; ordinary books exclude RPI orders.
+- [Aggregate trades](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/ws-streams/market): 100ms aggregation excludes insurance-fund/ADL trades. NBOT's consecutive-ID check is an implementation assumption, not quote completeness.
+- [Local book rules](https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/websocket-market-streams/How-to-manage-a-local-order-book-correctly): snapshot overlap, `pu` chaining, absolute quantities and zero removal.
+- [REST market data](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data): snapshot/aggregate limits and pagination; funding inclusive bounds, ascending order, limit 1,000, charge marks, Regular/Special types, variable interval information and quotas. No universal funding publication-finality SLA or final range watermark was found in these contracts.
+
+No sufficient completeness/finality proof is implemented. A live test can
+characterize delivery but cannot disprove the missing-crossing counterexample.

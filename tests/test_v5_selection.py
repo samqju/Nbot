@@ -1,6 +1,7 @@
 """V5 directional qualification and read-only market adapter fixtures."""
 from pathlib import Path
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 
@@ -172,7 +173,7 @@ class V5ReadOnlyEvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             p=Path(d)/"observer.db"
             m=observations()
-            with sqlite3.connect(p) as db:
+            with closing(sqlite3.connect(p)) as db, db:
                 db.executescript("""
                     CREATE TABLE market_events(event_open_ms INTEGER,event_close_ms INTEGER,
                       captured_at_ms INTEGER,status TEXT);
@@ -206,11 +207,11 @@ class V5ReadOnlyEvidenceTests(unittest.TestCase):
             self.assertEqual(p.read_bytes(),before)
             self.assertEqual([r.side for r in plan_event(result,event_open_ms=EVENT,
                                                           now_ms=NOW).selected],["LONG"])
-            with sqlite3.connect(p) as db:
+            with closing(sqlite3.connect(p)) as db, db:
                 db.execute("UPDATE event_provenance SET context_complete=0")
             with self.assertRaisesRegex(ValueError,"PROVENANCE"):
                 read_completed_event(p,event_open_ms=EVENT,now_ms=NOW)
-            with sqlite3.connect(p) as db:
+            with closing(sqlite3.connect(p)) as db, db:
                 db.execute("UPDATE event_provenance SET context_complete=1")
                 db.execute("DELETE FROM universe_membership WHERE symbol=?", (m.symbol,))
             with self.assertRaisesRegex(ValueError,"UNIVERSE_INVALID"):

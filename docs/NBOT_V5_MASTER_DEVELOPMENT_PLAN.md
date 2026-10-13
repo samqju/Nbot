@@ -34,7 +34,45 @@
 9. No environment may place an actual order without a separately approved
    execution design and explicit user authorization.
 
-## Current status — 2026-10-12
+## Current status — 2026-10-13
+
+**PR #38 V3 remediation supersedes the earlier path/funding certification claims
+below.** The second independent audit failed H1–H5 (missed 50ms stop,
+post-decision snapshot, reusable contradicted funding, premature horizon sealing,
+lost stop after failed persistence), plus M1 snapshot supervision and M2 admission
+race. The audited head was `9a8163c9c7d38cccdb2ae215746492e3d2898896`; its
+1,490-test CI ([38281033032](https://github.com/samqju/Nbot/actions/runs/38281033032))
+did not establish those missing properties. The supplied report is preserved in
+[NBOT_PR38_SECOND_INDEPENDENT_AUDIT.md](NBOT_PR38_SECOND_INDEPENDENT_AUDIT.md).
+
+V3 offers isolated **OBSERVED_STREAM** diagnostics only. Certified path scoring,
+training, Champion/promotion and complete-path performance claims are unavailable.
+Funding totals/net R stay unknown; two matching REST responses verify response
+agreement, not publication finality. Legacy SCORED rows retain their historical
+meaning and are excluded from certification. V1/V2 live checkpoints are rejected;
+start V3 at a new filename and preserve old evidence. No V4/VPS changes or orders.
+
+Implemented: atomic causal admission (all acquisition/snapshot/book-validation
+watermarks), provisional horizons with later quarantine, durable funding
+revocations, fail-closed persistence latch with explicit invalidating recovery,
+restart quarantine, supervised snapshot tasks/deadlines, byte-aware buffers,
+off-loop writes, chained event journaling with periodic checkpoints, atomic paired
+publication and explicit V5 connection closure. See
+[the actual architecture](V5_LIVE_EVIDENCE_BRIDGE.md) and
+[closure matrix and verification record](V5_PR38_REMEDIATION_AUDIT.md).
+
+Initial remediation verification: 90 focused V5 tests passed in 121.010s on an
+isolated Windows host. Full final-head regression/CI and fresh-agent review are
+tracked in the closure report; do not infer completion from this interim count.
+Desktop benchmark: 300 mutations, 20 symbols, 1,000 levels/side, no hypotheses;
+61.255 events/s, p95 18.017ms, p99 21.477ms, restart 0.120s, traced peak 1.085MB.
+This is not measured process RSS or a one-GB VPS acceptance result.
+
+**Next milestone:** independently review the reduced observed-research contract;
+then design bounded archive/rotation, shared-IP request budgets and authorized
+isolated multi-day capture/target-host resource acceptance. No available public
+feed proof currently unlocks complete-path ML labels. Certified learning remains
+blocked pending a technically sufficient new source/proof contract.
 
 | Item | Status | Evidence / outstanding action |
 |---|---|---|
@@ -491,3 +529,19 @@ diagnostics if tests fail. **No masking errors to achieve cosmetic silence.**
   installed, started and observed.
 - Treat both RESEARCH and PAPER as no-order-authority, even if a Champion exists.
 - If a PR changed a V5 contract, update this document **in the same PR**.
+
+## 2026-10-13 decision-log addendum — PR #38 V3 remediation
+
+The earlier milestone checkboxes record historical prototype work, not current
+certification. A watchdog, depth-ID chain, horizon witness and agreeing funding
+responses did not prove quote-path or settlement finality. V3 deliberately removes
+unsupported certified scoring rather than tuning liveness to hide that limitation.
+
+| Date | Decision | Why / implication |
+|---|---|---|
+| 2026-10-13 | Keep PR #38 open, unmerged and undeployed | User authorizes corrections/push only; independent review and latest CI remain gates |
+| 2026-10-13 | Version observed versus certified evidence | Received bytes and reproducible simulations do not establish all actual market movements |
+| 2026-10-13 | Disable certified V5 training/promotion consumers | Every current classification, including legacy SCORED and forged CERTIFIED_PATH, is rejected by the guard |
+| 2026-10-13 | Retain immutable diagnostics with append-only revocation | Funding contradiction, late within-window evidence, uncertain restart and persistence recovery can veto all dependent arms without deleting history |
+| 2026-10-13 | Journal inputs and checkpoint periodically | Avoid whole-shard serialization on each WSS event while verifying replay/head/checkpoint consistency |
+| 2026-10-13 | Resource improvement is not deployment approval | Byte limits and desktop benchmark do not establish representative one-GB sustained capture capacity |

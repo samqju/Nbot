@@ -54,7 +54,7 @@ class BridgeTests(unittest.TestCase):
         self.addCleanup(self._synthetic_silence.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.path = Path(self.temp.name)/"v5"/"live.db"
-        self.b = LiveEvidenceBridge(self.path, symbols=["BTCUSDT"])
+        self.b = LiveEvidenceBridge(self.path, symbols=["BTCUSDT"], clock=lambda: 0)
         self.b.initialize()
         self.b.connected("BTCUSDT")
         self.b.ingest(trade(), T-80)
@@ -67,7 +67,6 @@ class BridgeTests(unittest.TestCase):
         self.b.add(entry())
 
     def tearDown(self):
-        gc.collect()  # Legacy ledger connections close at collection on Windows.
         self.temp.cleanup()
 
     def finish(self, events=()):
@@ -90,9 +89,9 @@ class BridgeTests(unittest.TestCase):
     def test_quote_only_stop_crossing_and_shared_path(self):
         self.b.ingest({"stream": "btcusdt@bookTicker", "data": quote()}, T+120)
         rows = self.finish()
-        self.assertTrue(all(r.status == "SCORED" and r.exit_time_ms == T+100 for r in rows))
-        self.assertTrue(all(r.accounting.exit_fill_price == 98.5 for r in rows))
-        self.assertTrue(all(r.accounting.gross_r < -1 for r in rows))
+        self.assertTrue(all(r.status == "OBSERVED_STREAM" and r.exit_time_ms == T+100 for r in rows))
+        self.assertTrue(all(r.observed_accounting["exit_fill_price"] == 98.5 for r in rows))
+        self.assertTrue(all(r.observed_accounting["gross_r"] < -1 for r in rows))
         self.assertEqual(len({r.evidence_digest for r in rows}), 1)
         self.assertEqual(self.b.feeds["BTCUSDT"]["agg"], 11)
 
@@ -115,7 +114,7 @@ class BridgeTests(unittest.TestCase):
 
     def test_auditor_p1_no_bookticker_never_admits_or_scores(self):
         path=Path(self.temp.name)/"v5"/"no-ticker.db"
-        bridge=LiveEvidenceBridge(path,symbols=["BTCUSDT"])
+        bridge=LiveEvidenceBridge(path,symbols=["BTCUSDT"], clock=lambda: 0)
         bridge.initialize()
         bridge.connected("BTCUSDT")
         bridge.ingest(trade(),T-80)
@@ -190,7 +189,7 @@ class BridgeTests(unittest.TestCase):
         self.finish()
         key = next(iter(self.b.funding))
         rows = self.b.finalize("short", now_ms=END+FUNDING_GRACE_MS, funding_key=key)
-        self.assertTrue(all(r.accounting.exit_fill_price == 101.2 for r in rows))
+        self.assertTrue(all(r.observed_accounting["exit_fill_price"] == 101.2 for r in rows))
 
     def test_bookticker_ids_can_jump_and_exact_duplicate_is_idempotent(self):
         q = quote(u=999, bid="100.2", ask="100.3")
@@ -206,9 +205,9 @@ class BridgeTests(unittest.TestCase):
               "fundingRate": ".001", "markPrice": "105"}]
         rows = self.finish(f)
         by = {r.policy_id: r for r in rows}
-        self.assertEqual(by["FIXED_2R_V1"].accounting.funding_quote, 0)
-        self.assertAlmostEqual(by["TIME_EXIT_V1"].accounting.funding_quote, -.21)
-        self.assertEqual(by["TIME_EXIT_V1"].accounting.funding_settlements[0].mark_price, 105)
+        self.assertEqual(by["FIXED_2R_V1"].observed_accounting["observed_funding_quote"], 0)
+        self.assertAlmostEqual(by["TIME_EXIT_V1"].observed_accounting["observed_funding_quote"], -.21)
+        self.assertEqual(by["TIME_EXIT_V1"].observed_accounting["observed_settlements"][0]["mark_price"], 105)
 
     def test_funding_boundary_and_missing_proof_fail_closed(self):
         f = [{"symbol": "BTCUSDT", "fundingTime": END,
@@ -267,7 +266,7 @@ class BridgeTests(unittest.TestCase):
         self.b.disconnect("BTCUSDT")
         self.assertFalse(self.b.recover_trades("BTCUSDT", 12,
                                               lambda *a: [trade(11,T+10)], max_pages=1))
-        b = LiveEvidenceBridge(self.path, symbols=["BTCUSDT"])
+        b = LiveEvidenceBridge(self.path, symbols=["BTCUSDT"], clock=lambda: 0)
         b.initialize()
         self.assertEqual(b.feeds["BTCUSDT"]["agg"], 11)
         self.assertFalse(b.recover_trades("BTCUSDT",12,lambda *a: []))
@@ -278,7 +277,7 @@ class BridgeTests(unittest.TestCase):
     def test_restart_preserves_arm_and_digest_but_invalidates_quote_path(self):
         self.b.ingest(quote(), T+110)
         before = self.b.lab._paths["d1"].digest.hexdigest()
-        b = LiveEvidenceBridge(self.path, symbols=["BTCUSDT"])
+        b = LiveEvidenceBridge(self.path, symbols=["BTCUSDT"], clock=lambda: 0)
         b.initialize()
         p = b.lab._paths["d1"]
         self.assertEqual(p.digest.hexdigest(), before)
@@ -288,28 +287,27 @@ class BridgeTests(unittest.TestCase):
 
     def test_pending_scored_results_survive_restart_and_ledger_retry(self):
         rows = self.finish()
-        b = LiveEvidenceBridge(self.path, symbols=["BTCUSDT"])
+        b = LiveEvidenceBridge(self.path, symbols=["BTCUSDT"], clock=lambda: 0)
         b.initialize()
-        self.assertEqual(b.finalize("d1",now_ms=END), rows)
+        restored = b.finalize("d1",now_ms=END)
+        self.assertTrue(all(r.status == 'REVOKED' for r in restored))
+        self.assertEqual([r.observed_accounting for r in restored],
+                         [r.observed_accounting for r in rows])
         store = V5EvidenceStore(Path(self.temp.name)/"v5"/"ledger.db")
         store.initialize()
         store.record_decision(decision_id="d1", event_open_ms=300_000, symbol="BTCUSDT",
                               side="LONG",setup_id="TEST",qualified=True,reason="TEST",
                               feature_digest="test",selection_policy_id="TEST")
-        original=store.record_outcome
+        original=store.record_observed_pair
         count=0
-        def partial(**kwargs):
-            nonlocal count
-            count+=1
-            if count==2:
-                raise OSError("disk unavailable")
-            original(**kwargs)
-        with patch.object(store,"record_outcome",side_effect=partial):
+        with patch.object(store,"_connect",side_effect=OSError("disk unavailable")):
             with self.assertRaises(OSError):
                 b.persist_results(store,"d1")
+        self.assertEqual(store.observed_pairs(authority=b), [])
         self.assertEqual(b.lab.pending_persistence,1)
         b.persist_results(store,"d1")
-        self.assertEqual(store.status()["scored"],3)
+        self.assertEqual(store.status()["scored"],0)
+        self.assertEqual(len(store.observed_pairs(authority=b)),1)
         self.assertEqual(b.lab.pending_persistence,0)
 
     def test_depth_pu_gap_invalidates_all_arms_and_clears_book(self):
@@ -363,11 +361,11 @@ class BridgeTests(unittest.TestCase):
         self.b.ingest(quote(t=END,bid="100.1",ask="100.2"),END+10)
         self.closing_depth("100.1","100.2")
         self.b.ingest(trade(11,END),END+20)
-        b=LiveEvidenceBridge(self.path,symbols=["BTCUSDT"])
+        b=LiveEvidenceBridge(self.path,symbols=["BTCUSDT"], clock=lambda: 0)
         b.initialize()
-        self.assertIsNone(b.lab._paths["d1"].gap_reason)
+        self.assertEqual(b.lab._paths["d1"].gap_reason,"PROCESS_RESTART")
         key=b.reconcile_funding("BTCUSDT",T,END,lambda *a:[],now_ms=END+FUNDING_GRACE_MS)
-        self.assertTrue(all(r.status=="SCORED" for r in b.finalize("d1",now_ms=END+FUNDING_GRACE_MS,funding_key=key)))
+        self.assertTrue(all(r.status=="UNSCORABLE" for r in b.finalize("d1",now_ms=END+FUNDING_GRACE_MS,funding_key=key)))
 
     def test_acknowledged_decision_identity_cannot_be_reused(self):
         self.finish()
@@ -402,9 +400,12 @@ class BridgeTests(unittest.TestCase):
         self.assertIsNone(self.b.finalize("d1",now_ms=END))
         self.b.ingest(trade(11,END),END+20)
         self.assertIsNone(self.b.finalize("d1",now_ms=END))
-        self.closing_depth("100.1","100.2")
+        d=depth(u=200,U=101,pu=100,t=END,bid="100.1",ask="100.2")
+        d["b"].append(["99.9","0"]); d["a"].append(["100","0"])
+        self.b.ingest(d,END+25)
         rows=self.b.finalize("d1",now_ms=END)
-        self.assertEqual({r.reason for r in rows},{"FUNDING_COVERAGE_UNPROVEN"})
+        self.assertEqual({r.status for r in rows},{"OBSERVED_STREAM"})
+        self.assertTrue(all(r.accounting is None and r.observed_accounting["net_r"] is None for r in rows))
 
     def test_failed_commit_rolls_back_state_and_concurrent_writer_rejected(self):
         before=self.b.lab.dump()
@@ -412,7 +413,10 @@ class BridgeTests(unittest.TestCase):
             with self.assertRaises(sqlite3.OperationalError):
                 self.b.ingest(quote(),T+110)
         self.assertEqual(self.b.lab.dump(),before)
-        second=LiveEvidenceBridge(self.path,symbols=["BTCUSDT"])
+        self.assertIsNotNone(self.b.integrity_fault)
+        self.b.recover_integrity()
+        before=self.b.lab.dump()
+        second=LiveEvidenceBridge(self.path,symbols=["BTCUSDT"], clock=lambda: 0)
         second.initialize()
         with self.assertRaisesRegex(RuntimeError,"CONCURRENT_WRITER"):
             self.b.ingest(quote(),T+110)
@@ -423,14 +427,14 @@ class BridgeTests(unittest.TestCase):
             c.execute("UPDATE checkpoint SET state='{}'")
         c.close()
         with self.assertRaisesRegex(ValueError,"CORRUPT"):
-            LiveEvidenceBridge(self.path,symbols=["BTCUSDT"]).initialize()
+            LiveEvidenceBridge(self.path,symbols=["BTCUSDT"], clock=lambda: 0).initialize()
 
     def test_limits_no_orders_no_import_or_constructor_writes(self):
         path=Path(self.temp.name)/"v5"/"unused.db"
-        LiveEvidenceBridge(path,symbols=["BTCUSDT"])
+        LiveEvidenceBridge(path,symbols=["BTCUSDT"], clock=lambda: 0)
         self.assertFalse(path.exists())
         with self.assertRaisesRegex(ValueError,"PATH"):
-            LiveEvidenceBridge(Path(self.temp.name)/"v4"/"raw.db",symbols=["BTCUSDT"])
+            LiveEvidenceBridge(Path(self.temp.name)/"v4"/"raw.db",symbols=["BTCUSDT"], clock=lambda: 0)
         with self.assertRaisesRegex(RuntimeError,"NO_ORDER"):
             submit_order()
         with patch("nbot.observation.v5_live_evidence.MAX_DB_BYTES",1):
@@ -463,7 +467,7 @@ class TransportTests(unittest.TestCase):
             self.assertEqual(params["fromId"],11)
             return [trade(11,T+80)]
         with tempfile.TemporaryDirectory() as td:
-            b=LiveEvidenceBridge(Path(td)/"v5"/"feed.db",symbols=["BTCUSDT"])
+            b=LiveEvidenceBridge(Path(td)/"v5"/"feed.db",symbols=["BTCUSDT"], clock=lambda: 0)
             b.initialize()
             with self.assertRaisesRegex(RuntimeError,"WSS_CLOSED"):
                 asyncio.run(run_session(b,rest=rest,connect=lambda url,**k:Socket(url),
@@ -493,7 +497,7 @@ class TransportTests(unittest.TestCase):
             def __aiter__(self): return self
             async def __anext__(self): raise StopAsyncIteration
         with tempfile.TemporaryDirectory() as td:
-            b=LiveEvidenceBridge(Path(td)/"v5"/"feed.db",symbols=["BTCUSDT"])
+            b=LiveEvidenceBridge(Path(td)/"v5"/"feed.db",symbols=["BTCUSDT"], clock=lambda: 0)
             b.initialize()
             with self.assertRaisesRegex(RuntimeError,"WSS_CLOSED"):
                 asyncio.run(run_session(b,connect=lambda *a,**k: Socket()))

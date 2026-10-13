@@ -2,6 +2,7 @@
 from dataclasses import replace
 from pathlib import Path
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 
@@ -210,7 +211,7 @@ class PairedPolicyTests(unittest.TestCase):
             persist_to_v5_ledger(store,rows)
             persist_to_v5_ledger(store,rows)
             self.assertEqual(store.status()["scored"],3)
-            with sqlite3.connect(store.path) as c:
+            with closing(sqlite3.connect(store.path)) as c, c:
                 self.assertEqual(c.execute(
                     "SELECT COUNT(DISTINCT digest) FROM v5_outcomes").fetchone()[0],3)
             lab.acknowledge_persisted("d1")

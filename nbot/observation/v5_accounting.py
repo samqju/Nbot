@@ -3,7 +3,9 @@
 Fee policy: 0.05% taker per entry/exit, 1 bp modeled slippage per side.
 Fills already include spread (LONG buy ask/sell bid, SHORT sell bid/buy ask);
 do not subtract the spread a second time.
-Actual funding settlement records are required, with evidence of complete coverage.
+Actual funding settlement records are required, with caller-asserted coverage.
+This pure arithmetic module validates no source/path proof; its results alone
+are never eligible for V3 certified training or performance claims.
 """
 from __future__ import annotations
 

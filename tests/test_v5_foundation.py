@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 
@@ -117,7 +118,7 @@ class V5FoundationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"IMMUTABLE_ID_REUSED"):
                 store.record_outcome(decision_id="first",exit_policy_id="TRAILING_V1",
                     evidence_digest="different",result=None,unscorable_reason="WSS_GAP")
-            with sqlite3.connect(path) as db:
+            with closing(sqlite3.connect(path)) as db, db:
                 with self.assertRaisesRegex(sqlite3.DatabaseError,"IMMUTABLE_V5_DECISION"):
                     db.execute("DELETE FROM v5_decisions")
                 with self.assertRaisesRegex(sqlite3.DatabaseError,"IMMUTABLE_V5_OUTCOME"):

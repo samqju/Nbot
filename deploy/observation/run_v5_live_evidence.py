@@ -13,13 +13,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--research-only", action="store_true", required=True)
     parser.add_argument("--symbols", nargs="+", required=True)
-    parser.add_argument("--database", type=Path, default=Path("data/observation/v5/live_evidence.db"))
+    parser.add_argument("--database", type=Path, default=Path("data/observation/v5/live_evidence_v3.db"))
     args = parser.parse_args()
     from nbot.observation.v5_live_evidence import LiveEvidenceBridge
     from nbot.observation.v5_live_transport import run_research_capture
     bridge = LiveEvidenceBridge(args.database, symbols=args.symbols)
     bridge.initialize()
-    print("V5 public research evidence capture; order authority NONE", flush=True)
+    print("V5 observed-stream research capture; certification unavailable; order authority NONE", flush=True)
     try:
         asyncio.run(run_research_capture(bridge, enabled=args.research_only))
     except KeyboardInterrupt:
