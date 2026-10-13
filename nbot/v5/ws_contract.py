@@ -179,7 +179,8 @@ class FeedStatus:
             self.last_closed_ms.clear()
             self.last_agg_id.clear()
             self.cohort_valid = False
-            self.trade_gaps.clear()  # New unproven cohort; old gaps NOT repaired.
+            # Trade gaps remain sticky across reconnects. New network sessions
+            # cannot recreate missing executed trade observations.
         else:
             self.public_connected = True
             self.last_quote_ms.clear()
