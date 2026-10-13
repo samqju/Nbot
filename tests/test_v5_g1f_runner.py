@@ -7,8 +7,11 @@ import unittest
 
 from nbot.v5.g1f_runner import (
     ObservationOnlyRunner, resource_guard, db_size_mib, rest_seed,
+    record_restart_hold_events,
 )
 from nbot.v5.observation_continuity import ObservationContinuity
+from nbot.v5.g1f_journal import CandidateJournal
+from nbot.v5.finality_quarantine import FinalityQuarantine
 from nbot.v5.candle_ledger import EvidenceHold
 from nbot.v5.observation_contract import INTERVAL_MS
 from tests.test_v5_public_market import klines
@@ -75,6 +78,81 @@ class G1fRunnerTests(unittest.TestCase):
                 asyncio.run(rest_seed(
                     collector,collector.symbols,event,getter=getter))
             self.assertEqual(collector.ledger.inspect("ETHUSDT")["closed_bar_count"],0)
+
+
+    def test_unfinished_wss_audit_restarts_as_unscorable_once(self):
+        event=INTERVAL_MS*1_000_000
+        universe=("BTCUSDT","ETHUSDT")
+        with ObservationContinuity(universe,self.db) as session:
+            journal=CandidateJournal(session.ledger.db)
+            cohort=journal.begin_cohort(universe,selected_ms=event,
+                                       event_open_ms=event)
+            finality=FinalityQuarantine(session.ledger.db)
+            finality.record_wss_final(
+                "BTCUSDT",event,received_ms=event+INTERVAL_MS+1000,
+                candle=(event,100.,101.,99.,100.,10.),
+            )
+            self.assertEqual(record_restart_hold_events(
+                session,journal,cohort,universe,
+                current_closed_event_ms=event,
+                observed_ms=event+INTERVAL_MS+2000,
+            ),1)
+            self.assertEqual(journal.inspect()["candidate_rows"],4)
+            self.assertEqual(journal.inspect()["observed_rows"],0)
+            self.assertEqual(record_restart_hold_events(
+                session,journal,cohort,universe,
+                current_closed_event_ms=event,
+                observed_ms=event+INTERVAL_MS+3000,
+            ),0)
+        with ObservationContinuity(universe,self.db) as reopened:
+            self.assertEqual(CandidateJournal(reopened.ledger.db).inspect()
+                             ["unscorable_rows"],4)
+
+    def test_offline_event_gap_is_explicitly_audited(self):
+        event=INTERVAL_MS*1_000_000
+        universe=("BTCUSDT","ETHUSDT")
+        with ObservationContinuity(universe,self.db) as session:
+            journal=CandidateJournal(session.ledger.db)
+            cohort=journal.begin_cohort(universe,selected_ms=event,
+                                       event_open_ms=event)
+            journal.commit_event(
+                cohort_digest=cohort,event_open_ms=event,
+                observed_ms=event+INTERVAL_MS+1000,
+                eligible_symbols=universe,candles_by_symbol={},
+                quarantine={},health_holds={},btc_valid=False,
+                coverage_valid=False,
+            )
+            missing=record_restart_hold_events(
+                session,journal,cohort,universe,
+                current_closed_event_ms=event+2*INTERVAL_MS,
+                observed_ms=event+3*INTERVAL_MS+1000,
+            )
+            self.assertEqual(missing,2)
+            self.assertEqual(journal.inspect()["candidate_rows"],12)
+            self.assertEqual(journal.inspect()["unscorable_rows"],12)
+
+    def test_gap_above_96_events_requires_manual_review(self):
+        event=INTERVAL_MS*1_000_000
+        universe=("BTCUSDT","ETHUSDT")
+        with ObservationContinuity(universe,self.db) as session:
+            journal=CandidateJournal(session.ledger.db)
+            cohort=journal.begin_cohort(universe,selected_ms=event,
+                                       event_open_ms=event)
+            journal.commit_event(
+                cohort_digest=cohort,event_open_ms=event,
+                observed_ms=event+INTERVAL_MS+1000,
+                eligible_symbols=universe,candles_by_symbol={},
+                quarantine={},health_holds={},btc_valid=False,
+                coverage_valid=False,
+            )
+            with self.assertRaisesRegex(EvidenceHold,"OVER_96_EVENTS"):
+                record_restart_hold_events(
+                    session,journal,cohort,universe,
+                    current_closed_event_ms=event+97*INTERVAL_MS,
+                    observed_ms=event+98*INTERVAL_MS+1000,
+                )
+            self.assertEqual(journal.inspect()["candidate_rows"],4)
+
 
 
 if __name__=="__main__":
