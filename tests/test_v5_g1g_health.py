@@ -44,7 +44,7 @@ class G1gHealthTests(unittest.TestCase):
         if args[1]=="is-enabled":
             return SimpleNamespace(returncode=1,stdout=self.boot[args[-1]]+"\n")
         self.assertEqual(args[1],"show")
-        key=args[3]
+        key=args[4]
         mapping={
             "ActiveState":self.service_active,
             "UnitFileState":self.service_enabled,
