@@ -1,6 +1,6 @@
 # NBOT V5 — Market Intelligence, Strategy Alignment and Learning Roadmap
 
-**Document version:** 1.4  
+**Document version:** 1.5  
 **Date:** 2026-10-13 (IST)  
 **Owner:** NBOT project owner  
 **Repository:** samqju/Nbot  
@@ -755,3 +755,22 @@ The original **G0–G10** roadmap remains the safety/qualification backbone. The
 **Next development checkpoint:** Extend offline tests with genuine detector output and canonical historical-candle interface under a conservative BTC-as-of gate; stay within small VPS memory/CPU limits, with no legacy V4 write path or order imports. Subsequently seek separate user-reviewed PuTTY deployment/start steps.
 
 **Change record — v1.4 / 2026-10-13:** Recorded independently observed 8/8 GitHub CI result and precise limits of first V5 code. GitHub documentation only pending laptop mirror sync if Desktop Commander connection is unavailable.
+
+
+---
+
+## 30. V1.5 Full 24-pattern + BTC context offline adapter — CI PASS, 2026-10-13
+
+**Source location:** clean GitHub branch `v5-clean-restart-20261013` only; no V5 deployment. Created `nbot/v5/pattern_adapter.py` and `tests/test_v5_pattern_adapter.py`; updated `nbot/v5/observation_contract.py` and isolated GitHub Actions test workflow. Last tested source commit `68a8170fec5249117cae29c8dbe0a0d3938ace9c`. GitHub main and the existing V4 runtime are unchanged. The former unsuccessful experimental V5 code was not imported.
+
+**What now works in isolated, synthetic tests:** A closed-five-minute candle adapter validates at most 96 source candles per asset, requires at least 49 contiguous aligned past candles with positive finite OHLC and nonnegative volume, verifies source ends exactly at the decision event, and requires observation timing at/after candle close but not after decision. Invalid, future, missing, stale, gapped or distorted data are not scored. It computes event-causal 5m/15m/1h/4h returns, ATR, market-side breadth, volatility and cross-sectional ranks from already available candles. Separate `BTCUSDT` candles are required as BTC market context even when BTC is not one of the ~50 eligible symbol records. The five legacy context labels remain **mutually exclusive proxies**, not five independent profitable strategies; all nineteen other original technical conditions are actually evaluated using their pinned V4 definitions. This yields 24 named pattern states per eligible symbol/direction. Overlapping pattern matches are preserved without multiplying trades or learning outcomes. BTC-relative momentum uses the actual BTC one-hour return and stays `UNAVAILABLE` if BTC context is missing/stale. The adapter preserves V4 pattern catalog SHA-256 digest in its detector version; each candidate record also includes candle-source and BTC-source digests, explicit failure reasons and `OBSERVE_ONLY`/`order_authority=NONE`. The record schema version is now `NBOT_V5_CANDIDATE_OBSERVATION_V2`, before any production database exists.
+
+**Conservative coverage policy for this prototype:** A valid cross-sectional context requires at least 10 valid eligible markets and at least 80% of the selected eligible universe; otherwise relevant pattern evidence is `UNAVAILABLE` and records are `UNSCORABLE`. This threshold is a synthetic-first engineering safeguard pending an approved complete market-universe policy, not a confirmed optimal trading threshold or profitability claim. Exact 50-coin eligibility/liquidity snapshot mechanism is still to be implemented.
+
+**Testing outcome:** GitHub Actions run `38404033201`, `https://github.com/samqju/Nbot/actions/runs/38404033201`, **SUCCESS**, executed `python -m unittest -v tests.test_v5_observation_contract tests.test_v5_pattern_adapter` on Python 3.12. **22 tests passed** (eight original contract tests plus fourteen new adapter checks): 50 eligible→100 directional records, all 24 pattern IDs, actual overlapping breakout/volume matches, trend proxy, BTC relative momentum changing with actual BTC prices, context-only BTC, missing/stale BTC abstention, missing eligible coins remaining recorded, gapped/short/future/malformed candle refusal, future observation time not classifying technical patterns, deterministic replay, ledger tamper refusal, and refusal of unexpected symbol data. An intermediate added malformed-row test identified loss of a quality-specific error when its timestamp also failed validation; fixed and green in the stated final run. This is a positive example of test-driven fail-closed refinement, not proof of live-feed correctness or all 24 rules' statistical usefulness.
+
+**Gate status:** V5 G1a candidate-record contract **PASS offline**; G1b 24-rule mapping/BTC-context adapter **PASS offline synthetic**. **NOT YET READY TO DEPLOY**: Must still validate actual read-only candle acquisition and as-of eligibility list, F0 trade/quote feed separate health, uninterrupted market-source events, restart-proof cursor, durable fresh V5 event ledger, CPU/RAM budgets, scheduled five-minute trigger, and safe no-orders runtime packaging. No model, 2,000-completed-outcome training checkpoint, paper competition or live-trading authority exists.
+
+**Laptop sync status:** GitHub roadmap v1.5 is authoritative. Desktop Commander listed Sameer-Laptop **Offline** at the time of update, so synchronization of this newest roadmap to Downloads could not be verified and must be completed when that device reconnects. The laptop F: verified historical archive was not accessed or modified. No owner action required on PuTTY for this offline code gate.
+
+**Change record — v1.5 / 2026-10-13:** Complete 24 original pattern rule integration with real synthetic candle computations and separate BTC context, observe-only safety tests 22/22 PASS; record explicit limitations and pending real-feed reliability gate.
