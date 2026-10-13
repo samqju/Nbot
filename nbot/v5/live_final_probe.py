@@ -63,6 +63,13 @@ async def _listen(route, socket_url, session, deadline, finished, bad, target):
                         last_heartbeat = now
                     continue
                 frames += 1
+                if route == "market" and now - last_heartbeat >= 30:
+                    counts = session.stats
+                    print("G1D_HEARTBEAT",
+                          "wss_final", counts["wss_final_appended"],
+                          "quote", counts["sampled_quote_updates"],
+                          "trade", counts["trade_updates"], flush=True)
+                    last_heartbeat = now
                 now_ms = int(time.time() * 1000)
                 try:
                     result = session.consume(
@@ -70,6 +77,7 @@ async def _listen(route, socket_url, session, deadline, finished, bad, target):
                     )
                 except (EvidenceHold, UnsafeStream, ValueError) as exc:
                     bad.append(route + "_" + str(exc))
+                    finished.set()
                     break
                 if result == "APPENDED_WSS_FINAL":
                     print("G1D_REAL_FINAL", session.stats["wss_final_appended"],
@@ -82,6 +90,7 @@ async def _listen(route, socket_url, session, deadline, finished, bad, target):
             session.stats[route + "_frames"] = frames
     except Exception as exc:
         bad.append(route + "_" + type(exc).__name__ + "_" + str(exc)[:80])
+        finished.set()
     finally:
         # A disconnected session NEVER automatically recertifies either feed.
         session.disconnect(route)
