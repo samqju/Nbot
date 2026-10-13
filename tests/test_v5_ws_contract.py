@@ -191,5 +191,49 @@ class V5WSSSafetyTests(unittest.TestCase):
             asyncio.run(run_probe(symbols=SYMBOLS, seconds=60))
 
 
+    def test_500ms_depth_mode_uses_lower_frequency_public_stream(self):
+        plan = stream_urls(("BTCUSDT", "ETHUSDT"), quote_mode="depth5@500ms")
+        self.assertIn("btcusdt@depth5@500ms", plan["public"])
+        self.assertNotIn("bookTicker", plan["public"])
+        self.assertIn("btcusdt@aggTrade", plan["market"])
+        with self.assertRaisesRegex(UnsafeStream, "QUOTE_MODE_INVALID"):
+            stream_urls(("BTCUSDT",), quote_mode="unknown")
+
+    def test_500ms_depth_snapshots_validate_real_bid_ask(self):
+        data = {"e": "depthUpdate", "E": RECEIVED - 10, "T": RECEIVED - 15,
+                "s": "BTCUSDT", "U": 80, "u": 85, "pu": 79,
+                "b": [["100", "2"], ["99", "3"]],
+                "a": [["101", "4"], ["102", "5"]], "st": 1, "ps": "BTCUSDT"}
+        msg = wrap("depth5@500ms", data)
+        parsed = parse("public", msg)
+        self.assertEqual(parsed["kind"], "depth5@500ms")
+        self.assertEqual((parsed["bid"], parsed["ask"]), (100.0, 101.0))
+        self.assertEqual(parsed["quote_source"], "PARTIAL_DEPTH_500MS")
+        self.assertEqual(parsed["order_authority"], "NONE")
+        state = FeedStatus()
+        state.connect("public")
+        state.accept(parsed)
+        self.assertEqual(state.last_quote_ms["BTCUSDT"], RECEIVED)
+
+    def test_500ms_depth_invalid_snapshots_refused(self):
+        base = {"e": "depthUpdate", "E": RECEIVED - 10,
+                "s": "BTCUSDT", "U": 80, "u": 85,
+                "b": [["100", "2"]], "a": [["101", "4"]]}
+        samples = (
+            dict(base, st=2),
+            dict(base, ps="ETHUSDT"),
+            dict(base, b=[["102", "2"]]),
+            dict(base, b=[]),
+            dict(base, b=[["100", "0"]]),
+            dict(base, u=79),
+            dict(base, a=[["nan", "4"]]),
+            dict(base, b=[["99", "1"], ["100", "2"]]),
+        )
+        for candidate in samples:
+            with self.subTest(candidate=candidate), self.assertRaises(UnsafeStream):
+                parse("public", wrap("depth5@500ms", candidate))
+
+
+
 if __name__ == "__main__":
     unittest.main()
