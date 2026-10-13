@@ -20,7 +20,7 @@ _PUBLIC = "/public/stream"
 _SYMBOL = re.compile(r"^[A-Z0-9]{3,24}$")
 _ALLOWED = {
     "market": frozenset({"aggTrade", "kline_5m"}),
-    "public": frozenset({"bookTicker"}),
+    "public": frozenset({"bookTicker", "depth5@500ms"}),
 }
 # Default maximum message time skew; actual source freshness gates are separate.
 SKEW_TOLERANCE_MS = 90_000
@@ -31,8 +31,12 @@ class UnsafeStream(ValueError):
     """Malformed, stale, mismatched or unapproved public WSS evidence."""
 
 
-def stream_urls(eligible_symbols: Sequence[str]) -> dict[str, str]:
-    """Dedicated MARKET and PUBLIC connections, including BTC context."""
+def stream_urls(
+    eligible_symbols: Sequence[str], *, quote_mode: str = "bookTicker"
+) -> dict[str, str]:
+    """Dedicated MARKET and PUBLIC routes; quote modes cannot silently mix."""
+    if quote_mode not in ("bookTicker", "depth5@500ms"):
+        raise UnsafeStream("V5_WSS_QUOTE_MODE_INVALID")
     if (not 1 <= len(eligible_symbols) <= MAX_SYMBOLS
             or len(set(eligible_symbols)) != len(eligible_symbols)
             or any(not isinstance(s, str) or not _SYMBOL.fullmatch(s)
@@ -41,7 +45,7 @@ def stream_urls(eligible_symbols: Sequence[str]) -> dict[str, str]:
     symbols = sorted(set(eligible_symbols) | {"BTCUSDT"})
     market = [f"{s.lower()}@{stream}"
               for s in symbols for stream in ("aggTrade", "kline_5m")]
-    public = [f"{s.lower()}@bookTicker" for s in symbols]
+    public = [f"{s.lower()}@{quote_mode}" for s in symbols]
     return {
         "market": WSS_HOST + _MARKET + "?" + urlencode({"streams": "/".join(market)}, safe="@/"),
         "public": WSS_HOST + _PUBLIC + "?" + urlencode({"streams": "/".join(public)}, safe="@/"),
@@ -104,7 +108,8 @@ def decode_frame(
             or name != f"{symbol.lower()}@{stream_kind}"
             or data.get("s") != symbol):
         raise UnsafeStream("V5_WSS_STREAM_OR_SYMBOL_MISMATCH")
-    expected_type = "kline" if stream_kind == "kline_5m" else stream_kind
+    expected_type = ("kline" if stream_kind == "kline_5m" else
+                     "depthUpdate" if stream_kind == "depth5@500ms" else stream_kind)
     if data.get("e") != expected_type:
         raise UnsafeStream("V5_WSS_EVENT_TYPE_MISMATCH")
     event_ms = _timestamp(data.get("E"))
@@ -114,6 +119,41 @@ def decode_frame(
     common = {"route": route, "kind": stream_kind, "symbol": symbol,
               "event_ms": event_ms, "received_ms": received_ms,
               "order_authority": "NONE"}
+    if stream_kind == "depth5@500ms":
+        # Public partial top-five book snapshot, not a reconstructed diff book.
+        # Not a tick-by-tick executable spread or proof of historical top-of-book.
+        if data.get("e") != "depthUpdate":
+            raise UnsafeStream("V5_WSS_DEPTH_EVENT_INVALID")
+        _timestamp(data.get("U"), allow_zero=True)
+        update_id = _timestamp(data.get("u"), allow_zero=True)
+        if update_id < data["U"]:
+            raise UnsafeStream("V5_WSS_DEPTH_UPDATE_RANGE_INVALID")
+
+        def levels(name: str, *, descending: bool) -> tuple[tuple[float, float], ...]:
+            raw = data.get(name)
+            if not isinstance(raw, list) or not 1 <= len(raw) <= 5:
+                raise UnsafeStream("V5_WSS_DEPTH_LEVELS_INVALID")
+            result = []
+            for entry in raw:
+                if not isinstance(entry, list) or len(entry) != 2:
+                    raise UnsafeStream("V5_WSS_DEPTH_LEVELS_INVALID")
+                result.append((_positive(entry[0]), _positive(entry[1])))
+            prices = [price for price, _ in result]
+            if (len(prices) != len(set(prices))
+                    or prices != sorted(prices, reverse=descending)):
+                raise UnsafeStream("V5_WSS_DEPTH_ORDER_INVALID")
+            return tuple(result)
+
+        bids = levels("b", descending=True)
+        asks = levels("a", descending=False)
+        if asks[0][0] <= bids[0][0]:
+            raise UnsafeStream("V5_WSS_DEPTH_CROSSED_BOOK")
+        return {
+            **common, "update_id": update_id, "bid": bids[0][0],
+            "ask": asks[0][0], "best_bid_quantity": bids[0][1],
+            "best_ask_quantity": asks[0][1],
+            "quote_source": "PARTIAL_DEPTH_500MS",
+        }
     if stream_kind == "bookTicker":
         bid = _positive(data.get("b"))
         ask = _positive(data.get("a"))
@@ -207,7 +247,7 @@ class FeedStatus:
             raise UnsafeStream("V5_WSS_DISCONNECTED_EVENT")
         symbol = event["symbol"]
         recv = event["received_ms"]
-        if kind == "bookTicker":
+        if kind in ("bookTicker", "depth5@500ms"):
             self.last_quote_ms[symbol] = recv
         elif kind == "aggTrade":
             aid = event["aggregate_id"]
