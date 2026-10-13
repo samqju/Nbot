@@ -19,7 +19,7 @@ from nbot.v5.observation_contract import INTERVAL_MS
 from nbot.v5.observation_continuity import ObservationContinuity
 from nbot.v5.public_market import (
     HISTORY, PublicMarketDataError, closed_event_from_server_time,
-    public_get, select_universe,
+    public_get, select_universe, decode_klines,
 )
 from nbot.v5.ws_contract import UnsafeStream, stream_urls
 from nbot.v5.candle_ledger import CandleEvidenceLedger, EvidenceHold
@@ -143,6 +143,7 @@ async def run_probe(
     initial = 0
     compare_count = 0
     invalid_compares: list[str] = []
+    mismatch_details: list[dict] = []
     final_by_symbol: dict[str, bool] = {}
     restart_counts: dict[str, int] = {}
     quote_count = trade_count = 0
@@ -204,6 +205,25 @@ async def run_probe(
                 for symbol in collector.symbols:
                     try:
                         rows = _get_96(symbol, target, getter)
+                        rest = decode_klines(rows, event_open_ms=target)
+                        for rest_bar in rest:
+                            prior = collector.ledger._stored(symbol, rest_bar[0])
+                            if prior is not None and prior != rest_bar:
+                                old_source = collector.ledger.db.execute(
+                                    "SELECT first_source FROM candle_rows "
+                                    "WHERE symbol=? AND open_ms=?",
+                                    (symbol, rest_bar[0]),
+                                ).fetchone()
+                                fields = ("open", "high", "low", "close", "volume")
+                                mismatch_details.append({
+                                    "symbol": symbol,
+                                    "event_open_ms": rest_bar[0],
+                                    "first_source": old_source[0] if old_source else "UNKNOWN",
+                                    "changed_fields": [
+                                        fields[i-1] for i in range(1,6)
+                                        if prior[i] != rest_bar[i]
+                                    ],
+                                })
                         status, added = collector.ledger.synchronize_asof_rest(
                             symbol, rows, event_open_ms=target,
                             observed_ms=clock_ms(),
@@ -245,6 +265,7 @@ async def run_probe(
         "final_missing_symbols": sorted(s for s,v in final_by_symbol.items() if not v),
         "cross_source_rest_match_count": compare_count,
         "cross_source_mismatch": invalid_compares,
+        "cross_source_mismatch_details": mismatch_details[:20],
         "sqlite_reopened_97_count": restarted_count,
         "route_frames": frames,
         "sampled_symbols_with_quote_during_run": quote_count,
