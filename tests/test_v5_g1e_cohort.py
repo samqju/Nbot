@@ -75,7 +75,7 @@ class FiftyMarketProofTests(unittest.TestCase):
                 asyncio.run(run_probe(top=top, seconds=seconds,
                                       getter=lambda *a: self.fail("no network")))
 
-    def _fake(self, *, skip_last=False, mismatch=False):
+    def _fake(self, *, skip_last=False, mismatch=False, mismatch_symbol="BTCUSDT"):
         # Construct a consistent real-format REST snapshot around the current
         # wall-clock event, then inject mock final WSS closes for every coin.
         now_ms = int(time.time()*1000)
@@ -95,8 +95,9 @@ class FiftyMarketProofTests(unittest.TestCase):
             end_ms = int(params["endTime"])
             last_open = end_ms-INTERVAL_MS+1
             rows = klines(last_open)
-            if mismatch and s=="BTCUSDT" and calls[s] == 2:
+            if mismatch and s==mismatch_symbol and calls[s] == 2:
                 rows[-1][4] = "100.75"
+                rows[-1][5] = "10.5"
             return rows
 
         async def fake_listen(route,url,collector,policy,deadline,reached,faults,target):
@@ -181,6 +182,22 @@ class FiftyMarketProofTests(unittest.TestCase):
         ))
         self.assertLess(report["cross_source_rest_match_count"], 50)
         self.assertFalse(report["research_ready"])
+
+    def test_real_world_ada_final_close_and_volume_disagreement_holds(self):
+        report = self._fake(mismatch=True, mismatch_symbol="ADAUSDT")
+        self.assertEqual(report["result"], "HOLD")
+        self.assertEqual(report["wss_final_symbol_count"], 50)
+        self.assertEqual(report["cross_source_rest_match_count"], 49)
+        self.assertEqual(report["sqlite_reopened_97_count"], 50)
+        self.assertEqual(report["cross_source_mismatch_details"], [{
+            "symbol": "ADAUSDT",
+            "event_open_ms": report["cross_source_mismatch_details"][0]["event_open_ms"],
+            "first_source": "WSS_FINAL",
+            "changed_fields": ["close", "volume"],
+        }])
+        self.assertFalse(report["research_ready"])
+        self.assertEqual(report["order_authority"], "NONE")
+
 
 
 if __name__ == "__main__":
