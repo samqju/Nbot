@@ -1,6 +1,6 @@
 # NBOT V5 — Market Intelligence, Strategy Alignment and Learning Roadmap
 
-**Document version:** 1.2  
+**Document version:** 1.3  
 **Date:** 2026-10-13 (IST)  
 **Owner:** NBOT project owner  
 **Repository:** samqju/Nbot  
@@ -721,3 +721,20 @@ The original **G0–G10** roadmap remains the safety/qualification backbone. The
 **Initial status on new branch:** Roadmap imported and V5 restart authorized; NO new V5 source implemented, NO VPS database reset performed, NO service restarted, NO model trained or deployed. Next required action: owner-run read-only PuTTY inventory; only afterward prepare a targeted cleanup command for explicit confirmation.
 
 **Change record — v1.2 / 2026-10-13:** Created a truly clean V4-based development branch; recorded user authorization, verified off-VPS backup provenance, no-order boundary and staged PuTTY-driven VPS reset plan. Documentation change only.
+
+
+---
+
+## 28. V1.3 Observation VPS database reset — user-run PASS, 2026-10-13
+
+**Owner-provided PuTTY stdout (not independently re-executed by assistant):** `PREFLIGHT PASS - removing only approved old databases`; `OLD DATABASE RESET PASS: 25 files removed`; `Common operational database preserved: True`. This followed the user's read-only observation confirming source commit `b1a3c4a8d2a82c994669df7adb0d345e0415ffbf`, seven named NBOT systemd services/timers/target inactive, expected database sizes, 89 GB free, and zero active NBOT process/database file users.
+
+**Precisely scoped action reported complete:** Removed five former V4 SQLite files under `data/observation/v4/`, three former live-observation SQLite files under `data/observation/live/`, zero-byte `data/observation/live/observation.db`, and the 16 present SQLite WAL/SHM companions attached to the eight real database files: 9 base paths + 16 companions = **25 files**. The execution script rechecked exact base-file sizes, seven inactive unit states, and no `fuser` holders before unlinking the enumerated paths; its stdout reported PASS. Source code, configuration, service unit files and `data/common/binance_budget.sqlite` were not part of the removal list.
+
+**Backup boundary:** Historical off-VPS F: archive and independent restore remain documented at `F:\\NBOT_V4_R2_EVIDENCE_BACKUPS\\20261013T115137Z-288e9b1a`. Deletion on the Observation VPS does not modify the laptop archive. A fresh post-reset live-VPS readback was not yet run; PASS is based on owner-reported script exit/output. Execution VPS state remains uninspected in this clean-restart activity.
+
+**Important operating state:** Legacy V4 startup remains PROHIBITED because it may recreate old databases. No V5 VPS checkout, new schema, Observation service, paper book, model or real trade exists yet. Legacy services/timers must stay stopped. New V5 code must be developed/tested offline on the isolated branch, then deployed only with user-visible reviewed PuTTY steps and fresh owner authorization for starting named V5 units.
+
+**Reset checkpoint: PASS (owner-reported). Next checkpoint:** create and test an isolated, no-order V5 candidate observation contract using synthetic closed-5-minute data, complete eligible symbol × LONG/SHORT coverage, BTC validity indicators, missing-evidence rejection, stable decision IDs and deterministic replay. GitHub main/V4 history and F: archival files remain untouched.
+
+**Change record — v1.3 / 2026-10-13:** Recorded successful owner-run targeted Observation VPS reset and boundaries; documentation-only update. No assistant-origin VPS action.
