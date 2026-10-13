@@ -96,15 +96,21 @@ def observe(*, path: str = "/home/ubuntu/nbot_v5_data/g1f_observe.sqlite",
                 "FROM g1f_candidate_events"
             ).fetchone()
             cohorts = db.execute(
-                "SELECT COUNT(*) FROM g1f_universe_snapshots"
-            ).fetchone()[0]
-            if cohorts != 1:
+                "SELECT symbols_json FROM g1f_universe_snapshots"
+            ).fetchall()
+            if len(cohorts) != 1:
                 blockers.append("V5_COHORT_COUNT_INVALID")
+                expected_per_event = 0
+            else:
+                selected = json.loads(cohorts[0][0])
+                expected_per_event = 2 * len(selected)
+                if expected_per_event < 4 or expected_per_event > 100:
+                    blockers.append("V5_COHORT_SIZE_INVALID")
             if not recent or now_ms - recent > MAX_STALE_MIN * 60_000:
                 blockers.append("V5_LAST_EVENT_STALE")
             if recent and recent > now_ms:
                 blockers.append("V5_EVENT_IN_FUTURE")
-            if observed + unscorable != count * 100:
+            if observed + unscorable != count * expected_per_event:
                 blockers.append("V5_EVENT_DENOMINATOR_MISMATCH")
     except sqlite3.DatabaseError as exc:
         raise HealthHold("G1G_SQLITE_QUERY_FAILED") from exc
