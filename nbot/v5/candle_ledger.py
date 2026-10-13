@@ -221,6 +221,7 @@ class CandleEvidenceLedger:
         with self.db:
             for bar in bars:
                 self._insert(symbol, bar, "REST_BOOTSTRAP", observed_ms, digest)
+            self._gate(symbol, "NOT_BOOTSTRAPPED", "RESOLVED", digest)
         return len(bars)
 
     def append_wss_final(self, event: Mapping[str, object]) -> str:
