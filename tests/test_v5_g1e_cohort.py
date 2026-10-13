@@ -184,13 +184,13 @@ class FiftyMarketProofTests(unittest.TestCase):
         self.assertFalse(report["research_ready"])
 
     def test_real_world_ada_final_close_and_volume_disagreement_holds(self):
-        report = self._fake(mismatch=True, mismatch_symbol="ADAUSDT")
+        report = self._fake(mismatch=True, mismatch_symbol="COIN00USDT")
         self.assertEqual(report["result"], "HOLD")
         self.assertEqual(report["wss_final_symbol_count"], 50)
         self.assertEqual(report["cross_source_rest_match_count"], 49)
         self.assertEqual(report["sqlite_reopened_97_count"], 50)
         self.assertEqual(report["cross_source_mismatch_details"], [{
-            "symbol": "ADAUSDT",
+            "symbol": "COIN00USDT",
             "event_open_ms": report["cross_source_mismatch_details"][0]["event_open_ms"],
             "first_source": "WSS_FINAL",
             "changed_fields": ["close", "volume"],
