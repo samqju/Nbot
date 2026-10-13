@@ -1,6 +1,6 @@
 # NBOT V5 — Market Intelligence, Strategy Alignment and Learning Roadmap
 
-**Document version:** 1.6  
+**Document version:** 1.7  
 **Date:** 2026-10-13 (IST)  
 **Owner:** NBOT project owner  
 **Repository:** samqju/Nbot  
@@ -793,3 +793,20 @@ The original **G0–G10** roadmap remains the safety/qualification backbone. The
 **Laptop roadmap mirror:** The previous v1.5 document had not been synchronized after Desktop Commander outage. Sync v1.6 to `C:\Users\Sam\Downloads\NBOT_V5_MARKET_INTELLIGENCE_ARCHITECTURE_AND_ROADMAP_2026-10-13.md` only after verifying connection and GitHub source. The historical verified archive on F: is not altered.
 
 **Change record — v1.6 / 2026-10-13:** Market data REST contract & mocks 36/36 PASS; operational live-VPS API reachability not yet tested; service restarts, data writes and trading forbidden.
+
+
+---
+
+## 32. V1.7 Real Observation VPS Binance public connectivity — owner-run PASS, 2026-10-13
+
+**Provenance:** Owner manually executed a one-shot, read-only Python HTTPS GET diagnostic in the Observation VPS PuTTY shell. It requested `GET https://fapi.binance.com/fapi/v1/time` and three recent `BTCUSDT` `5m` candles via `GET /fapi/v1/klines`, using an explicit event-open cutoff, three-row count check and Binance candle-close timestamp validation. The output was pasted by the owner; the assistant did not independently connect to the VPS or rerun the command.
+
+**Exact owner-reported output:** `BINANCE PUBLIC CONNECTION: PASS`; `BTCUSDT CLOSED CANDLES: 3`; `LATEST CLOSED EVENT (UTC): 2026-10-13 13:25:00+00:00`; `LATEST BTC CLOSE: 83395.00`; `SERVER CLOCK DIFFERENCE (seconds): 0.3`; `OBSERVATION ONLY - NO TRADES`.
+
+**Gate:** Basic remote public Binance USD-M Futures API reachability and timestamp/short BTC five-minute candle retrieval from the Observation VPS **PASS** at the stated instant. This is **not** proof of 96-bar/12-asset or 50-asset continuity, all-asset market eligibility, full production data stream, V5 code execution on VPS, feed-health correctness or readiness for trading. No database writes, code checkout, daemon restart, paper or live execution occurred in this diagnostic. Do not treat the BTC value as a continuously current market quote.
+
+**Next gate:** A one-shot, bounded, user-visible PuTTY diagnostic of the public `exchangeInfo` + `ticker/24hr` eligibility snapshot and 96 consecutive *fully closed* 5-minute candles for the top 12 USDT-perpetual markets plus BTC when not selected. Count and list missing/stale symbols; never silently drop selected eligible symbols; inspect total network requests, runtime and clock agreement. No credentials, downloads, source edits, database changes or service/timer starts. Move to a separately authorized V5 module sandbox on VPS only after the live diagnostic and F0 safety controls are understood.
+
+**Documentation:** This source branch roadmap v1.7 is canonical for the clean restart and shall be mirrored to the laptop `C:\\Users\\Sam\\Downloads\\NBOT_V5_MARKET_INTELLIGENCE_ARCHITECTURE_AND_ROADMAP_2026-10-13.md` when Desktop Commander is online. Preserve F: historical archive untouched.
+
+**Change record — v1.7 / 2026-10-13:** Recorded owner-run read-only public Binance connectivity PASS with honest narrow scope; no operational changes performed by assistant.
