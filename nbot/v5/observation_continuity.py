@@ -6,7 +6,7 @@ paper portfolios or service autostart. Source-health guards are conservative.
 """
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, deque
 from pathlib import Path
 import time
 from typing import Callable, Mapping, Sequence
@@ -44,7 +44,7 @@ class ObservationContinuity:
         # not a quote/trade continuity or freshness certification.
         self.seen_quote_symbols: set[str] = set()
         self.seen_trade_symbols: set[str] = set()
-        self.final_opens: dict[str, list[int]] = {s: [] for s in self.symbols}
+        self.final_opens: dict[str, deque[int]] = {s: deque(maxlen=3) for s in self.symbols}
 
     def close(self) -> None:
         self.ledger.close()
