@@ -92,6 +92,16 @@ class FinalityRemediationProbeTests(unittest.TestCase):
         result=self._synthetic(conflict=True)
         self.assertEqual(result["result"],"PASS_WITH_QUARANTINE")
         for window in result["windows"]:
+            timeline=window["quarantine_timelines"]["COIN00USDT"]
+            self.assertEqual([x["stage"] for x in timeline],list(STAGES))
+            self.assertEqual(timeline[0]["changed_fields"],["close","volume"])
+            self.assertEqual(timeline[2]["changed_fields"],[])
+            self.assertTrue(all(len(x["wss_sha"])==64 and len(x["rest_sha"])==64
+                                for x in timeline))
+            self.assertTrue(timeline[0]["observed_ms"] <
+                            timeline[1]["observed_ms"] <
+                            timeline[2]["observed_ms"])
+            self.assertIn("CONFIRM_REST",window["rest_observation_time_bounds"])
             self.assertEqual(len(window["evidence"]["verified_symbols"]),49)
             self.assertEqual(len(window["evidence"]["quarantined_symbols"]),1)
             self.assertEqual(window["evidence"]["directional_observation_states"]
