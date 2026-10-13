@@ -1,10 +1,10 @@
 # NBOT V5 — Market Intelligence, Strategy Alignment and Learning Roadmap
 
-**Document version:** 1.7  
+**Document version:** 1.8  
 **Date:** 2026-10-13 (IST)  
 **Owner:** NBOT project owner  
 **Repository:** samqju/Nbot  
-**Publication:** New document on GitHub main; a separate local copy in Downloads root  
+**Publication:** V5 clean restart on GitHub branch `v5-clean-restart-20261013`; working mirror in laptop Downloads root  
 **Forensic reference:** V4 source at commit b1a3c4a8d2a82c994669df7adb0d345e0415ffbf  
 **Status:** **Owner-authorized clean V5 restart from pinned V4 source on an isolated GitHub branch. Earlier V5 prototype code is excluded from the new branch. VPS reset/deployment and any service start remain separately gated by owner-run PuTTY inspection and approval. No real-order authority.**  
 **Related governance:** Existing V4-R2 F0 roadmap controls evidence preservation and changes to running systems. This V5 document is the architecture-design successor, **not** an automatic amendment to F0 operations.
@@ -810,3 +810,20 @@ The original **G0–G10** roadmap remains the safety/qualification backbone. The
 **Documentation:** This source branch roadmap v1.7 is canonical for the clean restart and shall be mirrored to the laptop `C:\\Users\\Sam\\Downloads\\NBOT_V5_MARKET_INTELLIGENCE_ARCHITECTURE_AND_ROADMAP_2026-10-13.md` when Desktop Commander is online. Preserve F: historical archive untouched.
 
 **Change record — v1.7 / 2026-10-13:** Recorded owner-run read-only public Binance connectivity PASS with honest narrow scope; no operational changes performed by assistant.
+
+
+---
+
+## 33. V1.8 Twelve-market live Binance candle integrity — owner-run PASS, 2026-10-13
+
+**Evidence source:** Owner pasted output of the bounded public-only, one-time Python HTTPS test executed in Observation VPS PuTTY; assistant has not independently accessed the VPS. The test queried Binance USD-M public `/time`, `/exchangeInfo`, `/ticker/24hr`, and `/klines` for 12 highest-ranked 24-hour quote-volume USDT-margined TRADING PERPETUAL markets; BTCUSDT was among those 12. Requested 96 complete consecutive 5-minute candles for each symbol, checked open/close time boundaries, finite positive OHLC, price bounds and nonnegative volume, and rejected intervals that rolled over while the check ran.
+
+**Exact reported summary:** `Eligible coins tested: 12`; `Total symbols including BTC: 12`; `Complete 96-candle histories: 12`; `Failures: 0`; `Public API requests: 15`; `RESULT: PASS`; `OBSERVATION ONLY - NO TRADES OR DATABASE WRITES`. Selected symbols, in returned liquidity rank order: `BTCUSDT, ETHUSDT, SOLUSDT, ZECUSDT, NEARUSDT, XRPUSDT, HYPEUSDT, DOGEUSDT, STRKUSDT, GTCUSDT, SUIUSDT, ENAUSDT`.
+
+**Gate completed:** Live Observation VPS public Binance API eligibility and candle retrieval for one 12-coin sample **PASS**. The result does not prove the full 50-market universe, live bid/ask quotes, continuous WebSocket health, runtime safety, research labels, learning, profitability, or that the **actual isolated V5 Python module** has run on the VPS. The original V4 directory, deleted historical database sources, stop-only services and laptop historical F: archive were unchanged by the one-shot read-only diagnostic.
+
+**Next stage authorized for preparation:** Guide owner through a separate V5 sandbox checkout at `/home/ubuntu/nbot_v5_sandbox`, fetched from `v5-clean-restart-20261013`, with a pinned Git commit validation and explicit no-touch guarantee for `/home/ubuntu/Nbot`; no systemd starts, execution modules, trading keys or live orders. First run isolated Python offline tests, then a single `python3 -m nbot.v5.public_market --top 12` smoke check from sandbox. Its expected output is descriptive **observe-only summary**, no research/paper orders and no database files created. If the exact sandbox already exists, stop rather than overwrite it. The owner executes and returns the PuTTY output one stage at a time.
+
+**Status:** Design and live public-data connectivity PASS for specified scopes; V5 VPS sandbox checkout and execution **NOT YET PERFORMED** at this entry; every old NBOT service remains intentionally stopped until owner authorizes a specifically named new service. No automatic startup or service migration.
+
+**Change record — v1.8 / 2026-10-13:** Recorded owner-provided live 12/12 candle test and staged isolated V5 one-shot smoke plan. No VPS changes made by assistant.
