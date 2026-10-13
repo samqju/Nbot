@@ -1,6 +1,6 @@
 # NBOT V5 — Market Intelligence, Strategy Alignment and Learning Roadmap
 
-**Document version:** 1.3  
+**Document version:** 1.4  
 **Date:** 2026-10-13 (IST)  
 **Owner:** NBOT project owner  
 **Repository:** samqju/Nbot  
@@ -738,3 +738,20 @@ The original **G0–G10** roadmap remains the safety/qualification backbone. The
 **Reset checkpoint: PASS (owner-reported). Next checkpoint:** create and test an isolated, no-order V5 candidate observation contract using synthetic closed-5-minute data, complete eligible symbol × LONG/SHORT coverage, BTC validity indicators, missing-evidence rejection, stable decision IDs and deterministic replay. GitHub main/V4 history and F: archival files remain untouched.
 
 **Change record — v1.3 / 2026-10-13:** Recorded successful owner-run targeted Observation VPS reset and boundaries; documentation-only update. No assistant-origin VPS action.
+
+
+---
+
+## 29. V1.4 First isolated V5 observation contract — CI PASS, 2026-10-13
+
+**GitHub branch:** `v5-clean-restart-20261013` based on pinned V4 source; current offline test commit `97d272ce987d95b6f723003742abdf21e189b5c4`. No commits made to main. Files added: `nbot/v5/__init__.py`, `nbot/v5/observation_contract.py`, `tests/test_v5_observation_contract.py`, and `.github/workflows/v5-isolated-observation.yml`. All use only Python standard library for the new functionality; no execution adapter, Binance access, model weights, API keys or startup services.
+
+**Implemented so far:** An isolated candidate-record contract accepts a closed five-minute event, event-specific eligible symbol universe of 1–50 distinct symbols, separately supplied BTC market context, and per-symbol evidence. It creates one deterministic record per symbol for each of LONG and SHORT; for 50 symbols this is 100 independently attributable observation rows per event, not trades. The record stores all 24 legacy-named pattern identities as MATCH/NO_MATCH/UNAVAILABLE supplied evidence (actual V5 detectors not yet implemented), a BTC availability flag, explicit missing/stale/future-data refusal reasons, no-order authority, no trade action and status OBSERVED versus UNSCORABLE. This does not fabricate outcomes or increase a 2,000-matured training count. SQLite prototype persistence rejects updates/deletes and changed-payload replay for the same ID and wraps each batch atomically; tested only in disposable in-memory DBs.
+
+**Validation evidence:** GitHub Actions run `38401434911`, URL `https://github.com/samqju/Nbot/actions/runs/38401434911`, concluded SUCCESS on the same source commit. Python 3.12 `python -m unittest -v tests.test_v5_observation_contract` reported **Ran 8 tests; OK**. Validated 50→100 directional rows, symmetric sides, missing symbol, stale BTC, incomplete/multiple pattern states, future source and invalid timing guards, duplicate universe refusal, repeatability/append-only and atomic rollback. This is *unit-level synthetic validation*, not production readiness, full technical-detector coverage, live market intelligence, proof of profitability or a guarantee of all required F0 safety invariants.
+
+**Gate classification:** V5-G1a candidate-observation contract **PASS (synthetic / isolated)**. Full first observation milestone **IN PROGRESS** until read-only feed adaptation, all 24 actual detectors, time-continuity/provenance integration, eligible universe rules, deterministic replay of real archived-like fixtures, failure containment and runtime resource checks meet the roadmap. No VPS deployment, new VPS database creation, service/timer start, paper/live trading, model training, promotion or credentials authorized by this CI result.
+
+**Next development checkpoint:** Extend offline tests with genuine detector output and canonical historical-candle interface under a conservative BTC-as-of gate; stay within small VPS memory/CPU limits, with no legacy V4 write path or order imports. Subsequently seek separate user-reviewed PuTTY deployment/start steps.
+
+**Change record — v1.4 / 2026-10-13:** Recorded independently observed 8/8 GitHub CI result and precise limits of first V5 code. GitHub documentation only pending laptop mirror sync if Desktop Commander connection is unavailable.
