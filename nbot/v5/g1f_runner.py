@@ -92,6 +92,57 @@ async def rest_seed(session, symbols, event, *, getter=public_get):
     return result
 
 
+
+def record_restart_hold_events(session, journal, cohort_digest, eligible,
+                               *, current_closed_event_ms: int,
+                               observed_ms: int) -> int:
+    """Persist every missed/unfinalized 5m window as UNSCORABLE on restart.
+
+    Never infer hypothetical trades or retroactive trade/quote health.
+    Limit repair markers to 96 events; larger gaps require owner review.
+    """
+    previous=journal.latest_event()
+    unfinished=session.ledger.db.execute("""
+        SELECT event_open_ms FROM v5_wss_final_proof
+        WHERE event_open_ms NOT IN (
+            SELECT event_open_ms FROM g1f_event_manifest
+        )
+        UNION
+        SELECT event_open_ms FROM v5_finality_checks
+        WHERE event_open_ms NOT IN (
+            SELECT event_open_ms FROM g1f_event_manifest
+        )
+        UNION
+        SELECT open_ms FROM candle_rows
+        WHERE first_source='WSS_FINAL'
+          AND open_ms NOT IN (
+              SELECT event_open_ms FROM g1f_event_manifest
+          )
+        ORDER BY event_open_ms
+    """).fetchall()
+    if unfinished and unfinished[-1][0]>current_closed_event_ms:
+        raise EvidenceHold("G1F_RESTART_FUTURE_SOURCE_EVENT")
+    if previous is None and unfinished:
+        previous=unfinished[0][0]-INTERVAL_MS
+    if previous is None or previous>=current_closed_event_ms:
+        return 0
+    delta=current_closed_event_ms-previous
+    if delta%INTERVAL_MS:
+        raise EvidenceHold("G1F_RESTART_EVENT_NOT_ALIGNED")
+    missing=delta//INTERVAL_MS
+    if missing>MAX_CATCHUP_EVENTS:
+        raise EvidenceHold("G1F_RESTART_GAP_OVER_96_EVENTS")
+    for i in range(1,missing+1):
+        opened=previous+i*INTERVAL_MS
+        journal.commit_event(
+            cohort_digest=cohort_digest,event_open_ms=opened,
+            observed_ms=observed_ms,eligible_symbols=eligible,
+            candles_by_symbol={},quarantine={},
+            health_holds={s:("PROCESS_WAS_OFFLINE",) for s in eligible},
+            btc_valid=False,coverage_valid=False,
+        )
+    return missing
+
 class ObservationOnlyRunner:
     def __init__(self, *, top: int, path: Path, max_seconds: int,
                  getter=public_get):
@@ -142,45 +193,10 @@ class ObservationOnlyRunner:
             # REST historical sync before any WebSocket frame can enter.
             await rest_seed(session,symbols,event,getter=self.getter)
             # Previous recorded events are not silently skipped on restart.
-            previous=journal.latest_event()
-            unfinished=session.ledger.db.execute("""
-                SELECT event_open_ms FROM v5_wss_final_proof
-                WHERE event_open_ms NOT IN (
-                    SELECT event_open_ms FROM g1f_event_manifest
-                )
-                UNION
-                SELECT event_open_ms FROM v5_finality_checks
-                WHERE event_open_ms NOT IN (
-                    SELECT event_open_ms FROM g1f_event_manifest
-                )
-                UNION
-                SELECT open_ms FROM candle_rows
-                WHERE first_source='WSS_FINAL'
-                  AND open_ms NOT IN (
-                      SELECT event_open_ms FROM g1f_event_manifest
-                  )
-                ORDER BY event_open_ms
-            """).fetchall()
-            if unfinished and unfinished[0][0]>event:
-                raise EvidenceHold("G1F_RESTART_FUTURE_SOURCE_EVENT")
-            if previous is None and unfinished:
-                previous=unfinished[0][0]-INTERVAL_MS
-            if previous is not None and previous<event:
-                missing=(event-previous)//INTERVAL_MS
-                if missing>MAX_CATCHUP_EVENTS:
-                    raise EvidenceHold("G1F_RESTART_GAP_OVER_96_EVENTS")
-                for i in range(1,missing+1):
-                    opened=previous+i*INTERVAL_MS
-                    journal.commit_event(
-                        cohort_digest=identity,event_open_ms=opened,
-                        observed_ms=wall_ms(),eligible_symbols=eligible,
-                        candles_by_symbol={},
-                        quarantine={},
-                        health_holds={s:("PROCESS_WAS_OFFLINE",)
-                                      for s in eligible},
-                        btc_valid=False,coverage_valid=False,
-                    )
-                    self.stats["restart_missing_events"]+=1
+            self.stats["restart_missing_events"]+=record_restart_hold_events(
+                session,journal,identity,eligible,
+                current_closed_event_ms=event,observed_ms=wall_ms(),
+            )
             self.policy=ReconnectPolicy()
             tasks=[
                 asyncio.create_task(self._route(
