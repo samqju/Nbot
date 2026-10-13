@@ -211,5 +211,43 @@ class V5BoundedStreamTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             asyncio.run(run_probe(symbols=("BTCUSDT",), seconds=25))
 
+    def test_500ms_depth_reduces_quote_work_without_claiming_tick_execution(self):
+        store = BoundedObservationBuffer(("BTCUSDT", "ETHUSDT"),
+                                         quote_mode="depth5@500ms")
+        store.connect("public")
+        frame = {
+            "stream": "btcusdt@depth5@500ms",
+            "data": {"e": "depthUpdate", "E": RECEIVED - 8,
+                     "s": "BTCUSDT", "U": 90, "u": 91,
+                     "b": [["100", "3"]], "a": [["101", "4"]],
+                     "st": 1}
+        }
+        kind = store.consume("public", json.dumps(frame), received_ms=RECEIVED)
+        self.assertEqual(kind, "QUOTE_LATEST_REPLACED")
+        self.assertEqual(store.describe()["latest_quotes_retained"], 1)
+        self.assertEqual(store.describe()["quote_mode"], "depth5@500ms")
+        self.assertEqual(store.coins["BTCUSDT"].last_quote["quote_source"],
+                         "PARTIAL_DEPTH_500MS")
+        with self.assertRaisesRegex(UnsafeStream, "WRONG_QUOTE_SOURCE"):
+            store.consume("public", ticker(), received_ms=RECEIVED)
+
+    def test_500ms_depth_stale_update_id_does_not_refresh(self):
+        store = BoundedObservationBuffer(("BTCUSDT",), quote_mode="depth5@500ms")
+        store.connect("public")
+        def frame(update, event):
+            return json.dumps({
+                "stream": "btcusdt@depth5@500ms",
+                "data": {"e": "depthUpdate", "E": event, "s": "BTCUSDT",
+                         "U": update - 1, "u": update,
+                         "b": [["100", "2"]], "a": [["101", "3"]]}
+            })
+        store.consume("public", frame(100, RECEIVED - 15), received_ms=RECEIVED)
+        self.assertEqual(store.consume("public", frame(99, RECEIVED - 5),
+                                       received_ms=RECEIVED + 1),
+                         "OUT_OF_ORDER_QUOTE")
+        self.assertEqual(store.health.last_quote_ms["BTCUSDT"], RECEIVED)
+
+
+
 if __name__ == "__main__":
     unittest.main()
