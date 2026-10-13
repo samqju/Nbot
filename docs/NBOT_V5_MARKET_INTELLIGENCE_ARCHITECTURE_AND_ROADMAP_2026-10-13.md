@@ -1,6 +1,6 @@
 # NBOT V5 — Market Intelligence, Strategy Alignment and Learning Roadmap
 
-**Document version:** 2.8  
+**Document version:** 2.8.1  
 **Date:** 2026-10-13 (IST)  
 **Owner:** NBOT project owner  
 **Repository:** samqju/Nbot  
@@ -1059,3 +1059,20 @@ The standalone new service then started using the **same** persistent DB, recogn
 **Roadmap continuation:** Ordinary future V5 engineering is pre-authorized without asking at each milestone. Continue G2 full eligible-population and BTC-regime scientific candidate design while the independent 24-hour reliability gate accumulates evidence; require remediation if the soak reveals a data/source failure. No Execution VPS migration or real-money trading authorization is implied.
 
 **Change record — v2.8 / 2026-10-13:** Owner-granted standard milestone autonomy; five V4 retired boot symlinks disabled reversibly, V5 enabled, actual reboot proven and all V4 remain inactive, SQLite snapshot/integrity verified, 156/156 CI/VPS tests, hourly read-only audit installed and verified, automated next-day 24h review scheduled.
+
+
+---
+
+## 44. V2.8.1 — Owner-authorized retirement of Execution VPS legacy V3 live-paper workers (2026-10-13)
+
+**Owner instruction:** Owner explicitly questioned why the two unnecessary old Execution VPS services were still running and requested stopping them; current Observation-only V5 does not use old Execution V3 paper workers. This was treated as an independently authorized, reversible service shutdown; **no permission to send paper or real-money orders or delete legacy code/data** was inferred.
+
+**Before change, verified directly on `nbot-execution`:** `nbot-execution-live-paper.service` described itself as `NBOT V3 LIVE_PAPER Execution Worker`; `nbot-control-tunnel-live-paper.service` as `NBOT V3 Execution -> Observation LIVE_PAPER Control Tunnel`. Both had `ActiveState=active`, `UnitFileState=enabled`, `Restart=always` and `WantedBy=multi-user.target`; execution worker wanted the control tunnel. A third `nbot-control-tunnel-testnet.service` was already disabled. These service identities were read from live `systemctl show/list-unit-files` output without exposing secret environment variables.
+
+**Action:** Saved a minimal service-state audit (0600 permissions) at `/home/ubuntu/NBOT_V3_EXECUTION_SHUTDOWN_AUDIT_20261013.txt`, then executed `sudo systemctl disable --now nbot-execution-live-paper.service nbot-control-tunnel-live-paper.service` on **Execution VPS only**. Systemd confirmed removal of their two `multi-user.target.wants` symlinks and both services `ActiveState=inactive`, `SubState=dead`, `UnitFileState=disabled`, `MainPID=0`, `Result=success`. A second independent read-only verification confirmed there were **zero running NBOT systemd services** on Execution VPS; all three known NBOT execution unit files (the two old live-paper plus existing testnet tunnel) show disabled. No unit files were deleted, masked, edited or migrated, no old V3/V4 code/databases/logs were removed and no real-money order flow was enabled.
+
+**Independent Observation VPS check:** Immediately following Execution VPS shutdown, the Observation host `base` still reported `nbot-v5-observation-only.service` **active, enabled, MainPID present, NRestarts=0**, and `nbot-v5-g1g-health.timer` **active, enabled**. Thus stopping the legacy execution/control tunnel had not interrupted the V5 collector or hourly G1g audit in this observed check.
+
+**Safety and roadmap status:** This removes legacy Execution VPS idle workload and reboot/autorestart behavior before any V5 Champion/Challenger deployment. It does **not** indicate that a V5 Execution agent, paper books, model, or live-trade infrastructure is already running. Prior G1g 24-hour soak remains pending, and G2 learning/scientific-observation milestones remain incomplete. Future Execution VPS reuse must involve independent owner-reviewed V5 Champion and Challenger isolated portfolio engineering and simulation validation; no implicit restart of legacy V3 workers.
+
+**Change record — v2.8.1 / 2026-10-13:** Reversibly stopped and disabled both owner-identified unused V3 execution live-paper workers, verified Execution VPS NBOT idle, confirmed V5 Observation VPS unaffected, preserved all existing source/data/logs and legacy audit evidence.
