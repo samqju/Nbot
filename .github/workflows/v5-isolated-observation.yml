@@ -7,11 +7,13 @@ on:
     paths:
       - "nbot/v5/**"
       - "tests/test_v5_observation_contract.py"
+      - "tests/test_v5_pattern_adapter.py"
       - ".github/workflows/v5-isolated-observation.yml"
   pull_request:
     paths:
       - "nbot/v5/**"
       - "tests/test_v5_observation_contract.py"
+      - "tests/test_v5_pattern_adapter.py"
       - ".github/workflows/v5-isolated-observation.yml"
   workflow_dispatch:
 
@@ -30,4 +32,4 @@ jobs:
         with:
           python-version: "3.12"
       - name: Test synthetic-only V5 candidates and immutable ledger
-        run: python -m unittest -v tests.test_v5_observation_contract
+        run: python -m unittest -v tests.test_v5_observation_contract tests.test_v5_pattern_adapter
