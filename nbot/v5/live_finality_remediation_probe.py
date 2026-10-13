@@ -148,10 +148,38 @@ async def run_probe(*,top=50,windows=2,seconds=338,getter=public_get):
                     any(x.get("error") for x in stage["issues"]) for stage in stages
                 ):
                     status=audit.finalize_directional_observations(symbols,target)
+                # Export immutable source digests and exact REST observation
+                # timestamps for discrepant symbols before ephemeral DB cleanup.
+                timelines={}
+                for disputed in status["quarantined_symbols"]:
+                    checks=db.execute("""
+                        SELECT stage,observed_ms,wss_sha,rest_sha,changed_fields_json
+                        FROM v5_finality_checks
+                        WHERE symbol=? AND event_open_ms=? ORDER BY check_id
+                    """,(disputed,target)).fetchall()
+                    timelines[disputed]=[
+                        {"stage":stage_name,"observed_ms":seen,
+                         "wss_sha":wss_digest,"rest_sha":rest_digest,
+                         "changed_fields":json.loads(fields)}
+                        for stage_name,seen,wss_digest,rest_digest,fields in checks
+                    ]
+                stage_times={}
+                for stage_name in STAGES:
+                    bounds=db.execute("""
+                        SELECT MIN(observed_ms),MAX(observed_ms)
+                        FROM v5_finality_checks
+                        WHERE event_open_ms=? AND stage=?
+                    """,(target,stage_name)).fetchone()
+                    if bounds[0] is not None:
+                        stage_times[stage_name]={
+                            "first_ms":bounds[0],"last_ms":bounds[1],
+                        }
                 reports.append({
                     "window":n+1,"event_open_ms":target,
                     "wss_final_count":len(live),"missing_final":missing,
-                    "wss_market":stats,"rest_stages":stages,"evidence":status,
+                    "wss_market":stats,"rest_stages":stages,
+                    "rest_observation_time_bounds":stage_times,
+                    "quarantine_timelines":timelines,"evidence":status,
                 })
                 if db.execute("PRAGMA quick_check").fetchone()[0]!="ok":
                     raise ValueError("V5_FINALITY_SQLITE_QUICK_CHECK")
