@@ -144,6 +144,7 @@ async def run_probe(
     final_by_symbol: dict[str, bool] = {}
     restart_counts: dict[str, int] = {}
     quote_count = trade_count = 0
+    all_symbols: tuple[str, ...] = ()
     frames = {}
     peak = 0.0
     policy = ReconnectPolicy()
@@ -151,6 +152,7 @@ async def run_probe(
     with TemporaryDirectory(prefix="nbot_v5_g1e_cohort_") as directory:
         dbpath = Path(directory) / "g1e_temp.db"
         with ObservationContinuity(selected, dbpath) as collector:
+            all_symbols = collector.symbols
             for symbol in collector.symbols:
                 try:
                     rows = _get_96(symbol, event, getter)
@@ -209,7 +211,7 @@ async def run_probe(
                         invalid_compares.append(symbol + "_" + str(exc)[:80])
             # Persisted source truth tested only after connection closes.
         with CandleEvidenceLedger(dbpath) as verified:
-            for symbol in selected:
+            for symbol in all_symbols:
                 record = verified.inspect(symbol)
                 restart_counts[symbol] = record["closed_bar_count"]
                 if record["open_candle_gates"]:
@@ -220,17 +222,18 @@ async def run_probe(
     # A socket generation can transport valid data while research remains
     # unqualified: policy always reports research_ready=False.
     passed = (
-        initial == len(selected)
-        and final_count == len(selected)
-        and compare_count == len(selected)
-        and restarted_count == len(selected)
+        initial == len(all_symbols)
+        and final_count == len(all_symbols)
+        and compare_count == len(all_symbols)
+        and restarted_count == len(all_symbols)
         and not faults and not invalid_compares
     )
     return {
         "result": "PASS" if passed else "HOLD",
         "mode": "50_MARKET_REAL_WSS_FINAL_AND_REST_COMPARE_ONLY",
         "selected_symbol_count": len(selected),
-        "symbol_list": list(selected),
+        "total_symbols_including_btc": len(all_symbols),
+        "symbol_list": list(all_symbols),
         "rest_bootstrap_96_count": initial,
         "wss_final_symbol_count": final_count,
         "final_missing_symbols": sorted(s for s,v in final_by_symbol.items() if not v),
