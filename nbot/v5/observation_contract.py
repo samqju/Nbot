@@ -2,7 +2,7 @@
 
 This module only validates and stores complete two-sided candidate *observations*.
 It never requests market data, sends a recommendation, runs a model, or places
-paper/live orders. Pattern classifications are inputs; detectors come later.
+paper/live orders. Pattern classifications are supplied by a separately tested offline adapter.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import re
 import sqlite3
 from typing import Mapping, Sequence
 
-SCHEMA_VERSION = "NBOT_V5_CANDIDATE_OBSERVATION_V1"
+SCHEMA_VERSION = "NBOT_V5_CANDIDATE_OBSERVATION_V2"
 INTERVAL_MS = 300_000
 MAX_SYMBOLS = 50
 SIDES = ("LONG", "SHORT")
@@ -55,6 +55,9 @@ class Evidence:
     source_max_bar_open_ms: int
     observed_at_ms: int
     patterns_by_side: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    quality_issues: tuple[str, ...] = ()
+    source_digest: str | None = None
+    detector_version: str | None = None
 
 
 def _canonical(value: object) -> str:
@@ -76,7 +79,7 @@ def _evidence_reasons(
         evidence.observed_at_ms,
     )):
         return [f"{prefix}_INVALID_TIMESTAMPS"]
-    reasons = []
+    reasons = [f"{prefix}_{reason}" for reason in evidence.quality_issues]
     if evidence.last_closed_bar_open_ms != event_open_ms:
         reasons.append(f"{prefix}_CANDLE_MISSING_OR_STALE")
     if evidence.source_max_bar_open_ms != event_open_ms:
@@ -149,6 +152,9 @@ def build_candidate_records(
                 "symbol": symbol,
                 "side": side,
                 "btc_context_valid": not btc_errors,
+                "btc_source_digest": btc_context.source_digest if btc_context else None,
+                "source_digest": evidence.source_digest if evidence else None,
+                "detector_version": evidence.detector_version if evidence else None,
                 "patterns": states,
                 "status": "UNSCORABLE" if reasons else "OBSERVED",
                 "reason_codes": reasons,
