@@ -15,6 +15,7 @@ Group=ubuntu
 WorkingDirectory=/home/ubuntu/nbot_v5_sandbox
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=PYTHONUNBUFFERED=1
+ExecCondition=/home/ubuntu/nbot_v5_venv/bin/python -m nbot.v5.g1f_preflight
 ExecStart=/home/ubuntu/nbot_v5_venv/bin/python -u -m nbot.v5.g1f_runner --db /home/ubuntu/nbot_v5_data/g1f_observe.sqlite --top 50 --max-seconds 0
 Restart=no
 TimeoutStopSec=45
