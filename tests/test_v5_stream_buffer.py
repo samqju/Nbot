@@ -1,6 +1,8 @@
 """Synthetic resource caps, candle continuity and quote coalescing tests."""
+import asyncio
 import json
 import unittest
+from unittest.mock import patch
 
 from nbot.v5.observation_contract import INTERVAL_MS
 from nbot.v5.stream_buffer import BoundedObservationBuffer
@@ -166,6 +168,48 @@ class V5BoundedStreamTests(unittest.TestCase):
             self.buffer.seed_closed_candles("SOLUSDT", klines(),
                                             event_open_ms=EVENT)
 
+
+    def test_load_probe_reports_bounded_latest_state_with_no_authority(self):
+        from nbot.v5.ws_capacity_probe import run_probe
+
+        async def sample(route, url, store, *, seconds):
+            self.assertEqual(seconds, 10)
+            self.assertTrue(url.startswith("wss://fstream.binance.com/"))
+            store.connect(route)
+            if route == "public":
+                for i in range(100):
+                    store.consume("public", ticker(updated=i + 1), received_ms=RECEIVED)
+            else:
+                store.consume("market", trade(agg=1), received_ms=RECEIVED)
+            return {"route": route, "connected": True, "frames": 100,
+                    "rejected": {}, "frame_cap_hit": False,
+                    "duration_seconds": 10.0}
+
+        with patch("nbot.v5.ws_capacity_probe._sample", side_effect=sample):
+            result = asyncio.run(run_probe(symbols=("BTCUSDT", "ETHUSDT"), seconds=10))
+        self.assertEqual(result["result"], "PASS")
+        self.assertEqual(result["buffer"]["latest_quotes_retained"], 1)
+        self.assertEqual(result["buffer"]["event_counts"]["quote"], 100)
+        self.assertFalse(result["research_ready"])
+        self.assertEqual(result["order_authority"], "NONE")
+
+    def test_load_probe_fails_closed_on_frame_limit(self):
+        from nbot.v5.ws_capacity_probe import run_probe
+
+        async def sample(route, url, store, *, seconds):
+            store.connect(route)
+            store.totals["quote"] += 1
+            store.totals["trade"] += 1
+            return {"route": route, "connected": True, "frames": 50000,
+                    "rejected": {}, "frame_cap_hit": route == "public",
+                    "duration_seconds": 2.0}
+
+        with patch("nbot.v5.ws_capacity_probe._sample", side_effect=sample):
+            result = asyncio.run(run_probe(symbols=("BTCUSDT",), seconds=10))
+        self.assertEqual(result["result"], "HOLD")
+        self.assertIn("PUBLIC_FRAME_CAP", result["reasons"])
+        with self.assertRaises(ValueError):
+            asyncio.run(run_probe(symbols=("BTCUSDT",), seconds=25))
 
 if __name__ == "__main__":
     unittest.main()
