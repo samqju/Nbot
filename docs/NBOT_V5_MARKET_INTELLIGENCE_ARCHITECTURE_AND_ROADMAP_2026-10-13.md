@@ -1,6 +1,6 @@
 # NBOT V5 — Market Intelligence, Strategy Alignment and Learning Roadmap
 
-**Document version:** 2.7  
+**Document version:** 2.8  
 **Date:** 2026-10-13 (IST)  
 **Owner:** NBOT project owner  
 **Repository:** samqju/Nbot  
@@ -1030,3 +1030,32 @@ The standalone new service then started using the **same** persistent DB, recogn
 **Next approval request:** Owner to authorize a dedicated G1g **boot coexistence safety** phase: read-only inventory of ALL V4-enabled units and dependencies, owner-reviewed disabling/masking of approved retired V4 units only (never deleting V4 evidence), then controlled enablement of new V5 service across reboot, with a separate extended 24-hour+ observation soak and fault-recovery/audit monitoring. Do not activate model-training or Execution VPS as part of G1g.
 
 **Change record — v2.7 / 2026-10-13:** Owner-approved G1f persistent observation-only engineering verified with 149/149 GitHub+VPS tests, real 50-coin observation and 300 total durable LONG/SHORT records (200 observed/100 unscorable), active secured V5-only systemd service under a 200 MiB limit; boot-on-reboot intentionally blocked pending legacy V4 enabled-unit remediation.
+
+
+---
+
+## 43. V2.8 G1g V4/V5 boot transition and 24-hour monitoring — BOOT PASS, SOAK PENDING (2026-10-13)
+
+**Authority update:** Owner approved G1g and pre-authorized ordinary, reversible subsequent roadmap milestones without requiring repeated approvals; continue reporting completed milestone evidence. Real-money trading authority and potentially irreversible/high-impact changes still require separate owner approval. Existing no-order, training-readiness and two-VPS separation constraints remain binding.
+
+**Reboot conflict verified:** On Observation VPS hostname base (initial boot ID bb78953b-e8e0-4e0b-8703-a18a6bd49a42), legacy units were inactive but five boot entries were enabled: nbot-observer.target, nbot-observation-live.service, nbot-v4-research.service, nbot-v4-paper-contest.service, and nbot-v4-training.timer. Old target wanted the legacy observer and research-epoch timer. The independently verified Execution VPS retained its two existing live-paper services active; no changes were made there.
+
+**Reversible migration:** A private 916-line systemd unit inventory was saved to /home/ubuntu/nbot_v5_data/G1G_BOOT_UNITS_PRECHANGE_20261013.txt. Exactly those five retired V4 boot entries were disabled (not removed/masked); each returned disabled. Original V4 unit definitions, drop-ins, code, databases, forensic F: backups and GitHub main were preserved. Only nbot-v5-observation-only.service was enabled for multi-user boot. The multi-user.target dependency check showed V5 and host swap, no legacy NBOT observer; timers.target showed no old NBOT timer. The running V5 service had Restart=no and 200 MiB memory limit.
+
+**Pre-reboot data safety:** The live isolated V5 SQLite observation ledger passed PRAGMA quick_check=ok. An independent online SQLite backup was saved at /home/ubuntu/nbot_v5_data/g1g_pre_reboot_snapshot.sqlite (about 3.6 MiB) and also verified quick_check=ok.
+
+**Actual reboot and recovery:** Only Observation VPS was rebooted using sudo systemctl reboot, without touching Execution VPS. The first SSH retry timed out during restart; a later successful connection confirmed a different system boot ID, 9bc008f6-eaa2-4ced-8a9d-c3f54f3b5a6e. V5 automatically started, with ActiveState=active, UnitFileState=enabled, MainPID=1082, NRestarts=0 and about 52–59 MiB actual memory against 200 MiB bound. All SEVEN checked legacy V4 observation services/timers/target stayed inactive, with all five retired boot entries disabled. V5 boot journal showed G1F_PREFLIGHT_PASS OBSERVATION_ONLY; public market and quote WebSocket feeds reconnected with actual nonzero accepted frames, zero initial reported trade ID gaps and zero reconnect attempts during checked window. Both original V5 SQLite ledger and its pre-reboot snapshot again passed quick_check=ok.
+
+**Independent monitoring implementation:** Added nbot/v5/g1g_health.py, a READ-ONLY, fail-closed health check of seven legacy runtime states, the five retired boot states, V5 startup/activation status and memory bounds, read-only SQLite integrity check, frozen coin cohort denominator, event freshness threshold of 20 minutes, and observed versus unscorable directional records. It always reports research_ready=false, training_labels_created=0, order_authority=NONE; it cannot modify a service, access trading credentials or submit orders. Initial mocked systemctl test fixture bug was fixed without weakening the check.
+
+**Hourly unattended audit:** Added deploy/v5/nbot-v5-g1g-health.service, a read-only non-root oneshot, with ProtectSystem=strict, ProtectHome=read-only, Restart=no, MemoryMax=64M and CPUQuota=25%, and deploy/v5/nbot-v5-g1g-health.timer, a monotonic one-hour timer with OnBootSec=8min and Persistent=true. Both installed systemd units were SHA256-identical to GitHub files and passed systemd-analyze verify. Manual service activation yielded Result=success and ExecMainStatus=0. Timer is enabled and active with a verified next monotonic trigger. An actual scheduled hourly read-only run logged another PASS via journald (8 manifests, 700 OBSERVED + 100 UNSCORABLE directional records, database integrity OK, V4 inactive/disabled, V5 active/enabled, zero health blockers). It produces passive health evidence; it does not restart V5 or contact Execution VPS.
+
+**Engineering verification:** GitHub CI code/test commit 5044dd15927e1c2cda9d6431b1b98ea46ea26e8f, Actions run 38434353024, https://github.com/samqju/Nbot/actions/runs/38434353024, SUCCESS with 156/156 Python 3.12 safety tests. Actual Observation VPS ran the same 156 tests successfully in 27.490s. This includes new tests/test_v5_g1g_health.py and tests/test_v5_g1g_service.py, covering every legacy boot/runtime conflict, missing/stale/incorrectly sized event ledger, unsafe DB symlink/memory, limits and no trading authority. The isolated sandbox was fast-forwarded to that verified commit and remained clean while the original V5 observation-only systemd process continued running. Independent read-only postboot G1g health audit was PASS with 8 event manifests, 700 observed + 100 unscorable records and no safety blockers.
+
+**Extended soak:** A one-time automated 24-hour follow-up was scheduled for 2026-10-14 16:58:42 UTC (2026-10-14 22:28:42 India time), to inspect hourly audit journals, five-minute durable event continuity, observed/held windows, systemd boot/restarts, memory, fault evidence and database integrity. If connected inspection infrastructure is unavailable, the result must be UNVERIFIED rather than fabricated. The local hourly timer generates its own evidence while the laptop is offline.
+
+**Disposition:** G1g **reversible legacy boot isolation, real reboot, automatic V5-only startup, SQLite restart integrity and hourly monitor deployment PASS**. The full 24-hour+ uninterrupted market-feed/reconnect soak is STILL RUNNING / HOLD; it must NOT be recorded as a completed PASS before independent next-day evidence. Research readiness, 2,000 valid matured outcome labels, Champion training, dual paper portfolio execution, model promotion and real money remain NOT AUTHORIZED. No real/paper exchange orders were created.
+
+**Roadmap continuation:** Ordinary future V5 engineering is pre-authorized without asking at each milestone. Continue G2 full eligible-population and BTC-regime scientific candidate design while the independent 24-hour reliability gate accumulates evidence; require remediation if the soak reveals a data/source failure. No Execution VPS migration or real-money trading authorization is implied.
+
+**Change record — v2.8 / 2026-10-13:** Owner-granted standard milestone autonomy; five V4 retired boot symlinks disabled reversibly, V5 enabled, actual reboot proven and all V4 remain inactive, SQLite snapshot/integrity verified, 156/156 CI/VPS tests, hourly read-only audit installed and verified, automated next-day 24h review scheduled.
