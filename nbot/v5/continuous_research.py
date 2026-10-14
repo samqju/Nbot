@@ -30,6 +30,51 @@ def ro(path):
     return closing(sqlite3.connect(p.resolve().as_uri()+"?mode=ro",uri=True,timeout=10))
 
 
+def bounded_original_event_batch(source, store, *, start_event_ms, max_events):
+    """V4 catch-up principle, V5 original immutable event cursor.
+
+    No full-history event list and no opaque 'skip newest on restart'. A
+    partially processed event has no EVENT_COMPLETE marker and is retried
+    idempotently; a missing older manifest is an explicit source HOLD.
+    """
+    if type(start_event_ms) is not int or start_event_ms<0 or (
+            type(max_events) is not int or not 1<=max_events<=3):
+        raise ValueError("G4_RESEARCH_CURSOR_INPUT_INVALID")
+    last=store.db.execute(
+        "SELECT body FROM research_journal WHERE kind='EVENT_COMPLETE' "
+        "ORDER BY seq DESC LIMIT 1").fetchone()
+    completed=store.db.execute(
+        "SELECT COUNT(*) FROM research_journal WHERE kind='EVENT_COMPLETE'"
+    ).fetchone()[0]
+    cursor=None
+    if last:
+        body=json.loads(last[0])
+        cursor=body.get("event_ms")
+        if (type(cursor) is not int or cursor<start_event_ms
+                or cursor%300000):
+            raise ValueError("G4_RESEARCH_CURSOR_TAMPERED")
+    with ro(source) as db:
+        db.execute("PRAGMA query_only=ON")
+        if cursor is not None:
+            source_completed=db.execute(
+                "SELECT COUNT(*) FROM g1f_event_manifest "
+                "WHERE event_open_ms>=? AND event_open_ms<=?",
+                (start_event_ms,cursor)).fetchone()[0]
+            if source_completed!=completed:
+                raise ValueError("G4_RESEARCH_HISTORICAL_EVENT_GAP_HOLD")
+        rows=db.execute(
+            "SELECT event_open_ms FROM g1f_event_manifest "
+            "WHERE event_open_ms>=? AND event_open_ms>? "
+            "ORDER BY event_open_ms LIMIT ?",
+            (start_event_ms,cursor if cursor is not None else start_event_ms-1,
+             max_events)).fetchall()
+    events=tuple(int(r[0]) for r in rows)
+    if any(event%300000 or (cursor is not None and event<=cursor)
+           for event in events):
+        raise ValueError("G4_RESEARCH_EVENT_SEQUENCE_INVALID")
+    return events
+
+
 class ContinuousResearch:
     def __init__(self, *, source, vault, registry, root, protocol, start_event_ms):
         root=Path(root)
@@ -77,10 +122,9 @@ class ContinuousResearch:
     def _tick_from_source(self, now_ms, *, max_events, vault_path):
         if type(max_events) is not int or not 1<=max_events<=3:
             raise ValueError("RESEARCH_BATCH_BOUNDS")
-        with ro(self.source) as db:
-            events=[r[0] for r in db.execute("SELECT event_open_ms FROM g1f_event_manifest WHERE event_open_ms>=? ORDER BY event_open_ms",(self.start_event_ms,))]
-        done={json.loads(r[0])["event_ms"] for r in self.store.db.execute("SELECT body FROM research_journal WHERE kind='EVENT_COMPLETE'")}
-        selected=[e for e in events if e not in done][:max_events]
+        selected=bounded_original_event_batch(
+            self.source,self.store,start_event_ms=self.start_event_ms,
+            max_events=max_events)
         audit=None
         if selected:
             try:
