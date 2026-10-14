@@ -16,6 +16,8 @@ import time
 
 from nbot.v5.g4_forward_entry_quote import IndependentSourceAudit
 from nbot.v5.g4_segment_replay import verified_ram_vault
+from nbot.v5.g4_segment_quotes import VerifiedSegmentQuotes
+from nbot.v5.g4_incremental_path import original_segment_price_path
 from nbot.v5.g4_real_entry_admission import admit_research_entry
 from nbot.v5.g4_source_binding import bind_from_frozen_observation_copy
 from nbot.v5.g4_live_outcomes import follow_original_path
@@ -155,13 +157,27 @@ class ContinuousResearch:
             self.source,self.store,start_event_ms=self.start_event_ms,
             max_events=max_events)
         audit=None
-        if selected:
+        if selected and Path(vault_path).is_dir():
+            try:
+                with ro(self.source) as db:
+                    marks=",".join("?" for _ in selected)
+                    cohort=json.loads(db.execute(
+                        "SELECT symbols_json FROM g1f_universe_snapshots"
+                    ).fetchone()[0])
+                    requests=tuple(sorted(set(db.execute(
+                        "SELECT symbol,decision_at_ms FROM g1f_candidate_events "
+                        "WHERE event_open_ms IN ("+marks+")",
+                        selected).fetchall())))
+                audit=VerifiedSegmentQuotes(
+                    vault_path,symbols=cohort,requests=requests)
+            except (OSError,ValueError,sqlite3.DatabaseError,KeyError,TypeError):
+                audit=None
+        elif selected:
             try:
                 audit=IndependentSourceAudit(vault_path)
             except (OSError,ValueError,sqlite3.DatabaseError):
-                # An absent, malformed or tampered independent forward vault
-                # cannot qualify a single G4 price. Still enumerate all 100
-                # original source candidates as explicit HOLD, not a crash.
+                # Original evidence not ready: keep all 100 research directions
+                # HELD rather than fabricate a timestamp or market price.
                 audit=None
         for event in selected:
             with ro(self.source) as db:
@@ -198,7 +214,7 @@ class ContinuousResearch:
             self.store.append("event:"+str(event),"EVENT_COMPLETE",now_ms,{"event_ms":event,"candidate_population":100})
         pending=bounded_pending_path_page(self.labels,self.store)
         scan_end=(pending[-1][2],pending[-1][0]) if pending else None
-        if pending and audit is None:
+        if pending and audit is None and not Path(vault_path).is_dir():
             try:
                 audit=IndependentSourceAudit(vault_path)
             except (OSError,ValueError,sqlite3.DatabaseError):
@@ -209,11 +225,21 @@ class ContinuousResearch:
             stored=self.store.db.execute("SELECT body FROM research_journal WHERE identity=?",("candidate:"+intent["decision_id"],)).fetchone()
             if stored is None:continue
             candidate=json.loads(stored[0])["candidate"]
-            path=(follow_original_path(
-                vault=vault_path,audit=audit,candidate=candidate,
-                policy=intent["frozen_policy"],now_ms=now_ms)
-                if audit is not None else
-                {"state":"HOLD","reasons":["G4_ORIGINAL_VAULT_NOT_INDEPENDENTLY_AUDITED"]})
+            if isinstance(audit,VerifiedSegmentQuotes):
+                try:
+                    path=asdict(original_segment_price_path(
+                        segment_dir=vault_path,candidate=candidate,
+                        policy=intent["frozen_policy"],audit_at_ms=now_ms))
+                except (ValueError,OSError,sqlite3.DatabaseError):
+                    path={"state":"HOLD","reasons":[
+                        "G4_INCREMENTAL_SEGMENT_OR_SOURCE_INTEGRITY_HOLD"]}
+            elif audit is not None:
+                path=follow_original_path(
+                    vault=vault_path,audit=audit,candidate=candidate,
+                    policy=intent["frozen_policy"],now_ms=now_ms)
+            else:
+                path={"state":"HOLD","reasons":[
+                    "G4_ORIGINAL_VAULT_NOT_INDEPENDENTLY_AUDITED"]}
             if path["state"]=='PATH_REPLAYED':
                 self.store.append("path:"+label_id,"ORIGINAL_PRICE_PATH",now_ms,
                                   {"label_id":label_id,"path":path,"economic_state":"HELD_PENDING_INDEPENDENT_EXIT_QUOTE_FEE_SLIPPAGE_SETTLED_FUNDING"})
