@@ -19,7 +19,7 @@ from nbot.v5.g4_forward_stream_contract import verify_frame
 
 SOURCE_VAULT_VERSION = "NBOT_V5_G4_FORWARD_RAW_SOURCE_V1"
 _ZERO = "0" * 64
-_ROUTES = frozenset(("public_bookticker", "market_aggtrade"))
+_ROUTES = frozenset(("public_bookticker", "market_aggtrade", "market_markprice"))
 _FORBIDDEN = frozenset((
     "g1f_event_manifest", "g1f_candidate_events", "g2_quote_witness",
     "g3_event_context", "candle_rows", "v5_candidate_observations",
