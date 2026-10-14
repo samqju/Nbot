@@ -30,7 +30,7 @@ class G1SourceRecoveryTests(unittest.TestCase):
         with patch("nbot.v5.g1f_runner.feed_holds",return_value={
             "BTCUSDT":(),"ETHUSDT":("TRADE_NOT_FRESH",)
         }):
-            self.assertFalse(self.app._revalidate_source(
+            self.assertFalse(self.app._source_epoch_candidate(
                 self.session,("BTCUSDT","ETHUSDT"),self.event))
         self.assertTrue(self.app.interrupted)
         self.assertEqual(self.app.stats["reverified_epochs"],0)
@@ -40,7 +40,7 @@ class G1SourceRecoveryTests(unittest.TestCase):
         with patch("nbot.v5.g1f_runner.feed_holds",return_value={
             "BTCUSDT":()
         }):
-            self.assertFalse(self.app._revalidate_source(
+            self.assertFalse(self.app._source_epoch_candidate(
                 self.session,("BTCUSDT","ETHUSDT"),self.event))
         self.assertTrue(self.app.interrupted)
 
@@ -52,14 +52,31 @@ class G1SourceRecoveryTests(unittest.TestCase):
         with patch("nbot.v5.g1f_runner.feed_holds",return_value={
             "BTCUSDT":(),"ETHUSDT":()
         }):
-            self.assertTrue(self.app._revalidate_source(
+            self.assertTrue(self.app._source_epoch_candidate(
                 self.session,("BTCUSDT","ETHUSDT"),self.event))
+        # A candidate alone is insufficient. Wait for genuine REST 3-stage
+        # success and a complete accepted, committed event.
+        self.assertTrue(self.app.interrupted)
+        self.assertTrue(self.app._accept_source_epoch(
+            self.session,self.event))
         self.assertFalse(self.app.interrupted)
         self.assertEqual(self.app.stats["reverified_epochs"],1)
         for route in ("market","public"):
             state=self.app.policy.routes[route]
             self.assertEqual(state.retry_attempts,0)
             self.assertFalse(state.reconciliation_required)
+
+    def test_unaccepted_event_cannot_clear_source_hold(self):
+        with patch("nbot.v5.g1f_runner.feed_holds",return_value={
+            "BTCUSDT":(),"ETHUSDT":()
+        }):
+            candidate=self.app._source_epoch_candidate(
+                self.session,("BTCUSDT","ETHUSDT"),self.event)
+        self.assertTrue(candidate)
+        # The caller is deliberately required to wait for the 3 REST
+        # checks and a journaled OBSERVE_ONLY status before confirming.
+        self.assertTrue(self.app.interrupted)
+        self.assertEqual(self.app.stats["reverified_epochs"],0)
 
     def test_refuse_to_reverify_disconnected_route(self):
         self.app.policy.on_disconnect("public")
