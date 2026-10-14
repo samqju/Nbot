@@ -229,11 +229,13 @@ def classify_event(*, event_open_ms:int, decision_at_ms:int,
     btc_v=_features(btc) if btc_good else None
     btc_regime,confidence=_btc_regime(btc_v) if btc_good else ("UNKNOWN",0.0)
     btc_good=btc_good and btc_regime!="UNKNOWN"
+    # Market breadth deliberately excludes BTC; otherwise the global BTC
+    # conditioning variable would also contaminate the altcoin vote.
     raw_returns={
         s:_features(validated[s])["return_1h"]
-        for s in symbols if not reasons[s]
+        for s in symbols if s!="BTCUSDT" and not reasons[s]
     }
-    required=max(10,math.ceil(.8*len(symbols)))
+    required=max(8,math.ceil(.8*(len(symbols)-1)))
     breadth_ok=len(raw_returns)>=required and btc_good
     breadth=(sum((r>0)-(r<0) for r in raw_returns.values())/len(raw_returns)
              if breadth_ok else None)
@@ -266,7 +268,7 @@ def classify_event(*, event_open_ms:int, decision_at_ms:int,
         short_state="MATCH" if rel< -threshold else "NO_MATCH"
         selected_result[symbol]={
             "state":"AVAILABLE","structure":structure["structure"],
-            "confidence_score":round(.6+.3*min(1.,len(raw_returns)/len(symbols)),4),
+            "confidence_score":round(.6+.3*min(1.,len(raw_returns)/(len(symbols)-1)),4),
             "feature_availability":"AVAILABLE",
             "reasons":[],
             "relative_momentum_1h":round(rel,10),
@@ -288,6 +290,8 @@ def classify_event(*, event_open_ms:int, decision_at_ms:int,
                "features":{k:round(v,10) for k,v in btc_v.items()} if btc_good else None},
         "breadth_1h":round(breadth,10) if breadth_ok else None,
         "breadth_sample":len(raw_returns),
+        "breadth_population_size":len(symbols)-1,
+        "breadth_excludes_btc":True,
         "breadth_minimum":required,
         "breadth_available":breadth_ok,
         "coins":selected_result,
