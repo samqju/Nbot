@@ -1,0 +1,27 @@
+[Unit]
+Description=NBOT V5 G7 two-book zero-orders locked health
+After=network.target
+StartLimitBurst=3
+StartLimitIntervalSec=300
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/nbot_v5_continuous_release_20261014
+ExecStart=/usr/bin/flock -n /home/ubuntu/nbot_v5_paper_20261014/owner.lock /usr/bin/python3 -u -m nbot.v5.paper_health_runner --root /home/ubuntu/nbot_v5_paper_20261014 --policy /home/ubuntu/nbot_v5_paper_20261014/policy.json
+Restart=on-failure
+RestartSec=30
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/nbot_v5_paper_20261014
+PrivateTmp=true
+RestrictAddressFamilies=AF_UNIX
+MemoryMax=100M
+CPUQuota=10%
+Nice=15
+TasksMax=16
+
+[Install]
+WantedBy=multi-user.target

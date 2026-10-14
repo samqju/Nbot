@@ -64,7 +64,7 @@ def _digest(rows: Sequence) -> str:
 
 def replay_aggtrade_price_path(
     *, candidate: Mapping, policy: Mapping, original_rows: Sequence[Mapping],
-    source_manifest: Mapping, audit_at_ms: int,
+    source_manifest: Mapping, audit_at_ms: int, allow_early_exit: bool = False,
 ) -> PathReplay:
     """Fail closed on future policy, insufficient horizon or aggTrade ID gap.
 
@@ -105,7 +105,7 @@ def replay_aggtrade_price_path(
     if reasons:
         return PathReplay("HOLD",tuple(sorted(set(reasons))),did,None,None)
     maturity = decision + horizon
-    if audit_at_ms < maturity:
+    if audit_at_ms < maturity and not allow_early_exit:
         return PathReplay("PENDING",("HORIZON_NOT_MATURE",),did,None,None)
     archive_sha = source_manifest.get("archive_sha256") if isinstance(source_manifest,Mapping) else None
     rows_sha = source_manifest.get("rows_sha256") if isinstance(source_manifest,Mapping) else None
@@ -120,12 +120,15 @@ def replay_aggtrade_price_path(
             reasons.append("ORIGINAL_ROWS_SHA_MISMATCH")
     except (TypeError, ValueError, OverflowError):
         reasons.append("ORIGINAL_ROWS_NOT_CANONICAL")
-    if source_manifest.get("source_grade")!="ORIGINAL_BINANCE_PUBLIC_AGGTRADES":
+    live_source = source_manifest.get("source_grade") == "ORIGINAL_BINANCE_PUBLIC_WSS_AGGTRADES"
+    if source_manifest.get("source_grade") not in ("ORIGINAL_BINANCE_PUBLIC_AGGTRADES", "ORIGINAL_BINANCE_PUBLIC_WSS_AGGTRADES"):
         reasons.append("ORIGINAL_SOURCE_GRADE_UNVERIFIED")
     if source_manifest.get("symbol")!=candidate.get("symbol"):
         reasons.append("ORIGINAL_SYMBOL_MISMATCH")
     # Archive bytes and original download provenance must be audited separately.
-    if source_manifest.get("original_archive_verified") is not True:
+    if ((not live_source and source_manifest.get("original_archive_verified") is not True)
+            or (live_source and (source_manifest.get("original_vault_verified") is not True
+                                 or not _hex(source_manifest.get("independent_vault_head_sha256"))))):
         reasons.append("ORIGINAL_ARCHIVE_AUTHENTICITY_UNVERIFIED")
     if reasons:
         return PathReplay("HOLD",tuple(sorted(set(reasons))),did,archive_sha,rows_sha)
@@ -152,8 +155,10 @@ def replay_aggtrade_price_path(
     if not parsed:
         reasons.append("ORIGINAL_ROW_INVALID")
     else:
-        if parsed[0][0]>decision or parsed[-1][0]<maturity:
+        if parsed[0][0]>decision or (parsed[-1][0]<maturity and not allow_early_exit):
             reasons.append("ORIGINAL_PATH_BOUNDS_INCOMPLETE")
+        if allow_early_exit and parsed[-1][0] > audit_at_ms:
+            reasons.append("ORIGINAL_PATH_FUTURE_AT_AUDIT")
         if source_manifest.get("first_agg_id")!=parsed[0][2] or source_manifest.get("last_agg_id")!=parsed[-1][2]:
             reasons.append("ORIGINAL_AGG_ID_MANIFEST_MISMATCH")
     if reasons:
@@ -175,6 +180,8 @@ def replay_aggtrade_price_path(
         if direction*(price-target)>=0:
             selected=("TARGET_PRICE_CROSSED",at,price)
             break
+    if selected is None and allow_early_exit and (audit_at_ms < maturity or parsed[-1][0] < maturity):
+        return PathReplay("PENDING",("HORIZON_NOT_MATURE_OR_COVERED",),did,archive_sha,rows_sha)
     if selected is None and last is not None:
         selected=("HORIZON_LAST_TRADE",*last)
     if selected is None:

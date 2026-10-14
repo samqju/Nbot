@@ -18,6 +18,7 @@ from pathlib import Path
 import sqlite3
 import time
 from typing import Callable
+from dataclasses import dataclass
 
 from nbot.v5.g4_forward_stream_contract import forward_stream_endpoints
 from nbot.v5.g4_forward_vault import ForwardSourceVault
@@ -28,6 +29,90 @@ MAX_FRAMES = 100000
 MAX_DB_MIB = 256
 DEFAULT_RECONNECTS = 2
 _ROUTES = ("market_aggtrade", "public_bookticker", "market_markprice")
+
+
+@dataclass(frozen=True)
+class ReceivedFrame:
+    raw: str|bytes
+    received_ms: int
+
+
+class PublicShardFanIn:
+    """Partition one logical quote feed into bounded disjoint connections.
+
+    The logical epoch opens only after ALL shards connect. ANY shard loss fails
+    the entire logical route; it cannot silently inherit another shard's health.
+    Receipt clocks are taken on actual socket reads, before bounded queueing.
+    """
+    def __init__(self, endpoint, factory, clock_ms, shard_size=10):
+        if not 1<=shard_size<=10 or '/public/stream?streams=' not in endpoint:
+            raise G4CollectorHold("G4_PUBLIC_SHARD_CONFIG_INVALID")
+        prefix, streams=endpoint.split('?streams=',1)
+        names=streams.split('/')
+        if len(set(names))!=len(names) or len(names)>50 or any(not n.endswith('@bookTicker') for n in names):
+            raise G4CollectorHold("G4_PUBLIC_SHARD_POPULATION_INVALID")
+        self.endpoints=[prefix+'?streams='+'/'.join(names[i:i+shard_size]) for i in range(0,len(names),shard_size)]
+        self.factory,self.clock_ms=factory,clock_ms
+        self.contexts=[];self.sockets=[];self.tasks=[]
+        self.queue=asyncio.Queue(maxsize=32)
+        self.capacity=asyncio.Semaphore(32)
+        self.failure=None
+
+    async def __aenter__(self):
+        try:
+            contexts=[self.factory(endpoint) for endpoint in self.endpoints]
+            sockets=await asyncio.gather(*(c.__aenter__() for c in contexts),return_exceptions=True)
+            failure=None
+            for context,socket in zip(contexts,sockets):
+                if isinstance(socket,BaseException):failure=socket
+                else:self.contexts.append(context);self.sockets.append(socket)
+            if failure is not None:raise failure
+            self.tasks=[asyncio.create_task(self._receive(s)) for s in self.sockets]
+            return self
+        except BaseException:
+            await self.__aexit__(None,None,None)
+            raise
+
+    async def _receive(self, socket):
+        try:
+            iterator=socket.__aiter__()
+            while True:
+                await self.capacity.acquire()
+                try:
+                    raw=await anext(iterator)
+                except BaseException:
+                    self.capacity.release()
+                    raise
+                received=self.clock_ms()
+                # No await between timestamp and insertion: queued receipts
+                # retain actual application-read chronology across shards.
+                self.queue.put_nowait(ReceivedFrame(raw,received))
+        except StopAsyncIteration:
+            self.failure=G4CollectorHold("G4_PUBLIC_SHARD_ENDED")
+            await self.queue.put(self.failure)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Priority failure state ends the whole logical route. Pending
+            # queue contents are unknown source continuity, never fabricated.
+            self.failure=exc
+            await self.queue.put(exc)
+
+    def __aiter__(self):return self
+
+    async def __anext__(self):
+        if self.failure is not None:raise self.failure
+        item=await self.queue.get()
+        if isinstance(item,Exception):raise item
+        self.capacity.release()
+        return item
+
+    async def __aexit__(self,*args):
+        for task in self.tasks:task.cancel()
+        await asyncio.gather(*self.tasks,return_exceptions=True)
+        for context in reversed(self.contexts):
+            await context.__aexit__(*args)
+        return False
 
 
 class G4CollectorHold(ValueError):
@@ -109,6 +194,10 @@ async def capture_route(*, route: str, endpoint: str, vault: ForwardSourceVault,
                 async for payload in socket:
                     if stop.is_set():
                         break
+                    received_ms=clock_ms()
+                    if isinstance(payload,ReceivedFrame):
+                        received_ms=payload.received_ms
+                        payload=payload.raw
                     if isinstance(payload,str):
                         raw=payload.encode("utf8")
                     elif isinstance(payload,bytes):
@@ -117,8 +206,12 @@ async def capture_route(*, route: str, endpoint: str, vault: ForwardSourceVault,
                         raise G4CollectorHold("G4_FORWARD_NON_BYTES_FRAME")
                     if len(raw)>32768:
                         raise G4CollectorHold("G4_FORWARD_FRAME_OVERFLOW")
-                    receipt=vault.ingest(route=route,at_ms=clock_ms(),raw=raw)
+                    receipt=vault.ingest(route=route,at_ms=received_ms,raw=raw)
                     budget["frames"]+=1
+                    if budget["frames"]%32==0:
+                        # Fair scheduling preserves mark/trade/book transport
+                        # progress and ping handling under a busy quote feed.
+                        await asyncio.sleep(0)
                     if budget["frames"]>=budget["max_frames"]:
                         budget["reached"]="MAX_FRAMES"
                         stop.set()
@@ -140,6 +233,9 @@ async def capture_route(*, route: str, endpoint: str, vault: ForwardSourceVault,
             # Do not mark a clean socket close when it did not occur. Next
             # OPEN writes ABRUPT_RESTART_HOLD if prior epoch was left active.
             budget["source_errors"].append(route+":"+type(exc).__name__)
+            code=str(exc)
+            if code and len(code)<=96 and all(c.isupper() or c.isdigit() or c=='_' for c in code):
+                budget.setdefault("contract_failure_codes",[]).append(route+":"+code)
             tries+=1
         except Exception as exc:
             # websockets 17 raises ConnectionClosedError, which is NOT
@@ -154,6 +250,13 @@ async def capture_route(*, route: str, endpoint: str, vault: ForwardSourceVault,
                         "ConnectionClosedError")):
                 raise
             budget["source_errors"].append(route+":WSS_"+typ.__name__)
+            received=getattr(exc,"rcvd",None)
+            sent=getattr(exc,"sent",None)
+            budget.setdefault("disconnect_details",[]).append({
+                "route":route,"received_close_code":getattr(received,"code",None),
+                "sent_close_code":getattr(sent,"code",None),
+                "public_close_reason":str(getattr(received,"reason",""))[:160],
+            })
             tries+=1
         if not stop.is_set() and tries<=max_reconnects:
             await asyncio.sleep(min(tries,3))
@@ -166,16 +269,19 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
                       connector: Callable, duration_s: float,
                       max_frames: int, max_db_mib: int,
                       db_path: Path|None = None,
-                      clock_ms: Callable|None = None) -> dict:
+                      clock_ms: Callable|None = None,
+                      sustained: bool = False) -> dict:
     """Supervise 3 public-only routes with explicit finite caps.
 
     Unit tests inject a zero-network connector, deterministic frames/clocks.
     If one route fails, no other stream grants scientific continuity.
     """
+    duration_cap, frame_cap, disk_cap = ((21600,20000000,8192) if sustained else
+                                       (MAX_RUN_SECONDS,MAX_FRAMES,MAX_DB_MIB))
     if (not isinstance(duration_s,(int,float)) or
-            not 0<duration_s<=MAX_RUN_SECONDS or
-            type(max_frames) is not int or not 1<=max_frames<=MAX_FRAMES or
-            type(max_db_mib) is not int or not 1<=max_db_mib<=MAX_DB_MIB):
+            not 0<duration_s<=duration_cap or
+            type(max_frames) is not int or not 1<=max_frames<=frame_cap or
+            type(max_db_mib) is not int or not 1<=max_db_mib<=disk_cap):
         raise G4CollectorHold("G4_FORWARD_RESOURCE_BOUNDS_INVALID")
     clock_ms=clock_ms or (lambda:time.time_ns()//1000000)
     stop=asyncio.Event()
@@ -189,6 +295,11 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
             stop=stop,budget=budget))
         for route in _ROUTES
     ]
+    async def flush_periodically():
+        while not stop.is_set():
+            await asyncio.sleep(.1)
+            vault.flush()
+    flush_task=asyncio.create_task(flush_periodically())
     try:
         async with asyncio.timeout(duration_s):
             await asyncio.gather(*tasks)
@@ -209,6 +320,9 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
             if not task.done():
                 task.cancel()
         await asyncio.gather(*tasks,return_exceptions=True)
+        flush_task.cancel()
+        await asyncio.gather(flush_task,return_exceptions=True)
+        vault.flush()
         # If cancellation or forced timeout interrupted an open socket,
         # source-vault OPEN remains open and restart creates explicit gap.
     report=vault.audit()
@@ -216,20 +330,27 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
             "frames_seen":budget["frames"],
             "stop_reason":budget["reached"] or "SOURCE_STREAM_ENDED",
             "source_errors":tuple(budget["source_errors"]),
+            "disconnect_details":budget.get("disconnect_details",[]),
+            "contract_failure_codes":budget.get("contract_failure_codes",[]),
             "source_coverage_grade":"UNVERIFIED_UNTIL_INDEPENDENT_REPLAY",
-            "bounded_pilot_only":True,
+            "bounded_pilot_only":not sustained,
             "complete_four_hour_source_proven":False,
             "g4_scientific_accepted":False,
             "model_training_authority":"NONE","order_authority":"NONE"}
 
 
 class _RealConnector:
+    def __init__(self, shard_public=False):self.shard_public=shard_public
+
     def __call__(self, endpoint):
         # Construct context manager synchronously, no socket until __aenter__.
         import websockets
-        return websockets.connect(endpoint,open_timeout=15,
+        def factory(url):return websockets.connect(url,open_timeout=15,
                                   close_timeout=5,ping_interval=20,ping_timeout=20,
                                   max_size=32768,max_queue=32,compression=None)
+        if self.shard_public and '/public/' in endpoint:
+            return PublicShardFanIn(endpoint,factory,lambda:time.time_ns()//1000000)
+        return factory(endpoint)
 
 
 def main(argv=None) -> int:
@@ -241,10 +362,15 @@ def main(argv=None) -> int:
     p.add_argument("--max-db-mib",type=int,default=128)
     p.add_argument("--enable-network",action="store_true",
                    help="Explicitly permit public WSS acquisition; no order APIs exist")
+    p.add_argument("--sustained-source",action="store_true",
+                   help="Opt in to capped six-hour/8GiB source research, after capacity review")
+    p.add_argument("--shard-public",action="store_true",
+                   help="Partition disjoint original book streams; every shard loss holds the whole route")
     a=p.parse_args(argv)
     try:
         symbols=source_cohort_file(Path(a.cohort_manifest).read_bytes())
-        if not 1<=a.max_seconds<=MAX_RUN_SECONDS or not 1<=a.max_frames<=MAX_FRAMES or not 1<=a.max_db_mib<=MAX_DB_MIB:
+        caps = (21600,20000000,8192) if a.sustained_source else (MAX_RUN_SECONDS,MAX_FRAMES,MAX_DB_MIB)
+        if not 1<=a.max_seconds<=caps[0] or not 1<=a.max_frames<=caps[1] or not 1<=a.max_db_mib<=caps[2]:
             raise G4CollectorHold("G4_FORWARD_RESOURCE_BOUNDS_INVALID")
         root=Path(a.source_root)
         target=root/"g4_raw_source.sqlite"
@@ -269,12 +395,13 @@ def main(argv=None) -> int:
         with sqlite3.connect(uri,uri=True,timeout=10) as db:
             db.execute("PRAGMA busy_timeout=10000")
             db.execute("PRAGMA journal_mode=WAL")
-            vault=ForwardSourceVault(db,symbols=symbols)
+            db.execute("PRAGMA synchronous=FULL")
+            vault=ForwardSourceVault(db,symbols=symbols,batch_frames=64)
             vault.audit()  # Before any new receipt, verify previous storage.
             report=asyncio.run(run_bounded(
-                vault=vault,endpoints=endpoints,connector=_RealConnector(),
+                vault=vault,endpoints=endpoints,connector=_RealConnector(a.shard_public),
                 duration_s=a.max_seconds,max_frames=a.max_frames,
-                max_db_mib=a.max_db_mib,db_path=target))
+                max_db_mib=a.max_db_mib,db_path=target,sustained=a.sustained_source))
         print(json.dumps(report,sort_keys=True))
         # A terminated stream, exhausted route or crashed supervisor is always
         # operator HOLD, regardless of saved rows or zero connector errors.
