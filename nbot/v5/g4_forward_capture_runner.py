@@ -158,6 +158,13 @@ async def capture_route(*, route: str, endpoint: str, vault: ForwardSourceVault,
                         "ConnectionClosedError")):
                 raise
             budget["source_errors"].append(route+":WSS_"+typ.__name__)
+            received=getattr(exc,"rcvd",None)
+            sent=getattr(exc,"sent",None)
+            budget.setdefault("disconnect_details",[]).append({
+                "route":route,"received_close_code":getattr(received,"code",None),
+                "sent_close_code":getattr(sent,"code",None),
+                "public_close_reason":str(getattr(received,"reason",""))[:160],
+            })
             tries+=1
         if not stop.is_set() and tries<=max_reconnects:
             await asyncio.sleep(min(tries,3))
@@ -231,6 +238,7 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
             "frames_seen":budget["frames"],
             "stop_reason":budget["reached"] or "SOURCE_STREAM_ENDED",
             "source_errors":tuple(budget["source_errors"]),
+            "disconnect_details":budget.get("disconnect_details",[]),
             "source_coverage_grade":"UNVERIFIED_UNTIL_INDEPENDENT_REPLAY",
             "bounded_pilot_only":not sustained,
             "complete_four_hour_source_proven":False,
