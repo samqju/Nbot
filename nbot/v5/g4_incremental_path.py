@@ -78,6 +78,7 @@ def original_segment_price_path(*, segment_dir, candidate, policy,
     count=0
     digest=hashlib.sha256()
     selected=None
+    last_inside=None
     after_horizon=False
     reasons=set()
     # Track original route continuity and initial symbol cursor.
@@ -109,6 +110,7 @@ def original_segment_price_path(*, segment_dir, candidate, policy,
             active=True
             if last_epoch is not None and rec["epoch"]!=last_epoch:
                 last_symbol=None
+                last_pre=None
             last_epoch=rec["epoch"]
             continue
         if kind in ("CLOSED","ABRUPT_RESTART_HOLD"):
@@ -120,6 +122,8 @@ def original_segment_price_path(*, segment_dir, candidate, policy,
             continue
         if not active or rec["epoch"]!=last_epoch:
             reasons.add("G4_INCREMENTAL_UNOPENED_EPOCH")
+            continue
+        if rec["at_ms"]>audit_at_ms:
             continue
         if rec["state"]!="SOURCE_RECORDED":
             if rec["at_ms"]>=decision-5000 and not after_horizon and selected is None:
@@ -161,6 +165,7 @@ def original_segment_price_path(*, segment_dir, candidate, policy,
                 (row["a"]!=prior_agg+1 or row["f"]!=prior_last+1)):
             reasons.add("G4_INCREMENTAL_SEQUENCE_GAP")
         record_row(row)
+        last_inside=(at,_positive(row["p"]))
         if selected is None:
             price=_positive(row["p"])
             if price is None:
@@ -176,19 +181,18 @@ def original_segment_price_path(*, segment_dir, candidate, policy,
         reasons.add("G4_INCREMENTAL_SOURCE_OR_PATH_MISSING")
     if in_window and selected is None and audit_at_ms>=maturity and not after_horizon:
         reasons.add("G4_INCREMENTAL_FULL_HORIZON_NOT_PROVEN")
-    if selected is None and audit_at_ms<maturity:
-        return PathReplay("PENDING",("HORIZON_NOT_MATURE",),did,head,
-                          digest.hexdigest() if count else None)
     if reasons:
         return PathReplay("HOLD",tuple(sorted(reasons)),did,head,
+                          digest.hexdigest() if count else None)
+    if selected is None and audit_at_ms<maturity:
+        return PathReplay("PENDING",("HORIZON_NOT_MATURE",),did,head,
                           digest.hexdigest() if count else None)
     if selected is None:
         if last_time is None:
             return PathReplay("HOLD",("G4_INCREMENTAL_EXIT_MISSING",),did,head,None)
         # A stop/target was never hit. The final trade inside the horizon
         # is the last verified price. Keep only bounded state, never rows.
-        selected=("HORIZON_LAST_TRADE",last_time,
-                  _positive(last_symbol["p"]) if last_symbol else None)
+        selected=("HORIZON_LAST_TRADE",*(last_inside or (None,None)))
     why,when,price=selected
     if price is None:
         return PathReplay("HOLD",("G4_INCREMENTAL_EXIT_INVALID",),did,head,None)
