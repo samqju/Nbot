@@ -23,6 +23,7 @@ from nbot.v5.candle_ledger import EvidenceHold
 from nbot.v5.finality_quarantine import FinalityQuarantine
 from nbot.v5.g1f_engine import audit_event
 from nbot.v5.g1f_journal import CandidateJournal, JournalHold
+from nbot.v5.g2_source_witness import SourceWitness, WitnessHold
 from nbot.v5.observation_contract import INTERVAL_MS
 from nbot.v5.observation_continuity import ObservationContinuity
 from nbot.v5.public_market import (
@@ -148,7 +149,7 @@ def record_restart_hold_events(session, journal, cohort_digest, eligible,
 
 class ObservationOnlyRunner:
     def __init__(self, *, top: int, path: Path, max_seconds: int,
-                 getter=public_get):
+                 getter=public_get, g2_source_witness: bool = False):
         if (type(top) is not int or not 2<=top<=50
                 or type(max_seconds) is not int
                 or not (max_seconds==0 or 30<=max_seconds<=3600)):
@@ -156,6 +157,9 @@ class ObservationOnlyRunner:
         path=Path(path).expanduser()
         if path.parent.is_symlink() or not path.parent.is_dir():
             raise EvidenceHold("G1F_DB_PARENT_MISSING_OR_LINK")
+        if type(g2_source_witness) is not bool:
+            raise ValueError("G2_WITNESS_MODE_INVALID")
+        self.g2_source_witness=g2_source_witness
         self.top=top
         self.path=path
         self.max_seconds=max_seconds
@@ -183,6 +187,7 @@ class ObservationOnlyRunner:
         exchange=await asyncio.to_thread(self.getter,"/fapi/v1/exchangeInfo")
         ticker=await asyncio.to_thread(self.getter,"/fapi/v1/ticker/24hr")
         eligible=select_universe(exchange,ticker,limit=self.top)
+        selection_received_ms=wall_ms()
         symbols=tuple(sorted(set(eligible)|{"BTCUSDT"}))
         uri=stream_urls(eligible,quote_mode="depth5@500ms")
         started=time.monotonic()
@@ -193,6 +198,25 @@ class ObservationOnlyRunner:
             finality=FinalityQuarantine(session.ledger.db)
             identity=journal.begin_cohort(
                 eligible,selected_ms=binance_ms,event_open_ms=event)
+            witness=None
+            if self.g2_source_witness:
+                # This intentionally fails closed for historical, unwitnessed
+                # DBs: a new source snapshot CANNOT authenticate past events.
+                prior_events=session.ledger.db.execute(
+                    "SELECT COUNT(*) FROM g1f_event_manifest").fetchone()[0]
+                prior_witness=session.ledger.db.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' "
+                    "AND name='g2_cohort_witness'").fetchone()[0]
+                if prior_events and not prior_witness:
+                    raise EvidenceHold("G2_UNWITNESSED_LEGACY_DB_FORBIDDEN")
+                witness=SourceWitness(session.ledger.db)
+                witness_digest=witness.witness_cohort(
+                    exchange=exchange,ticker=ticker,selected=eligible,
+                    received_ms=selection_received_ms,
+                    first_event_open_ms=event,
+                    exchange_server_ms=binance_ms)
+                if witness_digest!=identity:
+                    raise EvidenceHold("G2_SOURCE_COHORT_HASH_MISMATCH")
             # REST historical sync before any WebSocket frame can enter.
             await rest_seed(session,symbols,event,getter=self.getter)
             # Previous recorded events are not silently skipped on restart.
@@ -208,7 +232,7 @@ class ObservationOnlyRunner:
             ]
             coordinator=asyncio.create_task(self._events(
                 session,journal,finality,identity,eligible,symbols,
-                event+INTERVAL_MS,deadline))
+                event+INTERVAL_MS,deadline,source_witness=witness))
             monitor=asyncio.create_task(self._metrics(
                 session,journal,deadline))
             tasks.extend([coordinator,monitor])
@@ -228,6 +252,7 @@ class ObservationOnlyRunner:
                 "reason":self.failed_reason,
                 "universe_count":len(eligible),
                 "cohort_digest":identity,
+                "g2_source_witness_enabled":self.g2_source_witness,
                 "metrics":self.stats,
                 "resource":resource_guard(self.path),
                 "journal":journal.inspect(),
@@ -304,7 +329,7 @@ class ObservationOnlyRunner:
                         self.interrupted=True
 
     async def _events(self,session,journal,finality,identity,eligible,symbols,
-                      start,deadline):
+                      start,deadline, *, source_witness=None):
         event=start
         while not self.stop.is_set() and time.monotonic()<deadline:
             due=event+INTERVAL_MS+CLOSE_GRACE_MS
@@ -315,7 +340,8 @@ class ObservationOnlyRunner:
                 summary=await audit_event(
                     session,journal,finality,symbols=eligible,
                     cohort_digest=identity,event_open_ms=event,
-                    getter=self.getter,interrupted=self.interrupted)
+                    getter=self.getter,interrupted=self.interrupted,
+                    source_witness=source_witness)
                 self.stats["committed_events"]+=1
                 print("G1F_EVENT",json.dumps(summary,sort_keys=True),flush=True)
                 resource_guard(self.path)
@@ -355,10 +381,13 @@ def main():
     parser.add_argument("--db",required=True)
     parser.add_argument("--top",type=int,default=50)
     parser.add_argument("--max-seconds",type=int,default=300)
+    parser.add_argument("--g2-source-witness",action="store_true",
+                        help="Opt-in complete as-of source witnesses (new database only)")
     args=parser.parse_args()
     collector=ObservationOnlyRunner(
         top=args.top,path=Path(args.db),
-        max_seconds=args.max_seconds)
+        max_seconds=args.max_seconds,
+        g2_source_witness=args.g2_source_witness)
     async def run():
         loop=asyncio.get_running_loop()
         for name in (signal.SIGINT,signal.SIGTERM):
