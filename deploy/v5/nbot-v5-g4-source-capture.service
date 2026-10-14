@@ -1,5 +1,5 @@
 [Unit]
-Description=NBOT V5 G4 bounded public-only compressed source pilot (manual OWNER RELEASE)
+Description=NBOT V5 G4 continuous public-only compressed source observation (manual OWNER RELEASE)
 Requisite=nbot-v5-g1g2g3-observation.service
 After=nbot-v5-g1g2g3-observation.service
 ConditionPathExists=/home/ubuntu/Nbot/runtime/source/OWNER_APPROVED_G4_CAPTURE_RELEASE
@@ -10,7 +10,7 @@ User=ubuntu
 WorkingDirectory=/home/ubuntu/Nbot
 Environment=PYTHONDONTWRITEBYTECODE=1
 ExecStartPre=/home/ubuntu/Nbot/.venv/bin/python -m nbot.v5.g4_source_preflight --g1-db /home/ubuntu/Nbot/runtime/observation/g1g2g3.sqlite --cohort-manifest /home/ubuntu/Nbot/runtime/source/g4-forward-cohort/cohort.json --source-root /home/ubuntu/Nbot/runtime/source/g4-forward-cohort
-ExecStart=/usr/bin/flock -n /home/ubuntu/Nbot/runtime/source/g4-forward-cohort/owner.lock /home/ubuntu/Nbot/.venv/bin/python -u -m nbot.v5.g4_forward_capture_runner --cohort-manifest /home/ubuntu/Nbot/runtime/source/g4-forward-cohort/cohort.json --source-root /home/ubuntu/Nbot/runtime/source/g4-forward-cohort --storage-mode segments --max-seconds 21600 --max-frames 20000000 --max-db-mib 8192 --sustained-source --enable-network
+ExecStart=/usr/bin/flock -n /home/ubuntu/Nbot/runtime/source/g4-forward-cohort/owner.lock /home/ubuntu/Nbot/.venv/bin/python -u -m nbot.v5.g4_forward_capture_runner --cohort-manifest /home/ubuntu/Nbot/runtime/source/g4-forward-cohort/cohort.json --source-root /home/ubuntu/Nbot/runtime/source/g4-forward-cohort --storage-mode segments --max-seconds 0 --max-frames 0 --max-db-mib 8192 --sustained-source --continuous-observe --enable-network
 Restart=no
 UMask=0077
 NoNewPrivileges=true
@@ -26,5 +26,5 @@ TasksMax=24
 
 # TEMPLATE ONLY. NO [Install] / autostart. Owner-release marker must not be
 # created until G1 cohort is independently frozen and full pilot capacity
-# reviewed. Six-hour bounded pilot is NOT final continuous science acceptance.
+# reviewed. No fixed wall-clock restart: stop on transport failure, rate cap, memory cap or 8GiB disk HOLD. Scientific acceptance always separate.
 # Never installed or enabled by the engineering deployment.
