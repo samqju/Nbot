@@ -6,7 +6,7 @@ import unittest
 
 from nbot.v5.g4_research_ledger import (
     append_terminal, freeze_label_intent, init_offline_ledger,
-    qualified_economic_label_count, status_breakdown,
+    qualified_economic_label_count, status_breakdown, maturity_calendar,
 )
 from tests.test_v5_g4_price_path import EVENT, DECISION, MATURITY
 
@@ -161,6 +161,46 @@ class G4ImmutableLedgerTests(unittest.TestCase):
     def test_an_undeclared_intent_cannot_terminalize(self):
         with self.assertRaisesRegex(ValueError,"G4_UNDECLARED_INTENT"):
             append_terminal(self.db,"9"*64,terminal())
+
+
+    def test_maturation_calendar_before_horizon_is_pending_not_score(self):
+        r=maturity_calendar(self.db,asof_ms=MATURITY-1)
+        self.assertEqual(r["status_counts"]["PENDING"],1)
+        self.assertEqual(r["qualified_economic_outcomes"],0)
+        self.assertFalse(r["training_gate_unlocked"])
+
+    def test_maturation_calendar_after_horizon_without_source_not_loss(self):
+        r=maturity_calendar(self.db,asof_ms=MATURITY+1)
+        self.assertEqual(r["status_counts"]["MATURE_BUT_UNRESOLVED"],1)
+        self.assertEqual(r["qualified_economic_outcomes"],0)
+
+    def test_maturation_calendar_one_event_not_independent_tag_count(self):
+        append_terminal(self.db,self.key,terminal("SCORED"))
+        r=maturity_calendar(self.db,asof_ms=MATURITY+1)
+        self.assertEqual(r["total_frozen_intents"],1)
+        self.assertEqual(r["distinct_scored_five_minute_events"],1)
+        self.assertEqual(r["qualified_economic_outcomes"],1)
+        self.assertEqual(r["automatic_paper_or_live_authority"],"NONE")
+
+    def test_reject_initialize_on_original_g1_or_g2_schema(self):
+        db=sqlite3.connect(":memory:")
+        try:
+            db.execute("CREATE TABLE g1f_event_manifest(event_open_ms INTEGER)")
+            with self.assertRaisesRegex(ValueError,"G4_LIVE_OR_HISTORICAL_DB_MUTATION_FORBIDDEN"):
+                init_offline_ledger(db)
+            self.assertNotIn("g4_label_intents",{
+                row[0] for row in db.execute("select name from sqlite_master where type='table'")})
+        finally:
+            db.close()
+
+    def test_reject_initialize_on_original_g3_schema(self):
+        db=sqlite3.connect(":memory:")
+        try:
+            db.execute("CREATE TABLE g3_event_context(event_open_ms INTEGER)")
+            with self.assertRaisesRegex(ValueError,"G4_LIVE_OR_HISTORICAL_DB_MUTATION_FORBIDDEN"):
+                init_offline_ledger(db)
+        finally:
+            db.close()
 
     def test_restart_reopens_same_standalone_database_without_duplicate(self):
         fd,path=tempfile.mkstemp(suffix="_g4_synthetic.sqlite")
