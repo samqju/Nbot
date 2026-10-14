@@ -34,15 +34,14 @@ def verified_ram_vault(segment_dir, *, symbols, ram_parent="/dev/shm",
     frozen=tuple(sorted(symbols))
     # Parsing and proving the source happens before any sqlite DB is opened.
     # Do not materialize part of a corrupt compressed chain as accepted.
-    records=[]
-    bytes_seen=0
+    frame_count=bytes_seen=0
     for rec,raw in read_segments(segment_dir,frozen):
         if rec["kind"]=="FRAME":
+            frame_count+=1
             bytes_seen+=len(raw)
-            if bytes_seen>max_view_mib*1024*1024 or sum(
-                    1 for item,_ in records if item["kind"]=="FRAME")>=max_frames:
+            if (bytes_seen>max_view_mib*1024*1024
+                    or frame_count>max_frames):
                 raise ValueError("G4_BRIDGE_FRAME_OR_BYTES_CAP_HOLD")
-        records.append((rec,raw))
     with TemporaryDirectory(prefix="nbot-g4-original-proof-",dir=str(parent)) as temp:
         target=Path(temp)/"g4_raw_source.sqlite"
         # The view is disposable RAM/tmpfs and is never re-used for capture.
@@ -51,7 +50,7 @@ def verified_ram_vault(segment_dir, *, symbols, ram_parent="/dev/shm",
             db.execute("PRAGMA synchronous=OFF")
             vault=ForwardSourceVault(db,symbols=frozen,batch_frames=64)
             abrupt_expected=0
-            for rec,raw in records:
+            for rec,raw in read_segments(segment_dir,frozen):
                 route,at,kind=rec["route"],rec["at_ms"],rec["kind"]
                 if kind=="ABRUPT_RESTART_HOLD":
                     abrupt_expected+=1
