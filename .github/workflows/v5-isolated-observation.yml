@@ -44,6 +44,7 @@ on:
       - "tests/test_v5_g4_source_binding.py"
       - "tests/test_v5_g4_archive_import.py"
       - "tests/test_v5_g4_https_capture.py"
+      - "tests/test_v5_g4_forward_stream_contract.py"
       - "deploy/v5/**"
       - ".github/workflows/v5-isolated-observation.yml"
   pull_request:
@@ -83,6 +84,7 @@ on:
       - "tests/test_v5_g4_source_binding.py"
       - "tests/test_v5_g4_archive_import.py"
       - "tests/test_v5_g4_https_capture.py"
+      - "tests/test_v5_g4_forward_stream_contract.py"
       - "deploy/v5/**"
       - ".github/workflows/v5-isolated-observation.yml"
   workflow_dispatch:
@@ -102,4 +104,4 @@ jobs:
         with:
           python-version: "3.12"
       - name: Test synthetic-only V5 candidates and immutable ledger
-        run: python -m unittest -v tests.test_v5_observation_contract tests.test_v5_pattern_adapter tests.test_v5_public_market tests.test_v5_ws_contract tests.test_v5_stream_buffer tests.test_v5_ws_selection tests.test_v5_candle_ledger tests.test_v5_candle_ledger_probe tests.test_v5_observation_continuity tests.test_v5_g1e_cohort tests.test_v5_source_epochs tests.test_v5_finality_quarantine tests.test_v5_finality_remediation_probe tests.test_v5_g1f_journal tests.test_v5_g1f_engine tests.test_v5_g1f_runner tests.test_v5_g1f_service_spec tests.test_v5_g1f_preflight tests.test_v5_g1g_health tests.test_v5_g1g_service tests.test_v5_g2_population_audit tests.test_v5_g2_population_replay tests.test_v5_g2_source_witness tests.test_v5_g2_source_acceptance tests.test_v5_g3_market_context tests.test_v5_g3_frozen_replay tests.test_v5_integrated_production tests.test_v5_g4_offline_gate tests.test_v5_g4_price_path tests.test_v5_g4_economics tests.test_v5_g4_research_ledger tests.test_v5_g4_source_binding tests.test_v5_g4_archive_import tests.test_v5_g4_https_capture
+        run: python -m unittest -v tests.test_v5_observation_contract tests.test_v5_pattern_adapter tests.test_v5_public_market tests.test_v5_ws_contract tests.test_v5_stream_buffer tests.test_v5_ws_selection tests.test_v5_candle_ledger tests.test_v5_candle_ledger_probe tests.test_v5_observation_continuity tests.test_v5_g1e_cohort tests.test_v5_source_epochs tests.test_v5_finality_quarantine tests.test_v5_finality_remediation_probe tests.test_v5_g1f_journal tests.test_v5_g1f_engine tests.test_v5_g1f_runner tests.test_v5_g1f_service_spec tests.test_v5_g1f_preflight tests.test_v5_g1g_health tests.test_v5_g1g_service tests.test_v5_g2_population_audit tests.test_v5_g2_population_replay tests.test_v5_g2_source_witness tests.test_v5_g2_source_acceptance tests.test_v5_g3_market_context tests.test_v5_g3_frozen_replay tests.test_v5_integrated_production tests.test_v5_g4_offline_gate tests.test_v5_g4_price_path tests.test_v5_g4_economics tests.test_v5_g4_research_ledger tests.test_v5_g4_source_binding tests.test_v5_g4_archive_import tests.test_v5_g4_https_capture tests.test_v5_g4_forward_stream_contract
