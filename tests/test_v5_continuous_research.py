@@ -75,6 +75,28 @@ class ContinuousIntegrationTests(unittest.TestCase):
         self.assertEqual(a["g4_maturity"],b["g4_maturity"])
         self.assertEqual(before,self.source.read_bytes())
 
+    def test_held_g3_context_keeps_entire_population_as_hold(self):
+        # The original G3 event can be source-held with null features.
+        # G4 must preserve the 100-direction denominator without a crash,
+        # fake BTC regime or synthesized economic outcomes.
+        with closing(sqlite3.connect(self.source)) as db:
+            g=json.loads(db.execute(
+                "SELECT payload_json FROM g3_event_context").fetchone()[0])
+            g["status"]="HOLD"
+            g["reasons"]=["G3_UNKNOWN_OR_INCOMPLETE_CROSS_SECTION"]
+            g["feature_evidence"]=None
+            db.execute("UPDATE g3_event_context SET payload_json=?,payload_sha=?",
+                       (canonical(g),digest(g)))
+            db.commit()
+        original=self.source.read_bytes()
+        report=self.engine.tick(COMMITTED+300)
+        self.assertEqual(report["candidate_population"],100)
+        self.assertEqual(report["admission_states"],{"HOLD":100})
+        self.assertEqual(report["qualified_independently_reviewed_outcomes"],0)
+        self.assertEqual(report["g4_maturity"]["total_frozen_intents"],0)
+        self.assertEqual(self.source.read_bytes(),original)
+        self.assertEqual(report["g7_paper_state"],"LOCKED")
+
     def test_missing_policy_tracks_held_full_population(self):
         self.registry.unlink()
         r=self.engine.tick(COMMITTED+300)
