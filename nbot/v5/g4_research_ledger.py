@@ -201,3 +201,37 @@ def status_breakdown(db: sqlite3.Connection) -> dict[str,int]:
     rows=db.execute("SELECT terminal_status,count(*) FROM g4_label_terminals "
                     "GROUP BY terminal_status").fetchall()
     return dict(rows)
+
+
+def maturity_calendar(db: sqlite3.Connection, *, asof_ms: int) -> dict:
+    """Read-only denominator report; NEVER auto-terminalize or trigger training.
+
+    Unsettled expired intents remain visible as MATURE_BUT_UNRESOLVED, not
+    implicitly a losing trade, dropped denominator, or eligible training sample.
+    Distinct event groups track correlation; no inference of effective N.
+    """
+    if type(asof_ms) is not int or asof_ms<0:
+        raise ValueError("G4_MATURITY_CLOCK_INVALID")
+    rows=db.execute(
+        "SELECT i.label_id,i.event_open_ms,i.maturity_at_ms,t.terminal_status "
+        "FROM g4_label_intents i LEFT JOIN g4_label_terminals t "
+        "ON i.label_id=t.label_id").fetchall()
+    status={"PENDING":0,"MATURE_BUT_UNRESOLVED":0,
+            "SCORED":0,"PATH_ONLY":0,"CENSORED":0,"UNRESOLVED":0}
+    scored_events=set()
+    for label_id,event,maturity,terminal in rows:
+        if terminal is None:
+            state="PENDING" if asof_ms<maturity else "MATURE_BUT_UNRESOLVED"
+        else:
+            state=terminal
+        status[state]+=1
+        if state=="SCORED":
+            scored_events.add(event)
+    return {
+        "total_frozen_intents":len(rows),
+        "status_counts":status,
+        "qualified_economic_outcomes":status["SCORED"],
+        "distinct_scored_five_minute_events":len(scored_events),
+        "training_gate_unlocked":False,
+        "automatic_paper_or_live_authority":"NONE",
+    }
