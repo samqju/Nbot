@@ -27,7 +27,8 @@ Observation owns public market evidence, research, model lifecycle and version-l
 - Separate new development clone: `/home/ubuntu/nbot_v5_execution_dev` on Execution VPS. No old source path, database, logs or backup modified. Tests use ephemeral system temporary directories and synthetic identifiers.
 - Run: `python3 -m unittest discover -s tests -p test_v5_execution_engine.py -v` from isolated dev checkout; CI workflow `.github/workflows/v5-isolated-execution.yml` repeats on Python 3.12.
 - Tests cover signed paper-only routing, same/different symbol across books, abstentions, stale/invalid quotes, model/contest/policy identity, signed replay, quote/event mismatch, idempotent restart, fees/slippage/funding, independent losses, immutable ledgers, loss kill switch, legacy path protection, bounded input, atomic failure rollback and refusal to manufacture a settlement.
-- Prior checkpoint: 20/20 local tests PASS at `cd94a77`; final verification and CI should cite their exact later commit and test count. Do not treat this evidence as a production green light.
+- E1 final isolated Execution VPS evidence: **23 of 23 synthetic tests PASS**, Python 3, commit `971a46e471079e907008a4f5d3d77c68b41a08fa`, with zero order APIs and no service start. Post-test legacy execution units still **inactive/inactive**.
+- GitHub Actions CI: **SUCCESS** at exactly that code commit, run `38508871941` — https://github.com/samqju/Nbot/actions/runs/38508871941 (Python 3.12). No production operation or paper authority follows from this PASS.
 
 ## Safeguards and next independent milestone
 
