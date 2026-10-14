@@ -16,11 +16,19 @@ def mk(stream_kind="agg", change=None):
                    "a":100,"f":500,"l":502,"T":NOW-110,
                    "p":"200.25","q":"10.5","m":False,"st":1}}
         route="market_aggtrade"
-    else:
+    elif stream_kind=="quote":
         p={"stream":"qntusdt@bookTicker",
            "data":{"e":"bookTicker","E":NOW-200,"s":"QNTUSDT",
                    "b":"200.1","B":"2.0","a":"200.2","A":"5.0","st":1}}
         route="public_bookticker"
+    elif stream_kind=="mark":
+        p={"stream":"qntusdt@markPrice@1s",
+           "data":{"e":"markPriceUpdate","E":NOW-100,"s":"QNTUSDT",
+                   "p":"200.3","i":"200.25","P":"200.20",
+                   "r":"-0.0002","T":NOW+28800000,"st":1}}
+        route="market_markprice"
+    else:
+        raise AssertionError("bad fixture")
     if change:change(p)
     return route,json.dumps(p,separators=(",",":")).encode()
 
@@ -38,6 +46,8 @@ class G4ForwardContracts(unittest.TestCase):
         self.assertIn("qntusdt@bookTicker",r["public_bookticker"])
         self.assertIn("/market/stream?streams=",r["market_aggtrade"])
         self.assertIn("qntusdt@aggTrade",r["market_aggtrade"])
+        self.assertIn("qntusdt@markPrice@1s",r["market_markprice"])
+        self.assertIn("/market/stream?streams=",r["market_markprice"])
         self.assertNotIn("/private/",r["market_aggtrade"])
 
     def test_normalizes_cohort_without_mutation(self):
@@ -116,6 +126,25 @@ class G4ForwardContracts(unittest.TestCase):
     def test_bad_maker_flag_holds(self):
         x=run(change=lambda p:p["data"].update(m=1))
         self.assertIn("AGGTRADE_ROW_INVALID",x.reasons)
+
+    def test_mark_funding_rate_stream_is_indicative_source_only(self):
+        x=run("mark")
+        self.assertEqual(x.state,"SOURCE_RECORDED")
+        self.assertEqual(x.route,"market_markprice")
+        self.assertEqual(x.scored_outcomes,0)
+        self.assertEqual(x.financial_authority,"NONE")
+
+    def test_mark_funding_invalid_signed_rate_is_held(self):
+        x=run("mark",change=lambda p:p["data"].update(r="NaN"))
+        self.assertIn("MARK_PRICE_OR_INDICATIVE_FUNDING_INVALID",x.reasons)
+
+    def test_mark_funding_next_time_must_be_future(self):
+        x=run("mark",change=lambda p:p["data"].update(T=NOW-1000))
+        self.assertIn("MARK_PRICE_OR_INDICATIVE_FUNDING_INVALID",x.reasons)
+
+    def test_mark_price_cross_route_rejected(self):
+        x=run("mark",change=lambda p:p.update(stream="qntusdt@aggTrade"))
+        self.assertIn("STREAM_SYMBOL_OR_TYPE_MISMATCH",x.reasons)
 
     def test_frame_is_bounded(self):
         route,_=mk()
