@@ -257,11 +257,60 @@ class ContinuousResearch:
     def close(self):self.labels.close();self.store.close()
 
 
+def bounded_research_catchup(engine, now_ms, *, max_cycles=8,
+                             max_events_per_cycle=3, monotonic=time.monotonic,
+                             max_runtime_seconds=120):
+    """V4-derived bounded catch-up: progress without starving G1 capture.
+
+    Run only if caller has a single owner-writer lock. An interrupted
+    candidate/event retries idempotently; no model can be promoted here.
+    """
+    if (type(max_cycles) is not int or not 1<=max_cycles<=8
+            or type(max_events_per_cycle) is not int
+            or not 1<=max_events_per_cycle<=3
+            or type(max_runtime_seconds) not in (int,float)
+            or not 1<=max_runtime_seconds<=120):
+        raise ValueError("G4_RESEARCH_CATCHUP_RESOURCE_INVALID")
+    began=monotonic()
+    progress=[]
+    result=None
+    for _ in range(max_cycles):
+        if monotonic()-began>=max_runtime_seconds:
+            break
+        due=bounded_original_event_batch(
+            engine.source,engine.store,start_event_ms=engine.start_event_ms,
+            max_events=max_events_per_cycle)
+        result=engine.tick(now_ms,max_events=max_events_per_cycle)
+        done=engine.store.db.execute(
+            "SELECT body FROM research_journal WHERE kind='EVENT_COMPLETE' "
+            "ORDER BY seq DESC LIMIT 1").fetchone()
+        if due and (not done or json.loads(done[0]).get("event_ms")!=due[-1]):
+            raise ValueError("G4_RESEARCH_PARTIAL_EVENT_NOT_COMMITTED")
+        progress.extend(due)
+        if len(due)<max_events_per_cycle:
+            break
+    if result is None:
+        result={"candidate_population":0,"g7_paper_state":"LOCKED",
+                "real_money_authority":"NONE"}
+    next_batch=bounded_original_event_batch(
+        engine.source,engine.store,start_event_ms=engine.start_event_ms,
+        max_events=1)
+    return {**result,"catchup_processed_events":len(progress),
+            "catchup_cycles":min(max_cycles, (len(progress)+max_events_per_cycle-1)//max_events_per_cycle
+                + (1 if result is not None and not progress else 0)),
+            "catchup_status":"BACKLOG_REMAINS" if next_batch else "CAUGHT_UP",
+            "source_evidence_rewritten":False,
+            "order_authority":"NONE","model_training_authority":"NONE"}
+
+
 def main():
     p=argparse.ArgumentParser()
     for name in ("source","vault","registry","root","protocol"):p.add_argument("--"+name,required=True)
     p.add_argument("--start-event-ms",type=int,required=True)
-    p.add_argument("--interval-seconds",type=int,default=300)
+    p.add_argument("--interval-seconds",type=int,default=60)
+    p.add_argument("--max-cycles",type=int,default=8)
+    p.add_argument("--max-events-per-cycle",type=int,default=3)
+    p.add_argument("--max-catchup-seconds",type=int,default=120)
     p.add_argument("--once",action="store_true")
     a=p.parse_args()
     if not 60<=a.interval_seconds<=600:raise ValueError("RESEARCH_INTERVAL_BOUNDS")
@@ -271,7 +320,10 @@ def main():
     try:
         while True:
             started=time.monotonic()
-            result=engine.tick(time.time_ns()//1000000)
+            result=bounded_research_catchup(
+                engine,time.time_ns()//1000000,max_cycles=a.max_cycles,
+                max_events_per_cycle=a.max_events_per_cycle,
+                max_runtime_seconds=a.max_catchup_seconds)
             print(canonical(result),flush=True)
             if a.once:break
             time.sleep(max(1,a.interval_seconds-(time.monotonic()-started)))
