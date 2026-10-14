@@ -135,7 +135,7 @@ def verify_frame(*, route:str, raw:bytes, received_at_ms:int,
                 not _positive(data.get("i")) or
                 funding is None or abs(funding)>Decimal("0.10") or
                 type(next_funding) is not int or
-                next_funding<event_time or
+                type(event_time) is not int or next_funding<event_time or
                 next_funding>received_at_ms+2*24*60*60*1000):
             issues.append("MARK_PRICE_OR_INDICATIVE_FUNDING_INVALID")
         if (prior_agg_id is not None or prior_last_trade_id is not None):
