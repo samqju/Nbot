@@ -112,6 +112,10 @@ class ForwardSourceVault:
         CREATE TRIGGER IF NOT EXISTS g4_forward_receipts_no_delete
           BEFORE DELETE ON g4_forward_receipts
           BEGIN SELECT RAISE(ABORT,'G4_VAULT_IMMUTABLE'); END;
+        CREATE INDEX IF NOT EXISTS g4_receipt_route_seq
+          ON g4_forward_receipts(route,seq);
+        CREATE INDEX IF NOT EXISTS g4_receipt_symbol_epoch_seq
+          ON g4_forward_receipts(route,epoch,symbol,seq);
         """)
         old = db.execute(
             "SELECT cohort_sha,symbols_json,contract "

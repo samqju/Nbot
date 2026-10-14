@@ -153,7 +153,12 @@ def append_terminal(db: sqlite3.Connection, label_id: str, payload: Mapping) -> 
         if row is None:
             raise ValueError("G4_UNDECLARED_INTENT")
         decision,maturity=row
-        if settled<decision or (state in ("SCORED","PATH_ONLY") and settled<maturity):
+        early = (state == "SCORED" and payload.get("exit_reason") in
+                 ("STOP_PRICE_CROSSED", "TARGET_PRICE_CROSSED")
+                 and type(payload.get("exit_at_ms")) is int
+                 and decision < payload["exit_at_ms"] <= settled
+                 and _sha(payload.get("early_exit_source_proof_sha256")))
+        if settled<decision or (state in ("SCORED","PATH_ONLY") and settled<maturity and not early):
             raise ValueError("G4_TERMINAL_PREMATURE")
         if state=="SCORED":
             if (grade!="QUOTE_CONSTRAINED_SIMULATION"
