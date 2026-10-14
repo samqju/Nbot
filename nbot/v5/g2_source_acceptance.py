@@ -33,6 +33,7 @@ def source_acceptance(path: str | Path, *, min_complete_events: int = 2,
         raise AcceptanceHold("G2_POPULATION_INTEGRITY_NOT_PROVEN")
     errors=set()
     checked=0
+    healthy_complete_events=0
     source_held=0
     verified=0
     src_status={}
@@ -133,6 +134,10 @@ def source_acceptance(path: str | Path, *, min_complete_events: int = 2,
                         src_status[(event,symbol)]="SOURCE_RECORDED"
                 if src_status.get((event,"BTCUSDT"))=="HOLD" and state!="HOLD":
                     errors.add("BTC_HELD_BUT_EVENT_ACCEPTED")
+                if (state=="OBSERVE_ONLY" and
+                        all(src_status.get((event,s))=="SOURCE_RECORDED"
+                            for s in selected)):
+                    healthy_complete_events+=1
             orphan=db.execute(
                 "SELECT COUNT(*) FROM g2_quote_witness "
                 "WHERE event_open_ms NOT IN (SELECT event_open_ms FROM g1f_event_manifest)"
@@ -144,11 +149,12 @@ def source_acceptance(path: str | Path, *, min_complete_events: int = 2,
     except (sqlite3.DatabaseError,ValueError,KeyError,TypeError) as exc:
         raise AcceptanceHold("G2_WITNESS_READ_OR_PARSE_FAILURE") from exc
     return {
-        "audit":"PASS" if not errors and checked>=min_complete_events else "HOLD",
+        "audit":"PASS" if not errors and healthy_complete_events>=min_complete_events else "HOLD",
         "violations":sorted(errors),
         "cohort_witness_sha256":cohort_sha,
         "event_manifests":checked,
-        "required_event_manifests":min_complete_events,
+        "fully_source_verified_observation_events":healthy_complete_events,
+        "required_verified_events":min_complete_events,
         "symbol_event_source_held":source_held,
         "symbol_event_source_recorded":verified,
         "complete_source_witness_rows":verified+source_held,
