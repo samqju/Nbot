@@ -38,6 +38,7 @@ def source_acceptance(path: str | Path, *, min_complete_events: int = 2,
     verified=0
     src_status={}
     cohort_sha=None
+    universe_source_report={}
     try:
         with sqlite3.connect(path.resolve().as_uri()+"?mode=ro",uri=True,timeout=5) as db:
             c=db.execute(
@@ -64,6 +65,26 @@ def source_acceptance(path: str | Path, *, min_complete_events: int = 2,
                     or receive-data["server_ms"] > 90000):
                 errors.add("COHORT_SNAPSHOT_NOT_REPRODUCIBLE")
             selected=set(ranked)
+            all_eligible=set()
+            for item in data["exchange"]["symbols"]:
+                if (item.get("contractType")=="PERPETUAL"
+                        and item.get("status")=="TRADING"
+                        and item.get("quoteAsset")=="USDT"
+                        and item.get("marginAsset")=="USDT"):
+                    all_eligible.add(item["symbol"])
+            rankable={
+                item["symbol"] for item in data["ticker"]
+                if item.get("symbol") in all_eligible
+                and float(item.get("quoteVolume",0))>0
+            }
+            universe_source_report={
+                "full_exchange_snapshot_rows":len(data["exchange"]["symbols"]),
+                "eligible_usdt_perpetual_markets":len(all_eligible),
+                "rankable_positive_turnover_markets":len(rankable),
+                "chosen_top_ranked_symbols":len(selected),
+                "rankable_not_in_frozen_top50":len(rankable-selected),
+                "excluded_markets_claimed_as_evaluated":0,
+            }
             frames=db.execute(
                 "SELECT event_open_ms,committed_ms,state "
                 "FROM g1f_event_manifest ORDER BY event_open_ms"
@@ -152,6 +173,7 @@ def source_acceptance(path: str | Path, *, min_complete_events: int = 2,
         "audit":"PASS" if not errors and healthy_complete_events>=min_complete_events else "HOLD",
         "violations":sorted(errors),
         "cohort_witness_sha256":cohort_sha,
+        "universe_selection_audit":universe_source_report,
         "event_manifests":checked,
         "fully_source_verified_observation_events":healthy_complete_events,
         "required_verified_events":min_complete_events,
