@@ -119,8 +119,22 @@ async def capture_route(*, route: str, endpoint: str, vault: ForwardSourceVault,
                     if len(raw)>32768:
                         raise G4CollectorHold("G4_FORWARD_FRAME_OVERFLOW")
                     receipt=vault.ingest(route=route,at_ms=clock_ms(),raw=raw)
+                    received=clock_ms()
+                    if received<budget["window_start_ms"]:
+                        budget["reached"]="SOURCE_CLOCK_REWIND_HOLD"
+                        stop.set()
+                        break
+                    if received-budget["window_start_ms"]>=300000:
+                        budget["window_start_ms"]=received
+                        budget["window_frames"]=0
+                    budget["window_frames"]+=1
+                    if budget["window_frames"]>budget["frame_rate_cap"]:
+                        budget["reached"]="SOURCE_FRAME_RATE_HOLD"
+                        stop.set()
+                        break
                     budget["frames"]+=1
-                    if budget["frames"]>=budget["max_frames"]:
+                    if (budget["max_frames"] is not None
+                            and budget["frames"]>=budget["max_frames"]):
                         budget["reached"]="MAX_FRAMES"
                         stop.set()
                         break
@@ -184,16 +198,21 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
     """
     duration_cap, frame_cap, disk_cap = ((21600,20000000,8192) if sustained else
                                        (MAX_RUN_SECONDS,MAX_FRAMES,MAX_DB_MIB))
+    open_ended=(sustained and db_path is None and
+                duration_s==0 and max_frames==0)
     if (not isinstance(duration_s,(int,float)) or
-            not 0<duration_s<=duration_cap or
-            type(max_frames) is not int or not 1<=max_frames<=frame_cap or
+            not (open_ended or 0<duration_s<=duration_cap) or
+            type(max_frames) is not int or
+            not (open_ended or 1<=max_frames<=frame_cap) or
             type(max_db_mib) is not int or not 1<=max_db_mib<=disk_cap):
         raise G4CollectorHold("G4_FORWARD_RESOURCE_BOUNDS_INVALID")
     clock_ms=clock_ms or (lambda:time.time_ns()//1000000)
     stop=asyncio.Event()
-    budget={"frames":0,"max_frames":max_frames,
+    budget={"frames":0,"max_frames":None if open_ended else max_frames,
             "db_path":db_path,"max_db_bytes":max_db_mib*1024*1024,
-            "source_errors":[],"reached":None}
+            "source_errors":[],"reached":None,
+            "window_start_ms":clock_ms(),"window_frames":0,
+            "frame_rate_cap":750000}
     tasks=[
         asyncio.create_task(capture_route(
             route=route,endpoint=endpoints[route],
@@ -204,11 +223,18 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
     async def flush_periodically():
         while not stop.is_set():
             await asyncio.sleep(getattr(vault,"flush_interval_seconds",.1))
-            vault.flush()
+            try:
+                vault.flush()
+            except Exception as exc:
+                budget["reached"]="SOURCE_CHECKPOINT_HOLD"
+                budget["source_errors"].append(
+                    "CHECKPOINT_"+type(exc).__name__)
+                stop.set()
+                raise G4CollectorHold("G4_PERIODIC_CHECKPOINT_FAILED") from exc
     flush_task=asyncio.create_task(flush_periodically())
     try:
-        async with asyncio.timeout(duration_s):
-            await asyncio.gather(*tasks)
+        async with asyncio.timeout(None if open_ended else duration_s):
+            await asyncio.gather(*tasks,flush_task)
     except TimeoutError:
         budget["reached"]=budget["reached"] or "TIME_BUDGET"
         stop.set()
@@ -217,7 +243,7 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
         # Never permit an uncaught supervisor exception to masquerade as
         # source continuity or silently discard the already-committed frames.
         # Preserve a typed, non-secret failure reason in the final audit.
-        budget["reached"]="UNEXPECTED_RUNNER_TASK_HOLD"
+        budget["reached"]=budget["reached"] or "UNEXPECTED_RUNNER_TASK_HOLD"
         budget["source_errors"].append("UNEXPECTED_TASK_"+type(exc).__name__)
         stop.set()
     finally:
@@ -238,6 +264,7 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
             "source_errors":tuple(budget["source_errors"]),
             "source_coverage_grade":"UNVERIFIED_UNTIL_INDEPENDENT_REPLAY",
             "bounded_pilot_only":not sustained,
+            "continuous_observation":open_ended,
             "complete_four_hour_source_proven":False,
             "g4_scientific_accepted":False,
             "model_training_authority":"NONE","order_authority":"NONE"}
@@ -266,12 +293,21 @@ def main(argv=None) -> int:
     p.add_argument("--enable-network",action="store_true",
                    help="Explicitly permit public WSS acquisition; no order APIs exist")
     p.add_argument("--sustained-source",action="store_true",
-                   help="Opt in to capped six-hour/8GiB source research, after capacity review")
+                   help="Opt in to capped source research, after capacity review")
+    p.add_argument("--continuous-observe",action="store_true",
+                   help="No scheduled disconnect; hard archive/rate guards still HOLD")
     a=p.parse_args(argv)
     try:
         symbols=source_cohort_file(Path(a.cohort_manifest).read_bytes())
         caps = (21600,20000000,8192) if a.sustained_source else (MAX_RUN_SECONDS,MAX_FRAMES,MAX_DB_MIB)
-        if not 1<=a.max_seconds<=caps[0] or not 1<=a.max_frames<=caps[1] or not 1<=a.max_db_mib<=caps[2]:
+        if a.continuous_observe:
+            if (not a.enable_network or not a.sustained_source
+                    or a.storage_mode!="segments" or a.max_seconds!=0
+                    or a.max_frames!=0):
+                raise G4CollectorHold("G4_CONTINUOUS_OWNER_RESOURCE_RELEASE_INVALID")
+        elif not 1<=a.max_seconds<=caps[0] or not 1<=a.max_frames<=caps[1]:
+            raise G4CollectorHold("G4_FORWARD_RESOURCE_BOUNDS_INVALID")
+        if not 1<=a.max_db_mib<=caps[2]:
             raise G4CollectorHold("G4_FORWARD_RESOURCE_BOUNDS_INVALID")
         root=Path(a.source_root)
         target=root/"g4_raw_source.sqlite"
@@ -322,7 +358,9 @@ def main(argv=None) -> int:
                     duration_s=a.max_seconds,max_frames=a.max_frames,
                     max_db_mib=a.max_db_mib,db_path=target,sustained=False))
         report["storage_mode"]=a.storage_mode
-        report["scientific_replay_adapter"]="HOLD_NOT_INTEGRATED" if a.storage_mode=="segments" else "LEGACY_ONLY"
+        report["scientific_replay_adapter"]=(
+            "INDEPENDENT_STREAMING_SOURCE_NOT_ECONOMICALLY_QUALIFIED"
+            if a.storage_mode=="segments" else "LEGACY_ONLY")
         print(json.dumps(report,sort_keys=True))
         # A terminated stream, exhausted route or crashed supervisor is always
         # operator HOLD, regardless of saved rows or zero connector errors.
