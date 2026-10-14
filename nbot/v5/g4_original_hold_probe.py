@@ -49,6 +49,7 @@ def find_explicit_g1_holds(db_path:str|Path):
                 "committed_ms":committed,
                 "manifest":manifest,
                 "held_unique_symbols":len(symbols),
+                "held_symbols":sorted(symbols),
                 "candidate_reason_counts":dict(sorted(reasons.items())),
                 "g2_witness_hold_rows":g2_hold,
                 "g3_context_status":g3.get("status"),
