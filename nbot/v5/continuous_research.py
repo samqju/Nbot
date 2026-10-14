@@ -54,7 +54,15 @@ class ContinuousResearch:
             events=[r[0] for r in db.execute("SELECT event_open_ms FROM g1f_event_manifest WHERE event_open_ms>=? ORDER BY event_open_ms",(self.start_event_ms,))]
         done={json.loads(r[0])["event_ms"] for r in self.store.db.execute("SELECT body FROM research_journal WHERE kind='EVENT_COMPLETE'")}
         selected=[e for e in events if e not in done][:max_events]
-        audit=IndependentSourceAudit(self.vault) if selected else None
+        audit=None
+        if selected:
+            try:
+                audit=IndependentSourceAudit(self.vault)
+            except (OSError,ValueError,sqlite3.DatabaseError):
+                # An absent, malformed or tampered independent forward vault
+                # cannot qualify a single G4 price. Still enumerate all 100
+                # original source candidates as explicit HOLD, not a crash.
+                audit=None
         for event in selected:
             with ro(self.source) as db:
                 candidates=db.execute("SELECT record_json FROM g1f_candidate_events WHERE event_open_ms=? ORDER BY symbol,direction",(event,)).fetchall()
