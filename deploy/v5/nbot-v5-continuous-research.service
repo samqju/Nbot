@@ -1,6 +1,7 @@
 [Unit]
 Description=NBOT V5 G4-G6 offline research (deployment HOLD, zero execution authority)
-After=network.target nbot-v5-g1g2g3-observation.service
+Requisite=nbot-v5-g1g2g3-observation.service nbot-v5-g4-source-capture.service
+After=network.target nbot-v5-g1g2g3-observation.service nbot-v5-g4-source-capture.service
 ConditionPathExists=/home/ubuntu/Nbot/runtime/research/OWNER_APPROVED_G4_RESEARCH_RELEASE
 
 [Service]
@@ -8,8 +9,7 @@ Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/Nbot
 Environment=PYTHONDONTWRITEBYTECODE=1
-EnvironmentFile=/home/ubuntu/Nbot/runtime/research/approved.env
-ExecStart=/usr/bin/flock -n /home/ubuntu/Nbot/runtime/research/owner.lock /home/ubuntu/Nbot/.venv/bin/python -u -m nbot.v5.continuous_research --source /home/ubuntu/Nbot/runtime/observation/g1g2g3.sqlite --vault /home/ubuntu/Nbot/runtime/source/g4-forward-cohort/segments --registry /home/ubuntu/Nbot/runtime/source/g4-forward-cohort/g4_research_template.json --root /home/ubuntu/Nbot/runtime/research --protocol /home/ubuntu/Nbot/runtime/research/protocol.json --start-event-ms ${NBOT_V5_START_EVENT_MS}
+ExecStart=/usr/bin/flock -n /home/ubuntu/Nbot/runtime/research/owner.lock /home/ubuntu/Nbot/.venv/bin/python -u -m nbot.v5.continuous_research --source /home/ubuntu/Nbot/runtime/observation/g1g2g3.sqlite --vault /home/ubuntu/Nbot/runtime/source/g4-forward-cohort/segments --registry /home/ubuntu/Nbot/runtime/source/g4-forward-cohort/g4_research_template.json --root /home/ubuntu/Nbot/runtime/research --protocol /home/ubuntu/Nbot/runtime/research/protocol.json
 Restart=no
 UMask=0077
 NoNewPrivileges=true
