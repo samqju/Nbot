@@ -261,7 +261,10 @@ class SyntheticReplay:
         db = self.engine.db
         last = db.execute("SELECT frame_id,at_ms FROM replay_frames WHERE at_ms<=? ORDER BY at_ms DESC, rowid DESC LIMIT 1",
                           (at_ms,)).fetchone()
-        nframes = db.execute("SELECT count(*) FROM replay_frames WHERE at_ms<=?", (at_ms,)).fetchone()[0]
+        frame_counts = db.execute(
+            "SELECT count(*) AS n, MIN(at_ms) AS first_ms, COUNT(DISTINCT event_id) AS events "
+            "FROM replay_frames WHERE at_ms<=?", (at_ms,)).fetchone()
+        nframes = frame_counts["n"]
         if not last:
             return {"status": "HOLD_NO_SHARED_EVENTS", "comparison_grade": "SYNTHETIC_ONLY"}
         books = {}
@@ -279,7 +282,7 @@ class SyntheticReplay:
                            "equity": mark["equity"], "mark_quality": mark["reason"]}
         latest_time = last["at_ms"]
         minimum_count = all(b["settled_count"] >= self.rules.min_settled_per_model for b in books.values())
-        common_duration = latest_time - self.rules.contest_start_ms
+        common_duration = latest_time - frame_counts["first_ms"]
         good_marks = all(b["equity"] is not None for b in books.values())
         reasons = []
         if not minimum_count:
@@ -295,6 +298,8 @@ class SyntheticReplay:
         return {"status": "HOLD_REVIEW_REQUIRED", "reasons": reasons,
                 "comparison_grade": "SYNTHETIC_ONLY",
                 "window_start_ms": self.rules.contest_start_ms,
+                "first_observed_ms": frame_counts["first_ms"],
+                "unique_event_ids_not_independent": frame_counts["events"],
                 "common_endpoint_ms": latest_time,
                 "declared_max_end_ms": self.rules.contest_end_ms,
                 "shared_frames": nframes, "common_duration_ms": common_duration,
