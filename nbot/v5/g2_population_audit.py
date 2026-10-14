@@ -94,10 +94,14 @@ def audit_population(path: str | Path, *, now_ms: int | None = None) -> dict:
                         or summary.get("research_ready") is not False):
                     problems.append("MANIFEST_PROOF_INVALID")
                 if last is None:
-                    # Selection can reference the last REST bootstrap event.
-                    # Observation starts on that 5m bar or the next one.
+                    # Cohort selection/bootstrap happens before WSS
+                    # evidence begins; exclude warm-up slots explicitly.
+                    # Bound initial setup to three 5m slots rather than
+                    # invent any observations or hide an extended outage.
                     bootstrap_offset = event_ms - first_event
-                    if bootstrap_offset not in (0, INTERVAL_MS):
+                    if (bootstrap_offset < 0
+                            or bootstrap_offset > 3 * INTERVAL_MS
+                            or bootstrap_offset % INTERVAL_MS):
                         problems.append("COHORT_FIRST_OBSERVATION_INVALID")
                 elif event_ms - last != INTERVAL_MS:
                     interrupted_events += 1
