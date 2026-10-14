@@ -122,14 +122,13 @@ class ContinuousIntegrationTests(unittest.TestCase):
         page=bounded_pending_path_page(self.engine.labels,self.engine.store)
         self.assertEqual(len(page),250)
         self.assertEqual(len({p[0] for p in page}),250)
-        for i in range(2):
+        for i,expected in enumerate((250,50,250)):
             tail=page[-1]
             self.engine.store.append("cursor-test:"+str(i),"PATH_SCAN_CURSOR",COMMITTED,
                                      {"decision_at_ms":tail[2],"label_id":tail[0]})
             page=bounded_pending_path_page(self.engine.labels,self.engine.store)
-            self.assertEqual(len(page),250)
-        # Third page includes the remaining (550 plus existing 100 intents
-        # if fixture had created them), but always <=250 bounded RAM.
+            self.assertEqual(len(page),expected)
+        # The seek cursor wraps safely after the final 50 unprocessed rows.
         self.assertLessEqual(len(page),250)
 
     def test_restart_replays_without_duplicate_and_source_unchanged(self):
