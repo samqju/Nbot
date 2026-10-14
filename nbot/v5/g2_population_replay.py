@@ -36,6 +36,7 @@ def audit_replay(path: str | Path, *, max_events: int = 3,
     matched=0
     total_records=0
     times=[]
+    quote_witness_complete = True
     try:
         with sqlite3.connect(p.resolve().as_uri()+"?mode=ro",uri=True,timeout=5) as db:
             if db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
@@ -49,12 +50,20 @@ def audit_replay(path: str | Path, *, max_events: int = 3,
             symbols=tuple(json.loads(json_symbols))
             if "BTCUSDT" not in symbols or not 1<=len(symbols)<=50:
                 raise ReplayHold("G2_SYMBOL_COHORT_INVALID")
+            has_quote_table=bool(db.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' "
+                "AND name='g2_quote_witness'").fetchone()[0])
+            quote_witness_complete=has_quote_table
             for (event,committed,state) in db.execute(
                 "SELECT event_open_ms,committed_ms,state FROM g1f_event_manifest "
                 "WHERE state='OBSERVE_ONLY' ORDER BY event_open_ms DESC LIMIT ?",
                 (max_events,)).fetchall():
                 examined+=1
                 times.append(event)
+                if has_quote_table and db.execute(
+                    "SELECT COUNT(*) FROM g2_quote_witness WHERE event_open_ms=?",
+                    (event,)).fetchone()[0]!=len(symbols):
+                    quote_witness_complete=False
                 if event+INTERVAL_MS>committed or committed>now_ms:
                     problems["EVENT_CLOCK_INVALID"]+=1
                     continue
@@ -144,7 +153,7 @@ def audit_replay(path: str | Path, *, max_events: int = 3,
         "event_opens_desc":times,
         "replayed_candidate_records":total_records,
         "exact_replay_matches":matched,
-        "quote_snapshots_archived":False,
+        "quote_snapshots_archived":quote_witness_complete,
         "full_futures_population_verified":False,
         "matured_outcomes":0,
         "research_ready":False,
