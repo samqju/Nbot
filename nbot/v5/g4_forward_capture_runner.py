@@ -181,6 +181,14 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
     except TimeoutError:
         budget["reached"]=budget["reached"] or "TIME_BUDGET"
         stop.set()
+    except Exception as exc:
+        # A first real Binance pilot exposed an unhandled task exception.
+        # Never permit an uncaught supervisor exception to masquerade as
+        # source continuity or silently discard the already-committed frames.
+        # Preserve a typed, non-secret failure reason in the final audit.
+        budget["reached"]="UNEXPECTED_RUNNER_TASK_HOLD"
+        budget["source_errors"].append("UNEXPECTED_TASK_"+type(exc).__name__)
+        stop.set()
     finally:
         stop.set()
         for task in tasks:
@@ -195,6 +203,9 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
             "stop_reason":budget["reached"] or "SOURCE_STREAM_ENDED",
             "source_errors":tuple(budget["source_errors"]),
             "source_coverage_grade":"UNVERIFIED_UNTIL_INDEPENDENT_REPLAY",
+            "bounded_pilot_only":True,
+            "complete_four_hour_source_proven":False,
+            "g4_scientific_accepted":False,
             "model_training_authority":"NONE","order_authority":"NONE"}
 
 
@@ -251,7 +262,10 @@ def main(argv=None) -> int:
                 duration_s=a.max_seconds,max_frames=a.max_frames,
                 max_db_mib=a.max_db_mib,db_path=target))
         print(json.dumps(report,sort_keys=True))
-        return 0 if not report["source_errors"] and report["stop_reason"] != "MAX_DB_SIZE" else 2
+        # A terminated stream, exhausted route or crashed supervisor is always
+        # operator HOLD, regardless of saved rows or zero connector errors.
+        acceptable_stop = report["stop_reason"] in ("MAX_FRAMES","TIME_BUDGET")
+        return 0 if not report["source_errors"] and acceptable_stop else 2
     except (ValueError,sqlite3.DatabaseError,OSError) as exc:
         print(json.dumps({"status":"HOLD","reason":str(exc),
                           "economic_outcomes":0,
