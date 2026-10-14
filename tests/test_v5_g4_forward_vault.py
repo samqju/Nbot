@@ -205,6 +205,39 @@ class G4VaultTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"G4_VAULT_CLOCK_REWIND"):
             self.v.ingest(route="market_aggtrade",at_ms=NOW-100,raw=trade())
 
+    def test_rejected_restart_clock_does_not_mutate_any_receipts(self):
+        self.connect()
+        self.v.ingest(route="market_aggtrade",at_ms=NOW,raw=trade())
+        head=self.v.audit()["head_sha256"]
+        total=self.db.execute("SELECT count(*) FROM g4_forward_receipts").fetchone()[0]
+        with self.assertRaisesRegex(ValueError,"G4_VAULT_CLOCK_REWIND"):
+            self.v.connect(route="market_aggtrade",at_ms=NOW-100)
+        self.assertEqual(self.v.audit()["head_sha256"],head)
+        self.assertEqual(self.db.execute("SELECT count(*) FROM g4_forward_receipts").fetchone()[0],total)
+
+    def test_private_standalone_sqlite_backup_restore_replays_identical_raw_hash(self):
+        with tempfile.TemporaryDirectory() as work:
+            original=os.path.join(work,"original_g4_only.sqlite")
+            restored=os.path.join(work,"restored_g4_only.sqlite")
+            source=sqlite3.connect(original)
+            try:
+                source.execute("PRAGMA journal_mode=WAL")
+                v=ForwardSourceVault(source,symbols=SYMS)
+                v.connect(route="market_aggtrade",at_ms=NOW-500)
+                receipt=v.ingest(route="market_aggtrade",at_ms=NOW,raw=trade())
+                head=v.audit()["head_sha256"]
+                with sqlite3.connect(restored) as destination:
+                    source.backup(destination)
+                with sqlite3.connect(restored) as recovered:
+                    replay=ForwardSourceVault(recovered,symbols=SYMS)
+                    self.assertEqual(replay.audit()["head_sha256"],head)
+                    raw=recovered.execute("SELECT raw_frame FROM g4_forward_receipts "
+                                          "WHERE kind='FRAME'").fetchone()[0]
+                    self.assertEqual(hashlib.sha256(raw).hexdigest(),receipt.raw_sha256)
+                    self.assertEqual(replay.audit()["scored_outcomes"],0)
+            finally:
+                source.close()
+
     def test_five_minute_candidates_are_never_trades(self):
         self.connect()
         for i in range(4):
