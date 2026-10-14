@@ -90,7 +90,8 @@ class PaperPolicy:
                      "min_confidence"):
             if number(getattr(self, name)) < ZERO:
                 raise ValueError(name)
-        if self.min_confidence > 1 or self.max_quote_age_ms <= 0 or self.max_recommendation_age_ms <= 0:
+        if (self.min_confidence > 1 or self.max_realized_drawdown > 1
+                or self.max_quote_age_ms <= 0 or self.max_recommendation_age_ms <= 0):
             raise ValueError("invalid policy")
 
 
@@ -211,12 +212,21 @@ class OfflineExecutionEngine:
 
     @contextmanager
     def _tx(self):
-        self.db.execute("BEGIN IMMEDIATE")
+        """Permit an outer synthetic replay event to atomically include ledger entries."""
+        nested = self.db.in_transaction
+        if nested:
+            self.db.execute("SAVEPOINT nbot_paper_nested")
+        else:
+            self.db.execute("BEGIN IMMEDIATE")
         try:
             yield self.db
-            self.db.execute("COMMIT")
+            self.db.execute("RELEASE SAVEPOINT nbot_paper_nested" if nested else "COMMIT")
         except BaseException:
-            self.db.execute("ROLLBACK")
+            if nested:
+                self.db.execute("ROLLBACK TO SAVEPOINT nbot_paper_nested")
+                self.db.execute("RELEASE SAVEPOINT nbot_paper_nested")
+            else:
+                self.db.execute("ROLLBACK")
             raise
 
     def _quote(self, q: dict, symbol: str, as_of_ms: int, now_ms: int):
