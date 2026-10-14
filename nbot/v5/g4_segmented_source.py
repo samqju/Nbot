@@ -115,9 +115,12 @@ def read_segments(root, expected_cohort=None):
         body = {key: value for key, value in meta.items() if key != "manifest_sha"}
         if meta.get("manifest_sha") != sha(canonical(body)):
             hold("MANIFEST_SHA_MISMATCH")
-        decompressor = gzip.GzipFile(fileobj=__import__("io").BytesIO(payload))
-        raw_data = decompressor.read(MAX_SEGMENT_UNCOMPRESSED + 1)
-        decompressor.close()
+        try:
+            decompressor = gzip.GzipFile(fileobj=__import__("io").BytesIO(payload))
+            raw_data = decompressor.read(MAX_SEGMENT_UNCOMPRESSED + 1)
+            decompressor.close()
+        except (EOFError, OSError, ValueError):
+            hold("SEGMENT_DECOMPRESSION_INVALID")
         if len(raw_data) > MAX_SEGMENT_UNCOMPRESSED or (
                 meta.get("uncompressed_sha") != sha(raw_data)):
             hold("SEGMENT_CONTENT_INVALID")
@@ -145,10 +148,19 @@ def read_segments(root, expected_cohort=None):
                 if previous and record["at_ms"] < previous["at_ms"]:
                     hold("ROUTE_CLOCK_REWIND")
                 if record["kind"] == "OPEN":
+                    if (previous and previous["kind"] not in
+                            ("CLOSED", "ABRUPT_RESTART_HOLD")):
+                        hold("MISSING_RESTART_HOLD_MARKER")
                     if record["epoch"] != (previous["epoch"] + 1 if previous else 1):
                         hold("EPOCH_SEQUENCE_INVALID")
                 elif not previous or record["epoch"] != previous["epoch"]:
                     hold("EPOCH_SEQUENCE_INVALID")
+                elif (record["kind"] == "ABRUPT_RESTART_HOLD"
+                      and previous["kind"] not in ("OPEN","FRAME")):
+                    hold("RESTART_MARKER_OUT_OF_PLACE")
+                elif (record["kind"] in ("CLOSED","FRAME")
+                      and previous["kind"] not in ("OPEN","FRAME")):
+                    hold("FRAME_OR_CLOSE_WITHOUT_ROUTE")
                 if record["kind"] == "FRAME" and len(raw) == 0:
                     hold("EMPTY_FRAME")
                 if record["kind"] != "FRAME" and raw:
