@@ -103,10 +103,20 @@ class G2PopulationAuditTests(unittest.TestCase):
         self.assertEqual(out["audit"],"PASS")
         self.assertEqual(out["cohort_bootstrap_offset_slots"],1)
 
-    def test_more_than_one_initial_unobserved_slot_is_hold(self):
+    def test_two_bootstrap_slots_are_visible_not_mistaken_for_a_data_gap(self):
         self.db.execute("DROP TRIGGER g1f_cohort_no_update")
         self.db.execute("UPDATE g1f_universe_snapshots SET first_event_open_ms=?",
                         (self.first - 2*INTERVAL_MS,))
+        self.db.commit()
+        out=self.inspect()
+        self.assertEqual(out["audit"],"PASS")
+        self.assertEqual(out["cohort_bootstrap_offset_slots"],2)
+        self.assertEqual(out["unrepresented_time_slots"],0)
+
+    def test_extended_initial_unobserved_setup_is_hold(self):
+        self.db.execute("DROP TRIGGER g1f_cohort_no_update")
+        self.db.execute("UPDATE g1f_universe_snapshots SET first_event_open_ms=?",
+                        (self.first - 4*INTERVAL_MS,))
         self.db.commit()
         self.assertIn("COHORT_FIRST_OBSERVATION_INVALID",self.inspect()["violations"])
 
