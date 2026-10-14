@@ -92,6 +92,18 @@ class ReconnectPolicy:
         """One REST overlap may repair candle history, NEVER trade/quote."""
         self.candle_gap_symbols.discard(symbol)
 
+    def accept_reverified(self, route: str) -> None:
+        """Re-arm a route only after a complete future source-quality proof.
+
+        Reset the retry budget, never the old persistent source-gap evidence.
+        """
+        state=self._route(route)
+        if not state.connected:
+            raise FeedRecoveryHold("V5_G1E_REVERIFY_DISCONNECTED")
+        state.retry_attempts=0
+        state.reconciliation_required=False
+        state.reasons.clear()
+
     def status(self) -> dict:
         return {
             "routes": {

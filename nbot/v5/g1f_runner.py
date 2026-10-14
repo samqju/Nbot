@@ -22,7 +22,7 @@ import time
 
 from nbot.v5.candle_ledger import EvidenceHold
 from nbot.v5.finality_quarantine import FinalityQuarantine
-from nbot.v5.g1f_engine import audit_event
+from nbot.v5.g1f_engine import audit_event, feed_holds
 from nbot.v5.g1f_journal import CandidateJournal, JournalHold
 from nbot.v5.g2_source_witness import SourceWitness, WitnessHold
 from nbot.v5.g3_context_ledger import G3ContextLedger
@@ -37,14 +37,27 @@ from nbot.v5.ws_contract import UnsafeStream, stream_urls
 
 MAX_RSS_MIB=192
 MAX_DB_MIB=256
-MAX_FRAMES_PER_5M=250000
+MAX_FRAMES_PER_5M=750000  # bounded HOLD; no automatic restart
 MAX_CATCHUP_EVENTS=96
-METRICS_EVERY_SECONDS=15
+METRICS_EVERY_SECONDS=60  # 1 heartbeat/minute; never journal each tick
 CLOSE_GRACE_MS=12000
 
 
 def wall_ms():
     return int(time.time()*1000)
+
+def g3_frozen_cohort(ranked_symbols):
+    """G3 consumes the SAME G1 ranked members in canonical sorted order.
+
+    The initial live selection is volume-ranked; restart cohorts are read
+    back sorted from SQLite. Normalize both without selecting new symbols.
+    """
+    ordered=tuple(ranked_symbols)
+    if (not 2<=len(ordered)<=50 or "BTCUSDT" not in ordered
+            or len(set(ordered))!=len(ordered)):
+        raise EvidenceHold("G3_RANKED_SOURCE_COHORT_INVALID")
+    return tuple(sorted(ordered))
+
 
 
 def db_size_mib(path: Path) -> float:
@@ -176,7 +189,7 @@ class ObservationOnlyRunner:
         self.interrupted=False
         self.stats={"market_frames":0,"public_frames":0,
                     "committed_events":0,"restart_missing_events":0,
-                    "reconnect_attempts":0}
+                    "reconnect_attempts":0,"reverified_epochs":0}
         self.last_log=time.monotonic()
         self.route_window_started={"market":time.monotonic(),
                                    "public":time.monotonic()}
@@ -185,6 +198,42 @@ class ObservationOnlyRunner:
     def fault(self, reason):
         self.failed_reason=str(reason)[:150]
         self.stop.set()
+
+    def _source_epoch_candidate(self, session, eligible, event_open_ms):
+        """Only fresh per-coin WSS data may request epoch rehabilitation.
+
+        This does NOT clear the interruption or bypass the three REST
+        finality stages. A failed candidate remains a recorded HOLD.
+        """
+        if not self.interrupted:
+            return False
+        holds=feed_holds(
+            session,eligible,event_open_ms=event_open_ms,
+            measured_ms=wall_ms(),interrupted=False)
+        return all(not holds.get(symbol,("SOURCE_WITNESS_MISSING",))
+                   for symbol in eligible)
+
+    def _accept_source_epoch(self, session, event_open_ms):
+        """Accept NEW epoch only after its complete 5m event is committed.
+
+        The original interrupted epoch and every earlier HOLD are retained.
+        """
+        if not self.interrupted:
+            return False
+        for route in ("market","public"):
+            if not self.policy.routes[route].connected:
+                raise FeedRecoveryHold("G1F_RECOVERY_ROUTE_DISCONNECTED")
+        for route in ("market","public"):
+            self.policy.accept_reverified(route)
+        self.interrupted=False
+        self.stats["reverified_epochs"]+=1
+        print("G1F_SOURCE_EPOCH_REVERIFIED",json.dumps({
+            "event_open_ms":event_open_ms,
+            "market_epoch":session.generations["market"],
+            "public_epoch":session.generations["public"],
+            "prior_gap_remains_recorded":True,
+        },sort_keys=True),flush=True)
+        return True
 
     async def start(self):
         now_response=await asyncio.to_thread(self.getter,"/fapi/v1/time")
@@ -296,7 +345,7 @@ class ObservationOnlyRunner:
                     raise EvidenceHold("G3_UNRECONCILED_CONTEXT_OVER_96_EVENTS")
                 for (prior_event,) in pending:
                     print("G3_RECOVERY",json.dumps(context.record(
-                        event_open_ms=prior_event,symbols=tuple(eligible)
+                        event_open_ms=prior_event,symbols=g3_frozen_cohort(eligible)
                     ),sort_keys=True),flush=True)
             self.policy=ReconnectPolicy()
             tasks=[
@@ -348,6 +397,7 @@ class ObservationOnlyRunner:
             return
         while not self.stop.is_set() and time.monotonic()<deadline:
             connected=False
+            retry=False
             try:
                 async with connect(
                     uri,open_timeout=9,close_timeout=2,
@@ -388,21 +438,24 @@ class ObservationOnlyRunner:
                 self.fault(route+"_SOURCE_HOLD_"+str(exc))
                 break
             except Exception as exc:
+                # Disconnect exactly once, before consulting retry_delay.
                 self.interrupted=True
-                self.policy.on_disconnect(route,"WSS_CONNECTION_FAULT")
+                retry=True
                 self.stats["reconnect_attempts"]+=1
+            finally:
+                if connected:
+                    session.disconnect(route)
+                    self.policy.on_disconnect(
+                        route,"WSS_CONNECTION_FAULT" if retry else "ROUTE_CLOSED")
+                    if not self.stop.is_set():
+                        self.interrupted=True
+            if retry and not self.stop.is_set():
                 try:
                     wait=self.policy.retry_delay(route)
                 except FeedRecoveryHold as error:
                     self.fault(str(error))
                     break
                 await asyncio.sleep(wait)
-            finally:
-                if connected:
-                    session.disconnect(route)
-                    self.policy.on_disconnect(route,"ROUTE_CLOSED")
-                    if not self.stop.is_set():
-                        self.interrupted=True
 
     async def _events(self,session,journal,finality,identity,eligible,symbols,
                       start,deadline, *, source_witness=None,g3_ledger=None):
@@ -413,16 +466,21 @@ class ObservationOnlyRunner:
                 await asyncio.sleep(min(1,(due-wall_ms())/1000))
                 continue
             try:
+                recovery_candidate=self._source_epoch_candidate(
+                    session,eligible,event)
                 summary=await audit_event(
                     session,journal,finality,symbols=eligible,
                     cohort_digest=identity,event_open_ms=event,
-                    getter=self.getter,interrupted=self.interrupted,
+                    getter=self.getter,
+                    interrupted=self.interrupted and not recovery_candidate,
                     source_witness=source_witness)
                 self.stats["committed_events"]+=1
+                if recovery_candidate and summary.get("status")=="OBSERVE_ONLY":
+                    self._accept_source_epoch(session,event)
                 print("G1F_EVENT",json.dumps(summary,sort_keys=True),flush=True)
                 if g3_ledger is not None:
                     recorded=g3_ledger.record(
-                        event_open_ms=event,symbols=tuple(eligible))
+                        event_open_ms=event,symbols=g3_frozen_cohort(eligible))
                     print("G3_EVENT",json.dumps(recorded,sort_keys=True),flush=True)
                 resource_guard(self.path)
             except asyncio.CancelledError:

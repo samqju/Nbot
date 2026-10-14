@@ -51,6 +51,13 @@ def _row(bar: Sequence) -> tuple:
     return (t, o, h, l, c, v)
 
 
+def _is_protected_legacy_db_target(path: Path) -> bool:
+    """Protect all old in-tree V4 databases except the single G1 V5 path."""
+    approved = Path("/home/ubuntu/Nbot/runtime/observation/g1g2g3.sqlite")
+    return ((str(path).startswith("/home/ubuntu/Nbot/") and path != approved)
+            or any(part.lower() in ("v4", "live", "v3") or part.lower().startswith(("nbot_v4", "nbot_v3")) for part in path.parts))
+
+
 class CandleEvidenceLedger:
     """SQLite FULL-sync WAL journal; one writer per connection, no online trading.
 
@@ -60,16 +67,18 @@ class CandleEvidenceLedger:
     """
 
     def __init__(self, path: str | Path):
-        path = Path(path).expanduser().resolve()
-        # One-way guard against accidentally recreating/resetting prior V4 data.
-        if (str(path).startswith("/home/ubuntu/Nbot/")
-                or any(part.lower() in ("v4", "live", "v3")
-                       for part in path.parts)):
+        original = Path(path).expanduser()
+        # Refuse redirects BEFORE resolve; a resolved path is not a symlink.
+        if original.is_symlink() or any(p.is_symlink() for p in original.parents):
+            raise EvidenceHold("V5_LEDGER_SYMLINK_FORBIDDEN")
+        path = original.resolve()
+        # New owner-approved single-tree layout. Only this precise G1/G2/G3
+        # observation ledger is allowed beneath the otherwise protected legacy
+        # Nbot tree. V4, old live/testnet, and arbitrary SQLite remain denied.
+        if _is_protected_legacy_db_target(path):
             raise EvidenceHold("V5_LEDGER_LEGACY_PATH_FORBIDDEN")
         if path.suffix not in (".db", ".sqlite") or not path.parent.is_dir():
             raise EvidenceHold("V5_LEDGER_NEW_DB_PATH_REQUIRED")
-        if path.is_symlink():
-            raise EvidenceHold("V5_LEDGER_SYMLINK_FORBIDDEN")
         self.path = path
         self.db = sqlite3.connect(str(path), timeout=5)
         try:

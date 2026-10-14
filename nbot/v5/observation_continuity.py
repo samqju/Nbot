@@ -146,15 +146,11 @@ class ObservationContinuity:
                 self.stats["wss_final_held"] += 1
             # Buffer cursor is downstream of immutable source; a WSS gap may
             # require a new generation seeded only from audited REST.
-            buffer_outcome = self.store.consume(
-                route, payload, received_ms=received_ms,
-            )
+            buffer_outcome = self.store.consume_decoded(parsed)
             if buffer_outcome == "CANDLE_GAP_HOLD":
                 self.stats["buffer_gap_held"] += 1
             return outcome
-        classification = self.store.consume(
-            route, payload, received_ms=received_ms,
-        )
+        classification = self.store.consume_decoded(parsed)
         if kind == "aggTrade":
             self.stats["trade_updates"] += 1
             if classification == "TRADE_CURSOR_ADVANCED":
