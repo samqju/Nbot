@@ -98,6 +98,27 @@ class OriginalG4EntryAdmissionTests(unittest.TestCase):
         self.assertEqual(result.policy_geometry["entry_reference_price"],"100.0")
         self.assertEqual(result.order_authority,"NONE")
 
+    def test_original_g2_asof_before_slow_g1_rest_finality_is_causal_not_entry_quote(self):
+        # In REAL observation G2 is frozen before REST comparisons; G1
+        # candidate final decision/commit occurs later. Equal clocks are
+        # factually wrong and must not be imposed as an artificial G4 hold.
+        with sqlite3.connect(self.g1) as db:
+            raw=db.execute(
+                "SELECT payload_json FROM g2_quote_witness WHERE symbol='BTCUSDT'"
+            ).fetchone()[0]
+            witness=json.loads(raw)
+            earlier=COMMITTED-500
+            witness["asof_ms"]=earlier
+            witness["source"]["quote_received_ms"]=earlier-100
+            witness["source"]["trade_received_ms"]=earlier-150
+            db.execute(
+                "UPDATE g2_quote_witness SET asof_ms=?,payload_json=?,payload_sha=? "
+                "WHERE symbol='BTCUSDT'",
+                (earlier,canonical(witness),digest(witness)))
+        result=self.run_admission()
+        self.assertEqual(result.state,"REFERENCE_GEOMETRY_RECORDED")
+        self.assertEqual(result.qualified_economic_outcomes,0)
+
     def test_preactivation_never_joins_old_event(self):
         self.spec["activates_at_ms"]=EVENT+300000
         self.register()
