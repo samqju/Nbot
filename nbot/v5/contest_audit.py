@@ -25,8 +25,13 @@ def audit_synthetic_contest(replay: SyntheticReplay, cutoff_ms: int) -> dict:
         for book in PORTFOLIOS
     }
     linked_decision_ids = {book: set() for book in PORTFOLIOS}
+    linked_exit_tuples = set()
     for record in rows:
         receipt = json.loads(record["receipt_json"])
+        for book in receipt["closed"]:
+            if book not in PORTFOLIOS:
+                raise ValueError("UNKNOWN_CLOSED_BOOK")
+            linked_exit_tuples.add((book, receipt["symbol"], receipt["at_ms"]))
         for book in PORTFOLIOS:
             decision = receipt["decisions"].get(book)
             if decision is None:
@@ -56,9 +61,18 @@ def audit_synthetic_contest(replay: SyntheticReplay, cutoff_ms: int) -> dict:
             high = max(high, equity)
             if high > 0:
                 worst = max(worst, (high - equity) / high)
-        ledger_fees = c.execute("""SELECT COALESCE(SUM(CAST(fee AS REAL)),0) FROM fills
-                                   WHERE portfolio=? AND at_ms BETWEEN ? AND ?""",
-                                (book, start, end)).fetchone()[0]
+        fee_records = c.execute("""SELECT fee FROM fills
+                                    WHERE portfolio=? AND at_ms BETWEEN ? AND ?""",
+                                (book, start, end)).fetchall()
+        fees = sum((number(f["fee"]) for f in fee_records), Decimal(0))
+        closed_orders = c.execute("""SELECT symbol,at_ms FROM orders
+                                    WHERE portfolio=? AND action='CLOSE_SYNTHETIC'
+                                    AND at_ms BETWEEN ? AND ?""",
+                                  (book, start, end)).fetchall()
+        unlinked_exits = sum((1 for x in closed_orders if (
+            book, x["symbol"], x["at_ms"]) not in linked_exit_tuples))
+        if unlinked_exits:
+            reasons.append("UNLINKED_SYNTHETIC_SETTLEMENT")
         # Only settled funding is posted to wallet. Unrealized accrued funding
         # is conservatively reflected in each qualified mark, never as a true exchange payment.
         settled = c.execute("""SELECT funding FROM settled WHERE portfolio=?
@@ -80,6 +94,7 @@ def audit_synthetic_contest(replay: SyntheticReplay, cutoff_ms: int) -> dict:
             "settled_count": base["portfolios"][book]["settled_count"],
             "decisions": opportunity_counts[book],
             "unlinked_decision_count": unlinked,
+            "unlinked_settlement_count": unlinked_exits,
             "realized_wallet": str(realized),
             "realized_return_on_same_initial_capital": str(realized / starting - 1),
             "common_endpoint_equity": equity_at_end,
@@ -91,7 +106,7 @@ def audit_synthetic_contest(replay: SyntheticReplay, cutoff_ms: int) -> dict:
             "max_observed_sampled_equity_drawdown_fraction": (
                 str(worst) if not missing else None),
             "sampled_drawdown_is_not_intrabar_drawdown": True,
-            "fee_total_approx_float_diagnostic_only": ledger_fees,
+            "synthetic_fees_paid_within_common_window": str(fees),
             "settled_adverse_funding_assumption": str(funding),
         }
         if missing:
