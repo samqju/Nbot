@@ -25,6 +25,14 @@ def cohort():
     return {"symbols":symbols,"cohort_digest":identity}
 
 
+def mark(at=NOW):
+    payload={"stream":"qntusdt@markPrice@1s",
+             "data":{"e":"markPriceUpdate","E":at-100,"s":"QNTUSDT",
+                     "p":"200.5","i":"200.4","P":"200.3",
+                     "r":"0.0001","T":at+28800000,"st":1}}
+    return json.dumps(payload,separators=(",",":")).encode()
+
+
 class MockSocket:
     def __init__(self,frames,*,throw_after=False):
         self.frames=frames
@@ -48,6 +56,8 @@ class MockConnector:
             frames=[trade()]
         elif "@bookTicker" in endpoint:
             frames=[quote()]
+        elif "@markPrice@1s" in endpoint:
+            frames=[mark()]
         else:
             raise AssertionError("unapproved mock endpoint")
         return MockSocket(frames,throw_after=self.throw_after)
@@ -124,6 +134,20 @@ class G4RunnerTests(unittest.TestCase):
             self.assertEqual(result["order_authority"],"NONE")
             self.assertEqual(result["counts"]["SOURCE_RECORDED"],2)
             self.assertEqual(len(connector.calls),2)
+
+    def test_complete_three_public_source_routes_no_trade_authority(self):
+        with sqlite3.connect(":memory:") as db:
+            vault=ForwardSourceVault(db,symbols=SYMS)
+            connector=MockConnector()
+            outcome=asyncio.run(run_bounded(
+                vault=vault,endpoints=forward_stream_endpoints(SYMS),
+                connector=connector,duration_s=15,max_frames=3,
+                max_db_mib=2,clock_ms=lambda:NOW))
+            self.assertEqual(outcome["frames_seen"],3)
+            self.assertEqual(outcome["counts"]["SOURCE_RECORDED"],3)
+            self.assertEqual(len(connector.calls),3)
+            self.assertEqual(outcome["scored_outcomes"],0)
+            self.assertEqual(outcome["order_authority"],"NONE")
 
     def test_invalid_max_duration_never_starts_network(self):
         vault=ForwardSourceVault(sqlite3.connect(":memory:"),symbols=SYMS)
