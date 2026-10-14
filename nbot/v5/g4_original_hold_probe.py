@@ -33,10 +33,12 @@ def find_explicit_g1_holds(db_path:str|Path):
                 if c.get("reason_codes"):
                     reasons.update(c["reason_codes"])
                     symbols.add(sym)
-            g2_hold=db.execute(
-                "SELECT count(*) FROM g2_quote_witness "
-                "WHERE event_open_ms=? AND payload_json LIKE '%\\\"status\\\":\\\"HOLD\\\"%'",
-                (event,)).fetchone()[0]
+            g2_hold=sum(
+                json.loads(raw_g2[0]).get("status")=="HOLD"
+                for raw_g2 in db.execute(
+                    "SELECT payload_json FROM g2_quote_witness "
+                    "WHERE event_open_ms=?",(event,))
+            )
             ctx=db.execute(
                 "SELECT payload_json FROM g3_event_context "
                 "WHERE event_open_ms=?",(event,)).fetchone()
