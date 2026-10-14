@@ -60,16 +60,21 @@ class CandleEvidenceLedger:
     """
 
     def __init__(self, path: str | Path):
-        path = Path(path).expanduser().resolve()
-        # One-way guard against accidentally recreating/resetting prior V4 data.
-        if (str(path).startswith("/home/ubuntu/Nbot/")
+        original = Path(path).expanduser()
+        # Refuse redirects BEFORE resolve; a resolved path is not a symlink.
+        if original.is_symlink() or any(p.is_symlink() for p in original.parents):
+            raise EvidenceHold("V5_LEDGER_SYMLINK_FORBIDDEN")
+        path = original.resolve()
+        # New owner-approved single-tree layout. Only this precise G1/G2/G3
+        # observation ledger is allowed beneath the otherwise protected legacy
+        # Nbot tree. V4, old live/testnet, and arbitrary SQLite remain denied.
+        approved = Path("/home/ubuntu/Nbot/runtime/observation/g1g2g3.sqlite")
+        if ((str(path).startswith("/home/ubuntu/Nbot/") and path != approved)
                 or any(part.lower() in ("v4", "live", "v3")
                        for part in path.parts)):
             raise EvidenceHold("V5_LEDGER_LEGACY_PATH_FORBIDDEN")
         if path.suffix not in (".db", ".sqlite") or not path.parent.is_dir():
             raise EvidenceHold("V5_LEDGER_NEW_DB_PATH_REQUIRED")
-        if path.is_symlink():
-            raise EvidenceHold("V5_LEDGER_SYMLINK_FORBIDDEN")
         self.path = path
         self.db = sqlite3.connect(str(path), timeout=5)
         try:
