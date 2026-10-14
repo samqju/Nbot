@@ -106,7 +106,7 @@ class ArchiveImportTests(unittest.TestCase):
             ingest(rows=rows)
 
     def test_backward_trade_time_rejected(self):
-        rows=[ROWS[0],ROWS[1].replace("1791763201000","1791763190000"),ROWS[2]]
+        rows=[ROWS[0],ROWS[1],ROWS[2].replace("1791763202000","1791763200500")]
         with self.assertRaisesRegex(ValueError,"G4_ARCHIVE_CSV_SEQUENCE_INVALID"):
             ingest(rows=rows)
 
