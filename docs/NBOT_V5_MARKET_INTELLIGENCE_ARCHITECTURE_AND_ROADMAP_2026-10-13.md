@@ -1,7 +1,8 @@
 # NBOT V5 — Market Intelligence, Strategy Alignment and Learning Roadmap
 
-**Document version:** 2.8.6  
-**Date:** 2026-10-13 (IST)  
+**Document version:** 2.8.7  
+**Date:** 2026-10-14 (IST); original roadmap issued 2026-10-13  
+**CURRENT GOVERNANCE NOTE (v2.8.7, 2026-10-14):** The historical early-restart status below describes the original October 13 baseline, NOT today's deployment. Integrated G1/G2/G3 V5 is already RUNNING at pinned SHA `1e7c090d05dc118b290c764d58c2944f56ad4b3b`; G2/G3 initial production PASS, distinct new G1 24h soak pending. See §50 and linked immutable handoff for exact current state, simplified-folder plan, and permitted non-disruptive offline development. Never zero source data to 'clean up'.  
 **Owner:** NBOT project owner  
 **Repository:** samqju/Nbot  
 **Publication:** V5 clean restart on GitHub branch `v5-clean-restart-20261013`; working mirror in laptop Downloads root  
@@ -1179,3 +1180,65 @@ The standalone new service then started using the **same** persistent DB, recogn
 **Unattended daytime review scheduled:** Thursday **15 October 2026 around 12:45 PM IST**, a 24h+ automatic review of the new actual service, journal, hourly health, G2 source witnesses and G3 time-locked contexts; remote SSH/ChatGPT inspection relies on laptop connection, while the server timer runs independently. If offline/unverified, the answer must report HOLD/UNVERIFIED, never pretend the gate passed. New live service is expected to run independently while laptop/ChatGPT are closed. Full deployment audit: `docs/NBOT_V5_G1_G3_INTEGRATED_PRODUCTION_DEPLOYMENT_2026-10-14.md` in the authoritative roadmap branch, with additional source/feature evidence from V5 G2 and G3 separate verified branches.
 
 **Change record — v2.8.6 / 2026-10-14:** New pinned restorable integrated Observation service live, original older V5 safely retired after a detected Ubuntu package-upgrade restart incompatibility, 247/247 CI + 2/2 genuinely witnessed production G2/G3 windows and protected health timer PASS, **full fresh 24h G1 soak still pending**. No financial order authority.
+
+
+---
+
+## 50. V2.8.7 — Owner-directed simplification, 12h/24h soak distinction, no-loss handoff and nonblocking offline work (2026-10-14)
+
+**Owner decision and non-negotiable intent.** The owner wants to stop accumulating confusing Observation VPS root directories, converge after acceptance on a clear single canonical `Nbot` Git codebase with `main` as the authoritative trunk, protect every cent of existing market evidence, preserve the full milestone-order engineering method across new chats, and avoid idle waiting when safe coding can proceed. This amendment is a DOCUMENTATION/GOVERNANCE change only to the roadmap branch `v5-clean-restart-20261013`, NOT a runtime, branch-merge, database, service, order-permission or retention mutation.
+
+### 50.1 Observed current state (not inferred future progress)
+
+At ~2026-10-14 07:17 UTC, connected Sameer-Laptop -> saved PuTTY `Observation-VPS` -> VPS `base`, verified:
+
+- The actually running service is `nbot-v5-g1g2g3-observation.service`, active and enabled, and independent `nbot-v5-integrated-health.timer` active/enabled; old `nbot-v5-observation-only.service` inactive/disabled.
+- Pinned integrated release is `/home/ubuntu/nbot_v5_integrated_20261014` on `feature/v5-observation-integrated-20261014`; clean Git HEAD and approved_code_sha both `1e7c090d05dc118b290c764d58c2944f56ad4b3b`; 247/247 historical CI PASS on release SHA.
+- Integrated DB `/home/ubuntu/nbot_v5_integrated_data/g1g2g3.sqlite` still ACTIVE. Stable service start `2026-10-14 06:46:04 UTC`, MainPID 11327, `NRestarts=0`, ~67 MiB RSS vs 200 MiB limit. Recent live WSS heartbeats showed both public streams connected, no reported trade gaps or reconnect attempts.
+- Protected health systemd oneshot manually rerun and PASS (`ExecMainStatus=0`, `violations=[]`): **6 accepted consecutive five-minute events, 600 full LONG+SHORT candidate records, 300 original G2 per-coin quote/trade source witness rows, 6 G3 contexts, 50 selected markets, 0 holds**, `research_ready=false`, `training_labels_created=0`, `recommendation_authority=NONE`, `order_authority=NONE`. Historical independent original G2/G3 proof database and branches remain distinct and intact. These records are NOT research-matured financial outcomes.
+- `/home/ubuntu/Nbot` exists on Git `main` (262 MiB), but it is NOT the code currently executing the integrated service. Source branch `v5-clean-restart-20261013` is authoritative for the original roadmap/G1f; integrated/G2/G3 features were isolated in their own ancestry; independent `feature/v5-execution-foundation-20261014` not merged. No evidence supports blindly replacing the running code with `main` today.
+
+### 50.2 The 12-hour pass was not canceled; the 24-hour gate is for a different release
+
+- Previously accepted 12-hour G1g/G1f soak established a bounded operational checkpoint for the **old G1-only V5 observer**, with documented old-source and historical cross-DB integrity limits. That evidence remains valid for its stated scope and does NOT restart when new G2/G3 code is deployed.
+- On October 14 a new **integrated G1+G2+G3** systemd collector and provenance/context database were first made permanent. During package maintenance there was a stop/start; its post-maintenance stable ActiveEnterTimestamp is **06:46:04 UTC / 12:16:04 PM IST, October 14**. A distinct original 24-hour *integrated-production reliability gate* starts there because the system, source-witness and persistence paths changed. The earliest 24 hours are **06:46:04 UTC Oct 15 / 12:16:04 PM IST Oct 15**, subject to proper continuity proofs, independent G2/G3 replay and resource/audit health. Formal review was scheduled for ~12:45 PM IST Oct 15; offline laptop results must be `UNVERIFIED/HOLD` if not reachable.
+- **Never impose a second redundant 24-hour clock merely because a new chat starts, a research branch advances, or a read-only audit runs.** Reset/re-evaluate the relevant gate only upon an actual restart, code/runtime/source boundary change, or an acceptance-breaking fault; document the new start and causal reason. Count `journalctl` systemd service transitions, not just NRestarts.
+- **Do not block all work during the soak.** Safely proceed with G4 scientific specification, failure-mode fixtures, research-grade economic cost/funding/slippage/quote evidence requirements, counterfactual horizons and missing/censored outcome design, mock/offline tests, historic branch ancestry audit and proposed directory simplification. Do not touch the running pinned collector's code, DB, unit, timer or host settings merely to keep busy. Do NOT activate continuous G4 label ingestion, mutate current evidence, enable research-ready, train Champion, start Execution or submit orders until full G1/G2/G3 operational acceptance and an independently frozen G4 contract. Original G4+ milestone acceptance order remains binding.
+
+### 50.3 Directory inventory (actual Observation VPS; October 14)
+
+| Existing `/home/ubuntu` path | Actual role | Planned safe disposition |
+|---|---|---|
+| `Nbot` | Git checkout `main`; historical larger working tree | Future sole canonical editable code repository, **after reviewed history integration**, never an in-place runtime replacement mid-soak |
+| `nbot_v5_integrated_20261014` | Active immutable pinned G1/G2/G3 code worktree | Keep untouched until explicit reviewed immutable-release transition; then archive/remove worktree after verified cutover |
+| `nbot_v5_integrated_data` | Active SQLite + pin | Retain and back up; later relocate through tested migration outside Git, never empty during soak |
+| `nbot_v5_sandbox` | Retired G1f observer worktree | Archive/remove after proof checks, not currently an automatic rollback |
+| `nbot_v5_data` | Legacy G1f SQLite + tested online backup | Archive with hashes/restore proof; do not convert historical rows to G2-qualified evidence |
+| `nbot_v5_g2_audit_dev` | Independent G2 Git worktree | Remove using verified Git worktree cleanup only once ancestry merged and proofs retained |
+| `nbot_v5_g2_proof_20261014` | Original immutable bounded source-witness proof database | Preserve, checksum and archive, do not mutate |
+| `nbot_v5_g3_audit_dev` | Independent G3 Git worktree | Remove after reviewed integration/proof retention |
+| `nbot_v5_venv` | Runtime Python environment | Consolidate only via reproducible pinned dependencies and verified new runtime |
+| `nbot-backups` | Host backup copies | Retain until restore/off-host copy and retention approval |
+| `nbot_f0_snapshot_staging` | Historical F0 forensic/recovery snapshots | Keep immutable, audited, off-host retained before owner-reviewed cleanup |
+| `nbot-release-records` | Deployment and rollback records | Keep as small canonical audit ledger |
+
+**Desired future simplicity:** one canonical editable `/home/ubuntu/Nbot` Git checkout on `main`, short-lived feature branches merged by PR/verified commits, one independent immutable *production release path* (e.g. `/srv/nbot/current` pointing to `/srv/nbot/releases/<SHA>`), one private persistent dataset root (e.g. `/var/lib/nbot` with observation and later paper subdirectories), and one managed backup/archive root (e.g. `/srv/nbot/archive`). The stable release may be a separate directory from `Nbot` for safety; 'only Nbot' must NOT mean putting mutable SQLite, API keys or a running code checkout in a Git source tree. These example destination paths are a PLAN, not actual deployed paths.
+
+**Safe consolidation acceptance and order:** (1) freeze full directory, service, timer, path, Git worktree/ref/merge-base and SHA inventory and offline restore plan; (2) prove complete V5 code ancestry with no Execution/V4 prototype contamination; (3) use PR/review/CI to bring accepted integrated V5 into `main` on a stable baseline without force updates, keep pinned running release untouched; (4) after the 24h operating gate and appropriate owner-acknowledged production cutover, create and verify versioned immutable release and service rollback; (5) back up/verify SQLite online plus WAL, restore offline and cross-check source-event SHA/continuity, then deliberately migrate state with one service cutover and observation; (6) only after strong backups/off-host retention, signed manifest and owner approval, retire obsolete extra worktrees/files in small reversible batches. NEVER delete just to make a directory listing look clean. Prior G1f failed an automatic restart from cohort rotation; it is not a proved failover.
+
+### 50.4 SQLite reset policy and economic-evidence separation
+
+**No blanket SQLite deletion.** Market-event DBs contain source clocks, original quote/rank witnesses, event history, BTC context and future learning provenance; old F0/G1/G2/G3 datasets are scientific and recovery assets. Keep observation event streams and frozen selected/unselected denominator records intact, with ID/version lineage. When separately authorizing a FINAL production/paper experiment launch, a fresh versioned *trading or portfolio ledger* with zero starting paper/live positions may be correct, alongside preserved read-only prior evidence and recorded cutover clocks; create a new DB only after backup, integrity, replay/restore proofs and an explicit release-boundary definition. Research counterfactual outcomes, forward paper fills and eventual real exchange fills must never be interchanged. There is no justification for zeroing the observation data just because G10 is complete.
+
+### 50.5 Standing architecture, gates and branch governance
+
+- Preserve two VPS separation: Observation/Learning collects top50 BTC/alt/24-pattern evidence, original quote/trade timestamps and then versioned mature virtual outcomes/offline ML. Execution runs independent gated Champion and Challenger **paper** books; much later any Champion real-order book requires separate independent authorization and safety. Candidate slots and coin contexts are NOT economic trade outcomes.
+- G4 economic source/label protocol -> G5 baseline/scientific viability -> G6 calibrated challengers -> G7 guarded paper decisions -> G8 shadow/paper forward observation -> G9 reviewed outcomes/promotion -> G10 improvements, strictly original documented order; 2,000 **qualified matured observations** is proposed learning threshold, not 2,000 raw slots; compare Champion/Challenger at fair paired 100-trade windows with after-cost no-trade/0R control and risk checks. Missing/noisy data => HOLD/ABSTAIN.
+- Keep `feature/v5-observation-g2-20261014`, `feature/v5-observation-g3-20261014`, `feature/v5-observation-integrated-20261014` distinct until audited, then converge via reviewed integration into `main`. Keep `feature/v5-execution-foundation-20261014` independent. Old `feature/v5-live-evidence-recovery` is historical, not trusted new V5 source. `v5-clean-restart-20261013` remains the governance branch until controlled integration is done; do not conflate with release Git HEAD.
+- Existing owner standing permissions permit safe inspection, testing, repository/documentation edits and isolated development; seek permission for irreversible deletion, production-impacting cutovers, material monetary risk and any real-order enablement. Preserve active collector until its independent acceptance gate is earned. No fabricated fills, win rates, label maturity or deterministic 'probabilities' from heuristic G3 confidences.
+
+### 50.6 Durable chat transition references
+
+Detailed reviewed release history: `docs/NBOT_V5_G1_G3_INTEGRATED_PRODUCTION_DEPLOYMENT_2026-10-14.md` (same roadmap branch). Fully standalone and latest user-intent handoff: **`docs/NBOT_V5_NEXT_CHAT_CONTINUITY_AND_CONSOLIDATION_2026-10-14.md`**. Both must be read with THIS roadmap by the new chat, then fresh read-only Observation VPS state verified; never assume a scheduled task or timestamp remains correct after a future incident. The scheduled 24h check is active on Oct 15 ~12:45 IST, subject to available remote access.
+
+**Change record — v2.8.7 / 2026-10-14:** Observed 6-event integrated health PASS and verified clean pinned release, clarified G1 old 12h versus new 24h gate and prohibited arbitrary repeat soaks, authorized concurrent *offline* G4 specification/tests during soak without premature operational acceptance, recorded complete workspace/data/backup roles, formalized later reviewed Git `main` consolidation and archive-only SQLite policy, and created a comprehensive new-chat GitHub handoff. **No running services, source refs or databases changed by this amendment.**
