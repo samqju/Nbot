@@ -48,6 +48,16 @@ class IntegratedStoppedServicesTests(unittest.TestCase):
         self.assertNotIn("--enable-network",spec)
         self.assertNotIn("--sustained-source",spec)
 
+    def test_research_unit_requires_G1_and_G4_and_frozen_registered_policy(self):
+        spec=G4.read_text()
+        self.assertIn("Requisite=nbot-v5-g1g2g3-observation.service nbot-v5-g4-source-capture.service",spec)
+        self.assertIn("runtime/source/g4-forward-cohort/g4_research_template.json",spec)
+        self.assertNotIn("approved.env",spec)
+        self.assertNotIn("NBOT_V5_START_EVENT_MS",spec)
+        self.assertNotIn("--start-event-ms",spec)
+        self.assertIn("Restart=no",spec)
+        self.assertNotIn("\n[Install]",spec)
+
     def test_g7_is_local_locked_health_not_order_worker(self):
         spec=G7.read_text()
         self.assertIn("nbot.v5.paper_health_runner",spec)
