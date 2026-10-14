@@ -136,7 +136,7 @@ async def capture_route(*, route: str, endpoint: str, vault: ForwardSourceVault,
             tries+=1
         except asyncio.CancelledError:
             raise
-        except (OSError,TimeoutError,ValueError,RuntimeError,Exception) as exc:
+        except (OSError,TimeoutError,ValueError,RuntimeError) as exc:
             # Do not mark a clean socket close when it did not occur. Next
             # OPEN writes ABRUPT_RESTART_HOLD if prior epoch was left active.
             budget["source_errors"].append(route+":"+type(exc).__name__)
@@ -198,14 +198,6 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
             "model_training_authority":"NONE","order_authority":"NONE"}
 
 
-async def _live_connector(endpoint):
-    # Import only after a human explicitly selects --enable-network.
-    import websockets
-    return websockets.connect(endpoint,open_timeout=15,
-                              close_timeout=5,ping_interval=20,ping_timeout=20,
-                              max_size=32768,max_queue=32,compression=None)
-
-
 class _RealConnector:
     def __call__(self, endpoint):
         # Construct context manager synchronously, no socket until __aenter__.
@@ -259,7 +251,7 @@ def main(argv=None) -> int:
                 duration_s=a.max_seconds,max_frames=a.max_frames,
                 max_db_mib=a.max_db_mib,db_path=target))
         print(json.dumps(report,sort_keys=True))
-        return 0 if not report["source_errors"] else 2
+        return 0 if not report["source_errors"] and report["stop_reason"] != "MAX_DB_SIZE" else 2
     except (ValueError,sqlite3.DatabaseError,OSError) as exc:
         print(json.dumps({"status":"HOLD","reason":str(exc),
                           "economic_outcomes":0,
