@@ -59,6 +59,9 @@ class G3RegimeStructureTests(unittest.TestCase):
         self.assertTrue(x["btc"]["valid"])
         self.assertIn(x["btc"]["regime"],REGIMES)
         self.assertTrue(x["breadth_available"])
+        self.assertTrue(x["breadth_excludes_btc"])
+        self.assertEqual(x["breadth_sample"],len(SYMBOLS)-1)
+        self.assertEqual(x["breadth_population_size"],len(SYMBOLS)-1)
         self.assertEqual(set(x["coins"]),set(SYMBOLS))
         self.assertTrue(all(v["structure"] in STRUCTURES for v in x["coins"].values()))
         self.assertEqual(x["recommendation_authority"],"NONE")
@@ -141,9 +144,10 @@ class G3RegimeStructureTests(unittest.TestCase):
         self.assertEqual(self.result()["coins"]["COIN00USDT"]["state"],"UNKNOWN")
 
     def test_breadth_requires_eighty_percent_and_at_least_ten(self):
-        for s in SYMBOLS[:3]:
+        for s in SYMBOLS[1:5]:
             self.receipts[s]["source"]["market_epoch"]=0
         x=self.result()
+        self.assertTrue(x["btc"]["valid"])
         self.assertFalse(x["breadth_available"])
         self.assertIsNone(x["breadth_1h"])
         self.assertEqual(x["unknown_coin_count"],len(SYMBOLS))
@@ -155,6 +159,15 @@ class G3RegimeStructureTests(unittest.TestCase):
         for s in SYMBOLS:
             self.prices[s]=candles(drift=-.001)
         self.assertLess(self.result()["breadth_1h"],-.8)
+
+    def test_breadth_reflects_altcoins_even_if_btc_trends_opposite(self):
+        self.prices["BTCUSDT"]=candles(drift=-.001)
+        for s in SYMBOLS:
+            if s!="BTCUSDT":
+                self.prices[s]=candles(drift=.001)
+        out=self.result()
+        self.assertEqual(out["btc"]["regime"],"TREND_DOWN")
+        self.assertEqual(out["breadth_1h"],1.0)
 
     def test_btc_relative_positive_long_and_negative_short_reachable(self):
         self.prices["BTCUSDT"]=candles(drift=.0001)
