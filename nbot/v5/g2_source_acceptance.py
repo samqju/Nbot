@@ -139,6 +139,8 @@ def source_acceptance(path: str | Path, *, min_complete_events: int = 2,
             ).fetchone()[0]
             if orphan:
                 errors.add("ORPHAN_WITNESSED_EVENT")
+    except AcceptanceHold:
+        raise
     except (sqlite3.DatabaseError,ValueError,KeyError,TypeError) as exc:
         raise AcceptanceHold("G2_WITNESS_READ_OR_PARSE_FAILURE") from exc
     return {
