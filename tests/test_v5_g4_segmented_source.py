@@ -85,6 +85,35 @@ class SegmentedCaptureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             list(read_segments(self.archive,SYMS))
 
+    def test_missing_unclean_restart_marker_invalidates_chain(self):
+        v=self.storage()
+        v.connect(route="market_aggtrade",at_ms=NOW-100)
+        v.ingest(route="market_aggtrade",at_ms=NOW,
+                 raw=trade(symbol="BTCUSDT",at=NOW))
+        # Fault-inject a buggy producer that begins a new epoch without an
+        # explicit loss marker. The independent reader must refuse it.
+        v._append("market_aggtrade","OPEN",NOW+1000)
+        v.flush()
+        with self.assertRaisesRegex(ValueError,"G4_SEGMENT_MISSING_RESTART_HOLD_MARKER"):
+            list(read_segments(self.archive,SYMS))
+
+    def test_validly_rehashed_but_invalid_gzip_still_holds(self):
+        from nbot.v5.g4_segmented_source import canonical,sha
+        import json
+        v=self.storage()
+        v.connect(route="market_aggtrade",at_ms=NOW)
+        v.flush()
+        raw=self.archive/"segment-00000001.gz"
+        meta=self.archive/"segment-00000001.json"
+        original=json.loads(meta.read_bytes())
+        raw.write_bytes(b"not-a-gzip")
+        original["compressed_sha"]=sha(raw.read_bytes())
+        body={k:x for k,x in original.items() if k!="manifest_sha"}
+        original["manifest_sha"]=sha(canonical(body))
+        meta.write_bytes(canonical(original))
+        with self.assertRaisesRegex(ValueError,"G4_SEGMENT_SEGMENT_DECOMPRESSION_INVALID"):
+            list(read_segments(self.archive,SYMS))
+
     def test_orphan_unpaired_segment_stops_recovery(self):
         v=self.storage()
         v.connect(route="public_bookticker",at_ms=NOW-100)
