@@ -46,6 +46,19 @@ CLOSE_GRACE_MS=12000
 def wall_ms():
     return int(time.time()*1000)
 
+def g3_frozen_cohort(ranked_symbols):
+    """G3 consumes the SAME G1 ranked members in canonical sorted order.
+
+    The initial live selection is volume-ranked; restart cohorts are read
+    back sorted from SQLite. Normalize both without selecting new symbols.
+    """
+    ordered=tuple(ranked_symbols)
+    if (not 2<=len(ordered)<=50 or "BTCUSDT" not in ordered
+            or len(set(ordered))!=len(ordered)):
+        raise EvidenceHold("G3_RANKED_SOURCE_COHORT_INVALID")
+    return tuple(sorted(ordered))
+
+
 
 def db_size_mib(path: Path) -> float:
     return sum(
@@ -332,7 +345,7 @@ class ObservationOnlyRunner:
                     raise EvidenceHold("G3_UNRECONCILED_CONTEXT_OVER_96_EVENTS")
                 for (prior_event,) in pending:
                     print("G3_RECOVERY",json.dumps(context.record(
-                        event_open_ms=prior_event,symbols=tuple(eligible)
+                        event_open_ms=prior_event,symbols=g3_frozen_cohort(eligible)
                     ),sort_keys=True),flush=True)
             self.policy=ReconnectPolicy()
             tasks=[
@@ -467,7 +480,7 @@ class ObservationOnlyRunner:
                 print("G1F_EVENT",json.dumps(summary,sort_keys=True),flush=True)
                 if g3_ledger is not None:
                     recorded=g3_ledger.record(
-                        event_open_ms=event,symbols=tuple(eligible))
+                        event_open_ms=event,symbols=g3_frozen_cohort(eligible))
                     print("G3_EVENT",json.dumps(recorded,sort_keys=True),flush=True)
                 resource_guard(self.path)
             except asyncio.CancelledError:
