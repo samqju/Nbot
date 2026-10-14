@@ -109,6 +109,9 @@ class ContinuousIntegrationTests(unittest.TestCase):
 
     def test_corrupt_forward_vault_cannot_fabricate_economics(self):
         with closing(sqlite3.connect(self.vault)) as db:
+            # Deliberate corruption bypasses the immutability trigger, as an
+            # offline malicious-storage fixture; production never drops it.
+            db.execute("DROP TRIGGER g4_forward_receipts_no_update")
             db.execute("UPDATE g4_forward_receipts SET raw_sha256=? WHERE seq=1",
                        ("0"*64,))
             db.commit()
