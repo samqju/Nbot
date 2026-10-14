@@ -232,3 +232,28 @@ def _check(db: sqlite3.Connection, event: int, symbol: str, side: str) -> Bindin
         eligible_population=50,
         candidate_population=100,
     )
+
+
+def main():
+    """Read-only scientific inspection of a frozen original G1/G2/G3 copy."""
+    import argparse
+    from dataclasses import asdict
+    p=argparse.ArgumentParser(description="Read-only G4 candidate original-source binding")
+    p.add_argument("--db",required=True)
+    p.add_argument("--event",required=True,type=int)
+    p.add_argument("--symbol",required=True)
+    p.add_argument("--side",choices=("LONG","SHORT"),required=True)
+    args=p.parse_args()
+    try:
+        audit=bind_from_frozen_observation_copy(
+            db_path=args.db,event_open_ms=args.event,
+            symbol=args.symbol,side=args.side)
+        print(json.dumps(asdict(audit),sort_keys=True))
+        return 0 if audit.state=="SOURCE_BOUND" else 2
+    except (OSError,ValueError) as exc:
+        print(json.dumps({"state":"HOLD","reason":str(exc),
+                          "scored_outcomes":0,"order_authority":"NONE"},sort_keys=True))
+        return 2
+
+if __name__=="__main__":
+    raise SystemExit(main())
