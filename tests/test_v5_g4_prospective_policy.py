@@ -52,7 +52,7 @@ class ProspectivePolicyTests(unittest.TestCase):
         self.assertEqual(x.state,"GEOMETRY_RECORDED")
         self.assertEqual(x.frozen_policy["entry_reference_price"],"100.1")
         self.assertEqual(x.frozen_policy["stop_price"],"98.5985")
-        self.assertEqual(x.frozen_policy["target_price"],"103.1030")
+        self.assertEqual(x.frozen_policy["target_price"],"103.10300")
         self.assertEqual(x.frozen_policy["declared_at_ms"],DECISION)
         self.assertEqual(x.scored_outcomes,0)
         self.assertEqual(x.order_authority,"NONE")
