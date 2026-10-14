@@ -33,6 +33,9 @@ def forward_stream_endpoints(symbols):
         "market_aggtrade": (
             "wss://fstream.binance.com/market/stream?streams=" +
             "/".join(f"{s.lower()}@aggTrade" for s in selected)),
+        "market_markprice": (
+            "wss://fstream.binance.com/market/stream?streams=" +
+            "/".join(f"{s.lower()}@markPrice@1s" for s in selected)),
         "cohort_symbols":selected,
         "source_version":FORWARD_VERSION,
     }
@@ -75,7 +78,7 @@ def verify_frame(*, route:str, raw:bytes, received_at_ms:int,
     The caller must chronologically append raw frame and SHA in a protected
     receipt file; this pure function does not authenticate on-wire WSS TLS.
     """
-    if route not in ("public_bookticker","market_aggtrade"):
+    if route not in ("public_bookticker","market_aggtrade","market_markprice"):
         raise ValueError("G4_FORWARD_ROUTE_INVALID")
     if (type(received_at_ms) is not int or received_at_ms<=0 or
             type(source_epoch) is not int or source_epoch<=0):
@@ -97,7 +100,8 @@ def verify_frame(*, route:str, raw:bytes, received_at_ms:int,
     if symbol not in selected:
         issues.append("FOREIGN_SYMBOL")
     stream_expected=(symbol.lower()+"@bookTicker" if route=="public_bookticker"
-                     else symbol.lower()+"@aggTrade") if isinstance(symbol,str) else None
+                     else symbol.lower()+"@aggTrade" if route=="market_aggtrade"
+                     else symbol.lower()+"@markPrice@1s") if isinstance(symbol,str) else None
     if item["stream"]!=stream_expected:
         issues.append("STREAM_SYMBOL_OR_TYPE_MISMATCH")
     event_time=data.get("E")
@@ -113,6 +117,27 @@ def verify_frame(*, route:str, raw:bytes, received_at_ms:int,
         else:
             if Decimal(data["b"])>=Decimal(data["a"]):
                 issues.append("BOOK_CROSSED")
+        if (prior_agg_id is not None or prior_last_trade_id is not None):
+            issues.append("WRONG_STREAM_CURSOR")
+    elif route=="market_markprice":
+        def _finite_decimal(value):
+            if not isinstance(value,str) or len(value)>80:
+                return None
+            try:
+                number=Decimal(value)
+                return number if number.is_finite() else None
+            except InvalidOperation:
+                return None
+        funding=_finite_decimal(data.get("r"))
+        next_funding=data.get("T")
+        if (data.get("e")!="markPriceUpdate" or
+                not _positive(data.get("p")) or
+                not _positive(data.get("i")) or
+                funding is None or abs(funding)>Decimal("0.10") or
+                type(next_funding) is not int or
+                next_funding<event_time or
+                next_funding>received_at_ms+2*24*60*60*1000):
+            issues.append("MARK_PRICE_OR_INDICATIVE_FUNDING_INVALID")
         if (prior_agg_id is not None or prior_last_trade_id is not None):
             issues.append("WRONG_STREAM_CURSOR")
     else:
