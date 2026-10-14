@@ -70,11 +70,10 @@ class ProspectivePolicyTests(unittest.TestCase):
         self.assertEqual(freeze_template(fixture()[0]),
                          freeze_template(fixture()[0]))
 
-    def test_template_activation_must_precede_event_decision(self):
-        p,_,_,_=fixture()
-        p["activates_at_ms"]=EVENT+300000
-        with self.assertRaisesRegex(ValueError,"G4_RISK_TEMPLATE_FUTURE_OR_HORIZON_INVALID"):
-            freeze_template(p)
+    def test_template_activation_must_precede_event_open(self):
+        x=run(lambda p,c,g,q:p.update(activates_at_ms=EVENT+300000))
+        self.assertEqual(x.state,"HOLD")
+        self.assertIn("CANDIDATE_BEFORE_POLICY_ACTIVATION_OR_EVENT_FINAL",x.reasons)
 
     def test_cannot_change_template_after_five_minute_start(self):
         x=run(lambda p,c,g,q:p.update(activates_at_ms=EVENT+600000,
