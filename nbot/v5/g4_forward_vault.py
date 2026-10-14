@@ -78,6 +78,8 @@ class ForwardSourceVault:
             raise ValueError("G4_VAULT_BATCH_BOUNDS")
         self.batch_frames=batch_frames
         self.pending_frames=0
+        self._tail_cache={}
+        self._symbol_cache={}
         self.symbols = normalized
         self.cohort_sha = _hash_receipt({"symbols": normalized,
                                          "version": SOURCE_VAULT_VERSION})
@@ -135,6 +137,8 @@ class ForwardSourceVault:
                            expected)
 
     def _last(self, route: str | None = None):
+        if route in self._tail_cache:
+            return self._tail_cache[route]
         if route is None:
             return self.db.execute(
                 "SELECT seq,route,epoch,kind,at_ms,symbol,evidence_state,"
@@ -185,6 +189,12 @@ class ForwardSourceVault:
             # through that unknown interval after an abrupt process loss.
             if kind!="FRAME" or self.pending_frames>=self.batch_frames:
                 self.flush()
+        cached=(cursor.lastrowid,route,epoch,kind,at_ms,symbol,state,reasons_json,
+                raw_sha,raw,previous_sha,chain)
+        self._tail_cache[None]=cached
+        self._tail_cache[route]=cached
+        if kind=="FRAME":
+            self._symbol_cache[(route,epoch,symbol)]=(state,raw)
         return Receipt(cursor.lastrowid,route,epoch,kind,at_ms,symbol,
                        state,reasons,raw_sha,previous_sha,chain)
 
@@ -244,7 +254,8 @@ class ForwardSourceVault:
             pass
         if symbol not in self.symbols:
             symbol = None
-        previous = (self.db.execute(
+        key=(route,last[2],symbol)
+        previous = self._symbol_cache.get(key) if key in self._symbol_cache else (self.db.execute(
             "SELECT evidence_state,raw_frame FROM g4_forward_receipts "
             "WHERE route=? AND epoch=? AND symbol=? AND kind='FRAME' "
             "ORDER BY seq DESC LIMIT 1", (route,last[2],symbol)).fetchone()

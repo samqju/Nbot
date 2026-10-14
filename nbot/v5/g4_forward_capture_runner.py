@@ -119,6 +119,10 @@ async def capture_route(*, route: str, endpoint: str, vault: ForwardSourceVault,
                         raise G4CollectorHold("G4_FORWARD_FRAME_OVERFLOW")
                     receipt=vault.ingest(route=route,at_ms=clock_ms(),raw=raw)
                     budget["frames"]+=1
+                    if budget["frames"]%32==0:
+                        # Fair scheduling preserves mark/trade/book transport
+                        # progress and ping handling under a busy quote feed.
+                        await asyncio.sleep(0)
                     if budget["frames"]>=budget["max_frames"]:
                         budget["reached"]="MAX_FRAMES"
                         stop.set()
