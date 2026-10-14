@@ -89,8 +89,19 @@ class ArchiveImportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"G4_ARCHIVE_CSV_SEQUENCE_INVALID"):
             ingest(rows=rows)
 
-    def test_underlying_trade_id_gap_rejected(self):
-        rows=[ROWS[0],ROWS[1].replace("11,12,179","15,16,179"),ROWS[2]]
+    def test_underlying_trade_id_gap_retained_as_explicit_research_hold(self):
+        rows=[ROWS[0],ROWS[1].replace(",11,12,179",",13,14,179"),
+              ROWS[2].replace(",13,13,179",",15,15,179")]
+        m,parsed=ingest(rows=rows)
+        self.assertEqual(len(parsed),3)
+        self.assertEqual(m["underlying_trade_id_gap_count"],1)
+        self.assertEqual(m["underlying_trade_ids_missing"],2)
+        self.assertFalse(m["all_underlying_trade_ids_contiguous"])
+        self.assertEqual(m["research_path_grade"],"HOLD_UNDERLYING_TRADE_ID_GAPS")
+        self.assertEqual(m["original_archive_verified"],False)
+
+    def test_underlying_trade_id_rewind_still_rejected(self):
+        rows=[ROWS[0],ROWS[1].replace(",11,12,179",",10,12,179"),ROWS[2]]
         with self.assertRaisesRegex(ValueError,"G4_ARCHIVE_CSV_SEQUENCE_INVALID"):
             ingest(rows=rows)
 
