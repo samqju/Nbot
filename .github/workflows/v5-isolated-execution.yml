@@ -7,10 +7,12 @@ on:
       - 'nbot/v5/execution_engine.py'
       - 'nbot/v5/execution_replay.py'
       - 'nbot/v5/contest_audit.py'
+      - 'nbot/v5/execution_incidents.py'
       - 'tests/test_v5_execution_engine.py'
       - 'tests/test_v5_execution_replay.py'
       - 'tests/test_v5_contest_audit.py'
       - 'tests/test_v5_execution_mock_contest.py'
+      - 'tests/test_v5_execution_incidents.py'
       - '.github/workflows/v5-isolated-execution.yml'
   workflow_dispatch:
 permissions:
