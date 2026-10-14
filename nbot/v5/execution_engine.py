@@ -172,7 +172,7 @@ class OfflineExecutionEngine:
         CREATE TRIGGER IF NOT EXISTS quotes_no_delete BEFORE DELETE ON shared_mock_quotes
           BEGIN SELECT RAISE(ABORT,'immutable market quote'); END;
         CREATE TABLE IF NOT EXISTS positions(
-          id INTEGER PRIMARY KEY, portfolio TEXT NOT NULL, symbol TEXT NOT NULL,
+          id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio TEXT NOT NULL, symbol TEXT NOT NULL,
           side TEXT NOT NULL, qty TEXT NOT NULL, entry TEXT NOT NULL,
           stop TEXT NOT NULL, risk TEXT NOT NULL, opened_ms INTEGER NOT NULL,
           model_id TEXT NOT NULL, decision_id INTEGER NOT NULL,
@@ -199,6 +199,10 @@ class OfflineExecutionEngine:
           BEGIN SELECT RAISE(ABORT,'immutable decision'); END;
         CREATE TRIGGER IF NOT EXISTS decisions_no_delete BEFORE DELETE ON decisions
           BEGIN SELECT RAISE(ABORT,'immutable decision'); END;
+        CREATE TRIGGER IF NOT EXISTS orders_no_update BEFORE UPDATE ON orders
+          BEGIN SELECT RAISE(ABORT,'immutable order'); END;
+        CREATE TRIGGER IF NOT EXISTS orders_no_delete BEFORE DELETE ON orders
+          BEGIN SELECT RAISE(ABORT,'immutable order'); END;
         CREATE TRIGGER IF NOT EXISTS fills_no_update BEFORE UPDATE ON fills
           BEGIN SELECT RAISE(ABORT,'immutable fill'); END;
         CREATE TRIGGER IF NOT EXISTS fills_no_delete BEFORE DELETE ON fills
@@ -212,6 +216,11 @@ class OfflineExecutionEngine:
         CREATE TRIGGER IF NOT EXISTS settled_no_delete BEFORE DELETE ON settled
           BEGIN SELECT RAISE(ABORT,'immutable settled'); END;
         """)
+        position_sql = self.db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='positions'"
+        ).fetchone()[0]
+        if "AUTOINCREMENT" not in position_sql.upper():
+            raise ValueError("INCOMPATIBLE_POSITION_ID_SCHEMA_REQUIRES_REVIEW")
 
     @contextmanager
     def _tx(self):
