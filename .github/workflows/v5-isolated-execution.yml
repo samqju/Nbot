@@ -5,7 +5,9 @@ on:
       - 'feature/v5-execution-foundation-*'
     paths:
       - 'nbot/v5/execution_engine.py'
+      - 'nbot/v5/execution_replay.py'
       - 'tests/test_v5_execution_engine.py'
+      - 'tests/test_v5_execution_replay.py'
       - '.github/workflows/v5-isolated-execution.yml'
   workflow_dispatch:
 permissions:
@@ -20,4 +22,4 @@ jobs:
         with:
           python-version: '3.12'
       - name: Verify synthetic-only Execution foundation (no network calls or API keys)
-        run: python -m unittest discover -s tests -p 'test_v5_execution_engine.py' -v
+        run: python -m unittest discover -s tests -p 'test_v5_execution*.py' -v
