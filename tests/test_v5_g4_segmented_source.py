@@ -116,6 +116,56 @@ class SegmentedCaptureTests(unittest.TestCase):
         self.assertEqual(r["audit"],"PASS")
         self.assertFalse(list(self.root.rglob("*.sqlite*")))
 
+    def test_independent_g4_quote_reader_uses_ephemeral_ram_view(self):
+        from nbot.v5.g4_segment_replay import verified_ram_vault
+        from nbot.v5.g4_forward_entry_quote import independent_asof_entry_quote
+        v=self.storage()
+        v.connect(route="public_bookticker",at_ms=NOW-1000)
+        original=quote(symbol="BTCUSDT",at=NOW)
+        v.ingest(route="public_bookticker",at_ms=NOW,raw=original)
+        v.flush()
+        with verified_ram_vault(self.archive,symbols=SYMS,
+                                ram_parent=self.root) as (db,proof):
+            self.assertTrue(db.exists())
+            self.assertEqual(proof["source_integrity"],"PASS")
+            self.assertEqual(proof["order_authority"],"NONE")
+            q=independent_asof_entry_quote(
+                vault_db=db,symbol="BTCUSDT",decision_at_ms=NOW+100)
+            self.assertEqual(q.state,"LOCAL_SOURCE_QUOTE")
+            self.assertEqual(q.bid,"200.4")
+            self.assertEqual(q.fills,0)
+        self.assertFalse(db.exists())
+        self.assertFalse(list(self.root.glob("*.sqlite*")))
+
+    def test_archive_restart_hold_survives_legacy_independent_replay(self):
+        from nbot.v5.g4_segment_replay import verified_ram_vault
+        v=self.storage()
+        v.connect(route="market_aggtrade",at_ms=NOW-300)
+        v.ingest(route="market_aggtrade",at_ms=NOW,raw=trade(symbol="BTCUSDT",at=NOW))
+        v.flush()
+        del v
+        after=self.storage()
+        after.connect(route="market_aggtrade",at_ms=NOW+1000)
+        after.flush()
+        with verified_ram_vault(self.archive,symbols=SYMS,
+                                ram_parent=self.root) as (_,proof):
+            self.assertEqual(proof["abrupt_restart_holds"],1)
+            self.assertEqual(
+                proof["original_vault_audit"]["integrity_audit"],"PASS")
+
+    def test_archive_bounded_ephemeral_replay_never_ignores_frame_cap(self):
+        from nbot.v5.g4_segment_replay import verified_ram_vault
+        v=self.storage()
+        v.connect(route="public_bookticker",at_ms=NOW-100)
+        for i in range(2):
+            v.ingest(route="public_bookticker",at_ms=NOW+i,
+                     raw=quote(symbol="BTCUSDT",at=NOW+i))
+        v.flush()
+        with self.assertRaisesRegex(ValueError,"G4_BRIDGE_FRAME_OR_BYTES_CAP_HOLD"):
+            with verified_ram_vault(self.archive,symbols=SYMS,
+                                    ram_parent=self.root,max_frames=1):
+                pass
+
     def test_legacy_raw_sqlite_dry_run_is_not_activated(self):
         import json
         manifest=self.root/"g1_cohort.json"
