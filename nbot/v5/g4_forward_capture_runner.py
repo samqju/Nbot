@@ -18,6 +18,7 @@ from pathlib import Path
 import sqlite3
 import time
 from typing import Callable
+from dataclasses import dataclass
 
 from nbot.v5.g4_forward_stream_contract import forward_stream_endpoints
 from nbot.v5.g4_forward_vault import ForwardSourceVault
@@ -28,6 +29,74 @@ MAX_FRAMES = 100000
 MAX_DB_MIB = 256
 DEFAULT_RECONNECTS = 2
 _ROUTES = ("market_aggtrade", "public_bookticker", "market_markprice")
+
+
+@dataclass(frozen=True)
+class ReceivedFrame:
+    raw: str|bytes
+    received_ms: int
+
+
+class PublicShardFanIn:
+    """Partition one logical quote feed into bounded disjoint connections.
+
+    The logical epoch opens only after ALL shards connect. ANY shard loss fails
+    the entire logical route; it cannot silently inherit another shard's health.
+    Receipt clocks are taken on actual socket reads, before bounded queueing.
+    """
+    def __init__(self, endpoint, factory, clock_ms, shard_size=10):
+        if not 1<=shard_size<=10 or '/public/stream?streams=' not in endpoint:
+            raise G4CollectorHold("G4_PUBLIC_SHARD_CONFIG_INVALID")
+        prefix, streams=endpoint.split('?streams=',1)
+        names=streams.split('/')
+        if len(set(names))!=len(names) or len(names)>50 or any(not n.endswith('@bookTicker') for n in names):
+            raise G4CollectorHold("G4_PUBLIC_SHARD_POPULATION_INVALID")
+        self.endpoints=[prefix+'?streams='+'/'.join(names[i:i+shard_size]) for i in range(0,len(names),shard_size)]
+        self.factory,self.clock_ms=factory,clock_ms
+        self.contexts=[];self.sockets=[];self.tasks=[]
+        self.queue=asyncio.Queue(maxsize=32)
+        self.failure=None
+
+    async def __aenter__(self):
+        try:
+            for endpoint in self.endpoints:
+                context=self.factory(endpoint)
+                socket=await context.__aenter__()
+                self.contexts.append(context);self.sockets.append(socket)
+            self.tasks=[asyncio.create_task(self._receive(s)) for s in self.sockets]
+            return self
+        except BaseException:
+            await self.__aexit__(None,None,None)
+            raise
+
+    async def _receive(self, socket):
+        try:
+            async for raw in socket:
+                received=self.clock_ms()
+                await self.queue.put(ReceivedFrame(raw,received))
+            raise G4CollectorHold("G4_PUBLIC_SHARD_ENDED")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Priority failure state ends the whole logical route. Pending
+            # queue contents are unknown source continuity, never fabricated.
+            self.failure=exc
+            await self.queue.put(exc)
+
+    def __aiter__(self):return self
+
+    async def __anext__(self):
+        if self.failure is not None:raise self.failure
+        item=await self.queue.get()
+        if isinstance(item,Exception):raise item
+        return item
+
+    async def __aexit__(self,*args):
+        for task in self.tasks:task.cancel()
+        await asyncio.gather(*self.tasks,return_exceptions=True)
+        for context in reversed(self.contexts):
+            await context.__aexit__(*args)
+        return False
 
 
 class G4CollectorHold(ValueError):
@@ -109,6 +178,10 @@ async def capture_route(*, route: str, endpoint: str, vault: ForwardSourceVault,
                 async for payload in socket:
                     if stop.is_set():
                         break
+                    received_ms=clock_ms()
+                    if isinstance(payload,ReceivedFrame):
+                        received_ms=payload.received_ms
+                        payload=payload.raw
                     if isinstance(payload,str):
                         raw=payload.encode("utf8")
                     elif isinstance(payload,bytes):
@@ -117,7 +190,7 @@ async def capture_route(*, route: str, endpoint: str, vault: ForwardSourceVault,
                         raise G4CollectorHold("G4_FORWARD_NON_BYTES_FRAME")
                     if len(raw)>32768:
                         raise G4CollectorHold("G4_FORWARD_FRAME_OVERFLOW")
-                    receipt=vault.ingest(route=route,at_ms=clock_ms(),raw=raw)
+                    receipt=vault.ingest(route=route,at_ms=received_ms,raw=raw)
                     budget["frames"]+=1
                     if budget["frames"]%32==0:
                         # Fair scheduling preserves mark/trade/book transport
@@ -247,12 +320,17 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
 
 
 class _RealConnector:
+    def __init__(self, shard_public=False):self.shard_public=shard_public
+
     def __call__(self, endpoint):
         # Construct context manager synchronously, no socket until __aenter__.
         import websockets
-        return websockets.connect(endpoint,open_timeout=15,
+        def factory(url):return websockets.connect(url,open_timeout=15,
                                   close_timeout=5,ping_interval=20,ping_timeout=20,
                                   max_size=32768,max_queue=32,compression=None)
+        if self.shard_public and '/public/' in endpoint:
+            return PublicShardFanIn(endpoint,factory,lambda:time.time_ns()//1000000)
+        return factory(endpoint)
 
 
 def main(argv=None) -> int:
@@ -266,6 +344,8 @@ def main(argv=None) -> int:
                    help="Explicitly permit public WSS acquisition; no order APIs exist")
     p.add_argument("--sustained-source",action="store_true",
                    help="Opt in to capped six-hour/8GiB source research, after capacity review")
+    p.add_argument("--shard-public",action="store_true",
+                   help="Partition disjoint original book streams; every shard loss holds the whole route")
     a=p.parse_args(argv)
     try:
         symbols=source_cohort_file(Path(a.cohort_manifest).read_bytes())
@@ -299,7 +379,7 @@ def main(argv=None) -> int:
             vault=ForwardSourceVault(db,symbols=symbols,batch_frames=64)
             vault.audit()  # Before any new receipt, verify previous storage.
             report=asyncio.run(run_bounded(
-                vault=vault,endpoints=endpoints,connector=_RealConnector(),
+                vault=vault,endpoints=endpoints,connector=_RealConnector(a.shard_public),
                 duration_s=a.max_seconds,max_frames=a.max_frames,
                 max_db_mib=a.max_db_mib,db_path=target,sustained=a.sustained_source))
         print(json.dumps(report,sort_keys=True))
