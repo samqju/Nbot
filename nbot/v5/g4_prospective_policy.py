@@ -137,7 +137,7 @@ def bind_at_decision(*, template: FrozenResearchTemplate,
     event=candidate.get("event_open_ms")
     if (not _clock(decision) or not _clock(event)
             or event%INTERVAL_MS or decision<event+INTERVAL_MS
-            or decision<spec["activates_at_ms"]):
+            or event<spec["activates_at_ms"] or decision<spec["activates_at_ms"]):
         reasons.append("CANDIDATE_BEFORE_POLICY_ACTIVATION_OR_EVENT_FINAL")
     side=candidate.get("side")
     symbol=candidate.get("symbol")
