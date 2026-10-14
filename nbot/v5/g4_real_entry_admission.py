@@ -7,6 +7,7 @@ Returns a local reference-risk geometry or explicit hold. NEVER SCORED.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from contextlib import closing
 from decimal import Decimal
 import json
 from pathlib import Path
@@ -41,7 +42,7 @@ class RealResearchAdmission:
 
 def admit_research_entry(*,g1_snapshot: str|Path,raw_source_vault: str|Path,
                          registry_file: str|Path,event_open_ms:int,
-                         symbol:str,side:str) -> RealResearchAdmission:
+                         symbol:str,side:str, audit_cache=None) -> RealResearchAdmission:
     if type(event_open_ms) is not int or event_open_ms<0 or event_open_ms%INTERVAL_MS:
         raise ValueError("G4_ADMISSION_EVENT_INVALID")
     if side not in ("LONG","SHORT") or not isinstance(symbol,str) or not symbol.endswith("USDT"):
@@ -73,8 +74,9 @@ def admit_research_entry(*,g1_snapshot: str|Path,raw_source_vault: str|Path,
         return hold("ORIGINAL_G1_G2_G3_DENOMINATOR_HELD",*bound.reasons)
     try:
         path=Path(g1_snapshot)
-        with sqlite3.connect(path.resolve().as_uri()+"?mode=ro",
-                             uri=True,timeout=10) as db:
+        with closing(sqlite3.connect(path.resolve().as_uri()+"?mode=ro",
+                             uri=True,timeout=10)) as db:
+            db.execute("BEGIN")
             old=db.execute(
                 "SELECT record_json FROM g1f_candidate_events "
                 "WHERE event_open_ms=? AND symbol=? AND direction=?",
@@ -123,7 +125,7 @@ def admit_research_entry(*,g1_snapshot: str|Path,raw_source_vault: str|Path,
     quote=independent_asof_entry_quote(
         vault_db=raw_source_vault,symbol=symbol,
         decision_at_ms=decision,
-        max_age_ms=frozen.spec["max_quote_age_ms"])
+        max_age_ms=frozen.spec["max_quote_age_ms"],audit_cache=audit_cache)
     if quote.state!="LOCAL_SOURCE_QUOTE":
         return hold("INDEPENDENT_REAL_ENTRY_QUOTE_HELD",*quote.reasons)
     # This is a side-correct counterfactual reference; all costs, future

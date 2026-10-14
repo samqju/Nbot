@@ -7,6 +7,7 @@ producer SHA chain and source frame contracts from immutable receipt bytes.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from contextlib import closing
 import hashlib
 import json
 from pathlib import Path
@@ -33,8 +34,9 @@ def audit_forward_source_copy(*,db_path:str|Path) -> dict:
     if path.is_symlink() or not path.is_file():
         raise ValueError("G4_AUDIT_SOURCE_MISSING_OR_SYMLINK")
     try:
-        with sqlite3.connect(path.resolve().as_uri()+"?mode=ro",
-                             uri=True,timeout=10) as db:
+        with closing(sqlite3.connect(path.resolve().as_uri()+"?mode=ro",
+                             uri=True,timeout=10)) as db:
+            db.execute("BEGIN")
             if db.execute("PRAGMA quick_check").fetchone()[0]!="ok":
                 raise ValueError("G4_AUDIT_SQLITE_INTEGRITY_INVALID")
             cohorts=db.execute(
