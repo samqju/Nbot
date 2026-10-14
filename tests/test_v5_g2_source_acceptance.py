@@ -59,6 +59,8 @@ class G2AcceptanceFixture(unittest.TestCase):
         out=self.acceptance()
         self.assertEqual(out["audit"],"PASS")
         self.assertEqual(out["complete_source_witness_rows"],4)
+        self.assertEqual(out["fully_source_verified_observation_events"],2)
+        self.assertEqual(out["universe_selection_audit"]["rankable_not_in_frozen_top50"],0)
         self.assertEqual(out["symbol_event_source_recorded"],4)
         self.assertFalse(out["research_ready"])
 
