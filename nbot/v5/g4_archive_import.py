@@ -9,7 +9,8 @@ is a separate independent evidence gate. Intended for bounded pilot chunks.
 from __future__ import annotations
 
 import csv
-from datetime import date as date_type
+from datetime import date as date_type, datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 from io import BytesIO, TextIOWrapper
 import json
@@ -56,6 +57,11 @@ def ingest_verified_um_daily_zip(*, archive_bytes: bytes,
     name=_name(symbol,on_date)
     if type(captured_at_ms) is not int or captured_at_ms<=0:
         raise ValueError("G4_ARCHIVE_CAPTURE_CLOCK_INVALID")
+    day_start=int(datetime.combine(date_type.fromisoformat(on_date),
+                 datetime.min.time(),timezone.utc).timestamp()*1000)
+    day_end=day_start+86400000
+    if captured_at_ms<day_end:
+        raise ValueError("G4_ARCHIVE_NOT_YET_FINALIZED")
     if not isinstance(archive_bytes,bytes) or not 0<len(archive_bytes)<=_MAX_COMPRESSED:
         raise ValueError("G4_ARCHIVE_SIZE_UNSUPPORTED")
     if not isinstance(checksum_bytes,bytes) or not 0<len(checksum_bytes)<500:
@@ -96,6 +102,16 @@ def ingest_verified_um_daily_zip(*, archive_bytes: bytes,
                             a,first,last,time=(int(values[j]) for j in (0,3,4,5))
                         except (ValueError,TypeError) as exc:
                             raise ValueError("G4_ARCHIVE_CSV_INTEGER_INVALID") from exc
+                        if not (day_start <= time < day_end):
+                            raise ValueError("G4_ARCHIVE_TRADE_DATE_MISMATCH")
+                        try:
+                            price,qty=Decimal(values[1]),Decimal(values[2])
+                        except InvalidOperation as exc:
+                            raise ValueError("G4_ARCHIVE_PRICE_QTY_INVALID") from exc
+                        if (not price.is_finite() or price<=0 or
+                                not qty.is_finite() or qty<=0 or
+                                max(len(values[1]),len(values[2]))>80):
+                            raise ValueError("G4_ARCHIVE_PRICE_QTY_INVALID")
                         truth=values[6].strip().lower()
                         if truth not in ("true","false"):
                             raise ValueError("G4_ARCHIVE_CSV_MAKER_FLAG_INVALID")
@@ -130,3 +146,37 @@ def ingest_verified_um_daily_zip(*, archive_bytes: bytes,
         "origin_and_custody_independently_verified":False,
     }
     return manifest,out
+
+
+def main() -> int:
+    """CLI verifies an existing OFFLINE archive pair; read-only, never downloads."""
+    import argparse
+    from pathlib import Path
+    p=argparse.ArgumentParser(description="G4 original public archive integrity (OFFLINE)")
+    p.add_argument("--zip",required=True)
+    p.add_argument("--checksum",required=True)
+    p.add_argument("--symbol",required=True)
+    p.add_argument("--date",required=True)
+    p.add_argument("--captured-at-ms",required=True,type=int)
+    args=p.parse_args()
+    try:
+        manifest,rows=ingest_verified_um_daily_zip(
+            archive_bytes=Path(args.zip).read_bytes(),
+            checksum_bytes=Path(args.checksum).read_bytes(),
+            symbol=args.symbol,on_date=args.date,captured_at_ms=args.captured_at_ms)
+        manifest["first_trade_time_ms"]=rows[0]["T"]
+        manifest["last_trade_time_ms"]=rows[-1]["T"]
+        manifest["historical_price_only"]=True
+        manifest["economic_outcomes"]=0
+        manifest["order_authority"]="NONE"
+        print(json.dumps(manifest,sort_keys=True))
+        return 0
+    except (OSError,ValueError) as exc:
+        print(json.dumps({"state":"HOLD","reason":str(exc),
+                          "economic_outcomes":0,"order_authority":"NONE"},
+                         sort_keys=True))
+        return 2
+
+
+if __name__=="__main__":
+    raise SystemExit(main())
