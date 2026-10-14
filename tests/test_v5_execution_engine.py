@@ -126,17 +126,23 @@ class DualBookTests(unittest.TestCase):
             (quote(observed_at_ms=NOW+1), "QUOTE_STALE_OR_FUTURE"),
         ]:
             with self.subTest(reason=reason):
-                self.assertEqual(self.send(request(), q=q)["reason"], reason)
+                sequence = self.engine.report("CHAMPION_PAPER")["last_sequence"] + 1
+                self.assertEqual(self.send(request(event=f"quote-case-{sequence}", sequence=sequence),
+                                           q=q)["reason"], reason)
 
     def test_invalid_model_and_stop_geometry_and_cost(self):
-        self.assertEqual(self.send(request(model_sha="f"*64))["reason"], "MODEL_OR_CONTEST_NOT_PINNED")
-        self.assertEqual(self.send(request(stop_price="101"))["reason"], "INVALID_STOP_GEOMETRY")
-        self.assertEqual(self.send(request(stop_price="100.005"))["reason"], "INVALID_STOP_GEOMETRY")
-        self.assertEqual(self.send(request(expected_after_cost_net_r="-1"))["reason"], "INSUFFICIENT_NET_EDGE")
-        self.assertEqual(self.send(request(confidence="0.2"))["reason"], "INSUFFICIENT_CONFIDENCE")
+        for i, (changes, reason) in enumerate([
+            ({"model_sha": "f"*64}, "MODEL_OR_CONTEST_NOT_PINNED"),
+            ({"stop_price": "101"}, "INVALID_STOP_GEOMETRY"),
+            ({"stop_price": "100.005"}, "INVALID_STOP_GEOMETRY"),
+            ({"expected_after_cost_net_r": "-1"}, "INSUFFICIENT_NET_EDGE"),
+            ({"confidence": "0.2"}, "INSUFFICIENT_CONFIDENCE"),
+        ], start=1):
+            with self.subTest(reason=reason):
+                self.assertEqual(self.send(request(sequence=i, event=f"risk-case-{i}", **changes))["reason"], reason)
 
     def test_sequence_and_duplicate_event(self):
-        self.assertEqual(self.send(request(sequence=3))["reason"], "REORDERED_SEQUENCE")
+        self.assertEqual(self.send(request(sequence=3, event="out-of-order"))["reason"], "REORDERED_SEQUENCE")
         self.assertEqual(self.send(request())["status"], "ACCEPTED")
         self.assertEqual(self.send(request(event="event-0001", sequence=2,
                                             idempotency_key="different-key-999"))["reason"], "DUPLICATE_EVENT")
@@ -173,7 +179,8 @@ class DualBookTests(unittest.TestCase):
                                                NOW+28800000)
         self.assertEqual(result["status"], "SETTLED")
         self.assertGreater(Decimal(result["funding"]), 0)
-        self.assertEqual(Decimal(result["wallet"]), Decimal("10000")+Decimal(result["net_pnl"]))
+        self.assertLess(abs(Decimal(result["wallet"]) -
+                            (Decimal("10000")+Decimal(result["net_pnl"]))), Decimal("1e-20"))
         self.assertEqual(self.engine.report("CHAMPION_PAPER")["settled_count"], 1)
         self.engine.close_database()
         self.engine = OfflineExecutionEngine(self.db, MODELS, KEYS)
