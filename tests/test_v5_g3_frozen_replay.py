@@ -21,7 +21,7 @@ class G3FrozenSourceTests(unittest.TestCase):
         self.addCleanup(self.db.close)
         self.first=INTERVAL_MS*1234
         self.next=self.first+INTERVAL_MS
-        self.symbols=tuple(sorted(("BTCUSDT",)+tuple(f"COIN{i:02d}USDT" for i in range(11))))
+        self.symbols=tuple(sorted(("BTCUSDT",)+tuple(f"COIN{i:02d}USDT" for i in range(getattr(self,"COHORT_SIZE",12)-1))))
         self.journal=CandidateJournal(self.db)
         self.cohort=self.journal.begin_cohort(
             self.symbols,selected_ms=self.first+INTERVAL_MS+900,
