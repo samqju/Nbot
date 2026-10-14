@@ -80,6 +80,19 @@ class ReplayTests(unittest.TestCase):
         self.assertFalse(r["quote_snapshots_archived"])
         self.assertEqual(r["matured_outcomes"],0)
 
+    def test_quote_witness_completeness_is_reported_truthfully(self):
+        self.assertFalse(self.report()["quote_snapshots_archived"])
+        self.db.execute("CREATE TABLE g2_quote_witness (event_open_ms INTEGER,symbol TEXT)")
+        self.db.executemany(
+            "INSERT INTO g2_quote_witness VALUES (?,?)",
+            ((self.event,s) for s in self.symbols)
+        )
+        self.db.commit()
+        self.assertTrue(self.report()["quote_snapshots_archived"])
+        self.db.execute("DELETE FROM g2_quote_witness WHERE symbol='BTCUSDT'")
+        self.db.commit()
+        self.assertFalse(self.report()["quote_snapshots_archived"])
+
     def test_changed_candle_sha_is_not_trusted(self):
         self.db.execute("UPDATE candle_rows SET candle_sha='bad' WHERE symbol='BTCUSDT'")
         self.db.commit()
