@@ -186,24 +186,34 @@ class ObservationOnlyRunner:
         self.failed_reason=str(reason)[:150]
         self.stop.set()
 
-    def _revalidate_source(self, session, eligible, event_open_ms):
-        """Clear a prior interruption only for a NEW source-qualified event.
+    def _source_epoch_candidate(self, session, eligible, event_open_ms):
+        """Only fresh per-coin WSS data may request epoch rehabilitation.
 
-        The old disrupted source epoch and any held events remain immutable.
-        Fresh REST candles alone are never adequate for trade/quote continuity.
+        This does NOT clear the interruption or bypass the three REST
+        finality stages. A failed candidate remains a recorded HOLD.
         """
         if not self.interrupted:
             return False
         holds=feed_holds(
             session,eligible,event_open_ms=event_open_ms,
             measured_ms=wall_ms(),interrupted=False)
-        if any(holds.get(symbol,("SOURCE_WITNESS_MISSING",))
-               for symbol in eligible):
+        return all(not holds.get(symbol,("SOURCE_WITNESS_MISSING",))
+                   for symbol in eligible)
+
+    def _accept_source_epoch(self, session, event_open_ms):
+        """Accept NEW epoch only after its complete 5m event is committed.
+
+        The original interrupted epoch and every earlier HOLD are retained.
+        """
+        if not self.interrupted:
             return False
-        self.interrupted=False
-        self.stats["reverified_epochs"]+=1
+        for route in ("market","public"):
+            if not self.policy.routes[route].connected:
+                raise FeedRecoveryHold("G1F_RECOVERY_ROUTE_DISCONNECTED")
         for route in ("market","public"):
             self.policy.accept_reverified(route)
+        self.interrupted=False
+        self.stats["reverified_epochs"]+=1
         print("G1F_SOURCE_EPOCH_REVERIFIED",json.dumps({
             "event_open_ms":event_open_ms,
             "market_epoch":session.generations["market"],
@@ -443,13 +453,17 @@ class ObservationOnlyRunner:
                 await asyncio.sleep(min(1,(due-wall_ms())/1000))
                 continue
             try:
-                self._revalidate_source(session,eligible,event)
+                recovery_candidate=self._source_epoch_candidate(
+                    session,eligible,event)
                 summary=await audit_event(
                     session,journal,finality,symbols=eligible,
                     cohort_digest=identity,event_open_ms=event,
-                    getter=self.getter,interrupted=self.interrupted,
+                    getter=self.getter,
+                    interrupted=self.interrupted and not recovery_candidate,
                     source_witness=source_witness)
                 self.stats["committed_events"]+=1
+                if recovery_candidate and summary.get("status")=="OBSERVE_ONLY":
+                    self._accept_source_epoch(session,event)
                 print("G1F_EVENT",json.dumps(summary,sort_keys=True),flush=True)
                 if g3_ledger is not None:
                     recorded=g3_ledger.record(
