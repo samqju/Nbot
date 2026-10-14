@@ -164,10 +164,15 @@ class ContinuousResearch:
                     cohort=json.loads(db.execute(
                         "SELECT symbols_json FROM g1f_universe_snapshots"
                     ).fetchone()[0])
-                    requests=tuple(sorted(set(db.execute(
-                        "SELECT symbol,decision_at_ms FROM g1f_candidate_events "
+                    rows=db.execute(
+                        "SELECT record_json FROM g1f_candidate_events "
                         "WHERE event_open_ms IN ("+marks+")",
-                        selected).fetchall())))
+                        selected).fetchall()
+                    requests=tuple(sorted({
+                        (candidate["symbol"],candidate["decision_at_ms"])
+                        for (raw,) in rows
+                        for candidate in (json.loads(raw),)
+                    }))
                 audit=VerifiedSegmentQuotes(
                     vault_path,symbols=cohort,requests=requests)
             except (OSError,ValueError,sqlite3.DatabaseError,KeyError,TypeError):
