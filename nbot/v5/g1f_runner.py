@@ -39,7 +39,7 @@ MAX_RSS_MIB=192
 MAX_DB_MIB=256
 MAX_FRAMES_PER_5M=750000  # bounded HOLD; no automatic restart
 MAX_CATCHUP_EVENTS=96
-METRICS_EVERY_SECONDS=15
+METRICS_EVERY_SECONDS=60  # 1 heartbeat/minute; never journal each tick
 CLOSE_GRACE_MS=12000
 
 
