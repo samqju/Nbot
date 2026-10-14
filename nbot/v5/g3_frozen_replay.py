@@ -136,6 +136,8 @@ def audit_g3(path:str | Path, *, max_events:int=2,
                         v["btc_relative_pattern_short"]=="MATCH"
                         for v in x["coins"].values()),
                 })
+    except G3Hold:
+        raise
     except (sqlite3.DatabaseError,TypeError,ValueError,KeyError,OverflowError) as exc:
         raise G3Hold("G3_FROZEN_REPLAY_UNVERIFIABLE") from exc
     return {
