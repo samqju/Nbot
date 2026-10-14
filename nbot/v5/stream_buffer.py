@@ -109,6 +109,19 @@ class BoundedObservationBuffer:
         parsed = decode_frame(
             route, frame, received_ms=received_ms, subscribed_symbols=self.eligible,
         )
+        return self.consume_decoded(parsed)
+
+    def consume_decoded(self, parsed: Mapping[str, object]) -> str:
+        """Consume an already verified frame without a second JSON decode.
+
+        Only use after decode_frame has validated the exact frozen universe.
+        This path makes no SQLite writes and retains only latest tick state.
+        """
+        if (parsed.get("route") not in ("market", "public")
+                or parsed.get("symbol") not in self.coins
+                or parsed.get("kind") not in ("aggTrade", "bookTicker",
+                                             "depth5@500ms", "kline_5m")):
+            raise UnsafeStream("V5_BUFFER_DECODED_FRAME_INVALID")
         symbol = parsed["symbol"]
         coin = self.coins[symbol]
         kind = parsed["kind"]
