@@ -1076,3 +1076,14 @@ The standalone new service then started using the **same** persistent DB, recogn
 **Safety and roadmap status:** This removes legacy Execution VPS idle workload and reboot/autorestart behavior before any V5 Champion/Challenger deployment. It does **not** indicate that a V5 Execution agent, paper books, model, or live-trade infrastructure is already running. Prior G1g 24-hour soak remains pending, and G2 learning/scientific-observation milestones remain incomplete. Future Execution VPS reuse must involve independent owner-reviewed V5 Champion and Challenger isolated portfolio engineering and simulation validation; no implicit restart of legacy V3 workers.
 
 **Change record — v2.8.1 / 2026-10-13:** Reversibly stopped and disabled both owner-identified unused V3 execution live-paper workers, verified Execution VPS NBOT idle, confirmed V5 Observation VPS unaffected, preserved all existing source/data/logs and legacy audit evidence.
+
+
+---
+
+## Execution workstream addendum — E1 synthetic-only foundation (branch-local, 2026-10-14)
+
+**Scope and isolation:** This addendum appears **only** on the separate `feature/v5-execution-foundation-20261014` branch, based on the verified original 2.8.1 roadmap at `cb68ee247cbbb8577238e7d452ac5e79ebc4d089`. It does not advance or supersede Observation G1g status, the original roadmap version on `v5-clean-restart-20261013`, G7 deployment gates, Champion training readiness or real-money authority.
+
+**E1 deliverable:** `nbot/v5/execution_engine.py` and `tests/test_v5_execution_engine.py` implement a single synthetic-only offline paper engine with two separately accounted books, authenticated/model-locked, sequenced and idempotent paper-only recommendations, BTC/quote fail-closed gates, source-consistent shared event fixtures, risk/cost limits, immutable SQLite evidence, mock fees/slip/funding and settled outcomes, persistent kill switches, and rollback/restart tests. **23/23** tests passed on the isolated Execution VPS development clone at `971a46e471079e907008a4f5d3d77c68b41a08fa`. Independent GitHub Actions CI **SUCCESS**: https://github.com/samqju/Nbot/actions/runs/38508871941 .
+
+**Safety posture:** Neither legacy Execution service was restarted (both stayed inactive), Observation VPS was untouched, and no API credentials, Binance order methods, network receiver, model, live trading, operational paper orders or production startup were introduced. The test harness uses temporary local synthetic databases only. Real market quality, exit automation, mark-to-market and fair shared-window competition evaluation are **NOT READY**. The global roadmap's G7/G8/G9 operational gates remain **HOLD**. All details and follow-up boundaries are in [E1 Execution workstream report](NBOT_V5_EXECUTION_E1_OFFLINE_FOUNDATION_2026-10-14.md). No automatic merge or branch promotion is authorized.
