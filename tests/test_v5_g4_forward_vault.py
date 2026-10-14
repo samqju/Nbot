@@ -56,6 +56,17 @@ class G4VaultTests(unittest.TestCase):
         self.assertEqual(r.order_authority,"NONE")
         self.assertEqual(self.v.audit()["counts"]["SOURCE_RECORDED"],1)
 
+    def test_mark_funding_source_in_third_isolated_market_route(self):
+        data={"stream":"qntusdt@markPrice@1s",
+              "data":{"e":"markPriceUpdate","E":NOW-100,"s":"QNTUSDT",
+                      "p":"200.5","i":"200.4","P":"200.2","r":"-0.0001",
+                      "T":NOW+28800000,"st":1}}
+        self.v.connect(route="market_markprice",at_ms=NOW-500)
+        receipt=self.v.ingest(route="market_markprice",at_ms=NOW,
+                              raw=json.dumps(data).encode())
+        self.assertEqual(receipt.evidence_state,"SOURCE_RECORDED")
+        self.assertEqual(self.v.audit()["scored_outcomes"],0)
+
     def test_agg_continuous_receipts(self):
         self.connect()
         self.v.ingest(route="market_aggtrade",at_ms=NOW,raw=trade())
