@@ -16,6 +16,7 @@ from tests.test_v5_g3_frozen_replay import G3FrozenSourceTests
 
 class IntegratedLedgerTests(unittest.TestCase):
     setUp=G3FrozenSourceTests.setUp
+    write_event=G3FrozenSourceTests.write_event
     report=G3FrozenSourceTests.report
 
     def test_two_real_source_events_produce_immutable_g3_context_rows(self):
