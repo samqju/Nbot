@@ -27,7 +27,7 @@ MAX_RUN_SECONDS = 3600
 MAX_FRAMES = 100000
 MAX_DB_MIB = 256
 DEFAULT_RECONNECTS = 2
-_ROUTES = ("market_aggtrade", "public_bookticker")
+_ROUTES = ("market_aggtrade", "public_bookticker", "market_markprice")
 
 
 class G4CollectorHold(ValueError):
@@ -153,7 +153,7 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
                       max_frames: int, max_db_mib: int,
                       db_path: Path|None = None,
                       clock_ms: Callable|None = None) -> dict:
-    """Supervise 2 public-only routes with explicit finite caps.
+    """Supervise 3 public-only routes with explicit finite caps.
 
     Unit tests inject a zero-network connector, deterministic frames/clocks.
     If one route fails, no other stream grants scientific continuity.
