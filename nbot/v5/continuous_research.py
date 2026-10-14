@@ -60,7 +60,7 @@ class ContinuousResearch:
                     with ro(self.source) as db:
                         cohort=db.execute(
                             "SELECT symbols_json FROM g1f_universe_snapshots "
-                            "ORDER BY selected_ms DESC LIMIT 1").fetchone()
+                            "ORDER BY selected_at_ms DESC LIMIT 1").fetchone()
                     if cohort is None:
                         raise ValueError("G4_G1_FROZEN_COHORT_MISSING")
                     view,_=stack.enter_context(verified_ram_vault(
