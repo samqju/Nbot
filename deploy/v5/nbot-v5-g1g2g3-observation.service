@@ -1,31 +1,31 @@
 # Observation-only integrated V5 G1+G2+G3. No API secrets/orders.
 # Parallel acceptance: do NOT disable original G1f until independent full soak.
 [Unit]
-Description=NBOT V5 G1-G3 original witnessed market intelligence collector
+Description=NBOT V5 isolated G1-G3 read-only market collector (PR39 recovery)
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=3600
-StartLimitBurst=2
-ConditionPathExists=/home/ubuntu/nbot_v5_integrated_20261014/nbot/v5/g3_market_context.py
+StartLimitBurst=1
+ConditionPathExists=/home/ubuntu/Nbot/nbot/v5/g3_market_context.py
 
 [Service]
 Type=simple
 User=ubuntu
 Group=ubuntu
-WorkingDirectory=/home/ubuntu/nbot_v5_integrated_20261014
+WorkingDirectory=/home/ubuntu/Nbot
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=PYTHONUNBUFFERED=1
-ExecCondition=/home/ubuntu/nbot_v5_venv/bin/python -m nbot.v5.g3_prod_preflight --repo /home/ubuntu/nbot_v5_integrated_20261014 --approved-sha-file /home/ubuntu/nbot_v5_integrated_data/approved_code_sha.txt --data-dir /home/ubuntu/nbot_v5_integrated_data
-ExecStart=/home/ubuntu/nbot_v5_venv/bin/python -u -m nbot.v5.g1f_runner --db /home/ubuntu/nbot_v5_integrated_data/g1g2g3.sqlite --top 50 --max-seconds 0 --g2-source-witness --g3-context
-Restart=on-failure
-RestartSec=15
+ExecCondition=/home/ubuntu/Nbot/.venv/bin/python -m nbot.v5.g3_prod_preflight --repo /home/ubuntu/Nbot --approved-sha-file /home/ubuntu/Nbot/runtime/observation/approved_code_sha.txt --data-dir /home/ubuntu/Nbot/runtime/observation
+ExecStart=/home/ubuntu/Nbot/.venv/bin/python -u -m nbot.v5.g1f_runner --db /home/ubuntu/Nbot/runtime/observation/g1g2g3.sqlite --top 50 --max-seconds 0 --g2-source-witness --g3-context
+Restart=no
+# No automatic restarts after interrupted market evidence
 TimeoutStopSec=45
 KillSignal=SIGTERM
 UMask=0077
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/ubuntu/nbot_v5_integrated_data
+ReadWritePaths=/home/ubuntu/Nbot/runtime/observation
 PrivateTmp=true
 PrivateDevices=true
 ProtectKernelTunables=true
@@ -37,10 +37,11 @@ MemoryAccounting=true
 MemoryMax=200M
 TasksMax=80
 CPUAccounting=true
-CPUQuota=70%
+CPUQuota=60%
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=nbot-v5-g1g2g3-observe
 
 [Install]
+# Operator controlled; intentionally left disabled until G1 soak review.
 WantedBy=multi-user.target
