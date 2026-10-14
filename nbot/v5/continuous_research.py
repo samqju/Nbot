@@ -6,7 +6,7 @@ must arrive through separately independently verified evidence exports.
 """
 import argparse
 from collections import Counter
-from contextlib import closing
+from contextlib import closing, ExitStack
 from dataclasses import asdict
 import json
 import os
@@ -54,21 +54,24 @@ class ContinuousResearch:
         """
         vault_path=Path(self.vault)
         if vault_path.is_dir() and not vault_path.is_symlink():
-            try:
-                with ro(self.source) as db:
-                    cohort=db.execute(
-                        "SELECT symbols_json FROM g1f_universe_snapshots "
-                        "ORDER BY selected_ms DESC LIMIT 1").fetchone()
-                if cohort is None:
-                    raise ValueError("G4_G1_FROZEN_COHORT_MISSING")
-                with verified_ram_vault(
+            with ExitStack() as stack:
+                view=vault_path
+                try:
+                    with ro(self.source) as db:
+                        cohort=db.execute(
+                            "SELECT symbols_json FROM g1f_universe_snapshots "
+                            "ORDER BY selected_ms DESC LIMIT 1").fetchone()
+                    if cohort is None:
+                        raise ValueError("G4_G1_FROZEN_COHORT_MISSING")
+                    view,_=stack.enter_context(verified_ram_vault(
                         vault_path,symbols=json.loads(cohort[0]),
-                        max_frames=100000,max_view_mib=128) as (view,proof):
-                    return self._tick_from_source(
-                        now_ms,max_events=max_events,vault_path=view)
-            except (ValueError,OSError,sqlite3.DatabaseError):
+                        max_frames=100000,max_view_mib=128))
+                except (ValueError,OSError,sqlite3.DatabaseError):
+                    # Only archive mounting failures become source HOLD;
+                    # internal scientific processing bugs must never be swallowed.
+                    view=vault_path
                 return self._tick_from_source(
-                    now_ms,max_events=max_events,vault_path=vault_path)
+                    now_ms,max_events=max_events,vault_path=view)
         return self._tick_from_source(
             now_ms,max_events=max_events,vault_path=self.vault)
 
