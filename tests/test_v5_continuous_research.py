@@ -66,6 +66,72 @@ class ContinuousIntegrationTests(unittest.TestCase):
         self.assertEqual(r["qualified_independently_reviewed_outcomes"],0)
         self.assertEqual(r["g7_paper_state"],"LOCKED")
 
+    def test_v4_bounded_catchup_does_not_replay_completed_event(self):
+        from nbot.v5.continuous_research import bounded_research_catchup
+        first=bounded_research_catchup(self.engine,COMMITTED+300)
+        self.assertEqual(first["candidate_population"],100)
+        self.assertEqual(first["catchup_processed_events"],1)
+        self.assertEqual(first["catchup_status"],"CAUGHT_UP")
+        self.assertEqual(first["qualified_independently_reviewed_outcomes"],0)
+        again=bounded_research_catchup(self.engine,COMMITTED+400)
+        self.assertEqual(again["catchup_processed_events"],0)
+        self.assertEqual(again["candidate_population"],100)
+        self.assertEqual(self.engine.store.db.execute(
+            "SELECT COUNT(*) FROM research_journal WHERE kind='EVENT_COMPLETE'"
+        ).fetchone()[0],1)
+
+    def test_v4_crash_halfway_through_event_recovers_original_100(self):
+        from nbot.v5.continuous_research import bounded_research_catchup
+        from unittest.mock import patch
+        original=self.engine.store.append
+        seen=[0]
+        def interrupt(identity,kind,at_ms,body):
+            if kind=="CANDIDATE":
+                seen[0]+=1
+                if seen[0]==23:
+                    raise OSError("SYNTHETIC_PROCESS_CRASH")
+            return original(identity,kind,at_ms,body)
+        source_bytes=self.source.read_bytes()
+        with patch.object(self.engine.store,"append",side_effect=interrupt):
+            with self.assertRaisesRegex(OSError,"SYNTHETIC_PROCESS_CRASH"):
+                bounded_research_catchup(self.engine,COMMITTED+300)
+        self.assertEqual(self.engine.store.db.execute(
+            "SELECT COUNT(*) FROM research_journal WHERE kind='EVENT_COMPLETE'"
+        ).fetchone()[0],0)
+        self.engine.close()
+        self.engine=ContinuousResearch(**self.kwargs)
+        result=bounded_research_catchup(self.engine,COMMITTED+400)
+        self.assertEqual(result["candidate_population"],100)
+        self.assertEqual(result["catchup_processed_events"],1)
+        self.assertEqual(result["catchup_status"],"CAUGHT_UP")
+        self.assertEqual(self.engine.store.db.execute(
+            "SELECT COUNT(*) FROM research_journal WHERE kind='CANDIDATE'"
+        ).fetchone()[0],100)
+        self.assertEqual(self.source.read_bytes(),source_bytes)
+        self.assertEqual(result["g7_paper_state"],"LOCKED")
+
+    def test_path_queue_cycles_550_origins_with_only_250_rows_in_ram(self):
+        from nbot.v5.continuous_research import bounded_pending_path_page
+        # 550 synthetic *unmatured* label ids. This is an isolated research DB.
+        with self.engine.labels as db:
+            for j in range(550):
+                label=f"extra-{j:05d}"
+                db.execute("INSERT INTO g4_label_intents VALUES (?,?,?,?,?,?,?,?)",
+                           (label,label,"f"*64,EVENT,COMMITTED+1000+j,
+                            COMMITTED+14401000+j,"0"*64,"{}"))
+        page=bounded_pending_path_page(self.engine.labels,self.engine.store)
+        self.assertEqual(len(page),250)
+        self.assertEqual(len({p[0] for p in page}),250)
+        for i in range(2):
+            tail=page[-1]
+            self.engine.store.append("cursor-test:"+str(i),"PATH_SCAN_CURSOR",COMMITTED,
+                                     {"decision_at_ms":tail[2],"label_id":tail[0]})
+            page=bounded_pending_path_page(self.engine.labels,self.engine.store)
+            self.assertEqual(len(page),250)
+        # Third page includes the remaining (550 plus existing 100 intents
+        # if fixture had created them), but always <=250 bounded RAM.
+        self.assertLessEqual(len(page),250)
+
     def test_restart_replays_without_duplicate_and_source_unchanged(self):
         before=self.source.read_bytes()
         a=self.engine.tick(COMMITTED+300)
