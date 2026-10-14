@@ -15,6 +15,7 @@ import sqlite3
 import time
 
 from nbot.v5.g4_forward_entry_quote import IndependentSourceAudit
+from nbot.v5.g4_segment_replay import verified_ram_vault
 from nbot.v5.g4_real_entry_admission import admit_research_entry
 from nbot.v5.g4_source_binding import bind_from_frozen_observation_copy
 from nbot.v5.g4_live_outcomes import follow_original_path
@@ -48,6 +49,30 @@ class ContinuousResearch:
                           {"protocol":asdict(protocol),"start_event_ms":start_event_ms})
 
     def tick(self, now_ms, *, max_events=1):
+        """For compressed sources, use only a bounded, independently verified
+        RAM-backed replay view. Missing evidence is never promoted to outcomes.
+        """
+        vault_path=Path(self.vault)
+        if vault_path.is_dir() and not vault_path.is_symlink():
+            try:
+                with ro(self.source) as db:
+                    cohort=db.execute(
+                        "SELECT symbols_json FROM g1f_universe_snapshots "
+                        "ORDER BY selected_ms DESC LIMIT 1").fetchone()
+                if cohort is None:
+                    raise ValueError("G4_G1_FROZEN_COHORT_MISSING")
+                with verified_ram_vault(
+                        vault_path,symbols=json.loads(cohort[0]),
+                        max_frames=100000,max_view_mib=128) as (view,proof):
+                    return self._tick_from_source(
+                        now_ms,max_events=max_events,vault_path=view)
+            except (ValueError,OSError,sqlite3.DatabaseError):
+                return self._tick_from_source(
+                    now_ms,max_events=max_events,vault_path=vault_path)
+        return self._tick_from_source(
+            now_ms,max_events=max_events,vault_path=self.vault)
+
+    def _tick_from_source(self, now_ms, *, max_events, vault_path):
         if type(max_events) is not int or not 1<=max_events<=3:
             raise ValueError("RESEARCH_BATCH_BOUNDS")
         with ro(self.source) as db:
@@ -57,7 +82,7 @@ class ContinuousResearch:
         audit=None
         if selected:
             try:
-                audit=IndependentSourceAudit(self.vault)
+                audit=IndependentSourceAudit(vault_path)
             except (OSError,ValueError,sqlite3.DatabaseError):
                 # An absent, malformed or tampered independent forward vault
                 # cannot qualify a single G4 price. Still enumerate all 100
@@ -80,7 +105,7 @@ class ContinuousResearch:
                 c=json.loads(raw)
                 identity="candidate:"+c["decision_id"]
                 if self.store.db.execute("SELECT 1 FROM research_journal WHERE identity=?",(identity,)).fetchone():continue
-                admission=admit_research_entry(g1_snapshot=self.source,raw_source_vault=self.vault,
+                admission=admit_research_entry(g1_snapshot=self.source,raw_source_vault=vault_path,
                                                registry_file=self.registry,event_open_ms=event,symbol=c["symbol"],side=c["side"],audit_cache=audit)
                 features=None;feature_reasons=[]
                 try:features=causal_features(c,g3)
@@ -98,14 +123,22 @@ class ContinuousResearch:
             self.store.append("event:"+str(event),"EVENT_COMPLETE",now_ms,{"event_ms":event,"candidate_population":100})
         path_ids={r[0][5:] for r in self.store.db.execute("SELECT identity FROM research_journal WHERE kind='ORIGINAL_PRICE_PATH'")}
         pending=[r for r in self.labels.execute("SELECT i.label_id,i.intent_json FROM g4_label_intents i LEFT JOIN g4_label_terminals t ON i.label_id=t.label_id WHERE t.label_id IS NULL ORDER BY i.decision_at_ms") if r[0] not in path_ids][:3000]
-        if pending and audit is None:audit=IndependentSourceAudit(self.vault)
+        if pending and audit is None:
+            try:
+                audit=IndependentSourceAudit(vault_path)
+            except (OSError,ValueError,sqlite3.DatabaseError):
+                audit=None
         for label_id,raw in pending:
             if self.store.db.execute("SELECT 1 FROM research_journal WHERE identity=?",("path:"+label_id,)).fetchone():continue
             intent=json.loads(raw)
             stored=self.store.db.execute("SELECT body FROM research_journal WHERE identity=?",("candidate:"+intent["decision_id"],)).fetchone()
             if stored is None:continue
             candidate=json.loads(stored[0])["candidate"]
-            path=follow_original_path(vault=self.vault,audit=audit,candidate=candidate,policy=intent["frozen_policy"],now_ms=now_ms)
+            path=(follow_original_path(
+                vault=vault_path,audit=audit,candidate=candidate,
+                policy=intent["frozen_policy"],now_ms=now_ms)
+                if audit is not None else
+                {"state":"HOLD","reasons":["G4_ORIGINAL_VAULT_NOT_INDEPENDENTLY_AUDITED"]})
             if path["state"]=='PATH_REPLAYED':
                 self.store.append("path:"+label_id,"ORIGINAL_PRICE_PATH",now_ms,
                                   {"label_id":label_id,"path":path,"economic_state":"HELD_PENDING_INDEPENDENT_EXIT_QUOTE_FEE_SLIPPAGE_SETTLED_FUNDING"})
