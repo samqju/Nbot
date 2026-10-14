@@ -33,7 +33,7 @@
 
 The checked code is restricted to `nbot/v5/execution_engine.py`, `nbot/v5/execution_replay.py`, `nbot/v5/contest_audit.py`, the isolated `tests/test_v5_*execution*.py` and `tests/test_v5_contest_audit.py` test suites and `.github/workflows/v5-isolated-execution.yml`. All fixture keys are synthetic and injected at test time. No sensitive or private exchange credential is requested/stored/committed. WAL/FULL SQLite databases for tests live in temporary paths. The isolated Execution VPS development clone is `/home/ubuntu/nbot_v5_execution_dev` and is NOT a service directory. No changes are needed on Observation `base`.
 
-Latest verified GitHub CI: https://github.com/samqju/Nbot/actions/runs/38510129046 at code commit `fc3292dbaea1c11e73a2a33373257f037f857dd2` (SUCCESS). The local Execution VPS synthetic E2, E3 and E4 tests were independently executed using the saved PuTTY connection. The exact final aggregate test count and local post-check evidence should be appended when final full-suite verification is complete.
+Final verified GitHub CI: **SUCCESS**, run https://github.com/samqju/Nbot/actions/runs/38510259392 at exact code+documentation commit `1ffb38ac987565416e69159dec4f4e3fdb78a6e2` (Python 3.12, isolated execution suite). Independent Execution VPS checkout at the same commit ran **51 execution/replay/mock contest tests PASS** and **11 contest-audit tests PASS**, total **62/62**. Final read-only operational verification: `nbot-execution-live-paper.service` and `nbot-control-tunnel-live-paper.service` both **inactive**, isolated Git worktree clean. No Observation VPS command, production service or exchange order was executed.
 
 ## Gating status and follow-up
 
