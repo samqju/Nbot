@@ -94,6 +94,22 @@ class G2PopulationAuditTests(unittest.TestCase):
         self.assertEqual(out["unscorable_directional_records"],4)
         self.assertEqual(out["unscorable_reasons"]["QUOTES_STALE"],4)
 
+    def test_one_initial_rest_bootstrap_slot_is_explicit_not_hidden(self):
+        self.db.execute("DROP TRIGGER g1f_cohort_no_update")
+        self.db.execute("UPDATE g1f_universe_snapshots SET first_event_open_ms=?",
+                        (self.first - INTERVAL_MS,))
+        self.db.commit()
+        out=self.inspect()
+        self.assertEqual(out["audit"],"PASS")
+        self.assertEqual(out["cohort_bootstrap_offset_slots"],1)
+
+    def test_more_than_one_initial_unobserved_slot_is_hold(self):
+        self.db.execute("DROP TRIGGER g1f_cohort_no_update")
+        self.db.execute("UPDATE g1f_universe_snapshots SET first_event_open_ms=?",
+                        (self.first - 2*INTERVAL_MS,))
+        self.db.commit()
+        self.assertIn("COHORT_FIRST_OBSERVATION_INVALID",self.inspect()["violations"])
+
     def test_missing_symbol_direction_fails(self):
         self.add_event(self.first+INTERVAL_MS,selected={"BTCUSDT"})
         self.assertIn("CANDIDATE_DENOMINATOR_MISSING",self.inspect()["violations"])
