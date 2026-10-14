@@ -97,6 +97,26 @@ class E3ContestAuditTests(unittest.TestCase):
         self.assertFalse(r["may_train_on_contest_period"])
         self.assertEqual(r["live_order_authority"], "NONE")
 
+    def test_direct_settlement_bypassing_replay_causes_hold(self):
+        self.replay.advance(frame(), [proposal()])
+        direct = self.engine.settle_synthetic("CHAMPION_PAPER", "BTCUSDT",
+                                              quote(now=NOW+500, bid="88", ask="88.02"), NOW+500)
+        self.assertEqual(direct["status"], "SETTLED")
+        self.replay.advance(frame(2, NOW+1000), [])
+        r = audit_synthetic_contest(self.replay, NOW+1000)
+        self.assertIn("UNLINKED_SYNTHETIC_SETTLEMENT", r["hold_reasons"])
+        self.assertEqual(r["books"]["CHAMPION_PAPER"]["unlinked_settlement_count"], 1)
+
+    def test_signing_identity_is_frozen_on_restart(self):
+        path = self.engine.db.execute("PRAGMA database_list").fetchone()[2]
+        self.engine.close_database()
+        keys = dict(KEYS)
+        keys["CHAMPION_PAPER"] = b"changed-only-synthetic-fixture-key"
+        with self.assertRaisesRegex(ValueError, "FROZEN_MODEL_MISMATCH"):
+            OfflineExecutionEngine(path, MODELS, keys)
+        self.engine = OfflineExecutionEngine(path, MODELS, KEYS)
+        self.replay = SyntheticReplay(self.engine, RULES, RECEIPT_KEY)
+
     def test_audit_is_read_only(self):
         self.replay.advance(frame(), [])
         before = self.engine.db.total_changes
