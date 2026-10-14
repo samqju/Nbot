@@ -62,6 +62,12 @@ class ContinuousResearch:
             if len(candidates)!=100 or g3_raw is None:
                 raise ValueError("G4_FULL_DIRECTIONAL_DENOMINATOR_MISSING")
             g3=json.loads(g3_raw[0])
+            # G3 HOLD has no feature evidence; never invent a BTC regime.
+            g3_features=g3.get("feature_evidence")
+            btc_features=(g3_features.get("btc",{})
+                          if isinstance(g3_features,dict) else {})
+            regime=(btc_features.get("regime","UNKNOWN")
+                    if isinstance(btc_features,dict) else "UNKNOWN")
             for raw, in candidates:
                 c=json.loads(raw)
                 identity="candidate:"+c["decision_id"]
@@ -78,7 +84,7 @@ class ContinuousResearch:
                 else:label=None
                 payload={"candidate":c,"admission":asdict(admission),"label_id":label,
                          "features":features,"feature_reasons":feature_reasons,
-                         "regime":g3.get("feature_evidence",{}).get("btc",{}).get("regime","UNKNOWN"),
+                         "regime":regime,
                          "g3_feature_known_ms":g3.get("valid_from_ms"),"order_authority":"NONE"}
                 self.store.append(identity,"CANDIDATE",now_ms,payload)
             self.store.append("event:"+str(event),"EVENT_COMPLETE",now_ms,{"event_ms":event,"candidate_population":100})
