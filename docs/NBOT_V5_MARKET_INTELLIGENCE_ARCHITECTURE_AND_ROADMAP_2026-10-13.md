@@ -1,6 +1,6 @@
 # NBOT V5 — Market Intelligence, Strategy Alignment and Learning Roadmap
 
-**Document version:** 2.8.1  
+**Document version:** 2.8.2  
 **Date:** 2026-10-13 (IST)  
 **Owner:** NBOT project owner  
 **Repository:** samqju/Nbot  
@@ -1076,3 +1076,18 @@ The standalone new service then started using the **same** persistent DB, recogn
 **Safety and roadmap status:** This removes legacy Execution VPS idle workload and reboot/autorestart behavior before any V5 Champion/Challenger deployment. It does **not** indicate that a V5 Execution agent, paper books, model, or live-trade infrastructure is already running. Prior G1g 24-hour soak remains pending, and G2 learning/scientific-observation milestones remain incomplete. Future Execution VPS reuse must involve independent owner-reviewed V5 Champion and Challenger isolated portfolio engineering and simulation validation; no implicit restart of legacy V3 workers.
 
 **Change record — v2.8.1 / 2026-10-13:** Reversibly stopped and disabled both owner-identified unused V3 execution live-paper workers, verified Execution VPS NBOT idle, confirmed V5 Observation VPS unaffected, preserved all existing source/data/logs and legacy audit evidence.
+
+
+---
+
+## 45. V2.8.2 — Owner-shortened G1G 12-hour checkpoint and isolated G2 population audit (2026-10-14)
+
+**Owner explicitly replaced G1g 24-hour soak with a 12-hour reliability checkpoint at 10:30 AM IST, 2026-10-14.** An actual direct read-only check at 10:30:52 IST verified Observation host base uptime 12h14m, unchanged post-G1g reboot ID 9bc008f6-eaa2-4ced-8a9d-c3f54f3b5a6e, nbot-v5-observation-only.service active/enabled with MainPID=1082 and NRestarts=0; current resident systemd memory 101,195,776 bytes, observed peak 111,292,416 bytes versus hard 209,715,200-byte cap. Seven checked retired V4 units stayed inactive, five retired boot states disabled, hourly health timer active/enabled and recently fired. G1g read-only report PASS: SQLite quick_check=ok, 152 committed event manifests, 15,090 OBSERVED + 110 UNSCORABLE directional records. Journal heartbeat confirmed market and public feed routes connected, reconnect_attempts=0, trade_gaps=0, research_ready=false and order_authority=NONE. All checks are operational; real disconnection recovery, profitable strategy and 24h soak were NOT proven.
+
+**Parallel safe scientific G2 development:** Created independent branch feature/v5-observation-g2-20261014 (never merged into live branch or Execution). Added read-only nbot/v5/g2_population_audit.py and tests/test_v5_g2_population_audit.py to verify frozen source cohort, exactly 50 symbols x LONG/SHORT per completed five-minute event, complete 24 pattern states, identity/hash/source clocks, matching manifest/event counts, explicit HONEST unavailable reasons, no replayed/dangling events, and absence of any recommendation, label, training or order authority. Standalone Observation VPS clone/worktree at /home/ubuntu/nbot_v5_g2_audit_dev tested and queried original live SQLite with mode=ro; running Observation service was not restarted or changed. GitHub Actions on Observation G2 isolated commit 80277c2826b56a928d10e65d84794fb11d80b640 passed 166/166 tests, run https://github.com/samqju/Nbot/actions/runs/38515064045 . Observation VPS G2 tests passed 10/10.
+
+**Actual G2 live outcome:** Independent G2 auditor PASS with zero violations, 154 contiguous committed five-minute event manifests, 50 frozen symbols and complete 15,400 expected/present two-sided candidate slots (15,290 OBSERVED, 110 UNSCORABLE). Exactly six manifests had HOLD status: one earlier explicitly recorded process-offline interval accounting for 100 directional records, and other intervals holding ten records due to stale trade data; counts across reason codes are overlapping, not independent observations. Initial cohort REST/bootstrap clock preceded first committed observation by TWO five-minute setup intervals; explicitly reported and excluded, not silently counted as observed. No gaps among committed events, no invented terminal trade labels or executable orders.
+
+**Execution dependency and safety:** Separate Execution E1–E5 offline synthetic 72/72 PASS is unchanged. E6A offline security/interface development MAY resume now, but E6B authenticated operational Observation-to-Execution integration remains HOLD pending a real scientifically validated first Champion plus compatible signed versioned recommendation producer, independent market quality/risk checks and paper authorization. No such model or producer exists; 15,290 candidate observations are **NOT** 15,290 matured after-cost training outcomes. Scientific G2 outcome labeling and future model creation remain separate not-yet-complete roadmap gates. Live Binance order authority remains NONE. A direct 12h check does NOT waive subsequent model/profit/safety gates.
+
+**Change record — v2.8.2 / 2026-10-14:** 12h G1g operational PASS (not 24h) and G2 population-only integrity audit PASS, further scientific labels/model/integration HOLD. Detailed handoff in docs/NBOT_V5_G1G_12H_AND_G2_AUDIT_2026-10-14.md on isolated Observation G2 branch.
