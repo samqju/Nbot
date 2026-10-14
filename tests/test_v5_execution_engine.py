@@ -227,6 +227,28 @@ class DualBookTests(unittest.TestCase):
                                             symbol="ETHUSDT"),
                                    q=quote("ETHUSDT"))["reason"], "BOOK_KILLED")
 
+    def test_shared_event_snapshot_cannot_change_for_challenger(self):
+        self.assertEqual(self.send(request())["status"], "ACCEPTED")
+        r = request("CHALLENGER_PAPER")
+        self.assertEqual(self.send(r, q=quote(bid="99.50", ask="99.52"))["reason"],
+                         "SHARED_MARKET_SNAPSHOT_MISMATCH")
+        self.assertEqual(self.engine.report("CHALLENGER_PAPER")["open_positions"], [])
+
+    def test_transaction_rollback_on_simulated_fill_storage_failure(self):
+        self.engine.db.execute("""CREATE TRIGGER fail_test_fill BEFORE INSERT ON fills
+                                   BEGIN SELECT RAISE(ABORT,'synthetic fault'); END;""")
+        with self.assertRaises(sqlite3.DatabaseError):
+            self.send(request())
+        self.assertEqual(self.engine.db.execute("SELECT COUNT(*) FROM decisions").fetchone()[0], 0)
+        self.assertEqual(self.engine.report("CHAMPION_PAPER")["wallet"], "10000")
+        self.engine.db.execute("DROP TRIGGER fail_test_fill")
+        self.assertEqual(self.send(request())["status"], "ACCEPTED")
+
+    def test_authenticated_message_size_is_bounded(self):
+        rec = request(strategy_tag_ids=["A"*1000]*20)
+        self.assertEqual(self.send(rec)["reason"], "MESSAGE_SIZE_LIMIT")
+        self.assertEqual(self.engine.db.execute("SELECT COUNT(*) FROM decisions").fetchone()[0], 0)
+
     def test_unknown_fields_not_execution_authority(self):
         self.assertEqual(self.send(request(real_order=True))["reason"], "CONTRACT_OR_AUTHORITY_INVALID")
 
