@@ -1104,3 +1104,14 @@ The standalone new service then started using the **same** persistent DB, recogn
 **Evidence:** [Execution E2–E4 test and safety report](NBOT_V5_EXECUTION_E2_E3_E4_OFFLINE_EVIDENCE_2026-10-14.md); final green CI at code commit `1ffb38ac987565416e69159dec4f4e3fdb78a6e2` — https://github.com/samqju/Nbot/actions/runs/38510259392 . Isolated Execution VPS reran **62/62** tests PASS (51 execution/replay/contest-load and 11 read-only audit); both legacy units remained inactive and isolated worktree clean.
 
 **Blockers retained:** No trained/validated Champion, no qualified independent market feed, no signed network delivery, no source-backed funding or executable fill model, no statistically valid real market contest, no deployed V5 Execution service, no private Binance credentials and no authority to submit Binance orders. **G7/G8/HUMAN PAPER PROMOTION/LIVE remain HOLD/NOT AUTHORIZED.** Safe isolated E5 design/tests may proceed without another approval; any service deployment, merge affecting Observation, operational remediation or financial authority change remains separately gated.
+
+
+---
+
+## Execution workstream addendum — E5 synthetic incident quarantine (branch-only, 2026-10-14)
+
+**Scope:** Offline-only `feature/v5-execution-foundation-20261014` branch; no change to Observation source or operational 12-hour checkpoint.
+
+**E5 source and evidence:** `nbot/v5/execution_incidents.py` stores bounded immutable SHA-identified invalid-frame HOLD incidents (max 256 distinct with durable overflow indicator), safely redacts proposal/secret payloads, and exposes a small operator status readout. On simulated absent/stale source, it records NO_REPLAY_EVIDENCE or SOURCE_TIMEOUT, independently activates one-way **paper new-entry kills** on both mock books after timeout, and explicitly leaves open positions unresolved rather than forging price-path evidence. Ten new synthetic tests passed. CI SUCCESS on exact code commit `dcaaaf9299a97f6fff3d6d79841b1847ff59cbef`: https://github.com/samqju/Nbot/actions/runs/38510512351 . Full evidence: [E5 incident checkpoint](NBOT_V5_EXECUTION_E5_INCIDENT_GUARD_2026-10-14.md).
+
+**Classification:** Synthetic E5 incident and timeout behavior PASS; 72 unique E1–E5 offline tests including separate 100/100 settlement fixture and 50-symbol no-trade fixture. **G7/G8 paper readiness remains HOLD; G9, live orders and promotion NOT AUTHORIZED.** No actual Observation integration, no operational execution service, and no merge. Any further E6 work remains offline until separate safety/source gates are satisfied.
