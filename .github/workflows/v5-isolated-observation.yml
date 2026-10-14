@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - v5-clean-restart-20261013
+      - feature/v5-observation-g2-20261014
     paths:
       - "nbot/v5/**"
       - "tests/test_v5_observation_contract.py"
