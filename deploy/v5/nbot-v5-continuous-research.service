@@ -1,19 +1,21 @@
 [Unit]
-Description=NBOT V5 original G1-G4 population and locked G5-G6 research bridge
-After=nbot-v5-g1g2g3-observation.service
+Description=NBOT V5 G4-G6 offline research (deployment HOLD, zero execution authority)
+After=network.target nbot-v5-g1g2g3-observation.service
+ConditionPathExists=/home/ubuntu/Nbot/runtime/research/OWNER_APPROVED_G4_RESEARCH_RELEASE
 
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/home/ubuntu/nbot_v5_continuous_release_20261014
-ExecStart=/usr/bin/flock -n /home/ubuntu/nbot_v5_research_20261014/owner.lock /home/ubuntu/nbot_v5_venv/bin/python -u -m nbot.v5.continuous_research --source /home/ubuntu/nbot_v5_integrated_data/g1g2g3.sqlite --vault /home/ubuntu/nbot-backups/g4-forward-continuous-20261014/g4_raw_source.sqlite --registry /home/ubuntu/nbot-backups/g4-forward-pilot-20261014/g4_research_template.json --root /home/ubuntu/nbot_v5_research_20261014 --protocol /home/ubuntu/nbot_v5_research_20261014/protocol.json --start-event-ms 1791973800000
-Restart=on-failure
-RestartSec=60
+WorkingDirectory=/home/ubuntu/Nbot
+Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=/home/ubuntu/Nbot/runtime/research/approved.env
+ExecStart=/usr/bin/flock -n /home/ubuntu/Nbot/runtime/research/owner.lock /home/ubuntu/Nbot/.venv/bin/python -u -m nbot.v5.continuous_research --source /home/ubuntu/Nbot/runtime/observation/g1g2g3.sqlite --vault /home/ubuntu/Nbot/runtime/source/g4_raw_source.sqlite --registry /home/ubuntu/Nbot/runtime/research/policy.json --root /home/ubuntu/Nbot/runtime/research --protocol /home/ubuntu/Nbot/runtime/research/protocol.json --start-event-ms ${NBOT_V5_START_EVENT_MS}
+Restart=no
 UMask=0077
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/ubuntu/nbot_v5_research_20261014
+ReadWritePaths=/home/ubuntu/Nbot/runtime/research
 PrivateTmp=true
 RestrictAddressFamilies=AF_UNIX
 MemoryMax=160M
@@ -21,5 +23,5 @@ CPUQuota=20%
 Nice=15
 TasksMax=16
 
-[Install]
-WantedBy=multi-user.target
+# Intentionally no [Install] section; this unit must not auto-enable.
+# Not installed or started during engineering.
