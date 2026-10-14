@@ -375,7 +375,8 @@ def bounded_research_catchup(engine, now_ms, *, max_cycles=8,
 def main():
     p=argparse.ArgumentParser()
     for name in ("source","vault","registry","root","protocol"):p.add_argument("--"+name,required=True)
-    p.add_argument("--start-event-ms",type=int,required=True)
+    p.add_argument("--start-event-ms",type=int,default=None,
+                   help="Defaults to prospectively frozen policy activation clock")
     p.add_argument("--interval-seconds",type=int,default=60)
     p.add_argument("--max-cycles",type=int,default=8)
     p.add_argument("--max-events-per-cycle",type=int,default=3)
@@ -384,6 +385,21 @@ def main():
     a=p.parse_args()
     if not 60<=a.interval_seconds<=600:raise ValueError("RESEARCH_INTERVAL_BOUNDS")
     os.umask(0o077)
+    if a.start_event_ms is None:
+        # The approved frozen policy is the source of truth; never synthesize
+        # a retrospective research start or rely on a mutable environment var.
+        frozen=json.loads(Path(a.registry).read_text())
+        from nbot.v5.g4_prospective_policy import freeze_template
+        template=freeze_template(frozen["spec"])
+        if (frozen.get("registry_version")!=
+                "NBOT_V5_G4_PREDECLARED_POLICY_REGISTRY_V1"
+                or frozen.get("policy_sha256")!=template.policy_sha256
+                or frozen.get("financial_authority")!="NONE"
+                or frozen.get("research_only") is not True):
+            raise ValueError("G4_RESEARCH_FROZEN_POLICY_START_INVALID")
+        a.start_event_ms=template.spec["activates_at_ms"]
+    if a.start_event_ms%300000:
+        raise ValueError("G4_RESEARCH_START_NOT_EVENT_ALIGNED")
     engine=ContinuousResearch(source=a.source,vault=a.vault,registry=a.registry,root=a.root,
                               protocol=Protocol(**json.loads(Path(a.protocol).read_text())),start_event_ms=a.start_event_ms)
     try:
