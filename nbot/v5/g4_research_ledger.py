@@ -45,6 +45,15 @@ def init_offline_ledger(db: sqlite3.Connection) -> None:
     This function intentionally has no filename, production migration or schema
     upgrade support. Never run on the live G1/G2/G3 observation SQLite.
     """
+    # Fail closed when accidentally pointed at ANY known observation/F0 DB.
+    # Isolated research labels must never touch G1/G2/G3 schema or V4 ledgers.
+    existing={row[0] for row in db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
+    forbidden={"g1f_event_manifest","g1f_candidate_events","g2_quote_witness",
+               "g3_event_context","candle_rows","v5_candidate_observations",
+               "research_decisions","virtual_trades","paper_trades"}
+    if existing & forbidden:
+        raise ValueError("G4_LIVE_OR_HISTORICAL_DB_MUTATION_FORBIDDEN")
     db.execute("PRAGMA foreign_keys=ON")
     db.executescript("""
         CREATE TABLE IF NOT EXISTS g4_label_intents(
