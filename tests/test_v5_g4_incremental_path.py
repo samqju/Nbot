@@ -113,9 +113,10 @@ class IncrementalG4PathTests(unittest.TestCase):
 
     def test_large_cross_coin_stream_keeps_no_trade_row_list(self):
         # 50-coin high-rate other-market traffic; BTC proof remains exact.
+        others=tuple(s for s in SYMS if s!="BTCUSDT")
         for i in range(1750):
-            sym=SYMS[i%50]
-            agg=100+i//50
+            sym=others[i%len(others)]
+            agg=100+i//len(others)
             self.vault.ingest(route="market_aggtrade",
                               at_ms=T+1400+i,
                               raw=tick(sym,agg,T+1400+i,100))
