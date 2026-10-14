@@ -12,7 +12,7 @@ The synthetic heartbeat returns `NO_REPLAY_EVIDENCE` when the source has never d
 
 Ten incident tests passed on isolated Execution VPS using temporary databases. They validate bad-source rejection, immutable incident rows, duplicate dedupe, storage cap and overflow, safe metadata, restart, no-feed HOLD, timeout kill and no manufactured settlement. GitHub Actions CI for the exact E5 code commit `dcaaaf9299a97f6fff3d6d79841b1847ff59cbef` **SUCCESS**: https://github.com/samqju/Nbot/actions/runs/38510512351 .
 
-Combined with E1–E4's 62 independent synthetic tests, this is **72 unique offline tests**; final aggregate rerun and legacy-service verification are separately required before closing the milestone.
+Combined with E1–E4's 62 independent synthetic tests, this is **72 unique offline tests**. Final independent Execution VPS validation at documentation HEAD `65952799f4c90793bec02dd324a8fa42bbe4aa98`: **61/61 execution/replay/mock/incident tests PASS + 11/11 contest-audit tests PASS = 72/72**, with a clean isolated Git worktree. Both legacy services `nbot-execution-live-paper.service` and `nbot-control-tunnel-live-paper.service` remained **inactive**. No Observation VPS command or running service change. This final check is a local offline test run; GitHub CI separately passed the last code revision.
 
 ## Remaining HOLD gates
 
