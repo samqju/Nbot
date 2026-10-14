@@ -97,6 +97,26 @@ class ContinuousIntegrationTests(unittest.TestCase):
         self.assertEqual(self.source.read_bytes(),original)
         self.assertEqual(report["g7_paper_state"],"LOCKED")
 
+    def test_missing_forward_vault_cannot_block_held_denominator(self):
+        self.vault.unlink()
+        report=self.engine.tick(COMMITTED+300)
+        self.assertEqual(report["candidate_population"],100)
+        self.assertEqual(report["admission_states"],{"HOLD":100})
+        self.assertEqual(report["qualified_independently_reviewed_outcomes"],0)
+        self.assertEqual(report["g4_maturity"]["total_frozen_intents"],0)
+        self.assertEqual(report["g7_paper_state"],"LOCKED")
+        self.assertFalse(self.vault.exists())
+
+    def test_corrupt_forward_vault_cannot_fabricate_economics(self):
+        with closing(sqlite3.connect(self.vault)) as db:
+            db.execute("UPDATE g4_forward_receipts SET raw_sha256=? WHERE seq=1",
+                       ("0"*64,))
+            db.commit()
+        report=self.engine.tick(COMMITTED+300)
+        self.assertEqual(report["candidate_population"],100)
+        self.assertEqual(report["admission_states"],{"HOLD":100})
+        self.assertEqual(report["qualified_independently_reviewed_outcomes"],0)
+
     def test_missing_policy_tracks_held_full_population(self):
         self.registry.unlink()
         r=self.engine.tick(COMMITTED+300)
