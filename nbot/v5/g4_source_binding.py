@@ -10,6 +10,7 @@ No schema modifications, network access, financial authority or synthetic labels
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import closing
 import hashlib
 import json
 from pathlib import Path
@@ -70,8 +71,9 @@ def bind_from_frozen_observation_copy(*, db_path: str | Path, event_open_ms: int
     if path.is_symlink() or not path.is_file():
         raise ValueError("G4_BIND_SNAPSHOT_NOT_REGULAR_FILE")
     try:
-        with sqlite3.connect(path.resolve().as_uri() + "?mode=ro",
-                             uri=True, timeout=8) as db:
+        with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro",
+                             uri=True, timeout=8)) as db:
+            db.execute("BEGIN")
             return _check(db, event_open_ms, symbol, side)
     except (sqlite3.Error, TypeError, KeyError, ValueError, json.JSONDecodeError) as exc:
         return _hold(event_open_ms, symbol, side, {"G4_BIND_SQLITE_OR_EVIDENCE_INVALID"})

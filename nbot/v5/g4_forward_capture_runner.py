@@ -192,6 +192,11 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
             stop=stop,budget=budget))
         for route in _ROUTES
     ]
+    async def flush_periodically():
+        while not stop.is_set():
+            await asyncio.sleep(.1)
+            vault.flush()
+    flush_task=asyncio.create_task(flush_periodically())
     try:
         async with asyncio.timeout(duration_s):
             await asyncio.gather(*tasks)
@@ -212,6 +217,9 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
             if not task.done():
                 task.cancel()
         await asyncio.gather(*tasks,return_exceptions=True)
+        flush_task.cancel()
+        await asyncio.gather(flush_task,return_exceptions=True)
+        vault.flush()
         # If cancellation or forced timeout interrupted an open socket,
         # source-vault OPEN remains open and restart creates explicit gap.
     report=vault.audit()
@@ -275,7 +283,8 @@ def main(argv=None) -> int:
         with sqlite3.connect(uri,uri=True,timeout=10) as db:
             db.execute("PRAGMA busy_timeout=10000")
             db.execute("PRAGMA journal_mode=WAL")
-            vault=ForwardSourceVault(db,symbols=symbols)
+            db.execute("PRAGMA synchronous=FULL")
+            vault=ForwardSourceVault(db,symbols=symbols,batch_frames=64)
             vault.audit()  # Before any new receipt, verify previous storage.
             report=asyncio.run(run_bounded(
                 vault=vault,endpoints=endpoints,connector=_RealConnector(),

@@ -120,12 +120,15 @@ def replay_aggtrade_price_path(
             reasons.append("ORIGINAL_ROWS_SHA_MISMATCH")
     except (TypeError, ValueError, OverflowError):
         reasons.append("ORIGINAL_ROWS_NOT_CANONICAL")
-    if source_manifest.get("source_grade")!="ORIGINAL_BINANCE_PUBLIC_AGGTRADES":
+    live_source = source_manifest.get("source_grade") == "ORIGINAL_BINANCE_PUBLIC_WSS_AGGTRADES"
+    if source_manifest.get("source_grade") not in ("ORIGINAL_BINANCE_PUBLIC_AGGTRADES", "ORIGINAL_BINANCE_PUBLIC_WSS_AGGTRADES"):
         reasons.append("ORIGINAL_SOURCE_GRADE_UNVERIFIED")
     if source_manifest.get("symbol")!=candidate.get("symbol"):
         reasons.append("ORIGINAL_SYMBOL_MISMATCH")
     # Archive bytes and original download provenance must be audited separately.
-    if source_manifest.get("original_archive_verified") is not True:
+    if ((not live_source and source_manifest.get("original_archive_verified") is not True)
+            or (live_source and (source_manifest.get("original_vault_verified") is not True
+                                 or not _hex(source_manifest.get("independent_vault_head_sha256"))))):
         reasons.append("ORIGINAL_ARCHIVE_AUTHENTICITY_UNVERIFIED")
     if reasons:
         return PathReplay("HOLD",tuple(sorted(set(reasons))),did,archive_sha,rows_sha)
