@@ -166,16 +166,19 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
                       connector: Callable, duration_s: float,
                       max_frames: int, max_db_mib: int,
                       db_path: Path|None = None,
-                      clock_ms: Callable|None = None) -> dict:
+                      clock_ms: Callable|None = None,
+                      sustained: bool = False) -> dict:
     """Supervise 3 public-only routes with explicit finite caps.
 
     Unit tests inject a zero-network connector, deterministic frames/clocks.
     If one route fails, no other stream grants scientific continuity.
     """
+    duration_cap, frame_cap, disk_cap = ((21600,20000000,8192) if sustained else
+                                       (MAX_RUN_SECONDS,MAX_FRAMES,MAX_DB_MIB))
     if (not isinstance(duration_s,(int,float)) or
-            not 0<duration_s<=MAX_RUN_SECONDS or
-            type(max_frames) is not int or not 1<=max_frames<=MAX_FRAMES or
-            type(max_db_mib) is not int or not 1<=max_db_mib<=MAX_DB_MIB):
+            not 0<duration_s<=duration_cap or
+            type(max_frames) is not int or not 1<=max_frames<=frame_cap or
+            type(max_db_mib) is not int or not 1<=max_db_mib<=disk_cap):
         raise G4CollectorHold("G4_FORWARD_RESOURCE_BOUNDS_INVALID")
     clock_ms=clock_ms or (lambda:time.time_ns()//1000000)
     stop=asyncio.Event()
@@ -189,6 +192,11 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
             stop=stop,budget=budget))
         for route in _ROUTES
     ]
+    async def flush_periodically():
+        while not stop.is_set():
+            await asyncio.sleep(.1)
+            vault.flush()
+    flush_task=asyncio.create_task(flush_periodically())
     try:
         async with asyncio.timeout(duration_s):
             await asyncio.gather(*tasks)
@@ -209,6 +217,9 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
             if not task.done():
                 task.cancel()
         await asyncio.gather(*tasks,return_exceptions=True)
+        flush_task.cancel()
+        await asyncio.gather(flush_task,return_exceptions=True)
+        vault.flush()
         # If cancellation or forced timeout interrupted an open socket,
         # source-vault OPEN remains open and restart creates explicit gap.
     report=vault.audit()
@@ -217,7 +228,7 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
             "stop_reason":budget["reached"] or "SOURCE_STREAM_ENDED",
             "source_errors":tuple(budget["source_errors"]),
             "source_coverage_grade":"UNVERIFIED_UNTIL_INDEPENDENT_REPLAY",
-            "bounded_pilot_only":True,
+            "bounded_pilot_only":not sustained,
             "complete_four_hour_source_proven":False,
             "g4_scientific_accepted":False,
             "model_training_authority":"NONE","order_authority":"NONE"}
@@ -241,10 +252,13 @@ def main(argv=None) -> int:
     p.add_argument("--max-db-mib",type=int,default=128)
     p.add_argument("--enable-network",action="store_true",
                    help="Explicitly permit public WSS acquisition; no order APIs exist")
+    p.add_argument("--sustained-source",action="store_true",
+                   help="Opt in to capped six-hour/8GiB source research, after capacity review")
     a=p.parse_args(argv)
     try:
         symbols=source_cohort_file(Path(a.cohort_manifest).read_bytes())
-        if not 1<=a.max_seconds<=MAX_RUN_SECONDS or not 1<=a.max_frames<=MAX_FRAMES or not 1<=a.max_db_mib<=MAX_DB_MIB:
+        caps = (21600,20000000,8192) if a.sustained_source else (MAX_RUN_SECONDS,MAX_FRAMES,MAX_DB_MIB)
+        if not 1<=a.max_seconds<=caps[0] or not 1<=a.max_frames<=caps[1] or not 1<=a.max_db_mib<=caps[2]:
             raise G4CollectorHold("G4_FORWARD_RESOURCE_BOUNDS_INVALID")
         root=Path(a.source_root)
         target=root/"g4_raw_source.sqlite"
@@ -269,12 +283,13 @@ def main(argv=None) -> int:
         with sqlite3.connect(uri,uri=True,timeout=10) as db:
             db.execute("PRAGMA busy_timeout=10000")
             db.execute("PRAGMA journal_mode=WAL")
-            vault=ForwardSourceVault(db,symbols=symbols)
+            db.execute("PRAGMA synchronous=FULL")
+            vault=ForwardSourceVault(db,symbols=symbols,batch_frames=64)
             vault.audit()  # Before any new receipt, verify previous storage.
             report=asyncio.run(run_bounded(
                 vault=vault,endpoints=endpoints,connector=_RealConnector(),
                 duration_s=a.max_seconds,max_frames=a.max_frames,
-                max_db_mib=a.max_db_mib,db_path=target))
+                max_db_mib=a.max_db_mib,db_path=target,sustained=a.sustained_source))
         print(json.dumps(report,sort_keys=True))
         # A terminated stream, exhausted route or crashed supervisor is always
         # operator HOLD, regardless of saved rows or zero connector errors.

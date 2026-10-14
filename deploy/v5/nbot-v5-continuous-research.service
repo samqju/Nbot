@@ -1,0 +1,25 @@
+[Unit]
+Description=NBOT V5 original G1-G4 population and locked G5-G6 research bridge
+After=nbot-v5-g1g2g3-observation.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/nbot_v5_continuous_release_20261014
+ExecStart=/usr/bin/flock -n /home/ubuntu/nbot_v5_research_20261014/owner.lock /home/ubuntu/nbot_v5_venv/bin/python -u -m nbot.v5.continuous_research --source /home/ubuntu/nbot_v5_integrated_data/g1g2g3.sqlite --vault /home/ubuntu/nbot-backups/g4-forward-continuous-20261014/g4_raw_source.sqlite --registry /home/ubuntu/nbot-backups/g4-forward-pilot-20261014/g4_research_template.json --root /home/ubuntu/nbot_v5_research_20261014 --protocol /home/ubuntu/nbot_v5_research_20261014/protocol.json --start-event-ms 1791973800000
+Restart=on-failure
+RestartSec=60
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/nbot_v5_research_20261014
+PrivateTmp=true
+RestrictAddressFamilies=AF_UNIX
+MemoryMax=160M
+CPUQuota=20%
+Nice=15
+TasksMax=16
+
+[Install]
+WantedBy=multi-user.target

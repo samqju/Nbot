@@ -7,6 +7,7 @@ fill or provide arbitrary future exit-time evidence. Fail closed on gaps.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import closing
 import hashlib
 import json
 from pathlib import Path
@@ -15,6 +16,17 @@ from typing import Any
 
 from nbot.v5.g4_forward_independent_audit import audit_forward_source_copy
 from nbot.v5.g4_forward_stream_contract import verify_frame
+
+
+class IndependentSourceAudit:
+    """One independent prefix replay per bounded event batch.
+
+    Quote queries cannot consume any row beyond the audited prefix. Immutable
+    receipts are still verified individually; source custody is never inferred.
+    """
+    def __init__(self, path):
+        self.path = Path(path).resolve()
+        self.proof = audit_forward_source_copy(db_path=path)
 
 @dataclass(frozen=True)
 class OriginalEntryQuote:
@@ -35,7 +47,8 @@ class OriginalEntryQuote:
 
 def independent_asof_entry_quote(*,vault_db:str|Path,
                                  symbol:str,decision_at_ms:int,
-                                 max_age_ms:int=1000) -> OriginalEntryQuote:
+                                 max_age_ms:int=1000,
+                                 audit_cache:IndependentSourceAudit|None=None) -> OriginalEntryQuote:
     if (not isinstance(symbol,str) or not symbol.endswith("USDT")
             or type(decision_at_ms) is not int or decision_at_ms<=0
             or type(max_age_ms) is not int or not 0<=max_age_ms<=5000):
@@ -45,13 +58,19 @@ def independent_asof_entry_quote(*,vault_db:str|Path,
     # Independent integrity replay of EVERY retained row, not only selected
     # symbol. The producer's self-audit alone is not sufficient.
     try:
-        proof=audit_forward_source_copy(db_path=vault_db)
+        if audit_cache is not None:
+            if not isinstance(audit_cache, IndependentSourceAudit) or audit_cache.path != Path(vault_db).resolve():
+                return held("G4_ENTRY_VAULT_INTEGRITY_UNVERIFIED")
+            proof=audit_cache.proof
+        else:
+            proof=audit_forward_source_copy(db_path=vault_db)
     except (ValueError,sqlite3.DatabaseError):
         return held("G4_ENTRY_VAULT_INTEGRITY_UNVERIFIED")
     if proof["integrity_audit"]!="PASS":
         return held("G4_ENTRY_VAULT_INTEGRITY_UNVERIFIED")
-    with sqlite3.connect(Path(vault_db).resolve().as_uri()+"?mode=ro",
-                         uri=True,timeout=10) as db:
+    with closing(sqlite3.connect(Path(vault_db).resolve().as_uri()+"?mode=ro",
+                         uri=True,timeout=10)) as db:
+        db.execute("BEGIN")
         raw_symbols=db.execute("SELECT symbols_json FROM g4_forward_cohort").fetchone()[0]
         if symbol not in json.loads(raw_symbols):
             return held("G4_ENTRY_SYMBOL_NOT_FROZEN")
@@ -59,8 +78,8 @@ def independent_asof_entry_quote(*,vault_db:str|Path,
             "SELECT seq,epoch,at_ms,raw_frame,raw_sha256,chain_sha256 "
             "FROM g4_forward_receipts WHERE route='public_bookticker' "
             "AND symbol=? AND kind='FRAME' AND evidence_state='SOURCE_RECORDED' "
-            "AND at_ms BETWEEN ? AND ? ORDER BY at_ms DESC,seq DESC LIMIT 1",
-            (symbol,decision_at_ms-max_age_ms,decision_at_ms)).fetchone()
+            "AND at_ms BETWEEN ? AND ? AND seq<=? ORDER BY at_ms DESC,seq DESC LIMIT 1",
+            (symbol,decision_at_ms-max_age_ms,decision_at_ms,proof["records_verified"])).fetchone()
         if quote is None:
             return held("G4_ENTRY_FRESH_QUOTE_MISSING")
         seq,epoch,seen,raw,raw_sha,chain=quote
