@@ -123,7 +123,7 @@ class IncrementalG4PathTests(unittest.TestCase):
         self.ingest(101,T+4000,110)
         r=self.replay(T+4200)
         self.assertEqual(r.state,"PATH_REPLAYED")
-        self.assertEqual(r.path_trade_count,3)
+        self.assertEqual(r.path_trade_count,2)  # one BTC pre-decision + target
         self.assertFalse(list(self.root.glob("*.sqlite*")))
 
     def test_tampered_compressed_segment_refuses_wins(self):
