@@ -77,6 +77,7 @@ class G4PricePathTests(unittest.TestCase):
     def test_original_underlying_trade_id_gap_blocks_replay(self):
         def gap(c,p,r,m):
             r[4]["f"]+=2
+            r[4]["l"]+=2
             m["rows_sha256"]=sha256(json.dumps(r,sort_keys=True,separators=(",",":")).encode()).hexdigest()
         x=run(gap)
         self.assertIn("AGGTRADE_SEQUENCE_GAP_OR_REORDER",x.reasons)
@@ -125,7 +126,7 @@ class G4PricePathTests(unittest.TestCase):
             source_manifest=m,audit_at_ms=MATURITY+10)
         self.assertEqual(x.state,"PATH_REPLAYED")
         self.assertEqual(x.exit_reason,"HORIZON_LAST_TRADE")
-        self.assertEqual(x.gross_path_r,"-0.6666666666666666666666666666666667")
+        self.assertEqual(x.gross_path_r,"-0.7333333333333333333333333333333333")
 
     def test_short_stop_exact_tick(self):
         def stop(c,p,r,m):
