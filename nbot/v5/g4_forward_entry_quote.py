@@ -39,6 +39,7 @@ class OriginalEntryQuote:
     receipt_sha256: str | None = None
     source_epoch: int | None = None
     chain_head_sha256: str | None = None
+    exchange_event_ms: int | None = None
     source_grade: str = "PUBLIC_TLS_WSS_LOCALLY_HASHED_NOT_EXCHANGE_SIGNED"
     fills: int = 0
     scored_outcomes: int = 0
@@ -113,11 +114,14 @@ def independent_asof_entry_quote(*,vault_db:str|Path,
             return held("G4_ENTRY_BOOK_FRAME_INVALID")
         if local.state!="SOURCE_RECORDED" or local.symbol!=symbol:
             return held("G4_ENTRY_BOOK_FRAME_INVALID")
+        if (type(local.event_time_ms) is not int or
+                not 0<=decision_at_ms-local.event_time_ms<=max_age_ms):
+            return held("G4_ENTRY_EXCHANGE_EVENT_STALE")
     return OriginalEntryQuote(
         "LOCAL_SOURCE_QUOTE",(),symbol,seen,
         bid=value["b"],ask=value["a"],
         receipt_sha256=raw_sha,source_epoch=epoch,
-        chain_head_sha256=proof["head_sha256"])
+        chain_head_sha256=proof["head_sha256"],exchange_event_ms=local.event_time_ms)
 
 
 def policy_quote_mapping(quote:OriginalEntryQuote) -> dict[str,Any]:
@@ -127,6 +131,7 @@ def policy_quote_mapping(quote:OriginalEntryQuote) -> dict[str,Any]:
         "bid":quote.bid,"ask":quote.ask,
         "source_verified":quote.state=="LOCAL_SOURCE_QUOTE",
         "receipt_sha256":quote.receipt_sha256,
+        "exchange_event_ms":quote.exchange_event_ms,
         "provenance_grade":quote.source_grade,
         "financial_authority":"NONE",
     }

@@ -55,14 +55,18 @@ class PublicShardFanIn:
         self.factory,self.clock_ms=factory,clock_ms
         self.contexts=[];self.sockets=[];self.tasks=[]
         self.queue=asyncio.Queue(maxsize=32)
+        self.capacity=asyncio.Semaphore(32)
         self.failure=None
 
     async def __aenter__(self):
         try:
-            for endpoint in self.endpoints:
-                context=self.factory(endpoint)
-                socket=await context.__aenter__()
-                self.contexts.append(context);self.sockets.append(socket)
+            contexts=[self.factory(endpoint) for endpoint in self.endpoints]
+            sockets=await asyncio.gather(*(c.__aenter__() for c in contexts),return_exceptions=True)
+            failure=None
+            for context,socket in zip(contexts,sockets):
+                if isinstance(socket,BaseException):failure=socket
+                else:self.contexts.append(context);self.sockets.append(socket)
+            if failure is not None:raise failure
             self.tasks=[asyncio.create_task(self._receive(s)) for s in self.sockets]
             return self
         except BaseException:
@@ -71,10 +75,21 @@ class PublicShardFanIn:
 
     async def _receive(self, socket):
         try:
-            async for raw in socket:
+            iterator=socket.__aiter__()
+            while True:
+                await self.capacity.acquire()
+                try:
+                    raw=await anext(iterator)
+                except BaseException:
+                    self.capacity.release()
+                    raise
                 received=self.clock_ms()
-                await self.queue.put(ReceivedFrame(raw,received))
-            raise G4CollectorHold("G4_PUBLIC_SHARD_ENDED")
+                # No await between timestamp and insertion: queued receipts
+                # retain actual application-read chronology across shards.
+                self.queue.put_nowait(ReceivedFrame(raw,received))
+        except StopAsyncIteration:
+            self.failure=G4CollectorHold("G4_PUBLIC_SHARD_ENDED")
+            await self.queue.put(self.failure)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -89,6 +104,7 @@ class PublicShardFanIn:
         if self.failure is not None:raise self.failure
         item=await self.queue.get()
         if isinstance(item,Exception):raise item
+        self.capacity.release()
         return item
 
     async def __aexit__(self,*args):
@@ -217,6 +233,9 @@ async def capture_route(*, route: str, endpoint: str, vault: ForwardSourceVault,
             # Do not mark a clean socket close when it did not occur. Next
             # OPEN writes ABRUPT_RESTART_HOLD if prior epoch was left active.
             budget["source_errors"].append(route+":"+type(exc).__name__)
+            code=str(exc)
+            if code and len(code)<=96 and all(c.isupper() or c.isdigit() or c=='_' for c in code):
+                budget.setdefault("contract_failure_codes",[]).append(route+":"+code)
             tries+=1
         except Exception as exc:
             # websockets 17 raises ConnectionClosedError, which is NOT
@@ -312,6 +331,7 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
             "stop_reason":budget["reached"] or "SOURCE_STREAM_ENDED",
             "source_errors":tuple(budget["source_errors"]),
             "disconnect_details":budget.get("disconnect_details",[]),
+            "contract_failure_codes":budget.get("contract_failure_codes",[]),
             "source_coverage_grade":"UNVERIFIED_UNTIL_INDEPENDENT_REPLAY",
             "bounded_pilot_only":not sustained,
             "complete_four_hour_source_proven":False,

@@ -91,7 +91,7 @@ class G4ForwardEntryQuoteTests(unittest.TestCase):
     def test_zero_age_requires_exact_same_ms(self):
         self.v.ingest(route="public_bookticker",at_ms=NOW,raw=quote())
         self.assertEqual(self.check(decision=NOW,age=0).state,
-                         "LOCAL_SOURCE_QUOTE")
+                         "HOLD")  # Original exchange E is 40ms earlier.
         self.assertEqual(self.check(decision=NOW+1,age=0).state,"HOLD")
 
     def test_unsupported_clock_fails_closed(self):

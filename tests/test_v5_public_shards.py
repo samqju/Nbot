@@ -1,5 +1,6 @@
 import asyncio
 import unittest
+import itertools
 from nbot.v5.g4_forward_capture_runner import PublicShardFanIn,ReceivedFrame,G4CollectorHold
 
 
@@ -13,6 +14,17 @@ class Socket:
 
 
 class ShardTests(unittest.TestCase):
+    def test_backpressure_keeps_original_receipt_clock_order(self):
+        class BusySocket(Socket):
+            async def __aiter__(self):
+                while True:yield self.raw
+        async def run():
+            endpoint='wss://fstream.binance.com/public/stream?streams='+ '/'.join(f'coin{i:02d}usdt@bookTicker' for i in range(50))
+            clock=itertools.count(1)
+            async with PublicShardFanIn(endpoint,lambda url:BusySocket(url),lambda:next(clock)) as fan:
+                times=[(await fan.__anext__()).received_ms for _ in range(200)]
+                self.assertEqual(times,sorted(times));self.assertEqual(len(set(times)),200)
+        asyncio.run(run())
     def test_exact_disjoint_population_and_receipt_time(self):
         async def run():
             urls=[]

@@ -131,6 +131,9 @@ class GuardedPaper:
         if bid >= ask or (ask-bid)/bid > Decimal("0.01"):
             raise ValueError("PAPER_QUOTE_CROSSED_OR_WIDE")
         if not self.synthetic:
+            if (type(q.get("exchange_event_ms")) is not int
+                    or not 0<=now_ms-q["exchange_event_ms"]<=self.policy["max_quote_age_ms"]):
+                raise ValueError("PAPER_EXCHANGE_QUOTE_CLOCK_STALE")
             verify_review(q.get("independent_review"), key=self.reviewer_key,
                           subject_sha256=digest({k: v for k, v in q.items() if k != "independent_review"}),
                           purpose="G7_QUOTE", now_ms=now_ms)
