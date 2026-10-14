@@ -106,8 +106,11 @@ class ReplayTests(unittest.TestCase):
 
     def test_time_exit_on_max_hold_but_not_before(self):
         self.replay.advance(frame(), [proposal()])
-        t = NOW+RULES.max_holding_ms
-        result = self.replay.advance(frame(2, t), [])
+        # Every intermediate 5m source sample is supplied; missing path cannot
+        # be silently replaced by a favorable last-tick-only settlement.
+        for i in range(2, 50):
+            t = NOW+(i-1)*300000
+            result = self.replay.advance(frame(i, t), [])
         self.assertEqual(result["receipt"]["closed"]["CHAMPION_PAPER"]["trigger"], "MAX_HOLD")
         self.assertGreater(Decimal(result["receipt"]["closed"]["CHAMPION_PAPER"]["result"]["funding"]), 0)
 
@@ -175,6 +178,38 @@ class ReplayTests(unittest.TestCase):
         self.assertIn("INDEPENDENT_REGIME_AND_UNCERTAINTY_UNVERIFIED", c["reasons"])
         self.assertEqual(c["portfolios"]["CHAMPION_PAPER"]["equity"],
                          a["receipt"]["marks"]["CHAMPION_PAPER"]["equity"])
+
+    def test_global_gap_rejects_unsupported_terminal_outcome(self):
+        self.replay.advance(frame(), [proposal()])
+        with self.assertRaisesRegex(ReplayRefused, "UNRESOLVED_COMMON_TIMELINE_GAP"):
+            self.replay.advance(frame(2, NOW+301000, bid="60", ask="60.1"), [])
+        self.assertEqual(self.eng.report("CHAMPION_PAPER")["settled_count"], 0)
+
+    def test_per_symbol_gap_not_hidden_by_other_symbol(self):
+        self.replay.advance(frame(), [proposal()])
+        self.replay.advance(frame(2, NOW+240000, symbol="ETHUSDT"), [])
+        with self.assertRaisesRegex(ReplayRefused, "UNRESOLVED_SYMBOL_TIMELINE_GAP"):
+            self.replay.advance(frame(3, NOW+360000, bid="50", ask="50.01"), [])
+        self.assertEqual(self.eng.report("CHAMPION_PAPER")["settled_count"], 0)
+
+    def test_two_prices_at_one_source_clock_forbidden(self):
+        self.replay.advance(frame(), [])
+        with self.assertRaisesRegex(ReplayRefused, "CONFLICTING_SAME_TIMESTAMP_MARKET_SOURCE"):
+            self.replay.advance(frame(2, NOW, bid="97", ask="97.02"), [])
+        self.assertEqual(self.eng.db.execute("SELECT count(*) FROM replay_frames").fetchone()[0], 1)
+
+    def test_quote_capture_clock_may_not_regress(self):
+        self.replay.advance(frame(), [])
+        with self.assertRaisesRegex(ReplayRefused, "REGRESSED_QUOTE_SOURCE_CLOCK"):
+            self.replay.advance(frame(2, NOW+100,
+                                    observed_at_ms=NOW-100), [])
+
+    def test_mark_uses_actual_capture_time_not_frame_processing_time(self):
+        self.replay.advance(frame(), [proposal()])
+        # Delayed but still allowable capture at 1900 ms age.
+        self.replay.advance(frame(2, NOW+2000, observed_at_ms=NOW+100), [])
+        mark = self.replay.advance(frame(3, NOW+3000, symbol="ETHUSDT"), [])
+        self.assertIsNone(mark["receipt"]["marks"]["CHAMPION_PAPER"]["equity"])
 
     def test_future_tick_rejected(self):
         with self.assertRaisesRegex(ReplayRefused, "FRAME_ID_OR_CLOCK_INVALID"):
