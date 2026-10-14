@@ -170,6 +170,53 @@ class ContinuousIntegrationTests(unittest.TestCase):
         finally:
             paper.store.close()
 
+    def test_compressed_g4_archive_replays_original_sources_with_no_order(self):
+        from nbot.v5.g4_segmented_source import SegmentedForwardSource
+        segment_root=self.base/"segments"
+        segment_root.mkdir(mode=0o700)
+        with closing(sqlite3.connect(self.source)) as src:
+            syms=json.loads(src.execute(
+                "SELECT symbols_json FROM g1f_universe_snapshots").fetchone()[0])
+        recorder=SegmentedForwardSource(segment_root,symbols=syms)
+        with closing(sqlite3.connect(self.vault)) as old:
+            for route,kind,at,raw in old.execute(
+                "SELECT route,kind,at_ms,raw_frame FROM g4_forward_receipts ORDER BY seq"):
+                if kind=="OPEN":
+                    recorder.connect(route=route,at_ms=at)
+                elif kind=="FRAME":
+                    recorder.ingest(route=route,at_ms=at,raw=raw)
+                elif kind=="CLOSED":
+                    recorder.disconnect(route=route,at_ms=at)
+                else:
+                    self.fail("unexpected fixture source marker")
+        recorder.flush()
+        self.assertEqual(recorder.audit()["audit"],"PASS")
+        self.engine.vault=segment_root
+        report=self.engine.tick(COMMITTED+300)
+        self.assertEqual(report["candidate_population"],100)
+        self.assertEqual(report["g4_maturity"]["total_frozen_intents"],100)
+        self.assertEqual(report["qualified_independently_reviewed_outcomes"],0)
+        self.assertEqual(report["g7_paper_state"],"LOCKED")
+        self.assertFalse(list(segment_root.glob("*.sqlite*")))
+
+    def test_corrupted_compressed_g4_vault_holds_all_candidates(self):
+        from nbot.v5.g4_segmented_source import SegmentedForwardSource
+        segment_root=self.base/"segments"
+        segment_root.mkdir(mode=0o700)
+        with closing(sqlite3.connect(self.source)) as src:
+            syms=json.loads(src.execute(
+                "SELECT symbols_json FROM g1f_universe_snapshots").fetchone()[0])
+        recorder=SegmentedForwardSource(segment_root,symbols=syms)
+        recorder.connect(route="public_bookticker",at_ms=COMMITTED-1000)
+        recorder.flush()
+        path=next(segment_root.glob("segment-*.gz"))
+        path.write_bytes(b"corruption"+path.read_bytes())
+        self.engine.vault=segment_root
+        report=self.engine.tick(COMMITTED+300)
+        self.assertEqual(report["candidate_population"],100)
+        self.assertEqual(report["admission_states"],{"HOLD":100})
+        self.assertEqual(report["qualified_independently_reviewed_outcomes"],0)
+
     def test_untrusted_cache_is_rejected(self):
         q=independent_asof_entry_quote(vault_db=self.vault,symbol="BTCUSDT",decision_at_ms=COMMITTED,audit_cache={"integrity_audit":"PASS"})
         self.assertEqual(q.state,"HOLD")
