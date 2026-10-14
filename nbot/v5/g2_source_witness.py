@@ -1,6 +1,6 @@
-"""Prospective G2 market-source witness contract, OFFLINE ONLY.
+"""Prospective G2 market-source witness contract, observation-only.
 
-This is a detached additive prototype. Not wired to G1f's live collector.
+Only the isolated G2 collector path uses it; original G1f remains unchanged.
 It cannot authenticate public Binance messages independently; it preserves
 exact input snapshots and received times so downstream audits can reject
 unknown/missing source history instead of creating retroactive qualifications.
@@ -82,7 +82,8 @@ class SourceWitness:
                 or first_event_open_ms < 0
                 or exchange_server_ms > received_ms
                 or received_ms - exchange_server_ms > 10_000
-                or received_ms > first_event_open_ms + INTERVAL_MS
+                or received_ms < first_event_open_ms + INTERVAL_MS
+                or received_ms >= first_event_open_ms + 2*INTERVAL_MS
                 or not 2 <= len(selected) <= MAX_COHORT):
             raise WitnessHold("G2_UNIVERSE_CLOCK_OR_SIZE_UNSAFE")
         ranked=select_universe(exchange,ticker,limit=len(selected))
