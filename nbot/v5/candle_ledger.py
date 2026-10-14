@@ -55,7 +55,7 @@ def _is_protected_legacy_db_target(path: Path) -> bool:
     """Protect all old in-tree V4 databases except the single G1 V5 path."""
     approved = Path("/home/ubuntu/Nbot/runtime/observation/g1g2g3.sqlite")
     return ((str(path).startswith("/home/ubuntu/Nbot/") and path != approved)
-            or any(part.lower() in ("v4", "live", "v3") for part in path.parts))
+            or any(part.lower() in ("v4", "live", "v3") or part.lower().startswith(("nbot_v4", "nbot_v3")) for part in path.parts))
 
 
 class CandleEvidenceLedger:
