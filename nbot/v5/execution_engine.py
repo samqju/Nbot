@@ -7,7 +7,7 @@ import json
 import re
 import sqlite3
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Mapping
@@ -73,6 +73,7 @@ class PaperPolicy:
     max_risk_per_trade: Decimal = DEC("0.01")
     max_total_open_risk: Decimal = DEC("0.02")
     max_cost_to_r: Decimal = DEC("0.25")
+    max_realized_drawdown: Decimal = DEC("0.10")
     min_expected_net_r: Decimal = DEC("0.1")
     min_confidence: Decimal = DEC("0.7")
     max_quote_age_ms: int = 2000
@@ -80,7 +81,7 @@ class PaperPolicy:
 
     def __post_init__(self):
         for name in ("starting_equity", "max_positions", "max_gross_notional_multiple",
-                     "max_risk_per_trade", "max_total_open_risk", "max_cost_to_r"):
+                     "max_risk_per_trade", "max_total_open_risk", "max_cost_to_r", "max_realized_drawdown"):
             if number(getattr(self, name), positive=True) <= ZERO:
                 raise ValueError(name)
         for name in ("taker_fee_rate", "slippage_rate_per_side",
@@ -114,9 +115,13 @@ class OfflineExecutionEngine:
             if not spec.model_id or not spec.experiment_id:
                 raise ValueError("model must be fully identified")
         path = Path(database).expanduser().resolve()
+        if any(part.lower() in ("nbot", "v3", "v4", "nbot-mainnet-build") for part in path.parts):
+            raise ValueError("LEGACY_DIRECTORY_FORBIDDEN")
         if path == Path(":memory:").resolve() or not path.parent.is_dir():
             raise ValueError("use an existing isolated directory for durable SQLite")
         self.models, self.keys = dict(models), dict(signing_keys)
+        self.policy_sha = hashlib.sha256(canonical(
+            {name: str(value) for name, value in asdict(self.policy).items()})).hexdigest()
         self.db = sqlite3.connect(str(path), timeout=5, isolation_level=None)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
@@ -128,13 +133,13 @@ class OfflineExecutionEngine:
                 m = models[book]
                 c.execute("""INSERT OR IGNORE INTO books
                     (portfolio, model_id, model_sha, experiment_id, contest_id,
-                     wallet, peak_wallet, last_sequence, killed)
-                    VALUES (?,?,?,?,?,?,?,0,0)""",
+                     wallet, peak_wallet, last_sequence, killed, policy_sha)
+                    VALUES (?,?,?,?,?,?,?,0,0,?)""",
                     (book, m.model_id, m.model_sha, m.experiment_id, m.contest_id,
-                     str(self.policy.starting_equity), str(self.policy.starting_equity)))
+                     str(self.policy.starting_equity), str(self.policy.starting_equity), self.policy_sha))
                 row = c.execute("SELECT * FROM books WHERE portfolio=?", (book,)).fetchone()
-                if (row["model_id"], row["model_sha"], row["experiment_id"], row["contest_id"]) != (
-                    m.model_id, m.model_sha, m.experiment_id, m.contest_id):
+                if (row["model_id"], row["model_sha"], row["experiment_id"], row["contest_id"], row["policy_sha"]) != (
+                    m.model_id, m.model_sha, m.experiment_id, m.contest_id, self.policy_sha):
                     raise ValueError("FROZEN_MODEL_MISMATCH: cannot silently swap model after restart")
 
     def close_database(self):
@@ -145,7 +150,8 @@ class OfflineExecutionEngine:
         CREATE TABLE IF NOT EXISTS books(
           portfolio TEXT PRIMARY KEY, model_id TEXT NOT NULL, model_sha TEXT NOT NULL,
           experiment_id TEXT NOT NULL, contest_id TEXT, wallet TEXT NOT NULL,
-          peak_wallet TEXT NOT NULL, last_sequence INTEGER NOT NULL, killed INTEGER NOT NULL);
+          peak_wallet TEXT NOT NULL, last_sequence INTEGER NOT NULL, killed INTEGER NOT NULL,
+          policy_sha TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS decisions(
           id INTEGER PRIMARY KEY, portfolio TEXT NOT NULL, idem TEXT NOT NULL,
           payload_sha TEXT NOT NULL, event_id TEXT NOT NULL, symbol TEXT NOT NULL,
@@ -256,6 +262,8 @@ class OfflineExecutionEngine:
         if confidence < self.policy.min_confidence or confidence > 1:
             raise Refused("INSUFFICIENT_CONFIDENCE")
         bid, ask = self._quote(q, r["symbol"], a, now_ms)
+        if q.get("reference") != r["entry_quote_reference"]:
+            raise Refused("QUOTE_REFERENCE_MISMATCH")
         stop = number(r.get("stop_price"), positive=True)
         slip = self.policy.slippage_rate_per_side
         entry = ask * (1 + slip) if r["side"] == "LONG" else bid * (1 - slip)
@@ -322,6 +330,8 @@ class OfflineExecutionEngine:
             except (Refused, KeyError, TypeError, ValueError) as exc:
                 result = {"status": "REJECTED",
                           "reason": exc.reason if isinstance(exc, Refused) else "MALFORMED_REQUEST"}
+            if result["status"] == "ACCEPTED":
+                result["grade"] = "SYNTHETIC"
             decision_id = c.execute("SELECT COALESCE(MAX(id),0)+1 FROM decisions").fetchone()[0]
             result["decision_id"] = decision_id
             c.execute("""INSERT INTO decisions (id,portfolio,idem,payload_sha,event_id,symbol,as_of_ms,result)
@@ -349,7 +359,6 @@ class OfflineExecutionEngine:
                 c.execute("UPDATE books SET wallet=? WHERE portfolio=?", (str(wallet), portfolio))
                 c.execute("""INSERT INTO ledger (portfolio,category,delta,wallet_after,at_ms,source_id)
                              VALUES (?,?,?,?,?,?)""", (portfolio, "ENTRY_FEE", str(-fee), str(wallet), now_ms, order_id))
-                result["grade"] = "SYNTHETIC"
             return result
 
     def settle_synthetic(self, portfolio: str, symbol: str, quote: dict, now_ms: int) -> dict:
@@ -394,8 +403,9 @@ class OfflineExecutionEngine:
                        str(entry_fee), str(fee), str(funding), str(net)))
             peak = max(wallet, number(c.execute("SELECT peak_wallet FROM books WHERE portfolio=?",
                                                (portfolio,)).fetchone()[0]))
-            c.execute("UPDATE books SET wallet=?,peak_wallet=? WHERE portfolio=?",
-                      (str(wallet), str(peak), portfolio))
+            drawdown_kill = wallet <= peak * (1 - self.policy.max_realized_drawdown)
+            c.execute("UPDATE books SET wallet=?,peak_wallet=?,killed=CASE WHEN ? THEN 1 ELSE killed END WHERE portfolio=?",
+                      (str(wallet), str(peak), int(drawdown_kill), portfolio))
             c.execute("DELETE FROM positions WHERE id=?", (p["id"],))
             return {"status": "SETTLED", "grade": "SYNTHETIC", "gross_pnl": str(gross),
                     "fees": str(entry_fee + fee), "funding": str(funding),
