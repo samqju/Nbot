@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import hashlib
 import os
 from pathlib import Path
 import resource
@@ -24,6 +25,8 @@ from nbot.v5.finality_quarantine import FinalityQuarantine
 from nbot.v5.g1f_engine import audit_event
 from nbot.v5.g1f_journal import CandidateJournal, JournalHold
 from nbot.v5.g2_source_witness import SourceWitness, WitnessHold
+from nbot.v5.g3_context_ledger import G3ContextLedger
+from nbot.v5.g1f_journal import digest as cohort_digest
 from nbot.v5.observation_contract import INTERVAL_MS
 from nbot.v5.observation_continuity import ObservationContinuity
 from nbot.v5.public_market import (
@@ -149,7 +152,8 @@ def record_restart_hold_events(session, journal, cohort_digest, eligible,
 
 class ObservationOnlyRunner:
     def __init__(self, *, top: int, path: Path, max_seconds: int,
-                 getter=public_get, g2_source_witness: bool = False):
+                 getter=public_get, g2_source_witness: bool = False,
+                 g3_context: bool = False):
         if (type(top) is not int or not 2<=top<=50
                 or type(max_seconds) is not int
                 or not (max_seconds==0 or 30<=max_seconds<=3600)):
@@ -159,7 +163,10 @@ class ObservationOnlyRunner:
             raise EvidenceHold("G1F_DB_PARENT_MISSING_OR_LINK")
         if type(g2_source_witness) is not bool:
             raise ValueError("G2_WITNESS_MODE_INVALID")
+        if type(g3_context) is not bool or (g3_context and not g2_source_witness):
+            raise ValueError("G3_REQUIRES_G2_WITNESSED_COHORT")
         self.g2_source_witness=g2_source_witness
+        self.g3_context=g3_context
         self.top=top
         self.path=path
         self.max_seconds=max_seconds
@@ -193,6 +200,43 @@ class ObservationOnlyRunner:
         started=time.monotonic()
         deadline=(started+self.max_seconds
                   if self.max_seconds else float("inf"))
+        # For a witnessed operational restart, reuse ORIGINAL cohort members.
+        # Never re-rank with fresh 24h volumes or replace old source evidence.
+        # SQLite is read-only here; every old record stays immutable.
+        existing=None
+        if self.g2_source_witness and self.path.is_file():
+            import sqlite3
+            with sqlite3.connect(self.path.resolve().as_uri()+"?mode=ro",uri=True) as previous:
+                present=previous.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' "
+                    "AND name='g1f_universe_snapshots'").fetchone()
+                if present:
+                    cohorts=previous.execute(
+                        "SELECT cohort_digest,symbols_json FROM g1f_universe_snapshots").fetchall()
+                    if len(cohorts)!=1:
+                        raise EvidenceHold("G2_RESTART_COHORT_NOT_UNIQUE")
+                    prev_digest,original_symbols=cohorts[0]
+                    previous_witness=previous.execute(
+                        "SELECT payload_json,payload_sha FROM g2_cohort_witness "
+                        "WHERE cohort_digest=?",(prev_digest,)).fetchone()
+                    if not previous_witness:
+                        raise EvidenceHold("G2_RESTART_ORIGINAL_WITNESS_MISSING")
+                    raw,sha=previous_witness
+                    if hashlib.sha256(raw.encode()).hexdigest()!=sha:
+                        raise EvidenceHold("G2_RESTART_ORIGINAL_SHA_CHANGED")
+                    data=json.loads(raw)
+                    frozen=tuple(json.loads(original_symbols))
+                    if (tuple(sorted(data["ranked_selected"]))!=frozen
+                            or data["cohort_digest"]!=prev_digest
+                            or prev_digest!=cohort_digest({
+                                "selection_version":"USDM_PERPETUAL_24H_QUOTE_VOLUME_V1",
+                                "symbols":frozen
+                            })):
+                        raise EvidenceHold("G2_RESTART_ORIGINAL_COHORT_CONFLICT")
+                    eligible=frozen
+                    symbols=frozen
+                    uri=stream_urls(eligible,quote_mode="depth5@500ms")
+                    existing=prev_digest
         with ObservationContinuity(eligible,self.path) as session:
             journal=CandidateJournal(session.ledger.db)
             finality=FinalityQuarantine(session.ledger.db)
@@ -210,20 +254,50 @@ class ObservationOnlyRunner:
                 if prior_events and not prior_witness:
                     raise EvidenceHold("G2_UNWITNESSED_LEGACY_DB_FORBIDDEN")
                 witness=SourceWitness(session.ledger.db)
-                witness_digest=witness.witness_cohort(
-                    exchange=exchange,ticker=ticker,selected=eligible,
-                    received_ms=selection_received_ms,
-                    first_event_open_ms=event,
-                    exchange_server_ms=binance_ms)
+                if existing is not None:
+                    witness_digest=existing
+                else:
+                    witness_digest=witness.witness_cohort(
+                        exchange=exchange,ticker=ticker,selected=eligible,
+                        received_ms=selection_received_ms,
+                        first_event_open_ms=event,
+                        exchange_server_ms=binance_ms)
                 if witness_digest!=identity:
                     raise EvidenceHold("G2_SOURCE_COHORT_HASH_MISMATCH")
             # REST historical sync before any WebSocket frame can enter.
             await rest_seed(session,symbols,event,getter=self.getter)
-            # Previous recorded events are not silently skipped on restart.
-            self.stats["restart_missing_events"]+=record_restart_hold_events(
-                session,journal,identity,eligible,
-                current_closed_event_ms=event,observed_ms=wall_ms(),
-            )
+            # Old G1f operational mode has explicit UNSCORABLE offline
+            # markers. Strict G2 mode cannot fabricate at-event quote
+            # witnesses for offline periods; preserve real temporal gaps,
+            # flag the first resumed interval, and let acceptance audit
+            # distinguish explicitly unobserved history from observations.
+            if self.g2_source_witness:
+                earlier=journal.latest_event()
+                if earlier is not None:
+                    delta=event-earlier
+                    if delta<0 or delta%INTERVAL_MS:
+                        raise EvidenceHold("G2_RESTART_EVENT_CLOCK_REWIND")
+                    if delta//INTERVAL_MS>MAX_CATCHUP_EVENTS:
+                        raise EvidenceHold("G2_RESTART_GAP_OVER_96_WINDOWS")
+                    self.stats["restart_missing_events"]=max(0,delta//INTERVAL_MS)
+            else:
+                self.stats["restart_missing_events"]+=record_restart_hold_events(
+                    session,journal,identity,eligible,
+                    current_closed_event_ms=event,observed_ms=wall_ms(),
+                )
+            context=G3ContextLedger(session.ledger.db) if self.g3_context else None
+            if context:
+                pending=session.ledger.db.execute(
+                    "SELECT m.event_open_ms FROM g1f_event_manifest m "
+                    "LEFT JOIN g3_event_context g ON m.event_open_ms=g.event_open_ms "
+                    "WHERE g.event_open_ms IS NULL ORDER BY m.event_open_ms LIMIT 97"
+                ).fetchall()
+                if len(pending)>96:
+                    raise EvidenceHold("G3_UNRECONCILED_CONTEXT_OVER_96_EVENTS")
+                for (prior_event,) in pending:
+                    print("G3_RECOVERY",json.dumps(context.record(
+                        event_open_ms=prior_event,symbols=tuple(eligible)
+                    ),sort_keys=True),flush=True)
             self.policy=ReconnectPolicy()
             tasks=[
                 asyncio.create_task(self._route(
@@ -232,7 +306,8 @@ class ObservationOnlyRunner:
             ]
             coordinator=asyncio.create_task(self._events(
                 session,journal,finality,identity,eligible,symbols,
-                event+INTERVAL_MS,deadline,source_witness=witness))
+                event+INTERVAL_MS,deadline,source_witness=witness,
+                g3_ledger=context))
             monitor=asyncio.create_task(self._metrics(
                 session,journal,deadline))
             tasks.extend([coordinator,monitor])
@@ -253,6 +328,7 @@ class ObservationOnlyRunner:
                 "universe_count":len(eligible),
                 "cohort_digest":identity,
                 "g2_source_witness_enabled":self.g2_source_witness,
+                "g3_context_enabled":self.g3_context,
                 "metrics":self.stats,
                 "resource":resource_guard(self.path),
                 "journal":journal.inspect(),
@@ -329,7 +405,7 @@ class ObservationOnlyRunner:
                         self.interrupted=True
 
     async def _events(self,session,journal,finality,identity,eligible,symbols,
-                      start,deadline, *, source_witness=None):
+                      start,deadline, *, source_witness=None,g3_ledger=None):
         event=start
         while not self.stop.is_set() and time.monotonic()<deadline:
             due=event+INTERVAL_MS+CLOSE_GRACE_MS
@@ -344,6 +420,10 @@ class ObservationOnlyRunner:
                     source_witness=source_witness)
                 self.stats["committed_events"]+=1
                 print("G1F_EVENT",json.dumps(summary,sort_keys=True),flush=True)
+                if g3_ledger is not None:
+                    recorded=g3_ledger.record(
+                        event_open_ms=event,symbols=tuple(eligible))
+                    print("G3_EVENT",json.dumps(recorded,sort_keys=True),flush=True)
                 resource_guard(self.path)
             except asyncio.CancelledError:
                 raise
@@ -382,12 +462,15 @@ def main():
     parser.add_argument("--top",type=int,default=50)
     parser.add_argument("--max-seconds",type=int,default=300)
     parser.add_argument("--g2-source-witness",action="store_true",
-                        help="Opt-in complete as-of source witnesses (new database only)")
+                        help="Opt-in complete as-of source witnesses (fresh or frozen DB)")
+    parser.add_argument("--g3-context",action="store_true",
+                        help="Append-only causal G3 BTC and 50-coin contexts (requires G2)")
     args=parser.parse_args()
     collector=ObservationOnlyRunner(
         top=args.top,path=Path(args.db),
         max_seconds=args.max_seconds,
-        g2_source_witness=args.g2_source_witness)
+        g2_source_witness=args.g2_source_witness,
+        g3_context=args.g3_context)
     async def run():
         loop=asyncio.get_running_loop()
         for name in (signal.SIGINT,signal.SIGTERM):
