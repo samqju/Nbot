@@ -33,7 +33,7 @@ def ingest(modifier=None, rows=None, members=None):
         archive,checksum=modifier(archive,checksum)
     return ingest_verified_um_daily_zip(archive_bytes=archive,
         checksum_bytes=checksum,symbol=SYMBOL,on_date=DATE,
-        captured_at_ms=1791763300000)
+        captured_at_ms=1791963300000)
 
 
 class ArchiveImportTests(unittest.TestCase):
@@ -124,6 +124,22 @@ class ArchiveImportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"G4_ARCHIVE_BAD_ZIP_OR_ENCODING"):
             ingest_verified_um_daily_zip(archive_bytes=damaged,checksum_bytes=check,
                 symbol=SYMBOL,on_date=DATE,captured_at_ms=1)
+
+    def test_valid_checksum_but_wrong_trade_day_is_rejected(self):
+        bad=[ROWS[0],ROWS[1].replace("1791763201000","1791849601000"),ROWS[2]]
+        with self.assertRaisesRegex(ValueError,"G4_ARCHIVE_TRADE_DATE_MISMATCH"):
+            ingest(rows=bad)
+
+    def test_valid_checksum_but_negative_price_is_rejected(self):
+        bad=[ROWS[0],ROWS[1].replace(",1.3,6,",",-1.3,6,"),ROWS[2]]
+        with self.assertRaisesRegex(ValueError,"G4_ARCHIVE_PRICE_QTY_INVALID"):
+            ingest(rows=bad)
+
+    def test_same_day_not_yet_finalized_rejected(self):
+        a,c=fixture()
+        with self.assertRaisesRegex(ValueError,"G4_ARCHIVE_NOT_YET_FINALIZED"):
+            ingest_verified_um_daily_zip(archive_bytes=a,checksum_bytes=c,
+                symbol=SYMBOL,on_date=DATE,captured_at_ms=1791763300000)
 
     def test_single_row_does_not_qualify_continuous_path(self):
         with self.assertRaisesRegex(ValueError,"G4_ARCHIVE_TOO_FEW_TRADES"):
