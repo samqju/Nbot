@@ -8,6 +8,7 @@ are observations, NEVER labels or modeled fills.
 from __future__ import annotations
 from collections import Counter
 from pathlib import Path
+import hashlib
 import json
 import sqlite3
 import time
@@ -79,7 +80,7 @@ def audit_replay(path: str | Path, *, max_events: int = 3,
                 for s in symbols:
                     # Only prices received by the original commit may be used.
                     rows=db.execute(
-                        "SELECT open_ms,candle_json,first_seen_ms "
+                        "SELECT open_ms,candle_json,candle_sha,first_seen_ms "
                         "FROM candle_rows WHERE symbol=? AND open_ms<=? "
                         "ORDER BY open_ms DESC LIMIT 96",(s,event)
                     ).fetchall()
@@ -89,17 +90,18 @@ def audit_replay(path: str | Path, *, max_events: int = 3,
                     rows.reverse()
                     if (rows[-1][0]!=event
                         or any(b[0]-a[0]!=INTERVAL_MS for a,b in zip(rows,rows[1:]))
-                        or any(r[2]>committed or r[2]<0 for r in rows)):
+                        or any(r[3]>committed or r[3]<0 for r in rows)):
                         problems["ARCHIVE_HISTORY_NOT_CAUSAL"]+=1
                         continue
                     source=[]
-                    for open_ms,candle_json,_ in rows:
+                    for open_ms,candle_json,candle_sha,_ in rows:
                         try:
                             bar=tuple(json.loads(candle_json))
                         except (TypeError,ValueError):
                             problems["ARCHIVE_CANDLE_JSON_INVALID"]+=1
                             break
-                        if len(bar)!=6 or bar[0]!=open_ms:
+                        if (len(bar)!=6 or bar[0]!=open_ms or
+                                hashlib.sha256(candle_json.encode()).hexdigest()!=candle_sha):
                             problems["ARCHIVE_CANDLE_CLOCK_MISMATCH"]+=1
                             break
                         source.append(bar)
