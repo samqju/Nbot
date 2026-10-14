@@ -188,6 +188,20 @@ class DualBookTests(unittest.TestCase):
         self.engine = OfflineExecutionEngine(self.db, MODELS, KEYS)
         self.assertEqual(self.engine.report("CHAMPION_PAPER")["wallet"], result["wallet"])
 
+    def test_closed_position_id_never_reused_on_next_trade(self):
+        for cycle in (1, 2):
+            now = NOW + (cycle-1)*10000
+            r = request(sequence=cycle, event=f"unique-position-{cycle}", now=now)
+            self.assertEqual(self.send(r, now=now)["status"], "ACCEPTED")
+            outcome = self.engine.settle_synthetic("CHAMPION_PAPER", "BTCUSDT",
+                          quote(now=now+1000), now+1000)
+            self.assertEqual(outcome["status"], "SETTLED")
+        rows = self.engine.db.execute("SELECT position_id FROM settled ORDER BY id").fetchall()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(set(x["position_id"] for x in rows)), 2)
+        with self.assertRaises(sqlite3.DatabaseError):
+            self.engine.db.execute("DELETE FROM orders")
+
     def test_unverifiable_exit_cannot_manufacture_settlement(self):
         self.send(request())
         self.assertEqual(self.engine.settle_synthetic("CHAMPION_PAPER", "BTCUSDT",
