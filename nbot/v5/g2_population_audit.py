@@ -36,6 +36,8 @@ def audit_population(path: str | Path, *, now_ms: int | None = None) -> dict:
     problems = []
     counts = Counter()
     hold_reasons = Counter()
+    pattern_matches = Counter()
+    per_coin = {}
     hold_events = 0
     interrupted_events = 0
     missing_time_slots = 0
@@ -164,6 +166,9 @@ def audit_population(path: str | Path, *, now_ms: int | None = None) -> dict:
                         problems.append("CANDIDATE_STATUS_INVALID")
                     counts[status] += 1
                     event_status[status] += 1
+                    per_coin.setdefault(symbol, Counter())[status] += 1
+                    if isinstance(states, dict):
+                        pattern_matches.update(k for k,v in states.items() if v=="MATCH" and k in PATTERN_IDS)
                 if slots != expected:
                     problems.append("CANDIDATE_DENOMINATOR_MISSING")
                 if (summary.get("observed") != event_status["OBSERVED"]
@@ -197,6 +202,15 @@ def audit_population(path: str | Path, *, now_ms: int | None = None) -> dict:
         "explicit_event_gaps": interrupted_events,
         "unrepresented_time_slots": missing_time_slots,
         "unscorable_reasons": dict(sorted(hold_reasons.items())),
+        "per_coin_attrition": {s:dict(sorted(c.items())) for s,c in sorted(per_coin.items())},
+        "pattern_match_counts": dict(sorted(pattern_matches.items())),
+        "source_grade_limits": {
+            "full_eligibility_exchange_ticker_snapshot":"NOT_ARCHIVED_IN_G1F",
+            "quote_and_trade_receipt_snapshots":"NOT_ARCHIVED_IN_G1F",
+            "selected_vs_unselected_outside_frozen_top50":"UNVERIFIABLE",
+            "candidate_vs_real_trade":"CANDIDATES_ONLY",
+        },
+        "g2_full_acceptance":"HOLD_SOURCE_GRADE_EVIDENCE_NOT_ARCHIVED",
         "expected_directional_records": counts["events"] * len(expected),
         "training_labels_created": 0,
         "research_ready": False,
