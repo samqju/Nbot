@@ -102,6 +102,11 @@ async def capture_route(*, route: str, endpoint: str, vault: ForwardSourceVault,
     """
     if route not in _ROUTES or type(max_reconnects) is not int or not 0<=max_reconnects<=5:
         raise G4CollectorHold("G4_FORWARD_ROUTE_OR_RETRY_INVALID")
+    # Older bounded pilot callers provide a smaller budget dictionary.
+    # Never weaken frame pressure checks when those tests/callers are reused.
+    budget.setdefault("window_start_ms",clock_ms())
+    budget.setdefault("window_frames",0)
+    budget.setdefault("frame_rate_cap",750000)
     tries=0
     while not stop.is_set() and tries<=max_reconnects:
         try:
