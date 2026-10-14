@@ -43,9 +43,6 @@ class VerifiedSegmentQuotes:
                 continue
             kind,at,epoch=rec["kind"],rec["at_ms"],rec["epoch"]
             if kind in ("OPEN","CLOSED","ABRUPT_RESTART_HOLD"):
-                for item in self.state.values():
-                    if at>item["_decision"] if "_decision" in item else False:
-                        continue
                 # A route marker at/before a given decision invalidates
                 # any quote from a prior local WSS epoch.
                 for key,item in self.state.items():
