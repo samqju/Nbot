@@ -93,8 +93,15 @@ def admit_research_entry(*,g1_snapshot: str|Path,raw_source_vault: str|Path,
         decision=candidate["decision_at_ms"]
         if type(decision) is not int or decision < event_open_ms+INTERVAL_MS:
             return hold("CANDIDATE_DECISION_CLOCK_INVALID")
-        if g2.get("asof_ms")!=decision:
-            return hold("G2_ENTRY_ASOF_DIFFERENT_FROM_CANDIDATE")
+        # Original G2 source is captured BEFORE slower three-stage G1
+        # REST finality; candidate commitment happens later. Exact equality
+        # would reject every genuine event. Earlier G2 is causal source
+        # context, NOT a fresh entry/executable quote at G4 decision:
+        # the independent forward-WSS quote below must prove that.
+        g2_at=g2.get("asof_ms")
+        if (type(g2_at) is not int or
+                not event_open_ms+INTERVAL_MS<=g2_at<=decision):
+            return hold("G2_SOURCE_ASOF_FUTURE_OR_NOT_EVENT_CAUSAL")
         coin=g3["feature_evidence"]["coins"][symbol]
         atr=coin.get("features",{}).get("atr14_fraction")
         if type(atr) not in (int,float):
