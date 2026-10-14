@@ -81,6 +81,12 @@ class G2PopulationAuditTests(unittest.TestCase):
         out=self.inspect()
         self.assertEqual(out["audit"],"PASS")
         self.assertEqual(out["expected_directional_records"],4)
+        self.assertEqual(out["per_coin_attrition"]["BTCUSDT"]["OBSERVED"],2)
+        self.assertEqual(out["per_coin_attrition"]["ETHUSDT"]["OBSERVED"],2)
+        self.assertEqual(out["g2_full_acceptance"],
+                         "HOLD_SOURCE_GRADE_EVIDENCE_NOT_ARCHIVED")
+        self.assertEqual(out["source_grade_limits"]["quote_and_trade_receipt_snapshots"],
+                         "NOT_ARCHIVED_IN_G1F")
         self.assertEqual(out["observed_directional_records"],4)
         self.assertEqual(out["training_labels_created"],0)
         self.assertFalse(out["research_ready"])
