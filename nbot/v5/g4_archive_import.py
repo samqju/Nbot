@@ -91,6 +91,7 @@ def ingest_verified_um_daily_zip(*, archive_bytes: bytes,
                     parsed=csv.reader(stream)
                     out=[]
                     previous_agg=previous_last=previous_time=None
+                    underlying_gaps=[]
                     for i,values in enumerate(parsed):
                         if len(values)!=7:
                             raise ValueError("G4_ARCHIVE_CSV_SHAPE_INVALID")
@@ -117,10 +118,18 @@ def ingest_verified_um_daily_zip(*, archive_bytes: bytes,
                             raise ValueError("G4_ARCHIVE_CSV_MAKER_FLAG_INVALID")
                         row={"a":a,"p":values[1],"q":values[2],"f":first,
                              "l":last,"T":time,"m":truth=="true"}
-                        if (min(a,first,last,time)<0 or first>last
-                                or previous_agg is not None and
-                                (a!=previous_agg+1 or first!=previous_last+1 or time<previous_time)):
+                        if min(a,first,last,time)<0 or first>last:
                             raise ValueError("G4_ARCHIVE_CSV_SEQUENCE_INVALID")
+                        if previous_agg is not None:
+                            if a!=previous_agg+1 or time<previous_time or first<=previous_last:
+                                raise ValueError("G4_ARCHIVE_CSV_SEQUENCE_INVALID")
+                            if first>previous_last+1:
+                                underlying_gaps.append({
+                                    "csv_data_row":len(out)+1,
+                                    "previous_last_trade_id":previous_last,
+                                    "next_first_trade_id":first,
+                                    "missing_trade_ids":first-previous_last-1,
+                                })
                         out.append(row)
                         previous_agg,previous_last,previous_time=a,last,time
     except (BadZipFile,RuntimeError,UnicodeError) as exc:
@@ -140,6 +149,14 @@ def ingest_verified_um_daily_zip(*, archive_bytes: bytes,
         "rows_sha256":_digest_records(out),
         "first_agg_id":out[0]["a"],"last_agg_id":out[-1]["a"],
         "row_count":len(out),
+        "agg_id_continuity_verified":True,
+        "underlying_trade_id_gap_count":len(underlying_gaps),
+        "underlying_trade_ids_missing":sum(g["missing_trade_ids"] for g in underlying_gaps),
+        "underlying_gap_examples":underlying_gaps[:10],
+        "underlying_gap_manifest_sha256":_digest_records(underlying_gaps),
+        "all_underlying_trade_ids_contiguous":not underlying_gaps,
+        "research_path_grade":"HOLD_UNDERLYING_TRADE_ID_GAPS" if underlying_gaps
+                          else "SOURCE_ONLY_NEEDS_INDEPENDENT_ORIGIN",
         # Only source-byte integrity checked relative to checksum; caller must
         # independently attest original HTTPS download origin and custody.
         "original_archive_verified":False,
