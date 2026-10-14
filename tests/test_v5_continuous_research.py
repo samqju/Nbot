@@ -264,6 +264,35 @@ class ContinuousIntegrationTests(unittest.TestCase):
         self.assertEqual(report["g7_paper_state"],"LOCKED")
         self.assertFalse(list(segment_root.glob("*.sqlite*")))
 
+    def test_streaming_quote_and_trade_path_when_ram_view_exceeds_cap(self):
+        from unittest.mock import patch
+        from nbot.v5.g4_segmented_source import SegmentedForwardSource
+        segment_root=self.base/"segments"
+        segment_root.mkdir(mode=0o700)
+        with closing(sqlite3.connect(self.source)) as src:
+            syms=json.loads(src.execute(
+                "SELECT symbols_json FROM g1f_universe_snapshots").fetchone()[0])
+        recorder=SegmentedForwardSource(segment_root,symbols=syms)
+        with closing(sqlite3.connect(self.vault)) as old:
+            for route,kind,at,raw in old.execute(
+                "SELECT route,kind,at_ms,raw_frame FROM g4_forward_receipts ORDER BY seq"):
+                if kind=="OPEN":recorder.connect(route=route,at_ms=at)
+                elif kind=="FRAME":recorder.ingest(route=route,at_ms=at,raw=raw)
+                elif kind=="CLOSED":recorder.disconnect(route=route,at_ms=at)
+        recorder.flush()
+        self.engine.vault=segment_root
+        # The production bridge has a finite 100k-frame/128MiB RAM view.
+        # Fail that view deliberately: the original source must remain usable
+        # via streaming, without data-loss reclassification or SQL tick writes.
+        with patch("nbot.v5.continuous_research.verified_ram_vault",
+                   side_effect=ValueError("G4_BRIDGE_FRAME_OR_BYTES_CAP_HOLD")):
+            report=self.engine.tick(COMMITTED+300)
+        self.assertEqual(report["candidate_population"],100)
+        self.assertEqual(report["g4_maturity"]["total_frozen_intents"],100)
+        self.assertEqual(report["qualified_independently_reviewed_outcomes"],0)
+        self.assertEqual(report["g7_paper_state"],"LOCKED")
+        self.assertFalse(list(segment_root.rglob("*.sqlite*")))
+
     def test_corrupted_compressed_g4_vault_holds_all_candidates(self):
         from nbot.v5.g4_segmented_source import SegmentedForwardSource
         segment_root=self.base/"segments"
