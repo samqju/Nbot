@@ -1,0 +1,28 @@
+# Read-only DB and systemd inspect; no runtime mutation or network.
+[Unit]
+Description=NBOT V5 integrated G1-G3 read-only source and context check
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/nbot_v5_integrated_20261014
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/home/ubuntu/nbot_v5_venv/bin/python -m nbot.v5.g3_prod_health --db /home/ubuntu/nbot_v5_integrated_data/g1g2g3.sqlite --service nbot-v5-g1g2g3-observation.service
+Restart=no
+TimeoutStartSec=60
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+PrivateDevices=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX
+MemoryAccounting=true
+MemoryMax=96M
+CPUQuota=35%
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nbot-v5-g1g2g3-health
