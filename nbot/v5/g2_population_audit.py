@@ -94,8 +94,11 @@ def audit_population(path: str | Path, *, now_ms: int | None = None) -> dict:
                         or summary.get("research_ready") is not False):
                     problems.append("MANIFEST_PROOF_INVALID")
                 if last is None:
-                    if event_ms != first_event:
-                        problems.append("COHORT_INITIAL_EVENT_MISMATCH")
+                    # Selection can reference the last REST bootstrap event.
+                    # Observation starts on that 5m bar or the next one.
+                    bootstrap_offset = event_ms - first_event
+                    if bootstrap_offset not in (0, INTERVAL_MS):
+                        problems.append("COHORT_FIRST_OBSERVATION_INVALID")
                 elif event_ms - last != INTERVAL_MS:
                     interrupted_events += 1
                     if event_ms > last + INTERVAL_MS:
@@ -181,6 +184,7 @@ def audit_population(path: str | Path, *, now_ms: int | None = None) -> dict:
         "violations": sorted(set(problems)),
         **snapshot,
         "events": counts["events"],
+        "cohort_bootstrap_offset_slots": (manifests[0][0] - first_event) // INTERVAL_MS,
         "first_event_open_ms": manifests[0][0],
         "last_event_open_ms": manifests[-1][0],
         "observed_directional_records": counts["OBSERVED"],
