@@ -21,6 +21,7 @@ from typing import Callable
 
 from nbot.v5.g4_forward_stream_contract import forward_stream_endpoints
 from nbot.v5.g4_forward_vault import ForwardSourceVault
+from nbot.v5.g4_segmented_source import SegmentedForwardSource
 
 RUNNER_CONTRACT = "NBOT_V5_G4_FORWARD_CAPTURE_ISOLATED_V1"
 MAX_RUN_SECONDS = 3600
@@ -136,7 +137,15 @@ async def capture_route(*, route: str, endpoint: str, vault: ForwardSourceVault,
             tries+=1
         except asyncio.CancelledError:
             raise
-        except (OSError,TimeoutError,ValueError,RuntimeError) as exc:
+        except ValueError as exc:
+            if str(exc).startswith("G4_SEGMENT_"):
+                budget["reached"]="SOURCE_STORAGE_HOLD"
+                budget["source_errors"].append(route+":STORAGE_"+str(exc))
+                stop.set()
+                return
+            budget["source_errors"].append(route+":"+type(exc).__name__)
+            tries+=1
+        except (OSError,TimeoutError,RuntimeError) as exc:
             # Do not mark a clean socket close when it did not occur. Next
             # OPEN writes ABRUPT_RESTART_HOLD if prior epoch was left active.
             budget["source_errors"].append(route+":"+type(exc).__name__)
@@ -194,7 +203,7 @@ async def run_bounded(*, vault: ForwardSourceVault, endpoints: dict,
     ]
     async def flush_periodically():
         while not stop.is_set():
-            await asyncio.sleep(.1)
+            await asyncio.sleep(getattr(vault,"flush_interval_seconds",.1))
             vault.flush()
     flush_task=asyncio.create_task(flush_periodically())
     try:
@@ -250,6 +259,10 @@ def main(argv=None) -> int:
     p.add_argument("--max-seconds",type=int,default=600)
     p.add_argument("--max-frames",type=int,default=50000)
     p.add_argument("--max-db-mib",type=int,default=128)
+    p.add_argument("--storage-mode",choices=("segments","legacy-sqlite"),
+                   default="segments",help="Bounded RAM compressed segments by default")
+    p.add_argument("--legacy-per-frame-sqlite-opt-in",action="store_true",
+                   help="Old per-frame SQLite only in bounded, explicit pilot")
     p.add_argument("--enable-network",action="store_true",
                    help="Explicitly permit public WSS acquisition; no order APIs exist")
     p.add_argument("--sustained-source",action="store_true",
@@ -268,28 +281,48 @@ def main(argv=None) -> int:
             print(json.dumps({
                 "status":"DRY_RUN_NO_NETWORK","symbols":len(symbols),
                 "source_contract":RUNNER_CONTRACT,
-                "db_path":str(target),"max_seconds":a.max_seconds,
+                "db_path":str(target) if a.storage_mode=="legacy-sqlite" else None,
+                "segment_dir":str(root/"segments") if a.storage_mode=="segments" else None,
+                "storage_mode":a.storage_mode,"max_seconds":a.max_seconds,
                 "max_frames":a.max_frames,"max_db_mib":a.max_db_mib,
                 "order_authority":"NONE","model_training_authority":"NONE",
             },sort_keys=True))
             return 0
-        if target.exists():
-            if target.is_symlink():
-                raise G4CollectorHold("G4_SOURCE_DB_SYMLINK_FORBIDDEN")
-            uri=target.resolve().as_uri()+"?mode=rw"
-        else:
-            uri=target.absolute().as_uri()+"?mode=rwc"
         os.umask(0o077)
-        with sqlite3.connect(uri,uri=True,timeout=10) as db:
-            db.execute("PRAGMA busy_timeout=10000")
-            db.execute("PRAGMA journal_mode=WAL")
-            db.execute("PRAGMA synchronous=FULL")
-            vault=ForwardSourceVault(db,symbols=symbols,batch_frames=64)
-            vault.audit()  # Before any new receipt, verify previous storage.
+        if a.storage_mode=="segments":
+            segment_root=root/"segments"
+            if not segment_root.exists():
+                segment_root.mkdir(mode=0o700)
+            vault=SegmentedForwardSource(
+                segment_root,symbols=symbols,
+                max_disk_bytes=a.max_db_mib*1024*1024)
+            vault.audit()  # Verify every independent persisted segment.
             report=asyncio.run(run_bounded(
                 vault=vault,endpoints=endpoints,connector=_RealConnector(),
                 duration_s=a.max_seconds,max_frames=a.max_frames,
-                max_db_mib=a.max_db_mib,db_path=target,sustained=a.sustained_source))
+                max_db_mib=a.max_db_mib,db_path=None,sustained=a.sustained_source))
+        else:
+            # Old per-frame SQLite mode is NOT approved for sustained capture.
+            if not a.legacy_per_frame_sqlite_opt_in or a.sustained_source:
+                raise G4CollectorHold("G4_RAW_SQLITE_NOT_APPROVED_FOR_SUSTAINED_CAPTURE")
+            if target.exists():
+                if target.is_symlink():
+                    raise G4CollectorHold("G4_SOURCE_DB_SYMLINK_FORBIDDEN")
+                uri=target.resolve().as_uri()+"?mode=rw"
+            else:
+                uri=target.absolute().as_uri()+"?mode=rwc"
+            with sqlite3.connect(uri,uri=True,timeout=10) as db:
+                db.execute("PRAGMA busy_timeout=10000")
+                db.execute("PRAGMA journal_mode=WAL")
+                db.execute("PRAGMA synchronous=FULL")
+                vault=ForwardSourceVault(db,symbols=symbols,batch_frames=64)
+                vault.audit()
+                report=asyncio.run(run_bounded(
+                    vault=vault,endpoints=endpoints,connector=_RealConnector(),
+                    duration_s=a.max_seconds,max_frames=a.max_frames,
+                    max_db_mib=a.max_db_mib,db_path=target,sustained=False))
+        report["storage_mode"]=a.storage_mode
+        report["scientific_replay_adapter"]="HOLD_NOT_INTEGRATED" if a.storage_mode=="segments" else "LEGACY_ONLY"
         print(json.dumps(report,sort_keys=True))
         # A terminated stream, exhausted route or crashed supervisor is always
         # operator HOLD, regardless of saved rows or zero connector errors.

@@ -41,7 +41,7 @@ class IntegratedStoppedServicesTests(unittest.TestCase):
     def test_g4_research_cannot_use_execution_or_old_frozen_db(self):
         spec=G4.read_text()
         self.assertIn("runtime/observation/g1g2g3.sqlite",spec)
-        self.assertIn("runtime/source/g4_raw_source.sqlite",spec)
+        self.assertIn("runtime/source/g4-forward-cohort/segments",spec)
         self.assertIn("runtime/research/protocol.json",spec)
         self.assertIn("${NBOT_V5_START_EVENT_MS}",spec)
         self.assertIn("RestrictAddressFamilies=AF_UNIX",spec)
