@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Mapping
 
 CONTRACT = "nbot.v5.paper.recommendation.v1"
+MAX_SIGNED_MESSAGE_BYTES = 8192
 DOMAIN = b"NBOT-V5-PAPER-RECOMMENDATION-V1\n"
 PORTFOLIOS = ("CHAMPION_PAPER", "CHALLENGER_PAPER")
 FIELDS = frozenset((
@@ -158,6 +159,14 @@ class OfflineExecutionEngine:
           as_of_ms INTEGER NOT NULL, result TEXT NOT NULL,
           UNIQUE(portfolio,idem), UNIQUE(portfolio,event_id,symbol),
           FOREIGN KEY(portfolio) REFERENCES books(portfolio));
+        CREATE TABLE IF NOT EXISTS shared_mock_quotes(
+          event_id TEXT NOT NULL, symbol TEXT NOT NULL, reference TEXT NOT NULL,
+          observed_at_ms INTEGER NOT NULL, bid TEXT NOT NULL, ask TEXT NOT NULL,
+          PRIMARY KEY(event_id,symbol));
+        CREATE TRIGGER IF NOT EXISTS quotes_no_update BEFORE UPDATE ON shared_mock_quotes
+          BEGIN SELECT RAISE(ABORT,'immutable market quote'); END;
+        CREATE TRIGGER IF NOT EXISTS quotes_no_delete BEFORE DELETE ON shared_mock_quotes
+          BEGIN SELECT RAISE(ABORT,'immutable market quote'); END;
         CREATE TABLE IF NOT EXISTS positions(
           id INTEGER PRIMARY KEY, portfolio TEXT NOT NULL, symbol TEXT NOT NULL,
           side TEXT NOT NULL, qty TEXT NOT NULL, entry TEXT NOT NULL,
@@ -249,7 +258,7 @@ class OfflineExecutionEngine:
             raise Refused("INVALID_SYMBOL")
         if r.get("side") not in ("LONG", "SHORT", "ABSTAIN"):
             raise Refused("INVALID_SIDE")
-        if not isinstance(r.get("strategy_tag_ids"), list) or not all(
+        if not isinstance(r.get("strategy_tag_ids"), list) or len(r["strategy_tag_ids"]) > 16 or not all(
             isinstance(s, str) and 0 < len(s) <= 80 for s in r["strategy_tag_ids"]):
             raise Refused("INVALID_STRATEGY_TAGS")
         if r["side"] == "ABSTAIN":
@@ -264,6 +273,14 @@ class OfflineExecutionEngine:
         bid, ask = self._quote(q, r["symbol"], a, now_ms)
         if q.get("reference") != r["entry_quote_reference"]:
             raise Refused("QUOTE_REFERENCE_MISMATCH")
+        frozen_quote = self.db.execute(
+            "SELECT * FROM shared_mock_quotes WHERE event_id=? AND symbol=?",
+            (r["event_id"], r["symbol"])).fetchone()
+        if frozen_quote and (
+            frozen_quote["reference"], frozen_quote["observed_at_ms"],
+            number(frozen_quote["bid"]), number(frozen_quote["ask"])) != (
+            q["reference"], q["observed_at_ms"], bid, ask):
+            raise Refused("SHARED_MARKET_SNAPSHOT_MISMATCH")
         stop = number(r.get("stop_price"), positive=True)
         slip = self.policy.slippage_rate_per_side
         entry = ask * (1 + slip) if r["side"] == "LONG" else bid * (1 - slip)
@@ -302,6 +319,8 @@ class OfflineExecutionEngine:
             payload = canonical(recommendation)
         except (TypeError, ValueError, OverflowError):
             return {"status": "REJECTED", "reason": "MALFORMED_REQUEST"}
+        if len(payload) > MAX_SIGNED_MESSAGE_BYTES:
+            return {"status": "REJECTED", "reason": "MESSAGE_SIZE_LIMIT"}
         expected = hmac.new(self.keys[portfolio], DOMAIN + payload, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected, signature):
             return {"status": "REJECTED", "reason": "INVALID_SIGNATURE"}
@@ -343,6 +362,11 @@ class OfflineExecutionEngine:
                 c.execute("UPDATE books SET last_sequence=? WHERE portfolio=?", (recommendation["sequence"], portfolio))
             if execution is not None and result["status"] == "ACCEPTED":
                 entry, stop, qty, risk = execution
+                bid, ask = self._quote(quote, symbol, recommendation["as_of_ms"], now_ms)
+                c.execute("""INSERT OR IGNORE INTO shared_mock_quotes
+                    (event_id,symbol,reference,observed_at_ms,bid,ask)
+                    VALUES (?,?,?,?,?,?)""",
+                    (event_id, symbol, quote["reference"], quote["observed_at_ms"], str(bid), str(ask)))
                 c.execute("INSERT INTO orders (portfolio,symbol,action,decision_id,at_ms) VALUES (?,?,?,?,?)",
                           (portfolio, symbol, "OPEN_SYNTHETIC", decision_id, now_ms))
                 order_id = c.execute("SELECT last_insert_rowid()").fetchone()[0]
