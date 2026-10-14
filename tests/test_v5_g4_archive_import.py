@@ -134,7 +134,7 @@ class ArchiveImportTests(unittest.TestCase):
         check=(sha256(damaged).hexdigest()+"  "+NAME+".zip\n").encode()
         with self.assertRaisesRegex(ValueError,"G4_ARCHIVE_BAD_ZIP_OR_ENCODING"):
             ingest_verified_um_daily_zip(archive_bytes=damaged,checksum_bytes=check,
-                symbol=SYMBOL,on_date=DATE,captured_at_ms=1)
+                symbol=SYMBOL,on_date=DATE,captured_at_ms=1791963300000)
 
     def test_valid_checksum_but_wrong_trade_day_is_rejected(self):
         bad=[ROWS[0],ROWS[1].replace("1791763201000","1791849601000"),ROWS[2]]
