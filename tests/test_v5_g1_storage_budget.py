@@ -9,7 +9,7 @@ from unittest.mock import patch
 import unittest
 
 from nbot.v5.candle_ledger import EvidenceHold
-from nbot.v5.g1f_runner import MAX_DB_MIB, db_size_mib, resource_guard
+from nbot.v5.g1f_runner import MAX_DB_MIB, METRICS_EVERY_SECONDS, db_size_mib, resource_guard
 from nbot.v5.observation_continuity import ObservationContinuity
 from nbot.v5.stream_buffer import BoundedObservationBuffer
 from nbot.v5.ws_contract import UnsafeStream, decode_frame
@@ -88,6 +88,9 @@ class FiftyCoinStorageBudgetTests(unittest.TestCase):
         ):
             with self.subTest(frame=frame),self.assertRaises(UnsafeStream):
                 store.consume_decoded(frame)
+
+    def test_metric_journaling_is_at_most_one_heartbeat_per_minute(self):
+        self.assertGreaterEqual(METRICS_EVERY_SECONDS,60)
 
     def test_sqlite_limit_counts_wal_and_shm_not_only_db(self):
         self.path.write_bytes(b"db")
