@@ -13,6 +13,7 @@ from nbot.v5.finality_quarantine import FinalityQuarantine, STAGES, single_close
 from nbot.v5.g1f_journal import CandidateJournal
 from nbot.v5.observation_contract import INTERVAL_MS
 from nbot.v5.public_market import public_get
+from nbot.v5.g2_source_witness import SourceWitness
 
 MAX_SPREAD_FRAC = .01
 MAX_QUOTE_AGE_MS = 5000
@@ -62,12 +63,35 @@ async def audit_event(session, journal: CandidateJournal,
                       getter=public_get, sleep=asyncio.sleep,
                       clock=lambda: int(time.time()*1000),
                       interrupted: bool = False,
-                      rest_delay_seconds: float = 8.0) -> dict:
+                      rest_delay_seconds: float = 8.0,
+                      source_witness: SourceWitness | None = None) -> dict:
     if clock() < event_open_ms+INTERVAL_MS:
         raise EvidenceHold("G1F_EVENT_NOT_CLOSED")
     # Capture data health NOW, before slow REST comparisons.
+    at_ms=clock()
     issues=feed_holds(session,symbols,event_open_ms=event_open_ms,
-                      measured_ms=clock(),interrupted=interrupted)
+                      measured_ms=at_ms,interrupted=interrupted)
+    if source_witness is not None:
+        # Capture only bounded latest WSS state at the same immutable clock
+        # before REST finality rounds introduce decision-time delays. A blank
+        # quote/trade or disconnected epoch is an explicit HOLD witness.
+        evidence={}
+        for symbol in symbols:
+            coin=session.store.coins[symbol]
+            quote=coin.last_quote or {}
+            trade=coin.last_trade or {}
+            evidence[symbol]={
+                "bid":quote.get("bid"),"ask":quote.get("ask"),
+                "quote_received_ms":quote.get("received_ms"),
+                "trade_received_ms":trade.get("received_ms"),
+                "market_connected":session.store.health.market_connected,
+                "public_connected":session.store.health.public_connected,
+                "market_epoch":session.generations.get("market",0),
+                "public_epoch":session.generations.get("public",0),
+            }
+        source_witness.witness_event_quotes(
+            cohort_digest=cohort_digest,event_open_ms=event_open_ms,
+            asof_ms=at_ms,sources=evidence)
     finals={}
     for s in symbols:
         row=session.ledger.db.execute("""
