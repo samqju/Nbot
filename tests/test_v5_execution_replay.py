@@ -6,7 +6,7 @@ import unittest
 from decimal import Decimal
 from pathlib import Path
 
-from test_v5_execution_engine import NOW, MODELS, KEYS, quote, request
+from tests.test_v5_execution_engine import NOW, MODELS, KEYS, quote, request
 from nbot.v5.execution_engine import OfflineExecutionEngine, sign_for_synthetic_test
 from nbot.v5.execution_replay import ReplayRules, ReplayRefused, SyntheticReplay
 

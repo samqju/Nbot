@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from test_v5_execution_engine import NOW, MODELS, KEYS
-from test_v5_execution_replay import frame, proposal, RECEIPT_KEY, RULES
+from tests.test_v5_execution_engine import NOW, MODELS, KEYS
+from tests.test_v5_execution_replay import frame, proposal, RECEIPT_KEY, RULES
 from nbot.v5.execution_engine import OfflineExecutionEngine
 from nbot.v5.execution_replay import SyntheticReplay
 from nbot.v5.execution_incidents import SyntheticIncidentGuard, MAX_DISTINCT_INCIDENTS

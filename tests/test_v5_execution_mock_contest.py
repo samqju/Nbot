@@ -8,8 +8,8 @@ import unittest
 from decimal import Decimal
 from pathlib import Path
 
-from test_v5_execution_engine import NOW, MODELS, KEYS
-from test_v5_execution_replay import frame, proposal, RECEIPT_KEY
+from tests.test_v5_execution_engine import NOW, MODELS, KEYS
+from tests.test_v5_execution_replay import frame, proposal, RECEIPT_KEY
 from nbot.v5.execution_engine import OfflineExecutionEngine, PaperPolicy
 from nbot.v5.execution_replay import ReplayRules, SyntheticReplay
 from nbot.v5.contest_audit import audit_synthetic_contest
