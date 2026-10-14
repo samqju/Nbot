@@ -33,6 +33,7 @@ class ReplayRules:
     contest_start_ms: int
     contest_end_ms: int
     max_holding_ms: int = 4 * 60 * 60 * 1000
+    max_evidence_gap_ms: int = 5 * 60 * 1000
     min_settled_per_model: int = 100
     min_shared_frames: int = 100
     min_shared_duration_ms: int = 24 * 60 * 60 * 1000
@@ -43,7 +44,7 @@ class ReplayRules:
                 or self.contest_start_ms < 0
                 or self.contest_end_ms <= self.contest_start_ms):
             raise ValueError("invalid contest UTC boundaries")
-        for field in ("max_holding_ms", "min_settled_per_model",
+        for field in ("max_holding_ms", "max_evidence_gap_ms", "min_settled_per_model",
                       "min_shared_frames", "min_shared_duration_ms"):
             value = getattr(self, field)
             if type(value) is not int or value <= 0:
@@ -189,23 +190,35 @@ class SyntheticReplay:
             last = db.execute("SELECT MAX(at_ms) FROM replay_frames").fetchone()[0]
             if last is not None and at < last:
                 raise ReplayRefused("NONCHRONOLOGICAL_MARKET_FRAME")
+            if last is not None and at - last > self.rules.max_evidence_gap_ms:
+                raise ReplayRefused("UNRESOLVED_COMMON_TIMELINE_GAP")
             try:
                 bid, ask = self.engine._quote(
                     q, symbol, at-self.engine.policy.max_quote_age_ms, at)
             except Refused as exc:
                 raise ReplayRefused(exc.reason) from None
-            last_quote = db.execute("SELECT at_ms FROM replay_quote_latest WHERE symbol=?",
-                                    (symbol,)).fetchone()
-            if last_quote and at < last_quote["at_ms"]:
-                raise ReplayRefused("REGRESSED_SYMBOL_CLOCK")
-            if not last_quote and db.execute("SELECT COUNT(*) FROM replay_quote_latest").fetchone()[0] >= MAX_MARKETS:
+            last_quote = db.execute(
+                "SELECT * FROM replay_quote_latest WHERE symbol=?", (symbol,)).fetchone()
+            quote_clock = q["observed_at_ms"]
+            if last_quote:
+                if quote_clock < last_quote["at_ms"]:
+                    raise ReplayRefused("REGRESSED_QUOTE_SOURCE_CLOCK")
+                if quote_clock - last_quote["at_ms"] > self.rules.max_evidence_gap_ms:
+                    raise ReplayRefused("UNRESOLVED_SYMBOL_TIMELINE_GAP")
+                if quote_clock == last_quote["at_ms"] and (
+                    q["reference"] != last_quote["reference"]
+                    or bid != number(last_quote["bid"])
+                    or ask != number(last_quote["ask"])
+                ):
+                    raise ReplayRefused("CONFLICTING_SAME_TIMESTAMP_MARKET_SOURCE")
+            elif db.execute("SELECT COUNT(*) FROM replay_quote_latest").fetchone()[0] >= MAX_MARKETS:
                 raise ReplayRefused("MAX_MARKETS_LIMIT")
             db.execute("""INSERT INTO replay_quote_latest (symbol,reference,bid,ask,at_ms)
                            VALUES (?,?,?,?,?)
                            ON CONFLICT(symbol) DO UPDATE SET
                            reference=excluded.reference,bid=excluded.bid,
                            ask=excluded.ask,at_ms=excluded.at_ms""",
-                       (symbol, q["reference"], str(bid), str(ask), at))
+                       (symbol, q["reference"], str(bid), str(ask), quote_clock))
             closed = {}
             for book in PORTFOLIOS:
                 position = db.execute("SELECT side,stop,opened_ms FROM positions WHERE portfolio=? AND symbol=?",
