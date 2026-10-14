@@ -135,13 +135,16 @@ class OfflineExecutionEngine:
                 m = models[book]
                 c.execute("""INSERT OR IGNORE INTO books
                     (portfolio, model_id, model_sha, experiment_id, contest_id,
-                     wallet, peak_wallet, last_sequence, killed, policy_sha)
-                    VALUES (?,?,?,?,?,?,?,0,0,?)""",
+                     wallet, peak_wallet, last_sequence, killed, policy_sha, signing_key_sha)
+                    VALUES (?,?,?,?,?,?,?,0,0,?,?)""",
                     (book, m.model_id, m.model_sha, m.experiment_id, m.contest_id,
-                     str(self.policy.starting_equity), str(self.policy.starting_equity), self.policy_sha))
+                     str(self.policy.starting_equity), str(self.policy.starting_equity), self.policy_sha,
+                     hashlib.sha256(self.keys[book]).hexdigest()))
                 row = c.execute("SELECT * FROM books WHERE portfolio=?", (book,)).fetchone()
-                if (row["model_id"], row["model_sha"], row["experiment_id"], row["contest_id"], row["policy_sha"]) != (
-                    m.model_id, m.model_sha, m.experiment_id, m.contest_id, self.policy_sha):
+                if (row["model_id"], row["model_sha"], row["experiment_id"], row["contest_id"],
+                     row["policy_sha"], row["signing_key_sha"]) != (
+                    m.model_id, m.model_sha, m.experiment_id, m.contest_id, self.policy_sha,
+                    hashlib.sha256(self.keys[book]).hexdigest()):
                     raise ValueError("FROZEN_MODEL_MISMATCH: cannot silently swap model after restart")
 
     def close_database(self):
@@ -153,7 +156,7 @@ class OfflineExecutionEngine:
           portfolio TEXT PRIMARY KEY, model_id TEXT NOT NULL, model_sha TEXT NOT NULL,
           experiment_id TEXT NOT NULL, contest_id TEXT, wallet TEXT NOT NULL,
           peak_wallet TEXT NOT NULL, last_sequence INTEGER NOT NULL, killed INTEGER NOT NULL,
-          policy_sha TEXT NOT NULL);
+          policy_sha TEXT NOT NULL, signing_key_sha TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS decisions(
           id INTEGER PRIMARY KEY, portfolio TEXT NOT NULL, idem TEXT NOT NULL,
           payload_sha TEXT NOT NULL, event_id TEXT NOT NULL, symbol TEXT NOT NULL,
