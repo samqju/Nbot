@@ -174,14 +174,16 @@ class ForwardSourceVault:
         if latest is None:
             generation = 1
         else:
+            if at_ms < latest[4]:
+                # Validation MUST precede all writes; even a rejected restart
+                # cannot create a false source-gap marker.
+                raise ValueError("G4_VAULT_CLOCK_REWIND")
             generation = latest[2] + 1
             if latest[3] not in ("CLOSED", "ABRUPT_RESTART_HOLD"):
                 # This proves only when an unexpected open connection was
                 # DISCOVERED after restart. The true gap start is UNKNOWN.
                 self._append(route, latest[2], "ABRUPT_RESTART_HOLD",at_ms,
                              None,"HOLD",("UNKNOWN_INTERRUPTION_SINCE_LAST_RECEIPT",),b"")
-            if at_ms < latest[4]:
-                raise ValueError("G4_VAULT_CLOCK_REWIND")
         return self._append(route,generation,"OPEN",at_ms,None,"HOLD",
                             ("INITIAL_EPOCH_CONTINUITY_UNPROVEN",),b"")
 
