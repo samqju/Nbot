@@ -28,4 +28,3 @@ jobs:
         run: |
           python -m unittest discover -s tests -p 'test_v5_execution*.py' -v
           python -m unittest discover -s tests -p 'test_v5_contest_audit.py' -v
-          python -m unittest discover -s tests -p 'test_v5_execution_mock_contest.py' -v
