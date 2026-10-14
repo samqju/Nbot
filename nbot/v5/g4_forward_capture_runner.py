@@ -141,6 +141,20 @@ async def capture_route(*, route: str, endpoint: str, vault: ForwardSourceVault,
             # OPEN writes ABRUPT_RESTART_HOLD if prior epoch was left active.
             budget["source_errors"].append(route+":"+type(exc).__name__)
             tries+=1
+        except Exception as exc:
+            # websockets 17 raises ConnectionClosedError, which is NOT
+            # OSError/RuntimeError. A real first longer pilot exposed this.
+            # Treat only that library's typed socket-close exceptions as a
+            # bounded reconnect, with durable gap evidence. Other exceptions
+            # still propagate to run_bounded's explicit task-crash HOLD.
+            typ=type(exc)
+            if (not typ.__module__.startswith("websockets.")
+                    or typ.__name__ not in (
+                        "ConnectionClosed","ConnectionClosedOK",
+                        "ConnectionClosedError")):
+                raise
+            budget["source_errors"].append(route+":WSS_"+typ.__name__)
+            tries+=1
         if not stop.is_set() and tries<=max_reconnects:
             await asyncio.sleep(min(tries,3))
     if not stop.is_set():
