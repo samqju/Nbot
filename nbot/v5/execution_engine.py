@@ -322,11 +322,13 @@ class OfflineExecutionEngine:
             except (Refused, KeyError, TypeError, ValueError) as exc:
                 result = {"status": "REJECTED",
                           "reason": exc.reason if isinstance(exc, Refused) else "MALFORMED_REQUEST"}
-            c.execute("""INSERT INTO decisions (portfolio, idem,payload_sha,event_id,symbol,as_of_ms,result)
-                         VALUES (?,?,?,?,?,?,?)""", (portfolio, idem, digest, event_id, symbol,
-                                                     recommendation.get("as_of_ms") if type(recommendation.get("as_of_ms")) is int else -1,
-                                                     json.dumps(result, sort_keys=True)))
-            decision_id = c.execute("SELECT last_insert_rowid()").fetchone()[0]
+            decision_id = c.execute("SELECT COALESCE(MAX(id),0)+1 FROM decisions").fetchone()[0]
+            result["decision_id"] = decision_id
+            c.execute("""INSERT INTO decisions (id,portfolio,idem,payload_sha,event_id,symbol,as_of_ms,result)
+                         VALUES (?,?,?,?,?,?,?,?)""", (decision_id, portfolio, idem, digest,
+                             event_id, symbol,
+                             recommendation.get("as_of_ms") if type(recommendation.get("as_of_ms")) is int else -1,
+                             json.dumps(result, sort_keys=True)))
             if type(recommendation.get("sequence")) is int and recommendation["sequence"] == book["last_sequence"] + 1:
                 c.execute("UPDATE books SET last_sequence=? WHERE portfolio=?", (recommendation["sequence"], portfolio))
             if execution is not None and result["status"] == "ACCEPTED":
@@ -347,10 +349,7 @@ class OfflineExecutionEngine:
                 c.execute("UPDATE books SET wallet=? WHERE portfolio=?", (str(wallet), portfolio))
                 c.execute("""INSERT INTO ledger (portfolio,category,delta,wallet_after,at_ms,source_id)
                              VALUES (?,?,?,?,?,?)""", (portfolio, "ENTRY_FEE", str(-fee), str(wallet), now_ms, order_id))
-                result["decision_id"] = decision_id
-                result["fill_id"] = c.execute("SELECT last_insert_rowid()").fetchone()[0] - 1
                 result["grade"] = "SYNTHETIC"
-                c.execute("UPDATE decisions SET result=? WHERE id=?", (json.dumps(result, sort_keys=True), decision_id))
             return result
 
     def settle_synthetic(self, portfolio: str, symbol: str, quote: dict, now_ms: int) -> dict:
