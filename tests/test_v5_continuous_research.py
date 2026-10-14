@@ -122,6 +122,31 @@ class ContinuousIntegrationTests(unittest.TestCase):
         q=independent_asof_entry_quote(vault_db=self.vault,symbol="BTCUSDT",decision_at_ms=COMMITTED+500,audit_cache=audit)
         self.assertEqual(q.at_ms,COMMITTED-100)
 
+    def test_full_g1_g7_missing_original_economics_stays_locked(self):
+        from nbot.v5.science import dataset, evaluate, fit_candidate
+        from nbot.v5.guarded_paper import GuardedPaper
+        from tests.test_v5_guarded_paper import POLICY
+        now=COMMITTED+300
+        report=self.engine.tick(now)
+        self.assertEqual(report["candidate_population"],100)
+        self.assertEqual(report["qualified_independently_reviewed_outcomes"],0)
+        orig=dataset(self.engine.verified_rows(),cutoff_ms=now,grade="ORIGINAL")
+        science=evaluate(orig,self.kwargs["protocol"])
+        self.assertEqual(science["qualified_outcomes"],0)
+        self.assertFalse(science["scientifically_accepted"])
+        self.assertIn("OUTCOMES_BELOW_2000",science["reasons"])
+        with self.assertRaisesRegex(ValueError,"G6_G5_SCIENCE_HOLD"):
+            fit_candidate(orig,boundary_ms=now,protocol=self.kwargs["protocol"])
+        paper=GuardedPaper(self.base/"guarded_paper.sqlite",policy=POLICY)
+        try:
+            state=paper.reconcile()
+            self.assertEqual(state["paper_state"],"LOCKED")
+            self.assertTrue(all(b["fills"]==0 for b in state["books"].values()))
+            with self.assertRaisesRegex(ValueError,"TWO_QUALIFIED_MODELS_REQUIRED"):
+                paper.unlock({},now)
+        finally:
+            paper.store.close()
+
     def test_untrusted_cache_is_rejected(self):
         q=independent_asof_entry_quote(vault_db=self.vault,symbol="BTCUSDT",decision_at_ms=COMMITTED,audit_cache={"integrity_audit":"PASS"})
         self.assertEqual(q.state,"HOLD")
