@@ -22,7 +22,7 @@ import time
 
 from nbot.v5.candle_ledger import EvidenceHold
 from nbot.v5.finality_quarantine import FinalityQuarantine
-from nbot.v5.g1f_engine import audit_event
+from nbot.v5.g1f_engine import audit_event, feed_holds
 from nbot.v5.g1f_journal import CandidateJournal, JournalHold
 from nbot.v5.g2_source_witness import SourceWitness, WitnessHold
 from nbot.v5.g3_context_ledger import G3ContextLedger
@@ -37,7 +37,7 @@ from nbot.v5.ws_contract import UnsafeStream, stream_urls
 
 MAX_RSS_MIB=192
 MAX_DB_MIB=256
-MAX_FRAMES_PER_5M=250000
+MAX_FRAMES_PER_5M=750000  # bounded HOLD; no automatic restart
 MAX_CATCHUP_EVENTS=96
 METRICS_EVERY_SECONDS=15
 CLOSE_GRACE_MS=12000
@@ -176,7 +176,7 @@ class ObservationOnlyRunner:
         self.interrupted=False
         self.stats={"market_frames":0,"public_frames":0,
                     "committed_events":0,"restart_missing_events":0,
-                    "reconnect_attempts":0}
+                    "reconnect_attempts":0,"reverified_epochs":0}
         self.last_log=time.monotonic()
         self.route_window_started={"market":time.monotonic(),
                                    "public":time.monotonic()}
@@ -185,6 +185,32 @@ class ObservationOnlyRunner:
     def fault(self, reason):
         self.failed_reason=str(reason)[:150]
         self.stop.set()
+
+    def _revalidate_source(self, session, eligible, event_open_ms):
+        """Clear a prior interruption only for a NEW source-qualified event.
+
+        The old disrupted source epoch and any held events remain immutable.
+        Fresh REST candles alone are never adequate for trade/quote continuity.
+        """
+        if not self.interrupted:
+            return False
+        holds=feed_holds(
+            session,eligible,event_open_ms=event_open_ms,
+            measured_ms=wall_ms(),interrupted=False)
+        if any(holds.get(symbol,("SOURCE_WITNESS_MISSING",))
+               for symbol in eligible):
+            return False
+        self.interrupted=False
+        self.stats["reverified_epochs"]+=1
+        for route in ("market","public"):
+            self.policy.accept_reverified(route)
+        print("G1F_SOURCE_EPOCH_REVERIFIED",json.dumps({
+            "event_open_ms":event_open_ms,
+            "market_epoch":session.generations["market"],
+            "public_epoch":session.generations["public"],
+            "prior_gap_remains_recorded":True,
+        },sort_keys=True),flush=True)
+        return True
 
     async def start(self):
         now_response=await asyncio.to_thread(self.getter,"/fapi/v1/time")
@@ -348,6 +374,7 @@ class ObservationOnlyRunner:
             return
         while not self.stop.is_set() and time.monotonic()<deadline:
             connected=False
+            retry=False
             try:
                 async with connect(
                     uri,open_timeout=9,close_timeout=2,
@@ -388,21 +415,24 @@ class ObservationOnlyRunner:
                 self.fault(route+"_SOURCE_HOLD_"+str(exc))
                 break
             except Exception as exc:
+                # Disconnect exactly once, before consulting retry_delay.
                 self.interrupted=True
-                self.policy.on_disconnect(route,"WSS_CONNECTION_FAULT")
+                retry=True
                 self.stats["reconnect_attempts"]+=1
+            finally:
+                if connected:
+                    session.disconnect(route)
+                    self.policy.on_disconnect(
+                        route,"WSS_CONNECTION_FAULT" if retry else "ROUTE_CLOSED")
+                    if not self.stop.is_set():
+                        self.interrupted=True
+            if retry and not self.stop.is_set():
                 try:
                     wait=self.policy.retry_delay(route)
                 except FeedRecoveryHold as error:
                     self.fault(str(error))
                     break
                 await asyncio.sleep(wait)
-            finally:
-                if connected:
-                    session.disconnect(route)
-                    self.policy.on_disconnect(route,"ROUTE_CLOSED")
-                    if not self.stop.is_set():
-                        self.interrupted=True
 
     async def _events(self,session,journal,finality,identity,eligible,symbols,
                       start,deadline, *, source_witness=None,g3_ledger=None):
@@ -413,6 +443,7 @@ class ObservationOnlyRunner:
                 await asyncio.sleep(min(1,(due-wall_ms())/1000))
                 continue
             try:
+                self._revalidate_source(session,eligible,event)
                 summary=await audit_event(
                     session,journal,finality,symbols=eligible,
                     cohort_digest=identity,event_open_ms=event,
