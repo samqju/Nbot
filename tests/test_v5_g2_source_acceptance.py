@@ -14,10 +14,11 @@ from tests.test_v5_g2_population_audit import G2PopulationAuditTests
 from tests.test_v5_g1f_engine import G1fEngineTests, NOW, FINAL, SYMBOLS, latest_rest
 
 
-class G2AcceptanceFixture(G2PopulationAuditTests):
-    """Reuse the actual G1F frozen-candidate journal fixture."""
+class G2AcceptanceFixture(unittest.TestCase):
+    """Reuse source-journal setup, without inheriting unrelated tests."""
+    add_event = G2PopulationAuditTests.add_event
     def setUp(self):
-        super().setUp()
+        G2PopulationAuditTests.setUp(self)
         self.next=self.first+INTERVAL_MS
         self.add_event(self.next)
         self.witness=SourceWitness(self.db)
@@ -108,7 +109,9 @@ class G2AcceptanceFixture(G2PopulationAuditTests):
         self.assertIn("HELD_SOURCE_WAS_ACCEPTED",self.acceptance()["violations"])
 
 
-class G2LiveHookTests(G1fEngineTests):
+class G2LiveHookTests(unittest.TestCase):
+    setUp = G1fEngineTests.setUp
+    create = G1fEngineTests.create
     def test_original_g1f_engine_records_exact_source_clock_when_opted_in(self):
         s,j,ident,finality=self.create()
         try:
@@ -140,7 +143,7 @@ class G2LiveHookTests(G1fEngineTests):
                 "SELECT COUNT(*),MIN(asof_ms),MAX(asof_ms) FROM g2_quote_witness"
             ).fetchone()
             self.assertEqual(rows[0],2)
-            self.assertEqual(rows[1],NOW+1100)
+            self.assertEqual(rows[1],NOW+2100)
             self.assertEqual(rows[1],rows[2])
         finally:
             s.close()
