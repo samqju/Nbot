@@ -35,9 +35,9 @@ class G2SourceWitnessTests(unittest.TestCase):
 
     def cohort(self, **kw):
         opts=dict(exchange=self.exchange,ticker=self.ticker,
-                  selected=self.selected,received_ms=self.event+1000,
+                  selected=self.selected,received_ms=self.event+INTERVAL_MS+1000,
                   first_event_open_ms=self.event,
-                  exchange_server_ms=self.event+950)
+                  exchange_server_ms=self.event+INTERVAL_MS+950)
         opts.update(kw)
         return self.w.witness_cohort(**opts)
 
@@ -66,8 +66,8 @@ class G2SourceWitnessTests(unittest.TestCase):
 
     def test_future_source_clock_refused(self):
         with self.assertRaisesRegex(WitnessHold,"CLOCK"):
-            self.cohort(received_ms=self.event-100,
-                        exchange_server_ms=self.event+1000)
+            self.cohort(received_ms=self.event+INTERVAL_MS-100,
+                        exchange_server_ms=self.event+INTERVAL_MS+1000)
 
     def test_cohort_changed_source_proof_rejected(self):
         self.cohort()
