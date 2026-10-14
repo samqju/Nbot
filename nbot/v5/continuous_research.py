@@ -30,6 +30,35 @@ def ro(path):
     return closing(sqlite3.connect(p.resolve().as_uri()+"?mode=ro",uri=True,timeout=10))
 
 
+def bounded_pending_path_page(labels, store, *, max_rows=250):
+    """V4 memory-bound work queue, V5 immutable restart cursor.
+
+    Seek by frozen (decision timestamp, label_id), rather than loading every
+    historical pending path or an unbounded set of already processed IDs.
+    Cursor is appended only AFTER batch processing by the caller.
+    """
+    if type(max_rows) is not int or not 1<=max_rows<=250:
+        raise ValueError("G4_PATH_QUEUE_RESOURCE_INVALID")
+    tail=store.db.execute(
+        "SELECT body FROM research_journal WHERE kind='PATH_SCAN_CURSOR' "
+        "ORDER BY seq DESC LIMIT 1").fetchone()
+    last_at,last_id=(-1,"") if tail is None else (
+        (lambda b:(b["decision_at_ms"],b["label_id"]))(json.loads(tail[0])))
+    if type(last_at) is not int or not isinstance(last_id,str):
+        raise ValueError("G4_PATH_QUEUE_CURSOR_INVALID")
+    sql=(
+        "SELECT i.label_id,i.intent_json,i.decision_at_ms "
+        "FROM g4_label_intents i LEFT JOIN g4_label_terminals t "
+        "ON i.label_id=t.label_id "
+        "WHERE t.label_id IS NULL AND "
+        "(i.decision_at_ms>? OR (i.decision_at_ms=? AND i.label_id>?)) "
+        "ORDER BY i.decision_at_ms,i.label_id LIMIT ?")
+    rows=labels.execute(sql,(last_at,last_at,last_id,max_rows)).fetchall()
+    if not rows and tail is not None:
+        rows=labels.execute(sql,(-1,-1,"",max_rows)).fetchall()
+    return tuple(rows)
+
+
 def bounded_original_event_batch(source, store, *, start_event_ms, max_events):
     """V4 catch-up principle, V5 original immutable event cursor.
 
@@ -167,14 +196,14 @@ class ContinuousResearch:
                          "g3_feature_known_ms":g3.get("valid_from_ms"),"order_authority":"NONE"}
                 self.store.append(identity,"CANDIDATE",now_ms,payload)
             self.store.append("event:"+str(event),"EVENT_COMPLETE",now_ms,{"event_ms":event,"candidate_population":100})
-        path_ids={r[0][5:] for r in self.store.db.execute("SELECT identity FROM research_journal WHERE kind='ORIGINAL_PRICE_PATH'")}
-        pending=[r for r in self.labels.execute("SELECT i.label_id,i.intent_json FROM g4_label_intents i LEFT JOIN g4_label_terminals t ON i.label_id=t.label_id WHERE t.label_id IS NULL ORDER BY i.decision_at_ms") if r[0] not in path_ids][:3000]
+        pending=bounded_pending_path_page(self.labels,self.store)
+        scan_end=(pending[-1][2],pending[-1][0]) if pending else None
         if pending and audit is None:
             try:
                 audit=IndependentSourceAudit(vault_path)
             except (OSError,ValueError,sqlite3.DatabaseError):
                 audit=None
-        for label_id,raw in pending:
+        for label_id,raw,_decision_at_ms in pending:
             if self.store.db.execute("SELECT 1 FROM research_journal WHERE identity=?",("path:"+label_id,)).fetchone():continue
             intent=json.loads(raw)
             stored=self.store.db.execute("SELECT body FROM research_journal WHERE identity=?",("candidate:"+intent["decision_id"],)).fetchone()
@@ -194,6 +223,15 @@ class ContinuousResearch:
                 append_terminal(self.labels,label_id,{"status":"CENSORED","source_grade":"NONE","settled_at_ms":now_ms,
                                                       "reason_codes":path.get("reasons",["G4_ORIGINAL_PATH_INCOMPLETE"]),
                                                       "net_r":None,"gross_r":None,"order_authority":"NONE"})
+        if scan_end is not None:
+            identity="path-cursor:"+str(self.store.db.execute(
+                "SELECT COALESCE(MAX(seq),0)+1 FROM research_journal"
+            ).fetchone()[0])
+            self.store.append(identity,"PATH_SCAN_CURSOR",now_ms,
+                              {"decision_at_ms":scan_end[0],
+                               "label_id":scan_end[1],
+                               "max_rows":250,"scanned":len(pending),
+                               "order_authority":"NONE"})
         rows=self.verified_rows()
         d=dataset(rows,cutoff_ms=now_ms,grade="ORIGINAL")
         report=evaluate(d,self.protocol)
