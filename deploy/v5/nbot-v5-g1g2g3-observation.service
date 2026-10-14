@@ -1,0 +1,46 @@
+# Observation-only integrated V5 G1+G2+G3. No API secrets/orders.
+# Parallel acceptance: do NOT disable original G1f until independent full soak.
+[Unit]
+Description=NBOT V5 G1-G3 original witnessed market intelligence collector
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=3600
+StartLimitBurst=2
+ConditionPathExists=/home/ubuntu/nbot_v5_integrated_20261014/nbot/v5/g3_market_context.py
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/nbot_v5_integrated_20261014
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecCondition=/home/ubuntu/nbot_v5_venv/bin/python -m nbot.v5.g3_prod_preflight --repo /home/ubuntu/nbot_v5_integrated_20261014 --approved-sha-file /home/ubuntu/nbot_v5_integrated_data/approved_code_sha.txt --data-dir /home/ubuntu/nbot_v5_integrated_data
+ExecStart=/home/ubuntu/nbot_v5_venv/bin/python -u -m nbot.v5.g1f_runner --db /home/ubuntu/nbot_v5_integrated_data/g1g2g3.sqlite --top 50 --max-seconds 0 --g2-source-witness --g3-context
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=45
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/nbot_v5_integrated_data
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryAccounting=true
+MemoryMax=200M
+TasksMax=80
+CPUAccounting=true
+CPUQuota=70%
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nbot-v5-g1g2g3-observe
+
+[Install]
+WantedBy=multi-user.target
