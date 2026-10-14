@@ -47,6 +47,7 @@ def quote(symbol="BTCUSDT", *, bid="99.99", ask="100.01", now=NOW, **changes):
     q = {
         "source": "SYNTHETIC", "healthy": True, "btc_healthy": True,
         "symbol": symbol, "bid": bid, "ask": ask, "observed_at_ms": now,
+        "reference": "synthetic-quote-v1",
     }
     q.update(changes)
     return q
@@ -134,7 +135,8 @@ class DualBookTests(unittest.TestCase):
         for i, (changes, reason) in enumerate([
             ({"model_sha": "f"*64}, "MODEL_OR_CONTEST_NOT_PINNED"),
             ({"stop_price": "101"}, "INVALID_STOP_GEOMETRY"),
-            ({"stop_price": "100.005"}, "INVALID_STOP_GEOMETRY"),
+            ({"stop_price": "100.03"}, "INVALID_STOP_GEOMETRY"),
+            ({"stop_price": "100.005"}, "COST_TO_R_TOO_HIGH"),
             ({"expected_after_cost_net_r": "-1"}, "INSUFFICIENT_NET_EDGE"),
             ({"confidence": "0.2"}, "INSUFFICIENT_CONFIDENCE"),
         ], start=1):
@@ -199,6 +201,31 @@ class DualBookTests(unittest.TestCase):
         with self.assertRaises(sqlite3.DatabaseError):
             self.engine.db.execute("UPDATE ledger SET delta='1000'")
         self.assertEqual(self.engine.integrity(), "ok")
+
+    def test_quote_reference_must_be_same_frozen_source(self):
+        self.assertEqual(self.send(request(), q=quote(reference="wrong-event"))["reason"],
+                         "QUOTE_REFERENCE_MISMATCH")
+
+    def test_policy_swap_rejected_across_restart(self):
+        self.engine.close_database()
+        with self.assertRaisesRegex(ValueError, "FROZEN_MODEL_MISMATCH"):
+            changed = OfflineExecutionEngine(self.db, MODELS, KEYS,
+                                             PaperPolicy(taker_fee_rate=Decimal("0.001")))
+            changed.close_database()
+        self.engine = OfflineExecutionEngine(self.db, MODELS, KEYS)
+
+    def test_legacy_path_forbidden(self):
+        with self.assertRaisesRegex(ValueError, "LEGACY_DIRECTORY_FORBIDDEN"):
+            OfflineExecutionEngine("/home/ubuntu/Nbot/legacy.sqlite", MODELS, KEYS)
+
+    def test_drawdown_switch_blocks_new_entries_but_not_settlement(self):
+        self.send(request())
+        self.engine.settle_synthetic("CHAMPION_PAPER", "BTCUSDT",
+                                      quote(bid="1", ask="1.02", now=NOW+60000), NOW+60000)
+        self.assertTrue(self.engine.report("CHAMPION_PAPER")["killed"])
+        self.assertEqual(self.send(request(sequence=2, event="after-drawdown",
+                                            symbol="ETHUSDT"),
+                                   q=quote("ETHUSDT"))["reason"], "BOOK_KILLED")
 
     def test_unknown_fields_not_execution_authority(self):
         self.assertEqual(self.send(request(real_order=True))["reason"], "CONTRACT_OR_AUTHORITY_INVALID")
