@@ -45,10 +45,12 @@ class G11FullIntegrationTests(unittest.TestCase):
 
     def plan(self, symbol="BTCUSDT", side="LONG", **changes):
         # Supplier sees only the just-reviewed prospective frozen deep cohort.
-        batch = explore_event(self.observation, self.event,
-                              capacity_slots=self.research.vacancies)
-        from nbot_v5_1.deep_selection import choose_deep
-        deep = choose_deep(self.universe, batch)
+        if not hasattr(self, "_cached_deep"):
+            batch = explore_event(self.observation, self.event,
+                                  capacity_slots=self.research.vacancies)
+            from nbot_v5_1.deep_selection import choose_deep
+            self._cached_deep = choose_deep(self.universe, batch)
+        deep = self._cached_deep
         opts = dict(symbol=symbol, side=side,
                     event_open_ms=self.event.event_open_ms,
                     declared_at_ms=self.event.decision_at_ms,
