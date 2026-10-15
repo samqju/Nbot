@@ -302,3 +302,26 @@ The owner queried whether V4 already kept learning/training records, correctly i
 **Evidence:** [Full 27-case test report and honest outstanding gates](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_CS00_RECOVERY_FIRST_RECORD_LABELS_AND_CENSOR_OFFLINE_ACCEPTANCE_20261015.md); exact final independently tested code SHA `bd0715ad2ca681263cd25c471862cd67cf93cbb7`; **491/491 PASS on BOTH Observation and Execution VPSs**, Python3.12.3, isolated test source cleanups confirmed.
 
 **[ ] Still missing:** B4 actual public-only WSS runner/automatic REST transport/retry/supervisor (this module is OFFLINE and performs no HTTP); G4 real 20/20 original and prior 47 gaps scientifically adjudicated; official daily archive ZIP/.CHECKSUM verifier and source provenance; independent quote/mark/funding evidence; full archival/laptop small-backup restore plan C4/C5; D3/D4 monitor/rollback operator; long-run source rate/backoff tests, E2 final commissioning readiness; separate CS-01 public-source-only owner approval. **CS-00 parent stays [ ] HOLD; G4–G10 authentic source/science/PAPER parents [ ] HOLD; G12 [ ] LOCKED.** No service started, paper/testnet/real order or model promotion.
+
+
+## CS-00 POST-TIMEOUT STATUS RECONCILIATION — 15 OCTOBER 2026
+
+This **latest** checklist/roadmap reconciliation supersedes older CS-00 task rows and old 464/491 PASS narratives **for offline engineering only**. An interrupted chat-message delivery did **not** roll back GitHub commits or alter VPS service state.
+
+**Immutable report:** [539/539 per VPS and independent synthetic off-host recovery evidence](NBOT_V5_1_CS00_RECOVERY_FIRST_OFFLINE_IMPLEMENTATION_TWO_VPS_539_ACCEPTANCE_AND_GO_HOLDS_20261015.md). Executable code SHA **`57968e43d815e4ad84caed88e815f152ab89194a`**; Observation-VPS **539/539 PASS** and Execution-VPS **539/539 PASS**, same pinned code, with synthetic CS-00 benchmark PASS on both. GitHub head after this code pin has **documentation-only** changes. Independent synthetic ledger backup: 4 files, 12,654 source bytes, matching package SHA `b6f6606fb74c6479c38e41ee5fe52f882766de5b8410929259deca5f34d8416f` across Observation→Execution VPSs; both synthetic sender/receiver temporary paths removed.
+
+**Checked only after actual offline evidence:**
+
+- [x] **CS-00-B4-OFFLINE**: source-only public TLS WebSocket codec, 100 broad / 200 direction / frozen BTC+19 deep, bounded receipt sealing, manually gated future foreground Observation code; **not installed, running, or live-proven**.
+- [x] **CS-00-R2-OFFLINE**: strict public USD-M aggregate-trade REST query/transport adapter, page/time/rate-budget/backoff/defer and independent source gap verifier; **no actual live REST request made during CS-00**.
+- [x] **CS-00-R3/R4-OFFLINE**: synthetic checksum ZIP/CSV daily archive recovery, frozen traded-price first-touch and strong separate quote/mark/funding/cost QUALIFICATION HOLDS; **real actual original file/history not tested**.
+- [x] **CS-00-R6/R8-OFFLINE**: restart/epoch/packet faults, rate pressure, source gap, timeout, tamper, 539/539 each host and synthetic resource benchmark PASS.
+- [x] **CS-00-C4-DESIGN / C5-SYNTHETIC-OFFHOST / R7-OFFLINE**: owner-approved minimal ledger evidence and independent **synthetic** 4-file cross-host copy/replay; no cloud purchase or secret shared.
+- [x] **CS-00-D3-OFFLINE**: RSS/CPU/disk/source/clock/queue emergency HOLD and no-auto-restart safety tested without installing a service.
+- [x] **G5/G7 irrecoverable exclusion**: only recovery-unavailable experiment is never eligible for win/loss/Training/Champion and maintains a tiny `UNRECOVERABLE_EXCLUDED` audited denominator tombstone.
+
+**Remain intentionally UNCHECKED:** [ ] full **CS-00 parent** operational signoff; [ ] C4 actual permanent storage destination/quota/retention/laptop agreement; [ ] C5 genuine original-data off-host verification; [ ] D3/D4 real operator alert/rollback deployment readiness; [ ] E2 independent pre-start commissioning release; [ ] CS-01 separately authorized genuine public-only Observation startup; [ ] real G4 source/20-market continuity and earlier 47 apparent missing trade IDs adjudication; [ ] G5–G10 genuine original-source/science/PAPER parent gates; [ ] G12 real locked.
+
+**Post-timeout independent audit:** both hosts reachable, `ps -eo comm=` showed no NBOT-named process, `systemctl list-units --all nbot*` none, no `/tmp/nbot-cs00-*` dirs. These are point-in-time checks only, not a substitute for ongoing monitoring. **Neither VPS service was started, installed, restarted, nor given new paper/real trading authority.**
+
+**Next owner action when ready:** agree a minimal durable off-host backup destination and retention/alert/operator details; then separately decide whether to authorize an actual public-market **CS-01** canary against a pinned reviewed SHA. The offline code acceptance is complete; the full operational approval remains HOLD.
