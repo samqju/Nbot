@@ -70,30 +70,30 @@ Acceptance gate for G1-01 is **all 12 actually executed offline tests PASS**, mo
 
 - [x] **G0-04-SCOPE-DRAFT:** Proposed exact first three files, inherited pure-helper lineage, rejected imports, 12 future tests, mode boundaries and sequencing in GitHub documentation; **15 Oct 2026**, documentation only.
 - [x] **G0-03-CLEANUP-BLOCK:** Cleanup command was rejected before execution; read-only checks established old NBOT worktree and old unit remain in place where applicable, **15 Oct 2026**.
-- [ ] **G0-03-CLEANUP-EXEC:** Complete approved NBOT-only old-VPS cleanup and verify results on both hosts; **BLOCKED** in this session.
+- [ ] **G0-03-CLEANUP-EXEC:** Confirm owner-run manual cleanup on both hosts via returned verification output; previous *automated* deletion remained BLOCKED. No manual results yet.
 - [x] **G0-04-CLOSE:** Scope finalized/accepted by owner instruction to proceed in parallel while they run manual cleanup; specified the exact 3 new application/test files, pure API contracts, source provenance, no-trade boundary and T01–T12 test plan. **This is a documentation acceptance, not a runtime test.**
 - [ ] **G1-01:** Create the three new files and demonstrate actual offline test results; not started.
 
-**No real-money order, paper order, service startup, secrets read, code import or host cleanup has been performed by this scoped G0-04 document. G0-04 scope closed; G0-03-CLEANUP-EXEC and G1-01 implementation/testing remain OPEN.**
+**No real-money order, paper order, service startup, secrets read, V5.1 application code import or host cleanup has been performed by this scoped G0-04 document. G0-04 scope closed; G0-03-CLEANUP-EXEC and G1-01 implementation/testing remain OPEN.**
 
 
 ## 7. Binding first-code API/validation contract — G0-04 final owner decision
 
 These definitions **narrow** the earlier high-level table and eliminate ambiguity for G1-01. No source file implementing them exists yet.
 
-**New Python package:** \`nbot_v5_1\` is independent of older \`nbot\`. Use Python standard library only. No import side effects beyond creating immutable Python constants and type/class definitions; no optional old fallbacks. Exactly three new files in G1-01, as listed in §3.
+**New Python package:** `nbot_v5_1` is independent of older `nbot`. Use Python standard library only. No import side effects beyond creating immutable Python constants and type/class definitions; no optional old fallbacks. Exactly three new files in G1-01, as listed in §3.
 
 ### 7.1 Canonical exported symbols in nbot_v5_1/core.py
 
 | Export | Exact conceptual contract |
 | --- | --- |
-| \`INTERVAL_MS = 300_000\` | Five-minute boundary constant; immutable, no wall-clock access. |
-| \`CORE_SCHEMA_VERSION = "NBOT_V5_1_CORE_V1"\` | A *new* explicit identity domain; old legacy schema identifiers remain historical. |
-| \`FiveMinuteEvent(event_open_ms: int, decision_at_ms: int)\` | \`@dataclass(frozen=True)\`, strict integers excluding booleans, \`event_open_ms >= 0\` and divisible by \`INTERVAL_MS\`; \`decision_at_ms >= event_open_ms + INTERVAL_MS\`. \`event_close_ms\` computed; no I/O or implicit now-time. |
-| \`SourceEvidence(last_closed_bar_open_ms: int, source_max_bar_open_ms: int, observed_at_ms: int, source_digest: str | None, source_epoch: int | None, route_state: str, quality_issues: tuple[str, ...] = ())\` | \`@dataclass(frozen=True)\`; recorded metadata, **not a claim of original proof or qualified fills**. Explicit routes states \`HEALTHY\`, \`GAP\`, \`UNKNOWN\`; evidence is separately tested against event. Absence stays absence. Raw source bytes and TLS attestations are future G2/G4 work. |
-| \`evidence_hold_reasons(event: FiveMinuteEvent, evidence: SourceEvidence | None, *, prefix: str)\` | Return a sorted deduplicated tuple of stable reason codes. \`None\` gives \`{prefix}_MISSING\`. Check no future/stale/wrong candle, invalid epochs/digests, unhealthy source; \`observed_at_ms\` must lie between close and decision. Fail closed; no hidden source recovery. |
-| \`canonical_digest(domain: str, payload: JSON-compatible value) -> str\` | Lowercase SHA-256 of UTF-8 \`json.dumps\` with \`sort_keys=True\`, separators \`(",", ":")\`, \`allow_nan=False\`, **without arbitrary string coercion**; input wrapped with \`CORE_SCHEMA_VERSION\` and an explicit non-empty whitelisted domain from \`event\`, \`evidence\`, \`intent\`. New IDs must not collide with old domain-independent V5 hashes. Reject floats/NaN/Infinity if unsafe, boolean in integer fields, unsupported objects; no filesystem cache. |
-| \`ObservationAuthority\` and \`ObservationDisposition\` (closed enums) | Authority value **NONE** only in first code slice; disposition values **OBSERVE_ONLY**, **HOLD**, **NO_TRADE** (not order instructions). No enum may enable \`LIVE\`, \`PAPER\`, buy/sell, fill or order placement. |
+| `INTERVAL_MS = 300_000` | Five-minute boundary constant; immutable, no wall-clock access. |
+| `CORE_SCHEMA_VERSION = "NBOT_V5_1_CORE_V1"` | A *new* explicit identity domain; old legacy schema identifiers remain historical. |
+| `FiveMinuteEvent(event_open_ms: int, decision_at_ms: int)` | `@dataclass(frozen=True)`, strict integers excluding booleans, `event_open_ms >= 0` and divisible by `INTERVAL_MS`; `decision_at_ms >= event_open_ms + INTERVAL_MS`. `event_close_ms` computed; no I/O or implicit now-time. |
+| `SourceEvidence(last_closed_bar_open_ms: int, source_max_bar_open_ms: int, observed_at_ms: int, source_digest: str | None, source_epoch: int | None, route_state: str, quality_issues: tuple[str, ...] = ())` | `@dataclass(frozen=True)`; recorded metadata, **not a claim of original proof or qualified fills**. Explicit routes states `HEALTHY`, `GAP`, `UNKNOWN`; evidence is separately tested against event. Absence stays absence. Raw source bytes and TLS attestations are future G2/G4 work. |
+| `evidence_hold_reasons(event: FiveMinuteEvent, evidence: SourceEvidence | None, *, prefix: str)` | Return a sorted deduplicated tuple of stable reason codes. `None` gives `{prefix}_MISSING`. Check no future/stale/wrong candle, invalid epochs/digests, unhealthy source; `observed_at_ms` must lie between close and decision. Fail closed; no hidden source recovery. |
+| `canonical_digest(domain: str, payload: JSON-compatible value) -> str` | Lowercase SHA-256 of UTF-8 `json.dumps` with `sort_keys=True`, separators `(",", ":")`, `allow_nan=False`, **without arbitrary string coercion**; input wrapped with `CORE_SCHEMA_VERSION` and an explicit non-empty whitelisted domain from `event`, `evidence`, `intent`. New IDs must not collide with old domain-independent V5 hashes. Reject floats/NaN/Infinity if unsafe, boolean in integer fields, unsupported objects; no filesystem cache. |
+| `ObservationAuthority` and `ObservationDisposition` (closed enums) | Authority value **NONE** only in first code slice; disposition values **OBSERVE_ONLY**, **HOLD**, **NO_TRADE** (not order instructions). No enum may enable `LIVE`, `PAPER`, buy/sell, fill or order placement. |
 
 **Failure semantics:** All invalid evidence stays visible via HOLD reasons, rather than being converted to a matching pattern or synthetic observation. Missing BTC or symbol evidence is HOLD; absence of a source_digest/verified source-epoch never upgrades a candle to original authenticated economic evidence. The first core module does **not** accept a market-universe size; therefore it cannot accidentally enforce historic 50-symbol capacity or claim 100/20/40 has been implemented. The future G2/G3 event scheduler owns active-universe and capacity masks; G1 does not.
 
@@ -101,17 +101,17 @@ These definitions **narrow** the earlier high-level table and eliminate ambiguit
 
 ### 7.2 Precise T01–T12 test acceptance elaboration
 
-- T01: assert imports under stubbed/blocked network, subprocess, file writes, DB open and old package modules do not attempt I/O or trading.
-- T02: \`__version__ == "5.1.0"\`, core identifier is V5.1-only, no \`nbot\` import or service startup.
-- T03: valid aligned event/decision inputs, including earliest legal decision exactly at close; deterministic \`event_close_ms\`.
+- T01: assert imports under blocked application-managed network, subprocess, file *writes*, DB open and old package modules do not attempt I/O or trading; ordinary Python import-loader source reads are permitted.
+- T02: `__version__ == "5.1.0"`, core identifier is V5.1-only, no `nbot` import or service startup.
+- T03: valid aligned event/decision inputs, including earliest legal decision exactly at close; deterministic `event_close_ms`.
 - T04: reject booleans, floats, negative, misaligned event and decision before close; evidence future/stale/invalid timestamps HOLD.
 - T05: missing BTC/symbol evidence, disconnected/unknown route, invalid epoch, incomplete source and wrong candle all produce explicit stable reasons.
 - T06: digest missing/invalid and no independently verified source custody never imply qualified original market provenance or after-cost score.
 - T07: same dict data with different insertion order hashes identically; differing event/domain/schema changes the ID.
-- T08: reject NaN, Infinity, non-JSON objects and forbidden numeric coercions with explicit errors; no \`default=str\`.
+- T08: reject NaN, Infinity, non-JSON objects and forbidden numeric coercions with explicit errors; no `default=str`.
 - T09: stable sorted unique reason codes independent of input issue order and repeated evaluation.
-- T10: no order-placement functions/classes/credentials/private Binance imports; defaults are \`NONE\` and \`OBSERVE_ONLY\`/\`HOLD\` or \`NO_TRADE\`.
-- T11: static scan and import isolation rule out \`MAX_SYMBOLS = 50\`, old package/version/table names, any SQLite connection or database migration.
+- T10: no order-placement functions/classes/credentials/private Binance imports; defaults are `NONE` and `OBSERVE_ONLY`/`HOLD` or `NO_TRADE`.
+- T11: static scan and import isolation rule out `MAX_SYMBOLS = 50`, old package/version/table names, any SQLite connection or database migration.
 - T12: run solely offline with hermetic synthetic fixtures and explicit no-side-effect assertions; report command, environment, count and failures in both roadmaps.
 
 **Exit evidence to record for G1-01:** Exact GitHub file+commit SHAs, readable code/test diffs, command and per-test results (no historical pass substituted), no-order/source HOLD negative cases, and environment/resource observation. Only then may G1-01 be ticked. Later old-source reuse requires separate module-level audit.
