@@ -262,6 +262,31 @@ class ObservationBook:
                    btc.state == "METADATA_CLOSED",
                    canonical_digest("event", payload))
 
+    def history_asof(self, symbol: str, event: FiveMinuteEvent) -> tuple[ClosedBar, ...]:
+        """Read-only, frozen copy of admissible closed candle history for G3.
+
+        A future last bar, gap, epoch mismatch, existing HOLD or incomplete
+        bootstrap returns an empty tuple; never silently use a stale suffix.
+        Does not establish independent original trade/quote custody.
+        """
+        self._name(symbol)
+        if type(event) is not FiveMinuteEvent:
+            raise ValueError("G2_HISTORY_EVENT_INVALID")
+        q = self._buffers[symbol]
+        if (self._holds[symbol] or len(q) < HISTORY_BARS
+                or q[-1].open_ms != event.event_open_ms
+                or q[-1].received_at_ms > event.decision_at_ms):
+            return ()
+        epoch = self._epochs[symbol]
+        route = self._routes[symbol]
+        if any(b.symbol != symbol or b.epoch != epoch or b.route != route
+               or b.close_ms + 1 > event.decision_at_ms
+               or b.received_at_ms > event.decision_at_ms
+               or (i and b.open_ms != q[i-1].open_ms + INTERVAL_MS)
+               for i, b in enumerate(q)):
+            return ()
+        return tuple(q)
+
     @property
     def buffered_candles(self) -> int:
         return sum(len(q) for q in self._buffers.values())
