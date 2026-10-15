@@ -240,15 +240,23 @@ Gate: No live trading unless a distinct, explicit decision and technical safety 
 6. Preserve previous evidence and note any regression explicitly. If tests later fail, mark the affected completion **REOPENED / HOLD**, untick it, record the reason, and re-qualify before PASS.
 7. At the end of a session summarize **newly ticked items, unticked/blocked items, test results, modified files, exact branch/commit, current mode and next smallest task**. Don't create a manual worksheet outside GitHub to track progress.
 
+**G0-01 verified documentation work (not proof that G0 is complete):**
+
+- [x] **G0-01:** Commit the versioned register **docs/NBOT_V5_1_LEGACY_COMPONENT_REUSE_REGISTER_V1_0.md** with pinned historical source snapshots, 27 component candidates R01–R27, 12 conflicts C01–C12, test evidence grades and V5.1-only runtime identifier policy. **Date:** 15 Oct 2026 IST. **Evidence commit:** **5d5133766b96ad3b21ab8b4c553e08740c3c7adb**; GitHub file retrieved and checked. **Tests:** document/file check only; no application/unit tests, source-quality audit, VPS or deployment activity during this task.
+- [ ] **G0-02:** First selected component's complete dependency/security/source-grade/test audit, plus precise reviewed V5.1 destination.
+- [ ] **G0-03:** VPS preservation and capacity inventory (without cleanup pending verified backup/rollback), despite new broad maintenance permission; no real-money release.
+
 **Initial verified seed work (not proof that G0 is complete):**
 
 - [x] **SEED-01:** Created new documentation-only **nbot-v5.1** branch without importing legacy working files; verified its first tree contained three documents (15 Oct 2026, initial branch commit **472c3f54415e06715f8b28673eee7d3b545338d4**).
 - [x] **SEED-02:** Copied original Complete Vision **V1.9** byte-for-byte (Git blob **e965d63ae85467a6156cf6134ea001906c8ebe67**); owner and engineering roadmap V1.0 created (same commit).
 - [ ] **G0 — Read-only recovery and legacy inventory complete**
-  - [ ] Record old relevant branches and pin original source commits, CI/test status and current available GitHub evidence.
-  - [ ] Create Legacy Component Reuse Register covering candidate V4/V5 modules, origin, dependencies, test claims and COPY / REIMPLEMENT / DISCARD decisions.
-  - [ ] Identify baseline risks: 50-vs-100/20, evidence gaps, archival pressure and first-Champion paper unlock mismatch.
-  - [ ] Present a nontechnical summary and obtain approval for the **first narrowly scoped code-porting task**.
+  - [x] Record old relevant branches and pin original source commits, historical CI/test status and available GitHub evidence — 15 Oct 2026, preliminary inventory in register commit **5d5133766b96ad3b21ab8b4c553e08740c3c7adb**; no new tests executed.
+  - [x] Create Legacy Component Reuse Register covering candidate V4/V5 modules, origin, preliminary dependencies, named tests and COPY-AND-ADAPT / REIMPLEMENT / DISCARD / REFERENCE decisions — 27 entries, GitHub verified **5d5133766b96ad3b21ab8b4c553e08740c3c7adb**.
+  - [x] Identify baseline risks: 50-vs-100/20/40, source-grade evidence gaps, archival pressure, first-Champion paper unlock mismatch, stale V3/V3.9/V4/V5 imports/IDs — C01–C12, same commit.
+  - [ ] G0-02: complete **per-selected-component** transitive import, hidden network/credential/order/DB side-effect audit with exact source blob, old test fixtures and new interface contract; register findings remain preliminary.
+  - [ ] G0-03: with owner's newly granted VPS authority, first assess existing service/storage/backup/pin/retention metadata safely and document preservation/rollback before any cleanup; no destructive or operational VPS work in G0-01.
+  - [ ] Present exact G1-01 first-port scope for owner review and obtain approval for the **first narrowly scoped application-code task**; G0-01 authorized documentation only.
 - [ ] **G1 — New safe application foundation complete**
   - [ ] Agree minimal V5.1 module/interface tree and source/mode authority contracts.
   - [ ] Create approved clean files; port only reviewed source helpers with exact lineage.
@@ -317,9 +325,10 @@ Gate: No live trading unless a distinct, explicit decision and technical safety 
 | --- | --- | --- | --- | --- | --- |
 | 2026-10-15 | SEED-01 | [x] | 472c3f54415e06715f8b28673eee7d3b545338d4 | Git tree: 3 docs, no application files | New clean V5.1 branch exists; old sources remain on their branches |
 | 2026-10-15 | SEED-02 | [x] | 472c3f54415e06715f8b28673eee7d3b545338d4 | Vision source/copy blob SHA match | The approved Vision V1.9 was carried over unchanged |
-| *Next* | G0 component inventory | [ ] | *To be completed* | *Not yet checked* | Review the old source before deciding what to copy |
+| 2026-10-15 | G0-01 source and conflict register | [x] | **5d5133766b96ad3b21ab8b4c553e08740c3c7adb**; [register](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_LEGACY_COMPONENT_REUSE_REGISTER_V1_0.md) | GitHub source/document review verified 27 candidates, 12 conflicts; no application tests | Safe parts identified without importing legacy or claiming scientific validation |
+| *Next* | G0-02 component-level dependency/side-effect audit | [ ] | *To be completed* | Require exact source blob and tests | Verify one safe pure component before writing V5.1 application code |
 
-**Do not interpret the two SEED checks as passing G0 or starting development.**
+**Do not interpret SEED or G0-01 checks as passing G0, G1 or any engineering/science/release gate.** The branch began with only three docs; G0-01 added this fourth document. The owner has since permitted potential VPS inspection and maintenance, but G0-01 performed no VPS operations. No explicit first application-code component approval, paper-release authorization or real-money trading release follows from this documentation approval.
 
 ## 5. Work management: each gate's report format
 
