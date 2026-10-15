@@ -1,5 +1,8 @@
 # NBOT V5.1 — G7 Learning: Offline Engineering Acceptance and Genuine-Evidence HOLD
 
+> **LATEST CS-01 TRADE-ONLY RETEST (15 OCT 2026):** Following the owner's instant simulated MARKET-fill decision, new active CS-01 never requests/subscribes to bid/ask. Genuine 180-second public-only TRADE + MARK retest passed: **32,313 frames**, **20/20 symbols each feed**, **40 total source cursors**, **0 hard source gaps**, auto-stopped, **145 hash-linked raw segment receipts verified**. This does NOT activate any virtual Research, qualified net returns, Champions, PAPER, Testnet or REAL. Existing G5/G6/G9–G10 code/test results are historical **quote-based synthetic lab acceptance**, not approval of V1.10 no-quote instant-market fills; implement/test the revised adverse-cost simulation before any model scientific/PAPER promotion. G7 original qualified outcomes still 0. See [Owner Vision V1.10](NBOT_V5_1_PRODUCT_VISION_V1_10_TRADE_PRICE_ONLY_AMENDMENT_20261015.md) and [20-coin G4 actual CS-01 evidence](NBOT_V5_1_CS01_TRADE_ONLY_RETEST_RELEASE_RESULTS_20261015.md). Legacy V1.9 original blueprint remains unmodified and preserved. **[ ] Future live research/economic/PAPER scientific gates stay HOLD.**
+
+
 **Date:** 15 October 2026 IST  
 **Repository/branch:** `samqju/Nbot` / `nbot-v5.1` — no changes to `main`.  
 **Exact code revision tested on BOTH VPSs:** `49cb90bc35a8e6c79dcf4cebf8db0edc1f0cfc4d`.  
