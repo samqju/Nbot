@@ -89,22 +89,31 @@ def read_segments(root, expected_cohort=None):
         hold("COHORT_INVALID")
     if expected_cohort is not None and symbols != list(expected_cohort):
         hold("COHORT_CONFLICT")
-    data = sorted(p for p in entries if p.name.startswith("segment-") and p.suffix == ".gz")
-    metas = sorted(p for p in entries if p.name.startswith("segment-") and p.suffix == ".json")
+    metas = sorted(root.glob("segment-????????.json"))
     expected_files = {header}
-    for i in range(1, len(data) + 1):
-        expected_files |= {root / f"segment-{i:08d}.gz",
-                           root / f"segment-{i:08d}.json"}
-    if len(data) != len(metas) or set(entries) != expected_files:
+    for i in range(1, len(metas) + 1):
+        stem=f"segment-{i:08d}"
+        expected_files.add(root/(stem+".json"))
+        local=root/(stem+".gz")
+        locator=root/(stem+".location.json")
+        if not local.is_file() and not locator.is_file():
+            hold("ORPHAN_OR_MISSING_SEGMENT")
+        if local.is_file(): expected_files.add(local)
+        if locator.is_file(): expected_files.add(locator)
+    if set(entries) != expected_files:
         hold("ORPHAN_OR_MISSING_SEGMENT")
     prior_segment = prior_receipt = ZERO
     seq = 0
     last_route = {}
     counts = {"FRAME": 0, "OPEN": 0, "CLOSED": 0, "ABRUPT_RESTART_HOLD": 0}
-    for i in range(1, len(data) + 1):
+    for i in range(1, len(metas) + 1):
         name = f"segment-{i:08d}"
         meta = json.loads((root / (name + ".json")).read_bytes())
-        payload = (root / (name + ".gz")).read_bytes()
+        from nbot.v5.g4_archive_rollover import resolve_payload
+        payload_path=resolve_payload(root,name,meta)
+        if payload_path.stat().st_size>MAX_SEGMENT_UNCOMPRESSED:
+            hold("COMPRESSED_SEGMENT_OVERSIZE")
+        payload = payload_path.read_bytes()
         if len(payload) > MAX_SEGMENT_UNCOMPRESSED or (
                 meta.get("segment_index") != i or
                 meta.get("prior_segment_sha") != prior_segment or
@@ -187,7 +196,8 @@ class SegmentedForwardSource:
     flush_interval_seconds = 5.0
 
     def __init__(self, root, *, symbols, max_pending_bytes=2*1024*1024,
-                 max_pending_frames=2048, max_disk_bytes=256*1024*1024):
+                 max_pending_frames=2048, max_disk_bytes=256*1024*1024,
+                 rollover_destination=None):
         if (type(max_pending_bytes) is not int or
                 not 32768 <= max_pending_bytes <= MAX_SEGMENT_UNCOMPRESSED or
                 type(max_pending_frames) is not int or
@@ -209,6 +219,7 @@ class SegmentedForwardSource:
         self.max_pending_bytes = max_pending_bytes
         self.max_pending_frames = max_pending_frames
         self.max_disk_bytes = max_disk_bytes
+        self.rollover_destination = rollover_destination
         self.symbols = syms
         self.pending = []
         self.pending_bytes = 0
@@ -229,7 +240,7 @@ class SegmentedForwardSource:
             elif record["kind"] == "OPEN":
                 self.by_symbol = {k: v for k, v in self.by_symbol.items()
                                   if k[0] != record["route"]}
-        manifests = sorted(self.root.glob("segment-*.json"))
+        manifests = sorted(self.root.glob("segment-????????.json"))
         if manifests:
             self.segment_head = json.loads(manifests[-1].read_bytes())["manifest_sha"]
             self.segment_count = len(manifests)
@@ -367,6 +378,10 @@ class SegmentedForwardSource:
             "last_receipt_sha": head}
         meta["manifest_sha"] = sha(canonical(meta))
         encoded = canonical(meta)
+        if self.total_written + len(zipped) + len(encoded) > self.max_disk_bytes and self.rollover_destination is not None:
+            from nbot.v5.g4_archive_rollover import archive_committed_segments
+            archive_committed_segments(self.root,self.rollover_destination)
+            self.total_written=sum(p.stat().st_size for p in self.root.iterdir())
         if self.total_written + len(zipped) + len(encoded) > self.max_disk_bytes:
             hold("ARCHIVE_DISK_CAP_HOLD")
         _durable_publish(self.root / (name + ".gz"), zipped)
