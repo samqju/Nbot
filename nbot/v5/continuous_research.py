@@ -320,6 +320,9 @@ class ContinuousResearch:
                 ("candidate:"+intent["decision_id"],)).fetchone()[0])
             supplied=self.economic_provider(population,intent,saved["path"],now_ms)
             if supplied is None:
+                self.store.append("economic-request:"+label,"ECONOMIC_REVIEW_REQUEST",now_ms,
+                                  {"label_id":label,"grade":self.grade,"population":population,
+                                   "intent":intent,"path":saved["path"],"order_authority":"NONE"})
                 continue
             package, review=supplied
             try:
@@ -483,6 +486,10 @@ def main():
     p.add_argument("--max-events-per-cycle",type=int,default=3)
     p.add_argument("--max-catchup-seconds",type=int,default=120)
     p.add_argument("--once",action="store_true")
+    p.add_argument("--economic-inbox")
+    p.add_argument("--economic-reviewer-key-file")
+    p.add_argument("--learning-review-inbox")
+    p.add_argument("--learning-reviewer-key-file")
     a=p.parse_args()
     if not 60<=a.interval_seconds<=600:raise ValueError("RESEARCH_INTERVAL_BOUNDS")
     os.umask(0o077)
@@ -501,8 +508,21 @@ def main():
         a.start_event_ms=template.spec["activates_at_ms"]
     if a.start_event_ms%300000:
         raise ValueError("G4_RESEARCH_START_NOT_EVENT_ALIGNED")
+    from nbot.v5.review_inbox import EconomicInbox, LearningReviewInbox, private_path
+    if bool(a.economic_inbox)!=bool(a.economic_reviewer_key_file) or bool(a.learning_review_inbox)!=bool(a.learning_reviewer_key_file):
+        raise ValueError("INDEPENDENT_INBOX_AND_KEY_REQUIRED_TOGETHER")
+    provider=EconomicInbox(a.economic_inbox) if a.economic_inbox else None
+    key=private_path(a.economic_reviewer_key_file).read_bytes() if provider else None
+    protocol=Protocol(**json.loads(Path(a.protocol).read_text()))
     engine=ContinuousResearch(source=a.source,vault=a.vault,registry=a.registry,root=a.root,
-                              protocol=Protocol(**json.loads(Path(a.protocol).read_text())),start_event_ms=a.start_event_ms)
+                              protocol=protocol,start_event_ms=a.start_event_ms,
+                              economic_provider=provider,reviewer_key=key)
+    if a.learning_review_inbox:
+        from nbot.v5.learning_lifecycle import LearningLifecycle
+        engine.learning=LearningLifecycle(
+            engine.store,protocol=protocol,grade="ORIGINAL",
+            reviewer=LearningReviewInbox(a.learning_review_inbox),
+            reviewer_key=private_path(a.learning_reviewer_key_file).read_bytes())
     try:
         while True:
             started=time.monotonic()
