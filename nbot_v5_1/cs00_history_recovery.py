@@ -152,6 +152,17 @@ class HistoricalAggTradeRecovery:
         self.finished = False
         self.needs_archive = now_ms - gap_start_ms > RECENT_MS
 
+    def advance_clock(self, now_ms:int):
+        """Explicit monotonic recovery worker clock; past the 48h REST
+        horizon becomes archive-pending, never silently scored.
+        """
+        if type(now_ms) is not int or now_ms<self.now_ms:
+            raise SourceRecoveryHold("CS00_RECOVERY_CLOCK_REWOUND")
+        self.now_ms=now_ms
+        if now_ms-self.gap_start_ms>RECENT_MS and not self.finished:
+            self.needs_archive=True
+        return self.state
+
     @property
     def state(self) -> str:
         if self.reasons:
