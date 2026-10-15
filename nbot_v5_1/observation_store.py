@@ -67,7 +67,7 @@ class CompactObservationStore:
     quarantined by refusal; G2 does not silently repair or delete it.
     """
     def __init__(self, directory: Path, *, max_bytes: int = 64 * 1024 * 1024):
-        if type(directory) is not Path or not directory.is_absolute() or directory.is_symlink():
+        if not isinstance(directory, Path) or not directory.is_absolute() or directory.is_symlink():
             raise ValueError("G2_STORAGE_PATH_INVALID")
         if (type(max_bytes) is not int or max_bytes < 128 * 1024
                 or max_bytes > 1024 * 1024 * 1024):
