@@ -1,5 +1,8 @@
 # NBOT V5.1 — Entire G1 Safe Foundation: Final Engineering Acceptance
 
+> **CURRENT STATUS POINTER — 15 October 2026:** G1's frozen-100 market-selection engineering milestone and initial real Binance public 100/100 source verification are PASS. This is NOT multi-day operating endurance. The subsequent G2/G3 initial public source/record pipeline passed its limited scope; G4 is currently HOLD after BTCUSDT bid/ask quote staleness. No production Observation, PAPER or REAL system is running. [Latest live-status and next-chat handoff](NBOT_V5_1_NEXT_CHAT_START_HERE_LIVE_G1_G3_PASS_G4_BTC_QUOTE_HOLD_20261015.md). The original numbered acceptance sections below remain historical and are not rewritten to suggest broader evidence.
+
+
 **FINAL G1 DECISION: ✅ ENTIRE G1 PASSED — G1-01 [x], G1-02 [x], G1-03 [x], G1-04 [x], and parent G1 [x]. No G1 subphase remains open.**
 
 **What was accepted:** Complete *nontrading/offline V5.1 application foundation*, including verified Python 3.12.3 tests on both VPSs. **Not accepted:** Binance order execution, paper/real trading, scientific original trade/quote custody, or unrestricted production deployment.
