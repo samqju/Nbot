@@ -49,6 +49,7 @@ class ExplorationRow:
     cost_state: str
     source_epoch: int | None
     source_route: str | None
+    source_grade: str
     inclusion_probability: float
     decision_id: str
     disposition: ObservationDisposition = ObservationDisposition.NO_TRADE
@@ -74,6 +75,7 @@ class ExplorationRow:
                 "cost_state": self.cost_state,
                 "source_epoch": self.source_epoch,
                 "source_route": self.source_route,
+                "source_grade": self.source_grade,
                 "inclusion_probability": self.inclusion_probability,
                 "decision_id": self.decision_id,
                 "disposition": self.disposition.value,
@@ -289,6 +291,7 @@ def explore_event(
                     "UNIVERSE_LIQUIDITY_METADATA_ONLY" if not universe_stale else "UNIVERSE_STALE",
                     "QUOTE_SLIPPAGE_FEE_FUNDING_UNVERIFIED",
                     srow.source_epoch, srow.route,
+                    "CLOSED_PUBLIC_CANDLE_METADATA_NOT_ORIGINAL",
                     probability if (sym,side) in source_eligible and capacity_slots>0 else 0.0,
                     identity))
     if len(rows) != 2*len(cohort) or len({r.decision_id for r in rows})!=len(rows):
