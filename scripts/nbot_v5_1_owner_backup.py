@@ -13,6 +13,7 @@ atomic live-service checkpoint without the future writer lock integration.
 """
 from __future__ import annotations
 import hashlib
+import gzip
 import fcntl
 import time
 from contextlib import contextmanager
@@ -312,9 +313,54 @@ def _verify_checkpoint_tree(root:Path):
     if len(commits)!=len(ev) or len(commits)!=len(exp):
         raise BackupHold("STATE_G2_G3_MISSING_CHECKPOINT")
 
+
+def _verify_original_segment_pairs(root:Path):
+    """Fail closed on torn or altered G4 zipped source receipts."""
+    folder=root/"evidence"
+    if not folder.exists():return
+    _private_dir(folder)
+    files=sorted(folder.iterdir())
+    if not files:return
+    pairs={}
+    for p in files:
+        m=re.fullmatch(r"segment-([0-9]{8})\.(json|gz)",p.name)
+        if not m or p.is_symlink() or not p.is_file():
+            raise BackupHold("STATE_EVIDENCE_UNKNOWN_OR_UNSAFE")
+        st=p.stat()
+        if st.st_uid!=os.getuid() or st.st_mode&0o077 or st.st_nlink!=1:
+            raise BackupHold("STATE_EVIDENCE_FILE_UNSAFE")
+        pairs.setdefault(int(m.group(1)),set()).add(m.group(2))
+    ids=sorted(pairs)
+    if ids!=list(range(1,len(ids)+1)):
+        raise BackupHold("STATE_EVIDENCE_SEQUENCE_MISSING")
+    last="0"*64
+    for i in ids:
+        if pairs[i]!={"json","gz"}:
+            raise BackupHold("STATE_EVIDENCE_SEGMENT_UNCOMMITTED_PAIR")
+        stem=f"segment-{i:08d}"
+        packed=(folder/(stem+".gz")).read_bytes()
+        receipt=(folder/(stem+".json")).read_bytes()
+        try:
+            data=json.loads(receipt)
+            if (data.get("schema")!="NBOT_V5_1_G4_SEGMENT_V1" or
+                    data.get("id")!=i or data.get("previous")!=last or
+                    data.get("compressed_sha256")!=hashlib.sha256(packed).hexdigest() or
+                    receipt!=json.dumps(data,sort_keys=True,separators=(",",":"),
+                                        ensure_ascii=True,allow_nan=False).encode("ascii")
+                    or len(packed)>1024*1024):
+                raise ValueError("segment hash chain")
+            body=gzip.decompress(packed)
+            if (len(body)>1024*1024 or
+                    data.get("body_sha256")!=hashlib.sha256(body).hexdigest()):
+                raise ValueError("segment body")
+        except (ValueError,TypeError,OSError,EOFError) as exc:
+            raise BackupHold("STATE_EVIDENCE_SEGMENT_CORRUPT") from exc
+        last=hashlib.sha256(receipt).hexdigest()
+
 def create_backup(*,state:Path=STATE_ROOT,destination:Path=BACKUP_ROOT):
     with _exclusive_state_backup_gate(state):
         _verify_checkpoint_tree(state)
+        _verify_original_segment_pairs(state)
         return _create_backup_locked(state=state,destination=destination)
 
 def _create_backup_locked(*,state:Path,destination:Path):
