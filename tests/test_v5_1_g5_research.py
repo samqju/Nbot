@@ -112,7 +112,7 @@ class G5ResearchTests(unittest.TestCase):
         self.assertGreater(stop,95)
         self.book.ingest(self.tick("102",id=2,t=END_DECISION+3000))
         self.assertEqual(self.book.active[p.intent_id].stop,stop)
-        hits=self.book.ingest(self.tick("101",id=3,t=END_DECISION+4000))
+        hits=self.book.ingest(self.tick("100",id=3,t=END_DECISION+4000))
         self.assertEqual(len(hits),1)
         self.assertEqual(hits[0].reason,"TRAILING_STOP")
 
@@ -124,7 +124,7 @@ class G5ResearchTests(unittest.TestCase):
         self.assertLess(before,105)
         self.book.ingest(self.tick("98",id=2,t=END_DECISION+3000))
         self.assertEqual(self.book.active[p.intent_id].stop,before)
-        hit=self.book.ingest(self.tick("99",id=3,t=END_DECISION+4000))
+        hit=self.book.ingest(self.tick("100",id=3,t=END_DECISION+4000))
         self.assertEqual(len(hit),1)
         self.assertEqual(hit[0].reason,"TRAILING_STOP")
 
