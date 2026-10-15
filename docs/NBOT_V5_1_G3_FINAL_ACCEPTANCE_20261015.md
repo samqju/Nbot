@@ -1,5 +1,8 @@
 # NBOT V5.1 — Entire G3 Causal Exploration Final Acceptance
 
+> **CURRENT STATUS POINTER — 15 October 2026:** G3 engineering and initial real public-source 100×2=200 directional row generation passed. All 24 detector-state slots were present for each row, but under the explicitly zero-Research-capacity run **200 directions were capacity-skipped, 0 detectors actually evaluated**. This must NOT be called 200 validated market signals, trade positions, scientific economic results or model-training samples. G4 live continuous source remains HOLD from BTCUSDT stale bid/ask messages. [Latest live-status and next-chat handoff](NBOT_V5_1_NEXT_CHAT_START_HERE_LIVE_G1_G3_PASS_G4_BTC_QUOTE_HOLD_20261015.md). The original numbered acceptance sections below remain historical and are not rewritten to suggest broader evidence.
+
+
 **Date:** 15 October 2026 IST  
 **Repository/branch:** [samqju/Nbot](https://github.com/samqju/Nbot), **`nbot-v5.1` only**  
 **Full G3 tested source revision:** `5d9707fe8521bbe17e96036aef0a5ec44a784a96`. Later documentation-only updates do not alter this tested code.  
