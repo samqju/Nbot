@@ -2,7 +2,7 @@
 
 **Roadmap version:** 1.1  
 **Date:** 15 October 2026  
-**Status:** A new beginning — planning and safety checks only; no trading authorization  
+**Status (current, 15 October 2026):** **Milestones 0, 1, 2, 3 COMPLETE** — G0 fresh-start preparation, G1 complete safe nontrading foundation, G2 read-only 100-coin Observation engineering. **Milestone 4 / G3 next.** Both VPSs passed 120/120 combined offline tests and the G2 100-coin synthetic capacity benchmark. **No permanently installed/running bot and no paper/testnet/real trading authorization.**  
 **Product blueprint:** NBOT Complete Product Vision **V1.9** (separately copied **unchanged** into this branch)  
 **Companion:** NBOT V5.1 Engineering Roadmap V1.0  
 **Repository/branch:** samqju/Nbot / nbot-v5.1
