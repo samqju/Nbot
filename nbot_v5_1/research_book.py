@@ -47,6 +47,7 @@ class _Path:
     state:str="ACTIVE_SYNTHETIC_PATH"
     seen:int=0
     checkpoint_stop:str|None=None
+    last_price:str|None=None
 
 
 @dataclass(frozen=True)
@@ -217,7 +218,7 @@ class VirtualResearchBook:
                      or intent.event_open_ms!=event.event_open_ms
                      or intent.declared_at_ms>event.decision_at_ms
                      or intent.activates_at_ms<=event.decision_at_ms
-                     or intent.intention_id if False else False):
+                     ):
                     bad+=1;continue
                 # The source-grade assertion is SYNTHETIC_ONLY in G5; the
                 # G4 20 market WARMUP_HOLD must never become 'qualified' here.
@@ -301,9 +302,7 @@ class VirtualResearchBook:
                     if path.last_tick_at is not None and path.last_tick_at<plan.expires_at_ms:
                         reason="HORIZON"
                         close_at=plan.expires_at_ms
-                        close_price=str(path.extreme) if False else (
-                            str(path._last_price) if hasattr(path,"_last_price")
-                            else plan.entry_reference)
+                        close_price=path.last_price if path.last_price is not None else plan.entry_reference
                     else:
                         self._hold_symbol(tick.symbol,tick.at_ms,"NO_CONFIRMED_HORIZON_COVERAGE")
                         return tuple(events)
@@ -329,7 +328,7 @@ class VirtualResearchBook:
                 path.last_tick_at=tick.at_ms
                 path.last_aggregate_id=tick.aggregate_id
                 path.seen+=1
-                path._last_price=tick.price
+                path.last_price=tick.price
                 if (plan.side=="LONG" and price>path.extreme
                         or plan.side=="SHORT" and price<path.extreme):
                     path.extreme=price
