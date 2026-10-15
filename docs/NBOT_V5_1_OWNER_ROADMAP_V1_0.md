@@ -173,7 +173,7 @@ The guardian must be able to independently reject a proposal and enforce the one
 
 - [x] **START-01:** New nbot-v5.1 branch created with **only three documents**, no imported old application files — verified from GitHub tree on 15 Oct 2026 (commit **472c3f54415e06715f8b28673eee7d3b545338d4**).
 - [x] **START-02:** Complete Vision V1.9 copied unchanged and both roadmaps created — GitHub verified on 15 Oct 2026 (same commit).
-- [ ] **Milestone 0 — Old NBOT preserved and safely assessed** (engineering G0)
+- [x] **Milestone 0 — Old NBOT assessed and owner-approved fresh start verified** (engineering G0)
   - [x] Identify the important historical branches, files and tests without changing them — initial read-only GitHub inventory, 15 Oct 2026; reuse register commit **5d5133766b96ad3b21ab8b4c553e08740c3c7adb**; documentation/source inspection, no tests run.
   - [x] Confirm which old components may be useful or risky — 27 preliminary candidates reviewed, 15 Oct 2026; same register/commit; source and test-file review only.
   - [x] **G0-03 assessment:** Inspect both VPSs, preserve old data, record stopped services, storage/RAM, proof files and backup gaps; document rollback steps — completed 15 Oct 2026, assessment commit **aea9a21776d4fcf4521ac4d55ca9aa083f5fdf28**; **no cleanup or backup restoration conducted**.
@@ -181,7 +181,7 @@ The guardian must be able to independently reject a proposal and enforce the one
   - [x] **G0-03-R2 owner decision:** Permission to discard old NBOT-only material from both VPSs without backup granted 15 Oct 2026; **no cleanup was executed in G0-03**. Avoid OS, SSH, non-NBOT files and historic GitHub branches.
   - [ ] **G0-03-CLEANUP-EXEC:** Automated legacy deletion was blocked before execution; read-only checks still showed both old NBOT trees. On 15 Oct 2026 owner approved **manual exact-path cleanup via saved PuTTY sessions** and will supply outputs. **PENDING VERIFICATION** — do not tick until actual removal proven. Owner now allows G0-04 *scope* finalization concurrently.
   - [x] **Approve first selected safe port:** The exact selected pure functions have a pinned source/risk audit, and the owner directed G0-04 scope finalization in parallel with manual cleanup, 15 Oct 2026. G0-04 scope commit **7c624de187e274fe40172e64d03b8697f6e1f7aa**. **Other 27 candidate assessments remain task-by-task and are not blanket approved.**
-- [ ] **Milestone 1 — Detailed list of code to copy/rebuild finished** (engineering G0)
+- [x] **Milestone 1 — Initial source reuse register and first component scope complete** (engineering G0)
   - [x] List old V4 detectors, market-data tools, research evidence checks, paper book and risk protections with pinned source links — 15 Oct 2026, register commit **5d5133766b96ad3b21ab8b4c553e08740c3c7adb**.
   - [x] Give each an easy choice: **COPY / REWRITE / DISCARD / REFERENCE** with the reason — register entries R01–R27; source inspection only.
   - [x] Identify conflicts between previous NBOT and Vision V1.9 — conflict register C01–C12, including obsolete V3/V3.9/V4/V5 runtime references.
