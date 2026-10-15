@@ -1,5 +1,8 @@
 # NBOT V5.1 — First Genuine CS-01 Binance Public-Only Observation Canaries, 15 Oct 2026
 
+> **NEW CHAT / NAVIGATION:** This is the immutable factual report for the first real canaries, NOT a production-readiness PASS. The authoritative next-session index with the precise G1/G2/G3 limited scope, G4 blocker, tests and real backup is [START HERE](NBOT_V5_1_NEXT_CHAT_START_HERE_LIVE_G1_G3_PASS_G4_BTC_QUOTE_HOLD_20261015.md). **G3's 200 recorded directional masks were capacity-skipped (no actual detector evaluation)**; do not count these as signal/trade success. Latest tested code `6b7491d8a903cbc248c85327a20919d68f05292f`.
+
+
 **Owner authorized:** start and verify **PUBLIC OBSERVATION ONLY** after their desktop commander reconnection. Owner did NOT authorize PAPER, testnet, real orders or economic/research model promotion.
 
 **Final HEAD executable checked in these live canaries:** `6b7491d8a903cbc248c85327a20919d68f05292f`. The code has not been installed as a permanent service. All canary processes used isolated shallow clones, explicit time limits and public URLs, and exited. **Final decision: LIVE CONTINUOUS OBSERVATION [ ] HOLD (not production-started); live REST and public WSS connectivity [x] VERIFIED.**
@@ -35,3 +38,9 @@
 **Manual owner WinSCP next action:** transfer the above exact .tar.gz and .sha256 from `/home/ubuntu/NBOT_Backups/` to the desktop, compare SHA, but don't confuse that copy with original-source scientific qualification.
 
 [Owner's WinSCP guide](NBOT_V5_1_OWNER_MANUAL_DESKTOP_WINSCP_BACKUP_V1_0.md) · [Controlled startup checklist](NBOT_V5_1_CONTROLLED_STARTUP_OWNER_CHECKLIST_AND_EVIDENCE_REGISTER_V1_0.md).
+
+## Reconciled next-chat status
+
+**[x]** Binance real 100-source initial G1/G2, 200 directional G3 receipt generation, all 3 BTC public WSS feed kinds, all 60 deep source cursors, safe shutoff, first locally validated 8-file genuine VPS backup. **[ ]** Continuous reliable G4 original-source coverage because **BTC QUOTE `EVENT_FUTURE_OR_STALE`**, [ ] WinSCP desktop backup transfer, [ ] 20-source temporal endurance, [ ] original cost/first touch, [ ] model/PAPER/real releases.
+
+All next steps, corrected trade-ID semantics and code SHA are consolidated in [this newer current handoff](NBOT_V5_1_NEXT_CHAT_START_HERE_LIVE_G1_G3_PASS_G4_BTC_QUOTE_HOLD_20261015.md); do not start a permanent collector on the strength of a limited source smoke run.
