@@ -71,6 +71,7 @@ class UniverseManifest:
     entries: tuple[UniverseEntry, ...]
     rejected: tuple[tuple[str, str], ...]
     qualified_count: int
+    public_receipts: tuple[tuple[str, str, int], ...] = ()  # kind, raw SHA, recv as-of
 
     @property
     def symbols(self) -> tuple[str, ...]:
@@ -82,6 +83,7 @@ def select_universe(
     history_closed: dict[str, int], source_health: dict[str, bool],
     *, source_received_at_ms: int, selected_at_ms: int,
     turnover_floor: str = "1000000", max_spread_bps: str = "50",
+    public_receipts: tuple[tuple[str, str, int], ...] = (),
 ) -> UniverseManifest:
     """Deterministic 50 turnover + 25 gainers + 25 losers, then qualified fill.
 
@@ -102,6 +104,23 @@ def select_universe(
     floor, spread_limit = _number(turnover_floor), _number(max_spread_bps)
     if floor <= 0 or spread_limit <= 0:
         raise UniverseHold("G2_UNIVERSE_THRESHOLDS_INVALID")
+    if type(public_receipts) is not tuple or len(public_receipts) not in (0, 3):
+        raise UniverseHold("G2_PUBLIC_RECEIPTS_INVALID")
+    if public_receipts:
+        expected = {"EXCHANGE_INFO", "TICKER_24HR", "BOOK_TICKER"}
+        if ({r[0] for r in public_receipts if type(r) is tuple and len(r) == 3}
+                != expected or len(public_receipts) != 3):
+            raise UniverseHold("G2_PUBLIC_RECEIPT_KINDS_INVALID")
+        for kind, digest, when in public_receipts:
+            if (type(kind) is not str or type(digest) is not str
+                    or not re.fullmatch(r"[0-9a-f]{64}", digest)
+                    or type(when) is not int or when < 0
+                    or when > selected_at_ms or selected_at_ms - when > 60_000):
+                raise UniverseHold("G2_PUBLIC_RECEIPT_SOURCE_STALE")
+        if source_received_at_ms != min(r[2] for r in public_receipts):
+            raise UniverseHold("G2_PUBLIC_RECEIPT_CLOCK_MISMATCH")
+        if max(r[2] for r in public_receipts) - source_received_at_ms > 15_000:
+            raise UniverseHold("G2_PUBLIC_RECEIPT_SKEW")
     listings = exchange_info.get("symbols")
     if type(listings) is not list:
         raise UniverseHold("G2_UNIVERSE_NO_EXCHANGE_INFO")
@@ -207,7 +226,8 @@ def select_universe(
                   "exchange": sorted((s, str(v.quote_turnover), str(v.change_percent),
                                       str(v.spread_bps), v.history_closed)
                                      for s, v in candidates.items()),
-                  "rejected": sorted(rejected)}
+                  "rejected": sorted(rejected),
+                  "receipts": sorted(public_receipts)}
     source_digest = _digest(normalized)
     manifest_payload = {"schema": UNIVERSE_SCHEMA, "at": selected_at_ms,
                         "source": source_digest,
@@ -216,4 +236,5 @@ def select_universe(
     return UniverseManifest(UNIVERSE_SCHEMA, selected_at_ms,
                             source_received_at_ms, source_digest,
                             _digest(manifest_payload), entries,
-                            tuple(sorted(rejected)), len(candidates))
+                            tuple(sorted(rejected)), len(candidates),
+                            tuple(sorted(public_receipts)))
