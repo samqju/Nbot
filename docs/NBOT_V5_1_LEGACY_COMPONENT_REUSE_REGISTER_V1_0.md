@@ -184,11 +184,11 @@ All paths and symbol names below are historical. Destination modules are **propo
 - [x] **G0-02-D — Specify exact independent V5.1 G1-01 files/contracts and 12 concrete offline acceptance checks; verified 15 Oct 2026 by architecture/document review.**
 - [x] **G0-03** VPS inventory and backup assessment completed via authorized read-only SSH on 15 Oct 2026; proof commit **aea9a21776d4fcf4521ac4d55ca9aa083f5fdf28**. **No restorable NBOT backup verified; cleanup remains HOLD.**
 - [x] **G0-03-R1/R2 disposition:** Owner **WAIVED (NOT PERFORMED)** old-data backups and approved abandonment of historical NBOT material on Execution-VPS/Observation-VPS, 15 Oct 2026. Old backup/restore requirement is NO LONGER a G0 prerequisite; no backup, restore or deletion is claimed. **7e9c2e6eb83bb9d3112386dad936e45e373dbcfc**.
-- [ ] **G0-03-CLEANUP-EXEC:** Separate NBOT-only cleanup action remains NOT EXECUTED; cannot be marked done by a waiver.
+- [x] **G0-03-CLEANUP-EXEC:** Owner-run cleanup SUCCESS on both VPSs; 15 Oct 2026 independent SSH after-check confirmed both old NBOT directories, reset markers and retired service file absent, no named NBOT units/processes and SSH working — [evidence](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G0_CLEANUP_COMPLETION_20261015.md), commit **81dadf68a9949b847fd8f38336c5d532eab861cd**. No old backups were made (waived).
 - [ ] First **G1-01 application coding, test execution and separate roadmap G1 gate acceptance**. G0-02 marks the *audit* complete, not a successful code migration or runtime safety test.
 - [ ] Remaining R01–R27 component-specific audits and any broader technical qualification needed before their individual transfers.
 
-**Current status after owner waiver 15 Oct 2026: G0-02 audit PASS; G0-03 assessment plus explicit backup waiver COMPLETE. G0 as a whole remains [ ] due to G0-04 first-code scope review, NOT due to omitted legacy backups.** Vision V1.9 and old GitHub branches remain unchanged. No deployment, paper unlock or real-money trading authorization has been exercised. Owner approval of G0-02 is not itself a scientific or financial release.
+**Latest status after 15 Oct 2026 verified cleanup: G0-01/02/03/04 PASS; cleanup independently verified; overall G0 completed.** Original source docs below preserve historical sequence and owner backup waiver; G1 application code/tests not started. Vision V1.9 and old GitHub branches remain unchanged. No deployment, paper unlock or real-money trading authorization has been exercised. Owner approval of G0-02 is not itself a scientific or financial release.
 
 
 ## 9. G0-03 — Actual two-VPS preservation and backup inventory (15 Oct 2026)
@@ -200,7 +200,7 @@ All paths and symbol names below are historical. Destination modules are **propo
 - [x] **Risk flagged:** Observation-VPS two inspected NBOT backup directories were **empty**. /var/backups contained OS package backups. Cloud/off-host backups NOT verified, so no recoverable copy/restore test was proven.
 - [x] **G0-03-R1 disposition:** Owner explicitly waived legacy backup/restore; **N/A / NOT DONE**, not backup PASS — **7e9c2e6eb83bb9d3112386dad936e45e373dbcfc**.
 - [x] **G0-03-R2 decision:** Owner has authorized abandoning old NBOT VPS data without backups; recorded as owner decision, **not deletion**.
-- [ ] **G0-03-CLEANUP-EXEC:** Specific path-limited old VPS app cleanup, if ever performed, must be tracked separately with before/after evidence.
+- [x] **G0-03-CLEANUP-EXEC:** Verified the old application directory, empty reset marker and relevant retired service absent on each VPS 15 Oct 2026; owner output + independent SSH proof **81dadf68a9949b847fd8f38336c5d532eab861cd**. The former pending checkbox is closed by actual work, not by the waiver.
 - [x] **G0-04 first application-code scope decision:** The owner approved completing scope in parallel with manual cleanup; exact independent 3-file V5.1 first-code plan and T01–T12 proof criteria approved 15 Oct 2026, **7c624de187e274fe40172e64d03b8697f6e1f7aa**. **G1-01 implementation/test execution not started.**
 
 **Owner override 15 Oct 2026:** G0-03 assessment [x], legacy backup waiver/abandonment decision [x] (**not backed up**), cleanup execution [ ], overall G0 [ ] pending G0-04, G1 [ ]; paper and real trading LOCKED. Neither VPS has been changed or cleaned by these documentation updates.
@@ -225,10 +225,10 @@ The owner explicitly requested the **old VPS cleanup to take place before G0-04 
 
 - [x] **G0-04-SCOPE-DRAFT:** The exact future 3-file pure V5.1 G1-01 scope, exclusions, 12 offline test conditions and branch/contract requirements were written in [G0-04 First Code Scope V1.0](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G0_04_FIRST_CODE_SCOPE_V1_0.md), source commit **697b55f4201e7d4f76daaa0bde0efc113b3c99f7**; document review only.
 - [x] **G0-03-CLEANUP-BLOCK recorded:** GitHub log documents that cleanup was not executed and original paths remain. This records a verified blocker, NOT a completed cleanup.
-- [ ] **G0-03-CLEANUP-EXEC:** Old NBOT-specific VPS app removal with independently confirmed absence on each host. **BLOCKED**, still required by owner's chosen sequence.
+- [x] **G0-03-CLEANUP-EXEC (later after-state):** Previously blocked **agent** command was not run; the owner subsequently completed manual cleanup. Independent read-only checks 15 Oct 2026 confirmed absence of named historical paths and old observation unit on both hosts; **81dadf68a9949b847fd8f38336c5d532eab861cd**.
 - [x] **G0-04-CLOSE:** Later explicit owner direction supersedes the earlier cleanup-first dependency **for documentation-only scope completion**. The strict 3-file first-code specification and tests are now approved/closed, 15 Oct 2026, **7c624de187e274fe40172e64d03b8697f6e1f7aa**. Actual cleanup is separately pending manual proof; no code or tests done.
 
-**Latest status:** G0-04 scope is now **[x]** under the owner's new parallel-work instruction, but **parent G0 and old-VPS cleanup execution remain [ ]** pending owner-run PuTTY outputs. No V5.1 application code exists yet. The legacy backup waiver remains in effect; old GitHub source branches and non-NBOT infrastructure must not be touched. New scientific/economic/source safety contracts and separate release approvals are unchanged.
+**Later completed status:** G0-04 scope remains **[x]** under the owner's newer parallel-work instruction; **old-VPS cleanup execution is now [x]** based on owner PuTTY logs and independent SSH proof **81dadf68a9949b847fd8f38336c5d532eab861cd**, and parent G0 can close with its evidence. No V5.1 application code exists yet. The legacy backup waiver remains in effect; old GitHub source branches and non-NBOT infrastructure must not be touched. New scientific/economic/source safety contracts and separate release approvals are unchanged.
 
 
 ## 12. Owner-finalized G0-04 scope and manual legacy cleanup path — 15 Oct 2026
@@ -240,7 +240,19 @@ The owner explicitly said: personally execute old VPS removal commands if automa
 - [x] **G0-04-F3:** Pure five-minute clock, immutable evidence HOLD, versioned hash and order authority NONE API accepted — same scope commit.
 - [x] **G0-04-F4:** Precise offline T01–T12 test cases and test-run proof gate accepted; not yet executed — same scope commit.
 - [x] **G0-04-CLOSE:** First-code scope fully documented and owner-approved, **15 Oct 2026**; [approved first-code scope](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G0_04_FIRST_CODE_SCOPE_V1_0.md).
-- [ ] **G0-03-CLEANUP-EXEC:** Guarded exact-path manual PuTTY commands supplied for both VPSs; awaiting user execution output showing success on *both* hosts. No fresh post-removal SSH proof yet. Do not tick merely because owner authorized them.
+- [x] **G0-03-CLEANUP-EXEC:** Owner supplied separate SUCCESS PuTTY outputs for both hosts; a fresh SSH verification proved both old repo/marker paths and the obsolete Observation systemd unit absent, no matching NBOT process/unit and SSH alive, **81dadf68a9949b847fd8f38336c5d532eab861cd**.
 - [ ] **G1-01 IMPLEMENT/TEST:** Code not written and 12 offline acceptance tests not executed; do not tick G1.
 
-**Current gate truth:** G0-01, G0-02, G0-03, G0-04 scope completed; **overall G0 remains OPEN pending manual VPS cleanup proof**, as requested. No legacy backup was made (owner waived). No app code, old branch deletion, paper or live trading permission given.
+**New gate truth following verified 15 Oct 2026 manual cleanup:** G0-01, G0-02, G0-03 including cleanup, and G0-04 scope **all complete, so parent G0 is COMPLETE**. No legacy backup was made (owner waived). No app code, old branch deletion, paper or live trading permission given.
+
+
+## 13. Final G0 source reuse register disposition — independent cleanup verification (15 Oct 2026)
+
+- [x] **G0-CLEANUP-01/02:** Owner PuTTY sessions on both VPSs returned NBOT_LEGACY_CLEANUP_SUCCESS, without any old backup.
+- [x] **G0-CLEANUP-03/04:** Assistant independently reached each same host and verified old /home/ubuntu/Nbot and empty reset directory absent; retired Observation-VPS unit absent; no named NBOT unit/process, SSH still working. Execution-VPS 2026-10-15T05:30:38Z and Observation-VPS 2026-10-15T05:30:43Z.
+- [x] **G0-CLEANUP-05:** Original legacy data intentionally abandoned without backup by owner's explicit previous waiver; historical GitHub source branches remain available for source-graded future selective COPY/REIMPLEMENT review.
+- [x] **G0-03-CLEANUP-EXEC:** Independently verified PASS under exact checked old NBOT app paths. [Dated proof report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G0_CLEANUP_COMPLETION_20261015.md), commit **81dadf68a9949b847fd8f38336c5d532eab861cd**.
+- [x] **G0 aggregate:** G0-01 register, G0-02 selected first-helper static audit, G0-03 owner waiver/inventory/old VPS cleanup and G0-04 approved 3-file scope are completed and evidenced. Separate future 27-item port reviews still required *at their respective later stages*; this G0 pass does NOT approve all old code or positive trading results.
+- [ ] **G1-01:** The independent three new V5.1 source/test files, new test runs and their scientific/security acceptance remain to be completed.
+
+**G0 COMPLETED on 15 October 2026; G1 NOT STARTED; paper and real-money execution locked.**
