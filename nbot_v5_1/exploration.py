@@ -285,7 +285,8 @@ def explore_event(
            "manifest":snapshot.universe_sha,"clock":event.decision_at_ms,
            "detectors":DETECTOR_VERSION,"limit":evaluation_limit,
            "vacancies":capacity_slots,
-           "rows":[(r.decision_id,r.status,r.detector_states) for r in rows]})
+           "rows":[[r.decision_id,r.status,[[n,s] for n,s in r.detector_states]]
+                   for r in rows]})
     return ExplorationBatch(event.event_open_ms,event.decision_at_ms,
            snapshot.universe_sha,DETECTOR_VERSION,policy,capacity_slots,
            evaluation_limit,len(source_eligible),counts["OBSERVED"],
