@@ -1,5 +1,8 @@
 # NBOT V5.1 — BTC/G4 QUOTE Delay Root-Cause Investigation, Saved Original WSS Forensics + V4 Design Review
 
+> **LATEST CS-01 TRADE-ONLY RETEST (15 OCT 2026):** Owner's V1.10 active source profile does NOT fetch/subscribe to bid/ask. G1 startup uses public exchange info + 24-hour activity + 96 closed 5m candles, with **no book spread validation**; 20 deep symbols receive only original `aggTrade` and `markPrice@1s`. Real owner-approved source-only CS-01 **180s PASS**, 32,313 accepted frames, 40/40 20x2 cursors, 0 hard gaps, stopped, 145 chained records integrity-replayed and a local tar archive checksum verified. **G4 full ongoing/original scientific qualification still [ ] HOLD** (no two-boundary/days/independent economic outcomes), and previous quote-based G5/G6/PAPER lab contracts still need versioned adaptation before activation. Prior 20x3/BTC bookTicker failures are **historical data from the old design**, not current release status. [Vision V1.10 amendment](NBOT_V5_1_PRODUCT_VISION_V1_10_TRADE_PRICE_ONLY_AMENDMENT_20261015.md) | [Actual public-only trade-only canary report](NBOT_V5_1_CS01_TRADE_ONLY_RETEST_RELEASE_RESULTS_20261015.md). Original V1.9 unchanged.
+
+
 **Date:** 15 October 2026.  
 **Repo/branch:** `samqju/Nbot`, `nbot-v5.1`.  
 **Latest actual live-run executable baseline (unchanged):** `6b7491d8a903cbc248c85327a20919d68f05292f`.  
