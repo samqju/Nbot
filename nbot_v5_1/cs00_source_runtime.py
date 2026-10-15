@@ -117,7 +117,7 @@ class SourceOnlyIntake:
                 if prior.aggregate_id is None or frame.agg_id != prior.aggregate_id+1:
                     self.quarantine.add((kind,symbol))
             state="SOURCE_HOLD" if (kind,symbol) in self.quarantine else "LOCAL_FRAME_NOT_INDEPENDENTLY_QUALIFIED"
-            reason=("GAP_OR_EPOCH_UNKNOWN" if state=="SOURCE_HOLD" else None)
+            reason=((frame.reason or "AGG_ID_OR_EPOCH_CONTINUITY_HOLD") if state=="SOURCE_HOLD" else None)
             status=SourceStatus(symbol,kind,epoch,frame.agg_id,received_ms,
                 state,reason,sha256(raw).hexdigest())
         except (DeepSourceHold,KeyError,ValueError,TypeError) as exc:
