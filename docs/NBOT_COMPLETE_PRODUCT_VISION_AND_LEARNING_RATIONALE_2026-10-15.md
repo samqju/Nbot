@@ -1,6 +1,6 @@
 # NBOT — Complete Product Vision, Learning Philosophy, and Reason for Every Major Component
 
-**Vision document, version 1.3 — 15 October 2026**
+**Vision document, version 1.4 — 15 October 2026**
 
 **Purpose:** Explain what NBOT is supposed to become, why it was conceived, what V4 taught us, why V5 includes virtual research trades, Champion/Challenger learning and paper trading, and how all of that serves a **single-position autonomous trading bot** rather than a needlessly complicated research institution.
 
@@ -588,6 +588,285 @@ NBOT need not discover a magical "best strategy" for every market regime. Succes
 **NBOT should learn from genuine, prospectively recorded virtual trades which kinds of coin structures, directions and detector combinations have shown a credible positive return after costs under which BTC and overall-market conditions. It should also learn when these setups fail, when costs are too high and when its evidence is too weak to trade. The learning system should improve selection through independently tested Challenger models while keeping the approved Champion stable, the single actual-position rule intact and all live order authority outside Research and Learning.**
 
 ---
+
+
+## 8C. TRAINING — Product Stage 5: turn what NBOT has learned into a candidate trading model
+
+**The owner's intended step:** After Learning has accumulated credible evidence about which coin structures, directions and patterns behave well under which market/BTC conditions, **Training creates a versioned trading model that can evaluate future opportunities.**
+
+This is the difference between **knowing from research that a type of situation may have an advantage** and **having an explicit decision rule capable of applying that knowledge today**.
+
+### Our seven plain-language product stages
+
+| Product stage | The question it answers | Main output |
+| --- | --- | --- |
+| **1. Observation** | What is happening across BTC and the watched market? | Reliable time-stamped market-state evidence |
+| **2. Exploration** | What coin structures and LONG/SHORT/NO TRADE possibilities are visible? | Complete eligible candidate descriptions and pattern labels |
+| **3. Research** | What happened afterward to prospectively defined virtual possibilities, after costs? | Source-verified hypothetical outcomes, or honest missing/pending states |
+| **4. Learning** | Which combinations have credible, repeatable positive after-cost advantage and when should we abstain? | Conditional evidence, uncertainty, acceptable/no-edge findings |
+| **5. Training** | Can that experience be encoded into a reproducible candidate trading strategy/model? | Frozen model candidate and validation report |
+| **6. Evaluator / Promoter–Retainer** | Is a tested Challenger actually better than the current Champion? | Retain/reject/replace/suspend recommendation and approval record |
+| **7. Trading Decisions & Position Management** | On the latest valid market event, should the approved model recommend LONG, SHORT or NO TRADE—and may the independent guardian act? | Authenticated proposals, vetoes and separately accounted paper/future live actions |
+
+**Naming distinction:** These seven stages express the **product's understandable learning-and-trading lifecycle**. They are **not** a unilateral renaming or override of the existing engineering/source-governance gates called G1–G7, or the later roadmap's G8–G10 milestones. Existing controls and evidence requirements remain binding unless explicitly revised and approved.
+
+### What Training receives
+
+Training uses mature, approved research evidence and the conditional findings from Learning, including:
+
+- **Features:** BTC and broad-market condition, a coin's time-of-decision structure, relative strength, volatility, liquidity and available pattern-detector labels.
+- **Sides and possibilities:** LONG, SHORT and the option to abstain. No-pattern observations may be informative; they cannot become forced trade signals.
+- **Economic targets:** verified after-cost hypothetical results, downside outcomes and uncertainty under frozen entry/exit/risk policies.
+- **Source/evidence quality:** time stamps, quote and original-price-path provenance, fee/slippage/funding assumptions, and incomplete-outcome exclusions.
+- **Dependence information:** overlapping market events, correlated coins, opposite directions and shared BTC shocks, so one market incident does not masquerade as many independent lessons.
+- **Experiment rules:** permissible training windows, model families, evaluation metrics, selected features, cost-to-risk limits, no-trade hurdle and approved scientific protocol.
+
+Training must not directly learn from invalid source gaps, uncompleted outcomes or self-created synthetic engineering fixtures as though they were genuine qualified market evidence.
+
+### What a model must actually learn to do
+
+Given an eligible **current** coin-direction opportunity with its current BTC/coin conditions, a model should estimate whether taking it would offer a **credible expected net outcome after costs**, and how uncertain that estimate is.
+
+It can learn relationships such as:
+
+- A confirmed breakout LONG may be more or less favorable in a BTC uptrend than in a BTC volatility shock.
+- Some mean-reversion attempts may work only when a coin is ranging, rather than already trending aggressively.
+- A structurally plausible SHORT may not be worth taking because spread, funding or downside risk overwhelms its apparent advantage.
+- There may be **no sufficiently supported opportunity** across the entire eligible universe.
+
+These are potential **learned findings**, not hard-coded or guaranteed profitable rules.
+
+A good model should be able to report for each considered opportunity:
+
+1. **The applicable context:** coin, side, BTC state, market state, coin structure, detector versions and current source quality.
+2. **The economic estimate:** net expected R or properly calibrated return distribution under the declared exit/cost policy.
+3. **Uncertainty and downside:** a conservative confidence/lower-bound or comparable robust safety statistic, out-of-regime warnings and drawdown sensitivity.
+4. **Eligibility:** whether the data, quote, funding assumptions, risk geometry and cost-to-R constraints are acceptable.
+5. **A recommendation:** a particular qualified LONG/SHORT opportunity, or **NO TRADE** with a reason.
+
+A high model score is not automatically a high economic advantage. The estimated after-cost improvement over doing nothing must be meaningful and defensible.
+
+### How a new model is produced safely
+
+1. **Freeze a data cutoff.** No outcome that matured after the cutoff may leak into training.
+2. **Check qualified evidence.** The roadmap's first checkpoint of **2,000 genuinely matured outcomes** is an eligibility threshold—not automatic proof of profitable trade selection. Apply independent event/time/regime coverage and sample quality.
+3. **Choose a modest candidate model.** Prefer reproducible models and understandable economic/risk baselines over an unlimited search for complex architectures.
+4. **Train on chronological data.** Preserve correlations and purge/embargo overlapping hypothetical trade horizons; no random split that lets future-linked evidence reappear as "new" validation.
+5. **Test on later untouched periods.** Compare after-cost results against NO TRADE and fair simpler policies, including selection under **one-position** portfolio occupancy.
+6. **Stress-test losses and uncertainty.** Recheck fees, slippage, different BTC/market regimes, stale inputs, gaps and abnormal conditions.
+7. **Freeze the model artifact.** Record version, code SHA, training-data cutoff, features, parameters, risk/cost policy, validation reports and checksum.
+8. **Submit it for independent qualification.** A trained file is a **candidate**, not a Champion and never an order authority.
+
+If the model does not show a credible advantage, keep **NO_MODEL / NO TRADE**, continue observing and improve the research evidence rather than forcing deployment.
+
+### The first model and later updates
+
+The first independently qualified model may become the **initial paper-only Champion** under an explicit owner-approved release. A second model is **not necessary to begin that first Champion-only paper phase** according to the existing lifecycle roadmap; the documented G7 current-code two-model unlock inconsistency must be reconciled in reviewed engineering rather than bypassed.
+
+After a further **2,000 newly matured independent qualifying outcomes**, Training may propose a **Challenger** using approved earlier data and a fixed cutoff. The new cohort is a checkpoint for proposing another candidate, not an excuse to retrain or promote after every recent loss.
+
+**Training creates candidate policies; it must never place virtual-research fills, submit paper orders, execute real trades or promote its own output.**
+
+---
+
+## 8D. EVALUATOR / PROMOTER–RETAINER — Product Stage 6: decide whether the Challenger deserves to replace the Champion
+
+**The owner's idea:** Keep the better strategy as the **temporary incumbent Champion** until stronger evidence shows that a genuinely better model should replace it.
+
+This is sensible, with one safety refinement: **winning is not enough by itself**. A proposed new Champion must pass predeclared, fair after-cost/risk tests and **independent approval**. The stage's normal automatic output is a **recommendation** to retain, reject, suspend or promote—not an unrestricted model self-promotion.
+
+### Why this stage exists
+
+An incumbent model gives us a stable reference. Without it, each new retraining round changes the rules and makes it impossible to distinguish market luck from real improvement.
+
+A Challenger may perform better on its own historical dataset simply because BTC was trending strongly then. The meaningful comparison is **both frozen policies on the same subsequent market period**.
+
+The model comparison should be simple to operate, even if its scientific checks are rigorous.
+
+### How a competition actually works
+
+**A. Candidate qualification before a contest**
+
+- The Challenger must already pass independent offline scientific, source and safety checks.
+- Freeze **both** models, their training cutoffs, feature versions and entry/exit/cost assumptions.
+- Define the comparison window, starting equity, risk limits, maximum duration, common events, outcome criteria and conditions for an inconclusive result **before** forward outcomes are observed.
+- No model may retrain from data generated during its ongoing contest.
+
+**B. One shared market feed, two independent paper books**
+
+- A single approved **Decision/Execution paper subsystem** receives the same eligible real-time event opportunities for both models.
+- The Observation-side inference process evaluates those same known-at-time features separately through **Champion** and **Challenger**, producing independent model-specific recommendations, including NO TRADE.
+- The Execution-side guardian checks each authorized proposal and maintains two isolated **simulated** books: **Champion Paper** and **Challenger Paper**.
+- Each book has its own equity, position budget, orders/fills, stops/exits, losses and accounting. In the proposed practical one-position design, **each paper book has at most one simulated position at a time**.
+- Paper books may select different coins, the same coin, opposite sides or abstain. They do **not** create two actual exchange positions.
+- They use the same forward clock, source-freshness standard and comparable costs/risk conventions so their results can be fairly compared.
+- **One event loop and one paper engine can serve two logical books**; do not duplicate WebSocket collectors, archive data or heavyweight Research pipelines for each model.
+
+**C. Compare the results honestly**
+
+The authoritative roadmap proposes a checkpoint of **at least 100 verifiably settled paper trades per model where possible**, together with sufficient common evaluation time/events and independent BTC/market regimes.
+
+The comparison also needs:
+
+- **Net after-cost results**, not raw win rate or gross profit.
+- **Risk and drawdown**, not merely which model earned the most by taking bigger bets.
+- Comparable starting equity, risk per trade and capital occupancy.
+- Trade frequency, selective abstention, missed opportunities, time in market and unresolved outcomes.
+- Robust uncertainty, confidence of superiority and sensitivity to cost assumptions.
+- A **common competition endpoint**, even when one model hits 100 trades first.
+- Evidence that the differences are not dominated by one correlated BTC market shock.
+
+**Never force a model to take trades merely to reach 100.** If a model is appropriately selective and reaches fewer trades before the frozen maximum duration, record **LOW ACTIVITY / INCONCLUSIVE**, not an automatic loss or unearned victory.
+
+### The Promoter–Retainer decision
+
+| Forward evidence | Decision |
+| --- | --- |
+| Qualified Challenger convincingly improves after-cost performance under comparable risk, confidence, source-quality and operational rules | **RECOMMEND PROMOTE**, subject to independent owner-approved routing change |
+| Champion remains better | **RETAIN** Champion and archive/reject Challenger |
+| Both lose money, neither clears NO TRADE, or results are too similar/uncertain | **HOLD / SUSPEND / CONTINUE RESEARCH**; do not promote the "less bad" policy automatically |
+| Challenger wins only by larger risk, unfair time window or optimistic fill assumptions | **REJECT / HOLD** |
+| Data gaps, timing mismatch, model changes mid-contest or irreconcilable accounting | **FAIL CLOSED**, preserve evidence and review |
+
+**The Champion is temporary in the sense of being replaceable—not short-lived by force.** It may remain Champion through many rejected Challengers. A retired Champion remains available as a verified rollback reference when approved.
+
+### Where the comparison runs—and why it should not stress a VPS
+
+**Do not run a third continuous price collector, model trainer or raw-tick replay for the contest.**
+
+- **Execution VPS:** A single lightweight forward-paper event engine and **two logical SQLite/accounting books** simulate model-specific fills and positions. It receives bounded, signed proposals, validates freshness and uses source evidence efficiently. Real-order code remains absent/locked without separate authorization.
+- **Observation VPS:** Produces model recommendations on the already assembled five-minute events using two **frozen inference artifacts**, receives compact paper fills/position/equity reports, and performs small periodic performance comparisons. Only lightweight inference—not training or source replay—belongs on the critical event path.
+- **Training:** Runs **offline or resource-limited**, asynchronously from the real-time event processing pipeline, only after a stable evidence snapshot. If testing shows its CPU/RAM load harms the 50-coin collector, move the **offline training job** to separately approved isolated compute, or schedule it more conservatively; do not interrupt or starve source custody, safety or position management.
+- **Resource proof:** Measure actual resident memory, CPU peaks, disk growth, database lock contention, time-to-recommendation and quote freshness before commissioning. The small VPSs were previously measured near **1 GiB physical RAM**, so model sizes, buffers and training batches must be bounded. No claim of negligible load without tests.
+
+The comparison is fundamentally **a pair of prospective decision logs and paper-account ledgers**, not a second complete market research platform.
+
+### Important lifecycle dependency
+
+Stage 6 cannot compare paper-trading models without **Stage 7 first producing paper results**.
+
+Therefore, despite numbering, the system is a **feedback loop**:
+
+**Training → candidate/Champion qualification → Stage 7 paper model decisions and simulated position results → Stage 6 fair comparison → reviewed promotion/retention → Stage 7 uses the approved updated Champion.**
+
+The initial Champion can start its **owner-approved paper-only** evaluation once qualified, without waiting for an initial Challenger. Later Challenger competitions use two separate paper books. The documented conflict with the current G7 two-model unlock still requires an explicit reviewed resolution; this vision does not change executable permissions.
+
+**Stage 6 decides which model deserves to become the reference; it does not decide an individual trade and does not send orders.**
+
+---
+
+## 8E. TRADING DECISIONS & POSITION MANAGEMENT — Product Stage 7: apply approved intelligence to today's market
+
+**The owner's intended last stage:** NBOT combines current Observation and Exploration, the intelligence learned by Research and Learning, an approved model created by Training, and a model-selection outcome from the Promoter–Retainer to decide **whether to trade, on which coin, and LONG or SHORT—or NO TRADE**.
+
+This should be the simplest possible operational decision loop, with an independently enforced safety boundary.
+
+### What Stage 7 actually needs
+
+Stage 7 **uses** the outputs of Stages 1–6, but **does not rerun them all on every event**.
+
+1. **Fresh market evidence:** Obtain the latest complete five-minute event, 50-coin eligibility, BTC/overall regime, coin features, quotes and source quality from Observation/Exploration.
+2. **A frozen approved model:** Load only the version and exact rules approved for the relevant paper or separately authorized future live channel.
+3. **Evaluate current opportunities:** Use the model's trained relationships to assess eligible LONG and SHORT candidates in their **current** known-at-time conditions, including risk and modeled costs.
+4. **Compare against NO TRADE:** Require a sufficiently credible conservative positive after-cost advantage. If none qualifies, issue an explicit NO TRADE decision.
+5. **Pick no more than one proposed actual opportunity:** If multiple candidates qualify, select the highest eligible opportunity under the frozen policy; that does not mean it will be authorized.
+6. **Send a limited recommendation:** Include model/strategy version, market event ID, coin, direction, proposed entry/stop/target/expiry, risk/cost assumptions, confidence, feature/source witness and idempotency identity.
+7. **Apply independent guardian vetoes:** Execution verifies the proposal has not expired, that market conditions and available position state agree, that risk/cost/size/leverage limits pass, and that the model/mode is explicitly authorized.
+8. **Act only in the authorized environment:** Paper simulation may record a hypothetical fill. A real exchange order is possible **only after a separate later real-money release**, and the global single-real-position rule must pass.
+9. **Manage and reconcile the position:** Track stop/exit/timeout, fees and funding where relevant; on restart reconcile actual exchange state rather than assuming a position was flat or closed.
+10. **Return results with their real evidence grade:** Paper and actual execution outcomes go back to Research/Learning and model comparison without being mistaken for new independent virtual hypotheses.
+
+**NO TRADE is an actual decision**, not a failure or a requirement to choose the second-best alternative.
+
+### Where virtual, paper and real trades should occur
+
+**Do not put all three trade types into one mixed account or one authority boundary.** They answer different questions.
+
+| Activity | Where it belongs | Purpose and authority |
+| --- | --- | --- |
+| **Virtual research trades** | **Stage 3 Research on Observation VPS** | Track frozen prospective LONG/SHORT experiments for learning, with verified hypothetical after-cost outcomes. **No actual order and no paper position authority.** May have many overlapping eligible virtual hypotheses because they do not consume real capital. |
+| **Initial Champion Paper** | **Stage 7 paper engine on Execution VPS** | Prospectively rehearse the qualified approved Champion's decisions and simulate at most one open paper position in the Champion book. Explicit **paper-only** release required. |
+| **Challenger Paper** | **Same Stage 7 paper engine; separate Challenger book** | Fairly compare frozen models using the same forward market period, independently simulated positions and accounting. Each book has its own one-paper-position constraint. A second paper book does **not** create another actual Binance position. |
+| **Future Champion Paper Mirror** | **Same Execution paper subsystem, distinct book** | After separately approved live deployment, replay the **same Champion intent and timing** for paper versus actual execution-quality comparison. Not a surrogate actual fill. |
+| **Future Champion Live** | **Separately authorized Execution VPS real-order subsystem** | Only approved Champion plus independent risk/position guardian. Enforce **one actual open Binance position globally**, including pending orders, partial fills and unresolved exchange state. Real orders remain prohibited until explicit separate authorization and safety acceptance. |
+
+All modes can share **read-only, verified market-data references and model inference outputs**, but must keep **distinct position ledgers, fill assumptions, risk/accounting state, authority and failure isolation**.
+
+No research virtual trade is a real fill; no paper fill is a live fill; no realized live trade is independent of its corresponding paper mirror.
+
+### Why the decision engine should not be identical to the trading executor
+
+**Approved model inference (the "brain")** remains on Observation VPS. It uses the current market event and approved Champion to **recommend** LONG, SHORT or NO TRADE. A frozen Challenger can independently recommend only for its authorized test book.
+
+**The Execution guardian (the "hands and brakes")** remains on Execution VPS. It alone can permit the appropriate simulated action—and, after a future separately scoped real release, place/manipulate actual orders.
+
+The guardian has an unconditional **VETO**, never a mandate to find a trade. It cannot invent alpha, silently substitute a different model, or bypass stale/unknown source information to stay active.
+
+A new Challenger, even if it looked promising during yesterday's retraining, cannot control the actual position without the complete model review, fair comparison, approval and deployment controls.
+
+### The ONE actual position invariant
+
+If any actual position or pending/unknown real order exists across any coin/direction:
+
+- No new real-entry recommendation may create a second exchange exposure.
+- Stage 7 may still **observe, explore, maintain Research virtual outcomes and generate paper-contest results** because these do not create actual exchange positions.
+- An uncertain/restarting position must be independently reconciled against actual exchange evidence before declaring the slot free.
+- Existing approved real position management must follow its protected stop/exit/emergency policy even if Observation loses connectivity; **no fresh-entry trading** on stale proposals.
+
+This is a single-position trader attached to a broad learner—not an enterprise multi-portfolio real trading system.
+
+### What changes during Champion and Challenger competition?
+
+Very little in the real-time infrastructure:
+
+- Observation computes **two frozen model inferences** from the **same observed candidate event**: one Champion, one Challenger.
+- Execution receives two separately authenticated **paper-only** recommendation streams and accounts for them in two logically separate paper books.
+- Stage 6 reviews **small, immutable paper outcome summaries**, not duplicate market-data collectors or enormous per-candidate replays.
+- The active Champion used for any separately approved real trade **does not change during the competition**.
+- If the Challenger is credibly better, Stage 6 submits an approval recommendation; only the authorized owner-controlled release process can change active routing.
+- If either model finds no edge, it may abstain. **NO TRADE** remains valid in either paper book.
+
+### Keep the real-time workload minimal
+
+On each valid five-minute decision event:
+
+**Read known-at-time features → score approved models → choose qualifying proposal or NO TRADE → independently risk-check → account for authorized paper or future real position.**
+
+This should not involve training a new model, rescanning full tick archives, duplicating 50-coin WebSocket connections or holding huge raw histories in RAM.
+
+As a concrete operating principle, **research and training can run on delayed, bounded work queues, while source observation and actual position safety retain priority**. Measured latency and hardware load—not assumptions—must determine final process limits.
+
+### Example: how the full loop fits together
+
+Suppose Exploration detects a confirmed range breakout LONG in coin A, a possible reversal SHORT in coin B and several unattractive setups. Observation records the current BTC trend and volatile market conditions.
+
+**Research** already contains verifiable virtual outcomes for similar combinations. **Learning** has estimated which conditions historically showed positive after-cost advantage, and **Training** has frozen a Champion plus a newer Challenger candidate.
+
+At the current five-minute event, **Stage 7** asks the approved Champion to score all eligible coin/direction alternatives. The Champion may propose coin A LONG—or return NO TRADE because the cost/risk-adjusted confidence is too weak.
+
+The **Execution guardian** may still reject coin A if spreads have widened, the quote is stale, or the single actual position is already occupied. Research continues to track eligible unselected virtual opportunities regardless.
+
+During a qualified paper contest, the Challenger could instead recommend coin B SHORT. Each paper book simulates its own at-most-one position using the same forward source environment. **Stage 6** later decides whether the Challenger deserves a reviewed promotion based on full, comparable, settled after-cost paper evidence—not merely one winning trade.
+
+The model can change through evidence and approval, **without the operational bot being rebuilt each time**.
+
+### Product acceptance for Stage 7
+
+The product is operationally ready for its *permitted mode* only when testing proves:
+
+1. Every recommendation is tied to a frozen model, source witness, event time and valid mode approval.
+2. Source gaps and stale information produce HOLD / NO TRADE, not guesses.
+3. The model cannot command order authority or create additional positions itself.
+4. Paper books have independent accounting and reconcile correctly after restart.
+5. Future real-order controls reject second positions, duplicate/stale orders and uncertain exchange state.
+6. Model comparisons cannot feed their own outcomes back into the frozen competitor mid-contest.
+7. Restart, funding/cost mistakes, latency, duplicate messages and memory/disk pressure fail safely.
+8. None of these tests changes the user's currently stopped/unreleased application services or grants live authority.
+
+**The simplest useful architecture is ONE observation/research/learning pipeline, ONE active approved Champion policy, a controlled stream of Challenger candidates, ONE guarded paper/execution subsystem with separate logical comparison books, and at most ONE actual open position if real trading is ever independently authorized.**
+
+---
+
 
 ## 9. Why after-cost return matters more than signal accuracy
 
