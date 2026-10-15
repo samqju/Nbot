@@ -1,8 +1,8 @@
 # NBOT V5.1 — Your Plain-Language Development Roadmap
 
-**Roadmap version:** 1.5 (G6 offline engineering validated; G5 40-slot restart test PASS; real G4/G5/G6 startup checks held)  
+**Roadmap version:** 1.6 (G7 Learning code and 285 tests PASS both VPS; real 2,000-evidence checkpoint HOLD)  
 **Date:** 15 October 2026  
-**Status (current, 15 October 2026):** **G0–G3 COMPLETED**. **G4 original public market source, G5 original price-first-touch, G6 verified genuine after-cost economics/off-host archive all remain [ ] HOLD** while we complete remaining offline NBOT development. G6 software implemented with **254/254 tests PASS on BOTH actual VPSs**, 1,440-frame source/archive benchmark PASS; improved G5 crash-with-all-40-active virtual paths now PASSED on BOTH VPSs, so **G5-06-A has been checked**. G4/G5/G6 original-source and operational archive checks are deferred to later separately authorized controlled startup, not waived or approved for trading. G7–G12 [ ], all permanent services/paper/real trading LOCKED.  
+**Status (current, 15 October 2026):** G0–G3 [x] complete, **G4–G6 parent [ ] HOLD** pending original market sources, real first-touch, economic evidence and off-host recovery; **G7 Learning offline software completed and tested: 285/285 tests on BOTH VPSs, 2,000 SYNTHETIC laboratory examples over only 100 shared market blocks, zero genuinely qualified results, NO_MODEL/NO_TRADE**. G7 parent [ ] because the real 2,000 independent matured after-cost learning-evidence checkpoint remains **0/2000**. Your decision to keep NBOT stopped while continuing G8+ offline is preserved. No collector, virtual/live research, paper or real trading started.  
 **Product blueprint:** NBOT Complete Product Vision **V1.9** (separately copied **unchanged** into this branch)  
 **Companion:** NBOT V5.1 Engineering Roadmap V1.0  
 **Repository/branch:** samqju/Nbot / nbot-v5.1
@@ -304,10 +304,24 @@ The guardian must be able to independently reject a proposal and enforce the one
   - [ ] **G6-06-B — REAL independent second-host source archive and restoration:** Verified local temporary source copy is not second VPS restore. Need independently check actual sealed original source archive and recovered source epochs during allowed future startup.
   - [ ] **G6-06-C — Real continuous-market throughput and crash/endurance:** The short simulated 24-cycle benchmark is not sustained 20-market source rates, disk rollover, fresh reconnects or physical loss of unsynced memory. Verify these at the approved startup.
   - [ ] **G6-06-D — Parent G6 remains unchecked:** Wait until real G4 original source, G5 original first-touch and the three G6 checks PASS; user explicitly asked to postpone verification, NOT to waive it. No service or trading enabled.
-- [ ] **Milestone 8 — Reliable Learning works** (engineering G7)
-  - [ ] Separate valid matured outcomes from pending, synthetic, incomplete or ambiguous observations.
-  - [ ] Check results under different BTC/market conditions while accounting for overlapping coin moves.
-  - [ ] Meet and review independent evidence-quality checkpoints or explicitly record HOLD.
+- [ ] **Milestone 8 — Reliable Learning (G7): full OFFLINE SOFTWARE ready, real Learning evidence HOLD**. [G7 full two-VPS 285-test and 2,000-example laboratory report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G7_OFFLINE_LEARNING_ACCEPTANCE_AND_GENUINE_EVIDENCE_HOLD_20261015.md), commit **225bc79f289ee93b2845061e7022c0d883507bff**.
+  - [x] **G7-01-A — Reviewed old Learning/Research source safely:** Audited R20 and R21 historical code, took only time-safe evaluation ideas; did not copy legacy V5 DB, old trained models or anything that could trade.
+  - [x] **G7-01-B — Join what was known THEN to what happened LATER:** Versioned identity and timestamps for BTC environment, overall market, coin structure, LONG/SHORT, original detector names, prospective frozen experiment, after-cost result and source lineage; future information cannot leak into old features.
+  - [x] **G7-01-C — Keep synthetic data out of genuine learning:** Only marked SYNTHETIC laboratory cases are accepted for current TESTS. Forged “original”, paper and real results refuse scientific qualification; data hashes alone do not prove exchange authenticity.
+  - [x] **G7-02-A — Account for ALL Research opportunities:** Preserve valid, pending, incomplete, censored, missing-source and restart-HOLD separately. No pretending missing results are good or bad; counting three detectors on one experiment never becomes three independent trades.
+  - [x] **G7-02-B — BTC market correlation correctly grouped:** Trades over the same BTC-driven movement and overlapping LONG/SHORT tests are grouped, not treated as 2,000 independent successes.
+  - [x] **G7-02-C — Record fair source-selection probabilities:** Include frozen K/N probability for sampled alternatives and distinguish unchosen/no-capacity and invalid-source records, without treating unobserved returns as measured profits.
+  - [x] **G7-03-A — Separate earlier and later market experience:** Entire shared-movement groups are chronologically separated for simulated train vs untouched later tests; overlapping horizons and near-boundary examples are purged rather than leaked.
+  - [x] **G7-03-B — Evaluate BTC/market/side differences and confidence:** Calculate simple conditional laboratory cost result and uncertainty against a NO_TRADE=0 benchmark with reproducible group-bootstrap tests. Positive synthetic sample DOES NOT mean profit in real markets.
+  - [x] **G7-03-C — Always choose NO_MODEL without qualified proof:** G7 has no ability to appoint a Champion, place an order or turn a simulated gain into a real approved strategy.
+  - [x] **G7-04-A — Preserve a small private Learning snapshot:** Finite 4MiB cap, content-hashed, disk-synced, owner-private test evidence and independently verified replay. Tamper, size, unsafe permission and false model approval are rejected.
+  - [x] **G7-04-B — Reject forged Learning report objects:** Even if a module fabricates a “verified” dataset object, G7 reconstructs and validates its complete source/maturity/digest before analysis.
+  - [x] **G7-05-A — Whole system tests on BOTH VPSs:** Previous 254 G1–G6 cases +31 new G7 = **285/285 PASS** on each Python3.12.3 VPS; same exact tested GitHub revision `49cb90bc35a8e6c79dcf4cebf8db0edc1f0cfc4d`.
+  - [x] **G7-05-B — Tested 2,000 hypothetical laboratory outcomes on BOTH:** 2,000 synthetic cases represent **only 100 correlated market-event groups**, NOT 2,000 genuine trials; 49 earlier/48 later LAB groups and 3 purged; 134,381-byte snapshot verified, both measured p99/memory/disk budgets passed. Correct decision: **NO_MODEL / NO_TRADE**.
+  - [x] **G7-05-C — No service or orders were started:** Tests were on isolated temporary GitHub checkouts; no permanent NBOT, paper, testnet, live stream worker or account actions.
+  - [ ] **G7-06-A — First 2,000 genuinely independent matured virtual-trade outcomes:** Still **0/2000** today. We need real qualified G4 market records, G5 forward paths, and G6 after-fee/slippage/funding evidence first. Lab examples will NEVER count.
+  - [ ] **G7-06-B — Independently validate genuine market/regime advantage and uncertainty:** After enough original evidence, compare against doing nothing on untouched later BTC/market periods, check diversity, losses and repeated strategy trials. Having 2,000 outcomes alone NEVER guarantees a qualified strategy.
+  - [ ] **G7-06-C — Entire parent G7 cannot be marked passed yet:** Offline Learning engine is done/tested; genuine scientifically proven Learning release requires both open checks, plus G4–G6 accepted sources. No qualified Champion/paper/real authorization.
 - [ ] **Milestone 9 — First qualified trained strategy works** (engineering G8)
   - [ ] Train only on earlier qualified outcomes with a frozen data cutoff.
   - [ ] Test the model on later untouched periods and against doing no trade.
@@ -586,3 +600,19 @@ Every line is a descriptive setup **hypothesis**, not permission to enter a trad
 - [ ] **G6 parent** remains HOLD. Continue offline engineering of G7–G11 only, without calling synthetic results scientifically qualified or starting NBOT services or paper/real trading.
 
 **Verified current state:** G0 [x], G1 [x], G2 [x], G3 [x], **G4 [ ] original market source HOLD**, **G5 [ ] source-integrated virtual Research HOLD** (full40 crash now PASS), **G6 [ ] original economics + off-host restore HOLD** (offline code/test PASS), G7–G12 [ ].
+
+
+### G7 owner-facing final offline Engineering evidence and genuine Learning HOLD (15 October 2026)
+
+[Permanent G7 complete evidence report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G7_OFFLINE_LEARNING_ACCEPTANCE_AND_GENUINE_EVIDENCE_HOLD_20261015.md), commit **225bc79f289ee93b2845061e7022c0d883507bff**, exact tested G7 source SHA `49cb90bc35a8e6c79dcf4cebf8db0edc1f0cfc4d`. New clean G7 code `learning_contract.py`, `learning_science.py`, `learning_snapshots.py`, 31 direct tests and a 2,000-example capacity benchmark. Both VPSs independently **285/285 PASS** Python3.12.3 in 17.310/17.401 seconds; synthetic 2,000-row /100 shared-BTC-market-block benchmark PASS p99 row creation **50.129/9.070ms**, RSS **24,308/24,196KiB**, disk **134,381B**, CPU 1.787/1.890s. Every result NO_MODEL / NO_TRADE and zero genuine after-cost training rows. The test includes positive-looking fake market wins to prove these still cannot unlock a model.
+
+- [x] G7-01 full decision-time BTC/coin/regime/detector/frozen-plan features and source grade plus honest maturation HODLs, old science audit.
+- [x] G7-02 pending/held/censored status denominator, fair prospective inclusion fractions, correlated BTC/coin/direction grouping and no duplicate 24 detector labels.
+- [x] G7-03 earlier/later market separation with dependence purging, reproducible uncertainty, model-vs-no-trade comparator that always abstains without qualified originals.
+- [x] G7-04 finite owner-private hashed/fsynced laboratory evidence and corruption/forged “passed” object rejection.
+- [x] G7-05 all **285/285** combined G1–G7 tests and measured 2,000 synthetic row /100-cluster stress PASS separately on both authorized target VPSs.
+- [ ] **G7-06-A REAL first 2,000 independent source-qualified matured virtual outcomes:** **0/2000**; source-genuine evidence must be collected after controlled startup and G4/G5/G6 independent data-check release.
+- [ ] **G7-06-B genuine conditions/edge stability and time-forward uncertainty:** no original-price/fee/funding historical sample yet; no automatic assumption of profitable strategies.
+- [ ] **G7 parent Milestone 8:** HOLD, cannot check genuine Learning even though all coding/testing stages [x].
+
+**Current:** G0 [x] G1 [x] G2 [x] G3 [x] FULL. G4 [ ] original-source HOLD, G5 [ ] original-path HOLD, G6 [ ] source after-cost/off-host HOLD, **G7 [ ] genuine source-qualified scientific Learning HOLD (offline fully coded and tested)**. G8/G9/G10/G11/G12 [ ] next offline development. NBOT permanently stopped, no virtual source engine, PAPER or REAL mode activated.
