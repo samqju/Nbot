@@ -182,7 +182,7 @@ The guardian must be able to independently reject a proposal and enforce the one
   - [x] List old V4 detectors, market-data tools, research evidence checks, paper book and risk protections with pinned source links — 15 Oct 2026, register commit **5d5133766b96ad3b21ab8b4c553e08740c3c7adb**.
   - [x] Give each an easy choice: **COPY / REWRITE / DISCARD / REFERENCE** with the reason — register entries R01–R27; source inspection only.
   - [x] Identify conflicts between previous NBOT and Vision V1.9 — conflict register C01–C12, including obsolete V3/V3.9/V4/V5 runtime references.
-  - [ ] Verify exact transitive imports, old side effects, source blob digests and adapted tests for the *first chosen* component; preliminary register does not grant transfer approval.
+  - [x] Verify the selected **pure first helpers**: exact old source/test blob hashes, complete selected-function imports/calls, excluded SQLite/old-version side effects and missing/required *future* tests — 15 Oct 2026, audit commit **2ebcc62f9f13aa4c7ed532cca108d9c359c77363**. This is an inspection PASS, not a code/test execution PASS.
   - [ ] Agree on the first safe, approved component to copy into V5.1; G1-01 pure contracts are recommended but not yet individually approved.
 - [ ] **Milestone 2 — Our new clean program foundation works** (engineering G1)
   - [ ] Approve a simple new directory/module layout.
@@ -237,9 +237,11 @@ The guardian must be able to independently reject a proposal and enforce the one
 ### G0-01 — Documentation-only legacy register (approved 15 October 2026)
 
 - [x] **G0-01:** Commit the initial Legacy Component Reuse Register with 27 source candidates, pinned historical branch/commit links, preliminary test quality, 12 key conflicts and explicit V5.1 modernization rules — completed **15 Oct 2026**, commit **5d5133766b96ad3b21ab8b4c553e08740c3c7adb**; confirmed by reading the new GitHub file. **Verification:** GitHub file-content/source review, not a code test, model result or VPS acceptance.
-- [ ] **G0-02:** Independently audit the first proposed port's direct/transitive dependencies, old identifiers, I/O/credential reachability and negative tests, then obtain explicit first-code-step review.
+- [x] **G0-02:** Independently audit the first proposed **pure-function** port's full static dependency chain, obsolete `nbot/__init__.py` version **3.0.0**, potential I/O/credential/order reachability, historical synthetic tests and missing negatives; specify the new `nbot_v5_1` package and 12 tests. **15 Oct 2026; register audit commit 2ebcc62f9f13aa4c7ed532cca108d9c359c77363.** No code copied and no tests run.
+- [ ] **G0-03:** Safely inspect and document both existing VPS service/data/backups, recovery paths and storage/capacity before any cleanup or deployment; do not delete old evidence without verified preservation.
+- [ ] **G0-04:** Final owner review of G1-01 exact scope and first application-code transfer; G0-02 identified/recommended it but did not execute G1-01.
 
-**Current state:** The first seed started with three files; the branch now contains one additional G0 register. No V5.1 application code, VPS cleanup or service deployment was performed in G0-01. User granted broader GitHub/VPS maintenance access on 15 Oct 2026, but separate scientific, paper and real-money release gates remain LOCKED.
+**Current state (15 Oct 2026):** G0-01 and G0-02 documentation/source audits are complete. The branch contains the original three authoritative files plus one legacy register; no V5.1 application code, deployment or VPS cleanup took place in G0-01/G0-02. The owner granted GitHub/VPS maintenance access, including PuTTY access via their computer, but scientific acceptance, paper and real-money release gates remain separate and LOCKED.
 
 ### Record of every verified tick
 
@@ -248,7 +250,9 @@ The guardian must be able to independently reject a proposal and enforce the one
 | 2026-10-15 | [x] START-01 | 472c3f54415e06715f8b28673eee7d3b545338d4 / verified three-file tree | The clean branch exists and does not carry old code |
 | 2026-10-15 | [x] START-02 | Same commit / Vision blob matches original | The approved product vision is safely copied |
 | 2026-10-15 | [x] G0-01 legacy register and preliminary source/conflict review | **5d5133766b96ad3b21ab8b4c553e08740c3c7adb** / GitHub verified 27 entries and 12 conflicts; no code tests | We now have a written map of what to keep, rebuild, or leave behind; old code still untouched |
-| *Next review* | [ ] G0-02 first-component dependency audit and VPS preservation inventory | Pending | Verify hidden dependencies and safe original data preservation before an application port or cleanup |
+| 2026-10-15 | [x] G0-02 selected pure-helper source/side-effect/test audit | **2ebcc62f9f13aa4c7ed532cca108d9c359c77363** / exact source/test hashes, complete selected-helper call graph, 12 planned negative tests; no application tests | First safe helpers are identified, and outdated V3 initialization is excluded |
+| *Next review* | [ ] G0-03 VPS preservation and capacity audit | Pending | Verify existing services/backups and safe rollback before changing or cleaning VPSs |
+| *Next review* | [ ] G0-04 review of first G1-01 code scope | Pending | Confirm the exact new files and tests before beginning their implementation |
 
 **Use [ ] and [x] on the individual subtasks throughout development.** The roadmap itself should be updated with a new GitHub commit as work is completed. No stage above is yet checked as completed.
 
@@ -282,10 +286,10 @@ At the end of each milestone, request a compact progress report answering:
 
 ## 7. Permissions and boundaries
 
-- **Never touch the user's laptop**, local files, Downloads folder or desktop.
+- **Permission update, 15 Oct 2026:** The owner has authorized narrowly necessary access to existing PuTTY sessions `Execution-VPS` and `Observation-VPS` via their laptop and the local authentication setup for VPS maintenance. Do not browse unrelated personal files, duplicate/read out the private key, or expose secrets in GitHub/logs. **G0-01/G0-02 required no laptop or VPS access.**
 - Keep **old GitHub branches, source files, DB evidence and existing pull requests intact**.
 - Development belongs to this separate clean NBOT V5.1 branch; do not merge to default without explicit approval.
-- Do not inspect or change VPS state, run remote commands, restart services or read secrets unless the owner separately authorizes those actions. Inspection may be read-only only with that authorization.
+- The owner has now authorized GitHub and both VPSs for necessary NBOT V5.1 development/maintenance, **but do a preservation inventory, verify restorable backups and plan rollback before any cleanup/deletion**. Do not infer a paper release or live-order permission; review operational effects before starting or restarting services.
 - Do not place real orders, enable real execution, access real credentials or assume the owner approved paper trading by approving this roadmap.
 - Use GitHub commits with small, testable changes and provide links and plain-English explanations.
 - A historical synthetic test pass is not qualified real-market source evidence.
