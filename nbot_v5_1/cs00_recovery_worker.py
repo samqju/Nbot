@@ -149,6 +149,12 @@ class RecoveryScheduler:
             if state=="RECOVERY_HOLD":
                 self.hold_reasons[key]="CS00_RECOVERY_DATA_UNVERIFIABLE"
         except (RecoveryTransportHold,SourceRecoveryHold) as ex:
+            if "CS00_REST_GLOBAL_WEIGHT_HOLD" in str(ex):
+                # A global REST weight limit is NOT a lost source page and
+                # must never consume the retry budget or censor a Research
+                # experiment. Wait until all old 60s requests have expired.
+                self.next_at[key]=now_ms+60000
+                return self.status(key)
             self.attempts[key]+=1
             if self.attempts[key]>=MAX_RETRIES:
                 self.hold_reasons[key]="CS00_RECOVERY_RETRIES_EXHAUSTED_REVIEW_NOT_AUTOCENSOR"
