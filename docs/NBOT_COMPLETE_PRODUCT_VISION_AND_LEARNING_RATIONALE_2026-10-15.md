@@ -1,6 +1,6 @@
 # NBOT — Complete Product Vision, Learning Philosophy, and Reason for Every Major Component
 
-**Vision document, version 1.2 — 15 October 2026**
+**Vision document, version 1.3 — 15 October 2026**
 
 **Purpose:** Explain what NBOT is supposed to become, why it was conceived, what V4 taught us, why V5 includes virtual research trades, Champion/Challenger learning and paper trading, and how all of that serves a **single-position autonomous trading bot** rather than a needlessly complicated research institution.
 
@@ -382,6 +382,210 @@ They must never:
 - Become retroactively modified to favor a preferred model.
 
 **Virtual trades are NBOT's laboratory, not NBOT's brokerage account.**
+
+---
+
+## 8A. RESEARCH — what NBOT does after Exploration has identified possibilities
+
+**Observation sees the market. Exploration describes potential opportunities. Research tests those possibilities using actual subsequent market evidence, without spending real money.**
+
+The owner's proposed design is best implemented as **one shared Research function**, not a separate Research system for each trading portfolio.
+
+### What Research receives
+
+Observation and Exploration hand Research a time-stamped, source-backed record containing:
+
+- **Which market event and coin?** The decision clock, eligible universe and the LONG or SHORT hypothesis.
+- **What was the broad market doing?** BTC direction, strength, volatility and shocks; overall market breadth and transition state.
+- **What was this coin doing?** Trend/range state, confirmed or forming price structure, strength relative to BTC, volatility and liquidity.
+- **Which patterns were visible?** Any of the 24 original V4 detector tags, including a valid **no-pattern** observation; overlapping pattern names are not independent trades.
+- **How trustworthy are these facts?** Data timing, source witnesses, gaps, quote freshness and what was or was not knowable at that moment.
+- **Was a trade plan eligible?** A prospectively frozen entry convention, stop-loss, target, maximum holding time and risk/cost assumptions where a virtual experiment is justified.
+
+A complete **observation/candidate record** need not become a virtual trade: the experiment still requires prospective eligibility, a coherent entry/exit plan and enough verifiable forward data.
+
+### What Research does
+
+1. Records every observed eligible alternative, including unchosen, rejected and **NO TRADE** possibilities, so the learner can see the choice NBOT actually faced.
+2. Starts **virtual research trades** only for eligible, **predefined** LONG or SHORT experiments. A virtual trade is a laboratory hypothesis, not an order or a real position.
+3. Follows later market prices without allowing future information to change the entry-time hypothesis.
+4. Determines whether stop, target or time limit was reached first using original and continuous-enough source evidence.
+5. Validates appropriate entry/exit quote evidence and economic assumptions; accounts for transaction fees, spread/slippage and applicable funding without double counting costs or inventing exchange fills.
+6. Produces an evidence-backed **after-cost hypothetical result**, or honestly records **PENDING / UNRESOLVED / CENSORED / HOLD** when the needed facts are not available.
+7. Links the result back to **the exact market, BTC state, coin structure, detector tags and direction** observed at the start.
+8. Supplies the mature, scientifically eligible results to Learning under explicit provenance and sample-independence rules.
+
+Research should also examine **missed opportunities**, including trades the Champion rejected, because learning only from chosen trades would perpetuate the previous selector's blind spots. It cannot claim that a one-position bot could have simultaneously executed all virtual alternatives.
+
+### Where do paper and future live trading fit?
+
+Research has **multiple sources of feedback** but does **not** need multiple independent research engines:
+
+| Evidence channel | What it teaches Research | What it does NOT prove |
+| --- | --- | --- |
+| **Virtual research trades** | Which prospective coin/structure/direction/BTC-condition combinations appear to have positive or negative after-cost hypothetical outcomes, and which were missed | That Binance would have filled all these hypothetical trades at those prices |
+| **Champion Paper** | How the approved selector behaves with forward timing, a realistic one-position paper budget, entry/exit simulation and risk vetoes | Actual exchange fills or actual earned profit |
+| **Challenger Paper** | Whether a frozen new model makes better decisions than the Champion over the **same** future market period | That a superior paper model is automatically fit for real money |
+| **Future Champion Live** | Real execution evidence: order acceptance/rejections, actual entry/exit fills, fees, funding, latency, slippage, operational issues and risk | That an untraded alternative would have achieved an identical real fill |
+
+All channels may provide useful learning feedback, **but keep their records, uncertainty and evidence grades separate**. A live trade and its corresponding virtual-paper mirror must not be counted as two independent market opportunities. Real results are a selected sample, so they cannot replace the broad virtual research denominator.
+
+The authoritative roadmap begins with **a qualified Champion paper stage**, and later permits independent Champion and Challenger paper portfolios for fair competition. A future separately authorized live phase may include Champion Live, Champion Paper Mirror and Challenger Paper. **These are separate testing/accounting environments, not separate Research departments and not three real open positions.**
+
+### The responsibility boundary — a deliberate architectural decision
+
+**Research may discover, test, measure and recommend. It must NOT place real orders, control real open positions, change the active Champion without approval, or grant itself paper/live authority.**
+
+- **Research:** establishes verifiable results and creates learning datasets.
+- **Learning/training:** estimates conditional after-cost advantage and produces independently testable model versions.
+- **Approved Champion decision policy:** generates current LONG/SHORT/NO TRADE recommendations from live, valid features; the Challenger can produce separate experimental recommendations.
+- **Independent Execution guardian:** validates model identity, proposal freshness, market source, position occupancy, stop/risk/cost gates and authorization; can veto any action.
+- **Owner-approved release controls:** govern model promotion, initial paper release and any future real-money permission. The user's final real-trading objective is **at most one actual open position globally**.
+
+This is how NBOT can become autonomous **at gathering evidence, learning and making proposals**, without letting a newly discovered pattern immediately take control of real money.
+
+---
+
+## 8B. LEARNING — how NBOT discovers what works, when and why
+
+**The owner's central learning goal is:**
+
+> "From the verified results of past virtual trades, learn whether a particular coin price structure and direction performs well under a particular type of market condition and BTC condition. Use that experience to recognize similar future situations—and avoid trades that have not shown a reliable advantage."
+
+That is the right goal. One critical refinement is that **past success is evidence, not an eternal guarantee**. NBOT should learn *estimated, conditional, after-cost advantage and uncertainty*, and keep testing whether those relationships remain useful in new market periods.
+
+### 1. Learn combinations, not isolated patterns
+
+A double bottom, breakout or trend continuation does not have one universal success rate. Its outcome may depend on many interacting conditions:
+
+| Question | What Learning should consider |
+| --- | --- |
+| **What market conditions?** | Overall uptrend/downtrend, range, broad participation, volatility regime, sudden transition or shock |
+| **What is BTC doing?** | BTC trend, short-term acceleration, sudden fall/rise, regime and whether the coin tends to follow or diverge from BTC |
+| **What is the coin doing?** | Trend versus range, its own volatility, relative strength, support/resistance, price-structure maturity and confirmation |
+| **What was detected?** | One or more of the original 24 pattern hypotheses, or a no-pattern observation, with direction-specific features |
+| **Which direction?** | LONG, SHORT or **NO TRADE**; conditions favorable for one direction can be unfavorable for the other |
+| **What was the proposed trade plan?** | Entry time, stop distance, profit target, exit/timeout, initial R, liquidity, spread and funding environment |
+| **How did it end?** | Matured verified after-cost net R, downside, missed/expired opportunities and valid outcome status |
+| **How reliable is the finding?** | Genuine independent samples, diversity of market periods, uncertainty, missingness and stability when conditions change |
+
+The learning target is not merely **"price rose after a pattern."** It is whether an eligible, prospectively declared and executable-looking trade policy would have had a **credible positive expected net return compared with not trading** under those *decision-time conditions*.
+
+### 2. Example — the same double bottom in three different environments
+
+The following is an **illustrative question**, not an established profitable result:
+
+- **Case A:** A double bottom forms on a relatively strong coin, BTC is stable or gradually strengthening, spreads are small and the stop/target geometry is reasonable. Research may eventually find that this combination deserves a **LONG** hypothesis.
+- **Case B:** The same-looking double bottom forms while BTC is plunging and the coin is weak relative to BTC. It may fail more often or create excessive downside, suggesting **NO TRADE**.
+- **Case C:** A purported double bottom appears inside an unresolved range with unreliable quotes, little liquidity or excessive costs. NBOT should **ABSTAIN**, even if the visual pattern looks attractive.
+
+Only verified future-outcome evidence can tell NBOT whether these descriptions actually separate better trades from worse ones. **Do not hardcode the illustrative conclusions as trading rules.** A structure that *looks* like a double bottom must also meet an explicit, versioned detector/confirmation definition before Learning can count it as such.
+
+### 3. What Learning needs from each virtual trade
+
+A useful learning example joins **the original decision-time context** to **the later verified outcome**:
+
+- Market event and time, coin, side and unique hypothesis identity.
+- BTC regime and overall market/breadth state **as known then**.
+- Coin structure and structural confirmation, including detector version and matched tags.
+- Relative strength/correlation, volatility, liquidity, quote freshness, and cost/risk geometry.
+- The entry/stop/target/timeout policy frozen **before** the outcome.
+- The future original price-path and source evidence, appropriate quote/cost/funding proofs, maturation time, and result **net of costs**.
+- Outcome quality status, evidence grade, event/regime dependence group, experiment version and code/model provenance.
+
+Learning must not use a future candle, later BTC movement, revised structure label, finalized funding figure or matured trade result as an **input to an earlier trading decision**. Those later facts may be outcome evidence only. Hold unresolved or insufficient-evidence cases outside qualified training labels, while keeping them visible for honest denominator and missingness analysis.
+
+The same coin movement may satisfy multiple detectors. **Count one uniquely defined virtual experiment once**, not once per detector tag. Simultaneous coins and LONG/SHORT alternatives can share a BTC-driven shock and must not be treated as independent proof.
+
+### 4. What Learning is actually trying to discover
+
+Over enough independently qualified outcomes, the system should estimate things like:
+
+- Under **which** BTC and market conditions is a breakout LONG worth considering?
+- When is the identical breakout too risky, too costly, or more likely to fail?
+- Do some structures produce more favorable SHORT than LONG results in particular conditions?
+- Is a coin's strength or weakness relative to BTC informative?
+- Does the same structure work differently in a range, trend or sudden regime shift?
+- Are expected returns still attractive **after** fees, spread, slip and funding?
+- How likely is a large loss or unacceptable drawdown, not just a winning trade?
+- Are apparent successes confined to one coin, one week or one correlated BTC move?
+- Is the model confident **enough to trade**, or should it answer NO TRADE?
+
+A learned relationship is useful only if it improves decisions **on later unseen market periods**. If it cannot do so reliably, it stays a research hypothesis.
+
+### 5. Learn without fooling ourselves
+
+The most important safeguards are not additional indicators. They are tests of whether the evidence deserves trust:
+
+1. **Authentic and mature:** only the correctly verified evidence grade enters the qualified dataset. Synthetic laboratory trades validate engineering but never count toward genuine research thresholds.
+2. **No future knowledge:** features must be available at the exact event; outcomes must mature before entering any model's training cutoff.
+3. **No false independence:** overlapping positions, same-event alternatives, opposite sides and shared BTC shocks are dependence groups, not thousands of independent successes.
+4. **Diverse market experience:** include sufficient independent events, coin/side variation, time span and distinct regimes. If all examples come from one BTC rally, uncertainty remains high.
+5. **Time-separated testing:** train on earlier data, use proper purging/embargo for overlapping horizons and evaluate on later untouched periods. Randomly splitting highly overlapping rows is misleading.
+6. **Conservative uncertainty:** judge whether a positive result is stable and convincingly above costs and the **NO TRADE** benchmark, not merely a positive in-sample average.
+7. **Multiple-attempt protection:** exploring many detectors, risk/target combinations and model versions creates false discoveries by chance. Track what was tried and preserve untouched evaluation evidence.
+8. **Observe changing conditions:** detect when a once-promising relationship weakens. Unknown regimes, bad sources or deteriorating evidence mean **HOLD / NO TRADE**, not forced retraining or action.
+
+The initial **2,000 genuinely matured virtual-outcome checkpoint** defined in the roadmap is a *minimum opportunity to evaluate learning*, **not proof that a strategy works**. If independence, diversity or the after-cost tests fail, keep collecting evidence and do not qualify a Champion.
+
+### 6. Translate learning into a usable decision
+
+For each eligible opportunity, a scientifically qualified model should be able to provide a decision-oriented estimate, for example:
+
+- **Coin and side:** the LONG or SHORT hypothesis under consideration.
+- **Conditions:** which BTC/market/coin structure features informed the evaluation.
+- **Expected after-cost result:** estimated net R or an appropriately calibrated outcome distribution.
+- **Uncertainty:** a conservative confidence estimate or lower bound, plus out-of-distribution flags where applicable.
+- **Risk and cost feasibility:** spread, slippage/funding assumptions, stop distance, downside and available position budget.
+- **Decision:** **QUALIFIED FOR FURTHER EXECUTION CHECK**, **INSUFFICIENT EVIDENCE**, **UNFAVORABLE**, or **NO TRADE**, together with the reason and frozen model version.
+
+A model that ranks Candidate A ahead of B has **not** necessarily established that either candidate is economically attractive. Learning must allow all candidates to fail the threshold, leaving **NO TRADE** as the right action.
+
+The final decision engine should consider only the **currently approved frozen Champion**, and the independent Execution guardian can still veto it. A model cannot take a second actual position merely because it has found a high-confidence opportunity.
+
+### 7. How Learning gets better over time — Champion and Challenger
+
+**Learn continually; change production behavior cautiously.**
+
+- Initially, Research supplies enough genuine, independently qualified, matured outcomes to attempt rigorous model evaluation.
+- If a model passes predeclared economic, uncertainty, causal and review tests, it may become the first **paper-only Champion**. If not, NBOT stays NO_MODEL / NO_TRADE.
+- Research keeps receiving new valid outcomes while that Champion remains unchanged.
+- After the roadmap's **next additional 2,000 newly matured qualifying outcomes** and the required independence/diversity gates, Learning may propose a **Challenger** trained on an approved earlier data window and checked against separate later evidence.
+- The Challenger does **not** replace the Champion because it is newer, has a higher historical win rate or wins a brief streak.
+- A qualified Challenger is evaluated prospectively over the same market period as the frozen Champion in **separate, comparable paper books**. Fair paper competition measures true position occupancy, costs, drawdown, abstention and forward net results.
+- When the contest produces strong enough evidence under predetermined standards, the system may **recommend** retain, reject, suspend or replace. **Approval is independent; there is no self-promotion into paper or live authority.**
+- If the market changes or both policies lose to doing nothing, retain safety and **NO TRADE** rather than forcing a winner.
+
+The roadmap's proposed **100 settled paper-trades-per-model checkpoint** is also subject to a common time period, predeclared maximum window and independent-event coverage. A highly selective model must not be forced to generate 100 trades. Inconclusive results remain inconclusive.
+
+### 8. Paper and actual outcomes also improve Learning—but not as interchangeable labels
+
+Virtual trade outcomes provide broad **counterfactual opportunity learning**.
+
+Paper outcomes help show whether a selected policy can operate in real time, with simulated fill/cost assumptions, risk vetoes, one-position occupancy and restart behavior.
+
+Separately authorized future real outcomes show **what Binance actually filled**, paid/charged and rejected. They may reveal that the virtual/paper cost models are too optimistic.
+
+Learning should use these as **separate labeled evidence channels**. The system should not pool hypothetical, paper and live outcomes as if they were the same kind of trade, nor count a virtual reflection of a real trade as an independent win. Actual trading is only a selected subset of possible opportunities, so real-only results cannot replace the unchosen-opportunity research dataset.
+
+Research and Learning can investigate and propose corrections to assumptions or new Challengers. **They may not directly order, cancel, leverage, liquidate or promote a real model.** Only a separately authorized execution system and policy can manage an actual position.
+
+### 9. What Learning should produce—not just a newly trained model
+
+The output of Learning should be understandable and auditable:
+
+1. A **condition-versus-outcome evidence map**: where there is positive, negative, uncertain or insufficient after-cost evidence by regime, structure, side and cost/risk conditions.
+2. A **sample-quality report**: counts of eligible, matured, independently effective, unresolved, censored and withheld cases, with source grades.
+3. A **baseline comparison**: no-trade, simple conditions and the existing model, evaluated on comparable opportunity periods where defensible.
+4. A **frozen model candidate** with its features, training cutoff, validation results, version, assumptions and checksum.
+5. A **plain-language recommendation**: retain Champion, evaluate Challenger further, reject, suspend, or stay NO_MODEL / NO TRADE.
+6. A **reason for abstention** when a tempting setup lacks reliable evidence.
+
+NBOT need not discover a magical "best strategy" for every market regime. Success means recognizing where it has enough evidence to act **and where it does not**.
+
+### The Learning vision in one paragraph
+
+**NBOT should learn from genuine, prospectively recorded virtual trades which kinds of coin structures, directions and detector combinations have shown a credible positive return after costs under which BTC and overall-market conditions. It should also learn when these setups fail, when costs are too high and when its evidence is too weak to trade. The learning system should improve selection through independently tested Challenger models while keeping the approved Champion stable, the single actual-position rule intact and all live order authority outside Research and Learning.**
 
 ---
 
