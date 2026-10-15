@@ -71,7 +71,11 @@ class PublicUsdMClient:
     def _request(self, name: str, path: str, params: dict, weight: int) -> PublicResponse:
         if not self.allowed:
             raise PublicMarketHold("G2_PUBLIC_NETWORK_LOCKED")
-        if name not in ("EXCHANGE_INFO", "TICKER_24HR", "BOOK_TICKER", "KLINES"):
+        allowed_paths = {"EXCHANGE_INFO": "/fapi/v1/exchangeInfo",
+                         "TICKER_24HR": "/fapi/v1/ticker/24hr",
+                         "BOOK_TICKER": "/fapi/v1/ticker/bookTicker",
+                         "KLINES": "/fapi/v1/klines"}
+        if name not in allowed_paths or path != allowed_paths[name]:
             raise PublicMarketHold("G2_PUBLIC_ENDPOINT_DENIED")
         if time.monotonic() - self._window_start >= 60:
             self._used, self._window_start = 0, time.monotonic()
@@ -153,6 +157,15 @@ def select_from_public_responses(
         if (type(value.raw_bytes) is not bytes or not value.raw_bytes or
                 hashlib.sha256(value.raw_bytes).hexdigest() != value.body_sha256):
             raise PublicMarketHold("G2_PUBLIC_SOURCE_DIGEST_MISMATCH")
+        try:
+            exact_decoded = json.loads(value.raw_bytes,
+                    parse_constant=lambda _: (_ for _ in ()).throw(
+                        PublicMarketHold("G2_PUBLIC_NONFINITE_SOURCE")))
+        except (ValueError, UnicodeError, TypeError) as exc:
+            raise PublicMarketHold("G2_PUBLIC_RAW_JSON_INVALID") from exc
+        if (type(exact_decoded) is not type(value.body)
+                or exact_decoded != value.body):
+            raise PublicMarketHold("G2_PUBLIC_RAW_BODY_MISMATCH")
     if type(selected_at_ms) is not int:
         raise PublicMarketHold("G2_PUBLIC_ASOF_INVALID")
     received = tuple(s.received_at_ms for s in sources)
