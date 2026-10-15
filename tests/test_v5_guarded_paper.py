@@ -89,6 +89,11 @@ class PaperTests(unittest.TestCase):
         self.unlock()
         self.assertEqual(self.submit(proposal(model_sha256="0"*64))["status"],"REJECTED")
 
+    def test_authenticated_real_money_request_is_rejected_without_any_fill(self):
+        self.unlock()
+        self.assertEqual(self.submit(proposal(authority="REAL_MONEY"))["status"],"REJECTED")
+        self.assertTrue(all(b["fills"]==0 for b in self.engine.reconcile()["books"].values()))
+
     def test_future_and_expired_message_no_order(self):
         self.unlock()
         for p in (proposal(at=BASE+1),proposal(expires_ms=BASE)):

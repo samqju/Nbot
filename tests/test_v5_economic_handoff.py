@@ -97,6 +97,16 @@ class EconomicHandoffTests(unittest.TestCase):
         self.x.engine.tick(fixture.COMMITTED+400)
         self.assertEqual(self.x.engine.verified_rows(), [])
 
+    def test_missing_exit_quote_keeps_cost_handoff_on_hold(self):
+        def missing(pop,intent,path,now):
+            package,_=evidence(pop,intent,path,now)
+            package["exit_quote"]=None
+            return package,review(digest(package),"G4_ECONOMIC_EVIDENCE",now=now,grade="SYNTHETIC")
+        self.x.engine.economic_provider=missing
+        result=self.x.engine.tick(fixture.COMMITTED+300)
+        self.assertEqual(result["g5"]["qualified_outcomes"],0)
+        self.assertEqual(result["g7_paper_state"],"LOCKED")
+
     def test_crash_after_terminal_before_handoff_recovers_once(self):
         engine = self.x.engine
         original = engine.store.append

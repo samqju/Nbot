@@ -71,3 +71,17 @@ class LearningLifecycleTests(unittest.TestCase):
         result=self.lifecycle().advance(self.now,epochs=2)
         for reason in ("COIN_DIVERSITY","REGIME_DIVERSITY","DEPENDENT_SAMPLE"):
             self.assertIn(reason,result["report"]["reasons"])
+
+    def test_interrupted_fit_preserves_frozen_job_and_no_partial_artifact(self):
+        from unittest.mock import patch
+        self.populate()
+        lifecycle=self.lifecycle()
+        with patch("nbot.v5.learning_lifecycle.fit_candidate",side_effect=OSError("SYNTHETIC_FIT_TERMINATION")):
+            with self.assertRaisesRegex(OSError,"FIT_TERMINATION"):
+                lifecycle.advance(self.now,epochs=30)
+        self.assertEqual(self.store.db.execute(
+            "SELECT COUNT(*) FROM research_journal WHERE kind='MODEL_CANDIDATE'").fetchone()[0],0)
+        result=lifecycle.advance(self.now,epochs=30)
+        self.assertIn(result["state"],("REVIEWED_CHAMPION","HOLDOUT_REJECTED"))
+        self.assertEqual(self.store.db.execute(
+            "SELECT COUNT(*) FROM research_journal WHERE kind='LEARNING_COHORT_FROZEN'").fetchone()[0],1)

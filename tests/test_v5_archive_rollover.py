@@ -64,6 +64,15 @@ class ArchiveRolloverTests(unittest.TestCase):
                 archive_committed_segments(self.root,self.cold)
         self.assertEqual(list(read_segments(self.root,SYMS)),before)
 
+    def test_encoded_frame_exhausting_ram_budget_is_not_admitted(self):
+        source=SegmentedForwardSource(self.root,symbols=SYMS,max_pending_bytes=32768)
+        before=source.seq
+        raw=quote(symbol=SYMS[0],at=NOW+1000)+b" "*27000
+        with self.assertRaisesRegex(ValueError,"FRAME_EXCEEDS_RAM_BUDGET"):
+            source.ingest(route="public_bookticker",at_ms=NOW+1000,raw=raw)
+        self.assertEqual(source.seq,before)
+        self.assertEqual(source.audit()["counts"]["FRAME"],200)
+
     def test_quota_rollover_continues_without_fixed_time_stop(self):
         source=SegmentedForwardSource(self.root,symbols=SYMS,max_pending_frames=32,
                                       max_pending_bytes=65536,max_disk_bytes=131072,
