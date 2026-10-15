@@ -37,10 +37,13 @@ class PublicResponse:
     body_sha256: str
     body: object
     request_weight: int
+    raw_bytes: bytes = b""  # exact public HTTP response bytes, unqualified
 
     def __post_init__(self):
         if (type(self.received_at_ms) is not int or
-                type(self.body_sha256) is not str or len(self.body_sha256) != 64):
+                type(self.body_sha256) is not str or len(self.body_sha256) != 64
+                or type(self.raw_bytes) is not bytes
+                or (self.raw_bytes and hashlib.sha256(self.raw_bytes).hexdigest() != self.body_sha256)):
             raise PublicMarketHold("G2_PUBLIC_RESULT_INVALID")
 
 
@@ -101,7 +104,7 @@ class PublicUsdMClient:
             raise PublicMarketHold("G2_PUBLIC_JSON_INVALID") from exc
         received = int((self._now() if self._now is not None else time.time()) * 1000)
         return PublicResponse(name, path, received, hashlib.sha256(data).hexdigest(),
-                              body, weight)
+                              body, weight, data)
 
     def exchange_info(self) -> PublicResponse:
         return self._request("EXCHANGE_INFO", "/fapi/v1/exchangeInfo", {}, 1)
