@@ -134,6 +134,7 @@ class FuturePublicObservationService:
                         except (SourceRecoveryHold,ValueError) as e:
                             self.errs.append("RECOVERY_TASK_HOLD:"+str(e)[:60])
                 if current.state=="SOURCE_HOLD":
+                    self.errs.append("FIRST_SOURCE_HOLD:"+kind+":"+current.symbol+":"+str(current.reason)[:160])
                     # A retrospective recovery task never repairs a live
                     # decision-time source epoch. Stop any new intake now.
                     self.pipeline.emergency_hold(
