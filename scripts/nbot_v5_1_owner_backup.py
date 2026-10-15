@@ -40,7 +40,7 @@ _NAME=re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,119}\Z")
 _SHA=re.compile(r"[a-f0-9]{64}\Z")
 SENSITIVE=("secret","private","api_key","apikey","credential",
            "password","token","session","id_rsa","id_ed25519",
-           "wallet","seedphrase","access_key","putty","\.env")
+           "wallet","seedphrase","access_key","putty",".env")
 MAX_FILE_BYTES=512*1024*1024
 MAX_TOTAL_BYTES=2*1024*1024*1024
 MAX_FILES=3000
@@ -70,12 +70,12 @@ def _allowed_path(rel:Path):
         raise BackupHold("UNSUPPORTED_RECORD_TYPE")
     return rel.as_posix()
 
-def _ignored_sqlite_companion(rel:Path):
+def _ignored_sqlite_companion(rel:Path,root:Path):
     if not rel.name.endswith(("-wal","-shm","-journal")):
         return False
     main=rel.with_name(rel.name.rsplit("-",1)[0])
     return (main.suffix.lower() in (".db",".sqlite",".sqlite3")
-            and (STATE_ROOT/main).is_file())
+            and (root/main).is_file())
 
 def _walk_files(root:Path):
     _private_dir(root)
@@ -99,7 +99,7 @@ def _walk_files(root:Path):
             p=root/rel
             if p.is_symlink():
                 raise BackupHold("SYMLINK_FILE_DENIED")
-            if _ignored_sqlite_companion(rel):
+            if _ignored_sqlite_companion(rel,root):
                 continue
             _allowed_path(rel)
             st=p.stat()
