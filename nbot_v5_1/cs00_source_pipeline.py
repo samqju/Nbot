@@ -71,6 +71,12 @@ class SourceOnlyPipeline:
                 if self.recorder_root is not None:
                     self.recorder=DeepSegmentRecorder(self.recorder_root,
                        symbols=tuple(c.symbols),quota_bytes=self.quota)
+                    if self.state_writer is not None:
+                        replayed=self.recorder.attach()
+                        if replayed:
+                            # Recover file custody, but do not pretend an
+                            # unapproved post-restart network epoch is continuous.
+                            raise CommissioningHold("CS00_SOURCE_RESTART_EPOCH_REVIEW_REQUIRED")
             elif c.symbols!=self.deep.symbols:
                 self.source_gap_count+=1
             # Persist complete G2/G3 first, then publish a final shared
