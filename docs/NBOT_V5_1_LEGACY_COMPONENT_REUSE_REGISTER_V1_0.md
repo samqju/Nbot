@@ -1,6 +1,6 @@
 # NBOT V5.1 — Legacy Component Reuse Register
 
-**Register version:** 1.1 (G4-01…G4-05 audited selectively; G4-06 live evidence HOLD)  
+**Register version:** 1.2 (G5 R11/R12/R15/R16/R18 audited; 224 offline tests PASS, G4/G5 parents remain HOLD)  
 **Assessment date:** 15 October 2026 (IST)  
 **CURRENT STATUS (15 October 2026):** G0–G3 **[x] COMPLETE**, G4 **[ ] PARTIAL / HOLD**. Pure G4 old-source R06/R13/R14 reviewed with exact pinned blobs, clean V5.1 replacement code, 186/186 tests on BOTH VPSs and real 3,077 WSS frames — but actual trade continuity has **47 gaps and only 19/20 accepted trade symbols**; no independently complete 20-source/long-run/off-host evidence. R04–R27 not otherwise automatically approved; all paper/real trading and services LOCKED. Earlier paragraphs preserve original G0-only chronology.  
 **Target:** samqju/Nbot, branch nbot-v5.1.  
@@ -317,4 +317,23 @@ The owner explicitly said: personally execute old VPS removal commands if automa
 - [ ] **G4-06-C/D — Network provenance/off-host retention:** authenticated original public WSS origin audit independent of local claims, actual off-host segment retention/restore, source gap/missing-tail recovery and long-duration resource evidence remain unproven.
 - [ ] **G4-06-E PARENT:** G4 **NOT COMPLETE**. G5–G12 remain open; services all stopped; no virtual/paper/testnet/live order authority.
 
-**Current audit status: G0 [x], G1 [x], G2 [x], G3 [x], G4 [ ] HOLD (partial G4 microticks above), G5–G12 [ ]; NO EXCHANGE ORDERS.**
+**Historical G4 checkpoint (superseded by later G5 update below):** G0–G3 passed, G4 parent HOLD; no exchange orders.
+
+
+## 16. G5 historical Research-source audit and offline engineering progress (15 Oct 2026)
+
+[Detailed G5 evidence and remaining source/crash-check HOLD report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G5_OFFLINE_ENGINEERING_PROGRESS_AND_HOLD_20261015.md), commit **79ff4da7fc3967e19df1f8b9a86db384ab6e847d**. Full G5 code/test source SHA **`2efea2cccb086a1f292ae90c1eaac414620f342b`**: **224/224 PASS on BOTH Python 3.12.3 VPSs** (186 previously passing tests +38 new G5), simulated 20×two-side/40 active/24 closed events benchmark p99 **197.077ms Observation /194.434ms Execution**, ~41MiB test RSS, ~1.25MiB journal, 600 cost-pending synthetic path closures, zero qualified after-cost profit. A subsequently committed 40-occupied-crash **benchmark-only** patch `a614cf7...` awaits rerun; unqualified live original G4 source remains HOLD.
+
+- [x] **G5-R11 V4 Research factory historical audit:** Pin `nbot/observation/v4_research.py`, commit `b1a3c4a8d2a82c994669df7adb0d345e0415ffbf`, blob `6d141f0163168fd8b95a30e3dfef839d2bd1bf70`. Its 100-active source, detector-count ranking, old DB and automatic refill were NOT reused. **V5.1 rebuilt** `research_book.py` max 40, one coin+side, frozen G4 20/BTC, no quota for forced new trials, 5-minute decision clock. Regimen R01–R38 G5 tests PASS.
+- [x] **G5-R12 constant-space first-touch review:** Pin `nbot/observation/research_replay.py`, same original V4 commit, blob `db225ec0d32247f71775191f701efca4c8015645`. Transferred only conceptual O(1) per active path/one shared symbol source, STOP/TARGET/trailing before next candle review; old price/float/chronological DB imports excluded. New adapter accepts SYNTHETIC_OFFLINE_TEST_ONLY; real G4 original source requires separate verification.
+- [x] **G5-R15 incremental G4 price path source:** Pin `nbot/v5/g4_incremental_path.py`, historical commit `47dd5fa34fae2f222ad23ce521c0c5034c1cadc8`, blob `f7fac3dd7d6533439e29b03e07438b6d1607a301`. Preserved one-pass original-shaped intent first-touch semantics with exact hypothetical timestamp in `research_book.py`. Old `PathReplay`, legacy source reader/full archive repeatedly scanned and price-only profitable outcome assumptions NOT imported.
+- [x] **G5-R16 prospective policy source:** Pin `nbot/v5/g4_prospective_policy.py`, old `91d904b0e3783a93266f4ff646414bbb8fcc3333`, blob `c8ab2dfa993160d927a7f0a335d47aa6c70e960d`. Reviewed old 50/old observation dependencies, rewrote `research_intent.py` pure immutable geometry/risk/trailing/horizon/decision clock, no future candle, no mocked fee/quote/funding justification or exchange key.
+- [x] **G5-R18 historic Research ledger audit:** Pin `nbot/v5/g4_research_ledger.py`, old `91d904b0e3783a93266f4ff646414bbb8fcc3333`, blob `df67b31b766aee55fa51e79033c3f6bd3a67a9df`. Retained distinction terminal price-path vs after-cost economic score; discarded original SQLite financial/label schema. New `research_journal.py` private bounded append-only hash/fsync audit; restart/source gaps HOLD and slots remain counted; no qualified-training labels minted.
+- [x] **G5 source/slot admission:** Every hypothetical lab intent `source_grade=SYNTHETIC_OFFLINE_TEST_ONLY`, `financial_authority=NONE`, `qualified_after_cost=0`; any attempted `ORIGINAL_VERIFIED` or paper/real authority is rejected until G4 independently passes. One coin-side can carry 24 detector tags but no second virtual intent; 40 maximum, both LONG and SHORT allowed as correlated research alternatives.
+- [x] **G5 224-test/two-VPS and original-shaped frame throughput:** All 38 additional G5 tests pass on two VPSs and each 24-review/40-peak benchmark passes within hard latency/RSS/disk budgets. Contradictory trade-ID sequences, false future path, tight/loose trailing, stale source, journal tamper, crashed active path, idle-source lost interval, concurrent writer and full slots are tested as fail-closed.
+- [x] **G5 full-40-active crash harness change committed:** Stronger benchmark asserts restored 40 occupied + HOLD. It was **not run after commit**, so do NOT tick the next acceptance evidence.
+- [ ] **G5-06-A** re-run amended 40-active restart benchmark on both target VPSs; old passing 24-review benchmark ended at zero occupied slots and does not prove this case.
+- [ ] **G5-06-B** real original Binance source-qualified 20-market first-touch, funding/quote/fee grade and off-host restore AFTER G4-06-A/B/C/D has independent real evidence; owner explicitly deferred startup checks rather than waive them.
+- [ ] **G5-06-C PARENT** remains HOLD; no G6 scientific after-cost labels, Champion authority or production start.
+
+**Current audit truth:** G0 [x], G1 [x], G2 [x], G3 [x], **G4 [ ] original-source HOLD**, **G5 [ ] full acceptance HOLD (offline code and tests PASS)**, G6–G12 [ ]. All live/paper/exchange order authority LOCKED. 
