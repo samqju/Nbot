@@ -116,6 +116,9 @@ class ChampionLabPaperBook:
                     if pos is None or body.get("decision_id")!=pos["decision_id"]:
                         raise PaperHold("G9_ORPHAN_OR_DUPLICATE_TERMINAL")
                     if body.get("result")=="LAB_CENSORED":
+                        # No invented exit/outcome; the entry fee remains
+                        # a debit in the audited LAB cash reconciliation.
+                        realized-=dec(pos["entry_fee"])
                         censored+=1
                     elif body.get("result")=="LAB_SIMULATED_SETTLEMENT":
                         if held:raise PaperHold("G9_HELD_POSITION_FALSE_SETTLEMENT")
