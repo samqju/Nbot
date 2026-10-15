@@ -45,7 +45,7 @@ def _sha(obj):
 
 
 def _private_directory(path: Path):
-    if (type(path) is not Path or not path.is_absolute() or
+    if (not isinstance(path, Path) or not path.is_absolute() or
             path.is_symlink() or not path.is_dir()):
         raise CommissioningHold("CS00_PRIVATE_DIRECTORY_REQUIRED")
     s = path.stat()
@@ -54,7 +54,7 @@ def _private_directory(path: Path):
 
 
 def _read_safe(path: Path, max_bytes: int) -> bytes:
-    if type(path) is not Path or path.is_symlink():
+    if not isinstance(path, Path) or path.is_symlink():
         raise CommissioningHold("CS00_FILE_SYMLINK")
     fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     try:
