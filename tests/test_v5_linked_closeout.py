@@ -8,7 +8,7 @@ from nbot.v5.continuous_research import ContinuousResearch
 from nbot.v5.g4_prospective_policy import freeze_template, ENTRY_CONVENTION, EXIT_POLICY_ID, RISK_POLICY_ID, COST_POLICY_ID
 from nbot.v5.guarded_paper import GuardedPaper, BOOKS, sign
 from nbot.v5.learning_lifecycle import LearningLifecycle
-from nbot.v5.science import Protocol, digest
+from nbot.v5.science import Protocol, digest, infer
 from tests.test_v5_g4_source_binding import EVENT
 from tests.test_v5_science import review
 from tests.test_v5_guarded_paper import POLICY, quote, economics
@@ -66,6 +66,9 @@ class LinkedCloseoutAcceptance(unittest.TestCase):
                 self.assertEqual(source.read_bytes(),source_before)
                 models={BOOKS[0]:state["models"]["CHAMPION"],BOOKS[1]:state["models"]["CHALLENGER"]}
                 self.assertNotEqual(*models.values())
+                artifacts={model:json.loads(engine.store.db.execute(
+                    "SELECT body FROM research_journal WHERE identity=?",("model:"+model,)).fetchone()[0])
+                           for model in models.values()}
                 role_records=engine.learning._approved()
                 self.assertLess(role_records[0]["max_settled_ms"],
                                 min(r["decision_ms"] for r in rows if r["decision_ms"]>role_records[0]["max_settled_ms"]+protocol.embargo_ms))
@@ -80,13 +83,21 @@ class LinkedCloseoutAcceptance(unittest.TestCase):
                                 champion_qualified=True,challenger_qualified=True),now)
             try:
                 for book in BOOKS:
+                    # G7's proposal must actually come from the registered
+                    # model's causal feature inference, never a hand-set edge.
+                    proposals=[(r,infer(artifacts[models[book]],r["features"]))
+                               for r in rows[-100:] if r["side"]=="LONG"]
+                    chosen,prediction=max(proposals,key=lambda item:item[1]["lower_net_r"])
+                    self.assertEqual(prediction["action"],"REVIEW_ONLY")
+                    self.assertGreater(prediction["lower_net_r"],float(POLICY["min_lower_net_r"]))
                     body={"version":"NBOT_V5_PAPER_V2","authority":"PAPER","book":book,
                           "model_sha256":models[book],"decision_id":digest([book,"linked-source"]),
-                          "at_ms":now,"expires_ms":now+5000,"side":"LONG","symbol":"BTCUSDT",
-                          "risk_group":"BTC","stop":"95","target":"110","lower_net_r":"0.2",
+                          "at_ms":now,"expires_ms":now+5000,"side":chosen["side"],"symbol":chosen["symbol"],
+                          "risk_group":"BTC","stop":"95","target":"110","lower_net_r":str(prediction["lower_net_r"]),
                           "source_quality_ok":True,"regime_gate_ok":True}
+                    current_quote=quote(at=now);current_quote["symbol"]=chosen["symbol"]
                     self.assertEqual(paper.submit({"body":body,"signature":sign(body,keys[book])},
-                                                  quote(at=now),economics(),now)["status"],"PAPER_FILLED")
+                                                  current_quote,economics(),now)["status"],"PAPER_FILLED")
                 before=paper.reconcile()["books"]
             finally:
                 paper.store.close()
@@ -97,7 +108,9 @@ class LinkedCloseoutAcceptance(unittest.TestCase):
                 costs=economics()
                 costs.update(funding_coverage_from_ms=now,funding_coverage_to_ms=now+1000)
                 for book in BOOKS:
-                    self.assertEqual(paper.exit(book,"BTCUSDT",quote(now+1000,"110","110.02"),
+                    symbol=next(iter(paper.project()[book]["positions"]))
+                    closing_quote=quote(now+1000,"110","110.02");closing_quote["symbol"]=symbol
+                    self.assertEqual(paper.exit(book,symbol,closing_quote,
                                                 costs,now+1000)["status"],"PAPER_SETTLED")
                 self.assertTrue(all(b["positions"]==0 for b in paper.reconcile()["books"].values()))
             finally:
