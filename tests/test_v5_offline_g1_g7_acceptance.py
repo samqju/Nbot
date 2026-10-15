@@ -109,7 +109,7 @@ class OfflineFullLifecycleAcceptance(unittest.TestCase):
                 BOOKS[1]:challenger["model_sha256"]}
         keys={BOOKS[0]:b"c"*32,BOOKS[1]:b"d"*32}
         with TemporaryDirectory(prefix="nbot-v5-offline-acceptance-") as temp:
-            path=Path(temp)/"synthetic_paper.sqlite"
+            path=Path(temp)/"guarded_paper.sqlite"
             paper=GuardedPaper(path,policy=POLICY,models=models,keys=keys,
                                reviewer_key=b"s"*32,synthetic=True)
             try:
@@ -170,7 +170,7 @@ class OfflineFullLifecycleAcceptance(unittest.TestCase):
                 "qualified_independently_reviewed_outcomes"],0)
             with TemporaryDirectory(
                     prefix="nbot-v5-real-grade-denial-") as tmp:
-                locked=GuardedPaper(Path(tmp)/"locked.sqlite",
+                locked=GuardedPaper(Path(tmp)/"guarded_paper.sqlite",
                                     policy=POLICY)
                 try:
                     self.assertEqual(locked.reconcile()["paper_state"],"LOCKED")
