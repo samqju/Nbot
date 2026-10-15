@@ -74,6 +74,8 @@ class SourceOnlyIntake:
         self._epochs:dict[str,int]={}
         self.processed=0
         self.authority="NONE"
+        self.consecutive_stale:dict[tuple[str,str],int]={}
+        self.stale_quote_mark_skipped=0
 
     def observe(self,*,kind:str,raw:bytes,epoch:int,received_ms:int)->SourceStatus:
         if (kind not in ("TRADE","QUOTE","MARK") or type(epoch) is not int
@@ -109,8 +111,27 @@ class SourceOnlyIntake:
             frame=verify_frame(kind=kind,raw=raw,received_at_ms=received_ms,
                 source_epoch=epoch,selected_symbols=self.symbols,
                 prior_agg_id=prior.aggregate_id if prior and kind=="TRADE" else None)
+            key=(kind,symbol)
+            if (frame.state=="HOLD" and frame.reason=="EVENT_FUTURE_OR_STALE"
+                    and kind in ("QUOTE","MARK")):
+                # A stale quote or mark is NEVER a valid decision-time price.
+                # Discard and journal the witness, preserve last good cursor.
+                # Several consecutive stale events indicate an unhealthy
+                # feed/clock and must instead cause a hard source HOLD.
+                n=self.consecutive_stale.get(key,0)+1
+                self.consecutive_stale[key]=n
+                if n<=3 and key not in self.quarantine:
+                    self.stale_quote_mark_skipped+=1
+                    status=SourceStatus(symbol,kind,epoch,
+                        prior.aggregate_id if prior else None,received_ms,
+                        "STALE_SOURCE_EVENT_SKIPPED","EVENT_FUTURE_OR_STALE",
+                        sha256(raw).hexdigest())
+                    self.transitions.append(status)
+                    return status
             if frame.state!="RECEIVED_UNQUALIFIED_LOCAL_WSS":
                 self.quarantine.add((kind,symbol))
+            else:
+                self.consecutive_stale.pop(key,None)
             if prior is not None and (epoch!=prior.epoch or received_ms<prior.received_ms):
                 self.quarantine.add((kind,symbol))
             if kind=="TRADE" and prior and frame.agg_id is not None:
@@ -144,4 +165,6 @@ class SourceOnlyIntake:
                 "quarantined_pairs":len(self.quarantine),
                 "source_qualified":0,"actual_order_capability":False,
                 "service_started":False,"financial_authority":"NONE",
-                "last_receipts":len(self.cursor)}
+                "last_receipts":len(self.cursor),
+                "stale_quote_mark_skipped":self.stale_quote_mark_skipped,
+                "consecutive_stale_pairs":len(self.consecutive_stale)}
