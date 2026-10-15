@@ -1,5 +1,8 @@
 # NBOT V5.1 — START HERE: Current Live Status, Exact G4 Blocker and Next-Chat Recovery
 
+> **LATEST CS-01 TRADE-ONLY RETEST (15 OCT 2026):** The owner replaced the ACTIVE G4 bid/ask bookTicker subscription with original USD-M `aggTrade` price movement + `markPrice@1s`; G1 active bootstrap no longer requests REST bid/ask. **576/576 offline tests PASS** (code SHA `7812878...`), **2/2 genuine BTC-only WSS smoke PASS**, **180-second 20-market CS-01 public-only canary PASS** (active source SHA `f474085...`): **32,313 accepted TRADE/MARK frames**, **40/40 source cursors**, **0 hard source gaps**, **0 QUOTE frames/subscriptions**, stopped automatically, no orders. **145/145 hash-linked source segments replayed and SHA verified**; new 2,778,845-byte archive and sha256 locally verified on VPS. **G4 full multi-boundary/endurance/scientific acceptance still [ ] HOLD**; G5/G6/G9 prior quote-based lab implementations require a reviewed V1.10 trade-only economic update before active Research/PAPER. Original Vision V1.9 unchanged. Read [V1.10 trade-price-only amendment](NBOT_V5_1_PRODUCT_VISION_V1_10_TRADE_PRICE_ONLY_AMENDMENT_20261015.md) and [verified actual-CS01 result/backup](NBOT_V5_1_CS01_TRADE_ONLY_RETEST_RELEASE_RESULTS_20261015.md). Historical old three-stream results below stay true *only for the OLD design*; don't mistake them for current CS01 status.
+
+
 **Last reconciled:** 15 October 2026 (IST).  
 **GitHub:** `samqju/Nbot` · working branch **`nbot-v5.1`** · immutable latest LIVE-tested executable SHA **`6b7491d8a903cbc248c85327a20919d68f05292f`**.  
 **Authoritative product blueprint:** `docs/NBOT_V5_1_COMPLETE_PRODUCT_VISION_V1_9.md` (unchanged).  
