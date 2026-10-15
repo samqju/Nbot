@@ -13,6 +13,9 @@ atomic live-service checkpoint without the future writer lock integration.
 """
 from __future__ import annotations
 import hashlib
+import fcntl
+import time
+from contextlib import contextmanager
 import io
 import json
 import os
@@ -221,7 +224,100 @@ def _verify_archive(path:Path):
                 raise BackupHold("ARCHIVE_MEMBER_HASH_MISMATCH")
         return manifest
 
+
+@contextmanager
+def _exclusive_state_backup_gate(state:Path):
+    """Writer and backup share one OS cross-process lock; no half-boundaries."""
+    _private_dir(state)
+    path=state.parent/".nbot-v5.1-state.lock"
+    if path.is_symlink():
+        raise BackupHold("STATE_LOCK_SYMLINK_DENIED")
+    fd=os.open(path,os.O_CREAT|os.O_RDWR|getattr(os,"O_NOFOLLOW",0),0o600)
+    try:
+        st=os.fstat(fd)
+        if (not stat.S_ISREG(st.st_mode) or st.st_uid!=os.getuid()
+                or st.st_nlink!=1 or st.st_mode&0o077):
+            raise BackupHold("STATE_LOCK_UNSAFE")
+        expiry=time.monotonic()+8
+        while True:
+            try:
+                fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic()>=expiry:
+                    raise BackupHold("STATE_IS_BUSY_BACKUP_RETRY")
+                time.sleep(0.05)
+        yield
+    finally:
+        fcntl.flock(fd,fcntl.LOCK_UN)
+        os.close(fd)
+
+def _verify_checkpoint_tree(root:Path):
+    """Standalone integrity check, no NBOT imports or network."""
+    g2=root/"observations";g3=root/"exploration";journal=root/"journals"
+    if not any(x.exists() for x in (g2,g3,journal)):
+        return
+    for x in (g2,g3,journal):
+        _private_dir(x)
+    ev={p.name for p in g2.glob("event_*.json")}
+    exp={p.name for p in g3.glob("g3_*.json.gz")}
+    commits={p.name for p in journal.glob("checkpoint_*.json")}
+    if bool(ev)!=bool(exp) or bool(exp)!=bool(commits):
+        raise BackupHold("STATE_CHECKPOINT_INCOMPLETE_G2_G3")
+    if not ev and not exp and not commits:
+        # Manifest-only data would be neither complete nor a real outcome.
+        if any(g2.iterdir()) or any(g3.iterdir()) or any(journal.iterdir()):
+            raise BackupHold("STATE_MANIFEST_WITHOUT_COMPLETED_BOUNDARY")
+        return
+    seen_events=set()
+    seen_paths=set()
+    for p in sorted(journal.iterdir()):
+        if not re.fullmatch(r"checkpoint_[0-9]{16}\.json",p.name):
+            raise BackupHold("STATE_UNKNOWN_JOURNAL_RECEIPT")
+        raw=p.read_bytes()
+        if len(raw)>16384:
+            raise BackupHold("STATE_CHECKPOINT_SIZE")
+        try:
+            item=json.loads(raw)
+            event=item["event_ms"]
+            files=item["files"]
+            if (type(event) is not int or
+                    p.name!=f"checkpoint_{event:016d}.json" or
+                    item["schema"]!="NBOT_V5_1_CS00_STATE_CHECKPOINT_V1" or
+                    item["financial_authority"]!="NONE" or
+                    item["state"]!="COMMITTED_SOURCE_ONLY_UNQUALIFIED" or
+                    type(files) is not list or len(files)!=3 or
+                    event in seen_events or
+                    raw!=json.dumps(item,sort_keys=True,separators=(",",":"),
+                                    allow_nan=False).encode("ascii")):
+                raise ValueError("format")
+            seen_events.add(event)
+            for rec in files:
+                name=rec["path"]
+                if (type(name) is not str or
+                    not re.fullmatch(r"(observations/(event|manifest)_[0-9a-f]{64}\.json|exploration/g3_[0-9]{16}_[0-9a-f]{64}\.json\.gz)",name)
+                    or type(rec["sha256"]) is not str or
+                    not _SHA.fullmatch(rec["sha256"])):
+                    raise ValueError("unsafe checkpoint path")
+                q=root/name
+                if q.is_symlink() or not q.is_file():
+                    raise ValueError("missing receipt")
+                if hashlib.sha256(q.read_bytes()).hexdigest()!=rec["sha256"]:
+                    raise ValueError("receipt changed")
+                seen_paths.add(name)
+        except (KeyError,ValueError,TypeError,UnicodeError,OSError) as exc:
+            raise BackupHold("STATE_CHECKPOINT_INVALID_OR_TAMPER") from exc
+    if ({"observations/"+p for p in ev}|{"exploration/"+p for p in exp})-seen_paths:
+        raise BackupHold("STATE_PARTIAL_BOUNDARY_NOT_COMMITTED")
+    if len(commits)!=len(ev) or len(commits)!=len(exp):
+        raise BackupHold("STATE_G2_G3_MISSING_CHECKPOINT")
+
 def create_backup(*,state:Path=STATE_ROOT,destination:Path=BACKUP_ROOT):
+    with _exclusive_state_backup_gate(state):
+        _verify_checkpoint_tree(state)
+        return _create_backup_locked(state=state,destination=destination)
+
+def _create_backup_locked(*,state:Path,destination:Path):
     _private_dir(state)
     _private_dir(destination)
     records=_walk_files(state)
