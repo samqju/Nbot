@@ -65,7 +65,7 @@ class FuturePublicObservationService:
     """
     def __init__(self,*,source_root:Path,code_sha:str):
         if (type(code_sha) is not str or not SHA.fullmatch(code_sha)
-                or type(source_root) is not Path or not source_root.is_absolute()
+                or not isinstance(source_root,Path) or not source_root.is_absolute()
                 or source_root.is_symlink()):
             raise PublicServiceHold("CS00_SERVICE_CONFIG_INVALID")
         self.root=source_root
