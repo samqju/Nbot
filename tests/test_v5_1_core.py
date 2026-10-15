@@ -48,26 +48,31 @@ class CoreOfflineContract(unittest.TestCase):
         self.event = FiveMinuteEvent(900_000, 1_200_000)
 
     def test_T01_import_has_no_application_io_or_order_side_effects(self) -> None:
-        """Imports must not open files for writing, use network, SQL or spawn."""
-        real_open = builtins.open
+        """Import in a fresh interpreter to avoid mutating shared class identity."""
+        code = r'''import builtins, socket, sqlite3, subprocess, os, sys
+from unittest.mock import patch
+real_open = builtins.open
 
-        def no_writes(file: object, mode: str = "r", *args: object, **kwargs: object):
-            if any(flag in mode for flag in "wax+"):
-                raise AssertionError("application write attempted during import")
-            return real_open(file, mode, *args, **kwargs)
+def no_writes(file, mode="r", *args, **kwargs):
+    if any(flag in mode for flag in "wax+"):
+        raise AssertionError("application write attempted during import")
+    return real_open(file, mode, *args, **kwargs)
 
-        with (patch.object(builtins, "open", side_effect=no_writes),
-              patch.object(socket, "socket", side_effect=AssertionError("socket")),
-              patch.object(sqlite3, "connect", side_effect=AssertionError("sqlite")),
-              patch.object(subprocess, "Popen", side_effect=AssertionError("subprocess")),
-              patch.object(os, "system", side_effect=AssertionError("os.system"))):
-            importlib.reload(core)
-            self.assertEqual(core.ObservationAuthority.NONE.value, "NONE")
-        # reload() creates fresh class objects; keep later tests on those types.
-        globals().update({name: getattr(core, name) for name in (
-            "FiveMinuteEvent", "SourceEvidence", "ObservationAuthority",
-            "ObservationDisposition", "evidence_hold_reasons", "canonical_digest",
-        )})
+with (patch.object(builtins, "open", side_effect=no_writes),
+      patch.object(socket, "socket", side_effect=AssertionError("socket")),
+      patch.object(sqlite3, "connect", side_effect=AssertionError("sqlite")),
+      patch.object(subprocess, "Popen", side_effect=AssertionError("subprocess")),
+      patch.object(os, "system", side_effect=AssertionError("os.system"))):
+    import nbot_v5_1.core as pure_core
+    assert pure_core.ObservationAuthority.NONE.value == "NONE"
+assert "nbot" not in sys.modules
+'''
+        result = subprocess.run(
+            [sys.executable, "-B", "-c", code], cwd=ROOT,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("nbot", sys.modules)
 
     def test_T02_version_identity_and_no_startup(self) -> None:
