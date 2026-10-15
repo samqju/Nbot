@@ -189,7 +189,7 @@ The guardian must be able to independently reject a proposal and enforce the one
   - [x] Identify conflicts between previous NBOT and Vision V1.9 — conflict register C01–C12, including obsolete V3/V3.9/V4/V5 runtime references.
   - [x] Verify the selected **pure first helpers**: exact old source/test blob hashes, complete selected-function imports/calls, excluded SQLite/old-version side effects and missing/required *future* tests — 15 Oct 2026, audit commit **2ebcc62f9f13aa4c7ed532cca108d9c359c77363**. This is an inspection PASS, not a code/test execution PASS.
   - [x] **First safe component and package plan approved:** V5.1-only five-minute clock, source HOLD evidence, canonical version-scoped hash and no-order authorities; precisely three new files and T01–T12 tests, 15 Oct 2026 — **7c624de187e274fe40172e64d03b8697f6e1f7aa**. This approves the **G1-01 code scope**, not old app copy or a test pass.
-- [ ] **Milestone 2 — Our new clean program foundation works** (engineering G1)
+- [x] **Milestone 2 — Our new SAFE OFFLINE foundation works** (engineering G1), **15 Oct 2026**. Fully verified 67/67 tests locally and independently on both VPS Python3.12.3 instances, no trading service or live source — [G1 final proof](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G1_FINAL_ACCEPTANCE_20261015.md), commit **bb0df4b727e5817d47fe693206baba91e2706456**.
   - [x] **First G1 layout approved:** `nbot_v5_1/__init__.py`, `nbot_v5_1/core.py`, `tests/test_v5_1_core.py` as the only first-code files; G0-04 scope **7c624de187e274fe40172e64d03b8697f6e1f7aa**, 15 Oct 2026.
   - [x] **G1-01-A:** Created three new, clean GitHub files only: `nbot_v5_1/__init__.py` (version 5.1), `nbot_v5_1/core.py` (five-minute clock, source HOLD and safe unique IDs) and `tests/test_v5_1_core.py`. Code commits **`e22b55abcc0631b603b5357a8be9122008bb1ef0`**, **`5d9fc0e22e0cc113353cd20593cce0cb687be2c1`** and **`f859f7f92a9614267fd4e7bfbc5cb6701bdb5288`**; 15 Oct 2026. Nothing old copied wholesale.
   - [x] **G1-01-B:** Actually ran all **12 offline safety tests**, **12 PASS, 0 failed**, 15 Oct 2026, Python 3.13.5; checked bad and premature timestamps, missing BTC/source evidence, invalid digests, unchanged result IDs and no order entry. **Synthetic testing only**, not live market evidence.
@@ -204,7 +204,19 @@ The guardian must be able to independently reject a proposal and enforce the one
   - [x] **G1-02-G — Exact GitHub source checked:** All five changed source/test files match the verified local test versions; no old bot code or VPS deployment.
   - [x] **G1-02-H — Fixed old core test interaction:** Original import safety check now uses a separate isolated Python process so old and new tests do not interfere.
   - [x] **G1-02 — Foundation components DONE:** Two new nontrading modules, two new test files, one prior test-harness correction. **88c0f8acfec85eaf75b80529fd22b1274922baac**; 45/45 synthetic offline tests pass; paper/real trading still locked.
-  - [ ] **G1-03 / remainder of full G1 acceptance:** Still must verify new program's cross-component initialization, power-loss/restart/durable evidence handling, target Python runtime and other independent safety tests. Parent G1/Milestone 2 remains unchecked.
+  - [x] **G1-03-A:** Created a narrowly scoped source route/candle clock/epoch interface. Even a healthy-looking source does **not** count as original authenticated evidence (source HOLD). **bb0df4b727e5817d47fe693206baba91e2706456**; G01–G05 PASS.
+  - [x] **G1-03-B:** A restart always returns OFFLINE/HOLD/NONE authority, even if the audit log verifies; a damaged log blocks evidence recovery, and a restart HOLD record is idempotent. G06–G09 PASS.
+  - [x] **G1-03-C:** Hardened journal: synchronizes the new file AND its containing directory; retry after an interrupted directory sync repeats both synchronizations. G10–G11 PASS.
+  - [x] **G1-03-D:** Simulated partial write, corrupted record, wrong schema and full audit quota all fail closed, with no hidden overwrite/rotation. G12–G15 PASS. Actual electrical outage was NOT attempted; the future original-source durability gates remain.
+  - [x] **G1-03-E:** Verified guardian/source/journal/restart integration, subprocess restart, locked future operating modes and secure journal directory. G16–G22 PASS.
+  - [x] **G1-03-F:** Combined **67/67 offline tests PASS** under Python 3.13.5; Python3.12 syntax check on 10 files PASS.
+  - [x] **G1-03-G:** Exact four changed GitHub source/test file hashes match local tested copies; source/test changes stay on `nbot-v5.1`.
+  - [x] **G1-03 COMPLETED:** Source and restart interfaces, audit durability and 22 new integration/failure tests finished, [G1 final report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G1_FINAL_ACCEPTANCE_20261015.md).
+  - [x] **G1-04-A:** Observation-VPS independently ran the committed version's **67 tests under Python 3.12.3: all PASS**; temporary test files removed afterward.
+  - [x] **G1-04-B:** Execution-VPS independently ran the **same committed version's 67 tests under Python 3.12.3: all PASS**; temporary test files removed afterward.
+  - [x] **G1-04-C:** Confirmed no permanent NBOT install or application service was started on either VPS; no Binance account, password or exchange order accessed.
+  - [x] **G1-04-D:** Recorded limitations plainly: these are OFFLINE tests only, not real market-source custody, real host power outage, 100-coin load or paper/live execution.
+  - [x] **G1-04 FINAL / COMPLETE G1 OWNER MILESTONE 2:** All G1-01, G1-02, G1-03 and final G1-04 checks passed **within the safe, nontrading G1 scope** — proof **bb0df4b727e5817d47fe693206baba91e2706456**; every trading mode remains LOCKED.
 - [ ] **Milestone 3 — Observe up to 100 coins** (engineering G2)
   - [ ] Choose eligible high-volume, top-gaining and top-losing coins with no duplicates and BTC always included.
   - [ ] Reliably record completed five-minute candles and detect missing/old information.
@@ -291,7 +303,11 @@ The guardian must be able to independently reject a proposal and enforce the one
 | 2026-10-15 | [x] G1-02-D/E audit journal and recovery negatives | **88c0f8acfec85eaf75b80529fd22b1274922baac**; 18/18 journal tests PASS | Basic private, bounded audit records detect tampering, gaps, duplicate retries and unsafe files |
 | 2026-10-15 | [x] G1-02-F/G/H combined test and GitHub checks | **45/45 tests PASS**, all five GitHub code blobs match the tested files; Python 3.13.5 | First and second foundation parts work together without importing legacy runtime or order functionality |
 | 2026-10-15 | [x] **G1-02 child milestone complete** | [Detailed G1-02 acceptance and limits](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G1_02_FOUNDATION_ACCEPTANCE_20261015.md), commit **88c0f8acfec85eaf75b80529fd22b1274922baac** | Safe nontrading building blocks exist; **the full G1 milestone is not yet done** |
-| *Next review* | [ ] G1-03 / whole G1 integration and recovery checks | Not yet performed | Prove future restart, evidence durability and compatibility before considering any service start |
+| 2026-10-15 | [x] **G1-03-A/B/C** source, restart and journal first-file durability | **bb0df4b727e5817d47fe693206baba91e2706456**; G01–G11 PASS | Source evidence stays uncertain after any restart; journal records survive verified append and deny unauthorized orders |
+| 2026-10-15 | [x] **G1-03-D/E/F/G** failure injection, integration, hash/test review | **bb0df4b727e5817d47fe693206baba91e2706456**; G12–G22 PASS, combined **67/67 PASS** Python3.13.5 | Broken records and invalid clocks cannot be silently converted into trades or source proof |
+| 2026-10-15 | [x] **G1-04-A/B** independently run on both VPS target interpreters | **bb0df4b727e5817d47fe693206baba91e2706456**; Observation and Execution Python3.12.3, each **67/67 PASS**; clean temporary checkouts | Both servers can run exactly the same safe foundation version without enabling a service |
+| 2026-10-15 | [x] **G1-04-C/D + entire G1 parent DONE** | [Final full G1 acceptance](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G1_FINAL_ACCEPTANCE_20261015.md), commit **bb0df4b727e5817d47fe693206baba91e2706456** | Nontrading foundation and all its subphases are complete; market-data and paper/live acceptance are still future stages |
+| *Next review* | [ ] G2 public read-only Observation | Not started | Next, separately validate 100-coin discovery, source health, and bounded original-source retention |
 
 **Use [ ] and [x] on the individual subtasks throughout development.** Owner milestones 0 and 1 (engineering G0) are now completed; **the first application development milestone (G1) and all trading stages remain open.**
 
@@ -351,7 +367,7 @@ At the end of each milestone, request a compact progress report answering:
 **Owner's guiding statement:** NBOT V5.1 should be **small enough to understand, cautious enough to trust, and able to improve from authentic evidence**. An empty trade slot and NO TRADE are perfectly legitimate outcomes.
 
 
-**15 Oct 2026 updated development truth:** G0 [x], G1-01 [x], **G1-02 [x]** after 45/45 combined offline safety tests and exact GitHub file hash verification. **Owner Milestone 2 / whole G1 [ ]** until the remaining independent power-loss/recovery/integration/target-runtime testing passes. No VPS deployment, Binance connection or paper/real order occurred. The old data backup waiver has no bearing on new V5.1 audit/source retention. All trading release gates remain LOCKED. See **88c0f8acfec85eaf75b80529fd22b1274922baac**.
+**CURRENT verified result, 15 Oct 2026:** G0 [x], G1-01 [x], G1-02 [x], **G1-03 [x], G1-04 [x] and entire G1 / Owner Milestone 2 [x]**. Actual **67/67 OFFLINE tests PASS** locally on Python3.13.5 and separately on Observation-VPS and Execution-VPS **Python3.12.3**, same exact code revision, no permanent install/service. **bb0df4b727e5817d47fe693206baba91e2706456**. No Binance market feed, source-grade study, account access, virtual/paper orders or real-money authorization. Future G2–G12 and original-source custody remain locked/pending.
 
 
 ### G1-01 — First clean code and offline test completion (15 Oct 2026)
@@ -381,6 +397,20 @@ At the end of each milestone, request a compact progress report answering:
 - [x] **45 offline tests PASS:** 12 G1-01 + 15 foundation + 18 journal, no failures. Local Linux Python 3.13.5; 3.12 syntax parsing only.
 - [x] **GitHub proof:** [G1-02 detailed report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G1_02_FOUNDATION_ACCEPTANCE_20261015.md), commit **88c0f8acfec85eaf75b80529fd22b1274922baac**, matching hashes for all five changed files.
 - [x] **G1-02 COMPLETE** as the second narrow code milestone; no trading permission or VPS deployment.
-- [ ] **G1 parent / owner Milestone 2 NOT COMPLETE:** Crash/power-loss validation, new evidence custody, target Python runtime, independent integration and other G1 acceptance remain open.
+- [x] **Later G1 parent completion (15 Oct 2026):** G1-03 simulated outage/write-loss and restart HOLD, journal directory durability and source causality, plus actual target-Python tests on both VPSs **67/67 PASS**; [final proof](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G1_FINAL_ACCEPTANCE_20261015.md), **bb0df4b727e5817d47fe693206baba91e2706456**. **Physical power cut and future ORIGINAL source custody are not G1 acceptance claims** and remain separate stricter G2/G4 operational qualifications.
 
 **Remaining lock:** This basic journal cannot replace a high-frequency original market archive, host backups or evidence-grade scientific qualification. The old VPS backup waiver applies solely to the **old deleted installations**, not to new NBOT V5.1 source evidence.
+
+
+### Complete G1 owner sign-off — 15 October 2026
+
+All small checks documented in this roadmap and the [Engineering Roadmap](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_ENGINEERING_ROADMAP_V1_0.md) now have test- and commit-backed proof:
+
+- [x] **G1-01:** Pure new V5.1 source clock/ID/metadata HOLD core and 12 offline tests.
+- [x] **G1-02:** Operating modes locked, evidence grades conservative, independent guardian NO_TRADE, bounded private append-only audit journal, 15+18 offline tests.
+- [x] **G1-03:** Causal versioned source envelope; restart always OFFLINE/HOLD; file/parent directory durable fsync/retry; 22 new no-order, power-failure-simulation and integration tests.
+- [x] **G1-04:** Actual committed source tested on **both** target Linux VPSs running Python3.12.3; each ran all **67 tests with 0 failures**, no services/deployment.
+- [x] **Entire owner Milestone 2 / engineering G1:** **PASSED** for nontrading foundation. See [complete G1 report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G1_FINAL_ACCEPTANCE_20261015.md), commit **bb0df4b727e5817d47fe693206baba91e2706456**.
+- [ ] **G2: actual public market observation** is next, requiring independent permissions, source-grade validation, 100/20 scale, crash-consistent original-source archive and benchmarks before its own gate passes.
+
+**No live observation, paper or real trading released by this milestone.** Synthetic unit tests and hash-linked metadata cannot establish profitable trading strategies, market data authenticity or protection against actual power loss. Those later safety tests will not be waived merely because the owner previously declined backups of the old abandoned installation.
