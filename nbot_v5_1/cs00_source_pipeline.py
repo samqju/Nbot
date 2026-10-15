@@ -120,6 +120,6 @@ class SourceOnlyPipeline:
                 "source_frames":self.source_frames,
                 "source_gap_count":self.source_gap_count,
                 "source_grade":"LOCAL_UNQUALIFIED_NO_ORIGINAL_RELEASE",
-                "active":False,"original_virtual_allowed":False,
+                "active":self.active,"original_virtual_allowed":False,
                 "paper_enabled":False,"testnet_enabled":False,
                 "real_enabled":False,"financial_authority":"NONE"}
