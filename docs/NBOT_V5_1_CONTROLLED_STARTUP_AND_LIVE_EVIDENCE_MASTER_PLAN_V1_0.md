@@ -1,0 +1,167 @@
+# NBOT V5.1 — Controlled Startup & Genuine Live-Evidence Validation Master Plan V1.0
+
+**Status: PROPOSED RUNBOOK — NOT APPROVED TO EXECUTE.**  
+**Created:** 15 October 2026 (IST)  
+**Repository:** `samqju/Nbot`, branch `nbot-v5.1`  
+**Authority:** Product Vision V1.9, Owner/Engineering Roadmaps V1.9, G4–G10 genuine-evidence HOLD records, and G11 offline acceptance.  
+**Engineering reference:** G11 independently tested source commit `7ba7abd315fa7fdac5fd0b7babb81d267ffe6348`, 430/430 on each target VPS.  
+**Companion operator/owner register:** [NBOT V5.1 Controlled Startup Owner Checklist & Evidence Register V1.0](NBOT_V5_1_CONTROLLED_STARTUP_OWNER_CHECKLIST_AND_EVIDENCE_REGISTER_V1_0.md).
+
+> **THIS FILE DOES NOT AUTHORIZE STARTUP, PUBLIC SOURCE COLLECTION, VIRTUAL RESEARCH ACTIVATION, PAPER TRADING, BINANCE TESTNET TRADING, REAL ORDERS, API KEYS, MODEL PROMOTION, OR G12.** Every phase requires the specific written authorization and evidence gate below. Defaults remain OFFLINE / HOLD / NO_TRADE. No inherited approval from a previous NBOT branch may unlock a new V5.1 component.
+
+## 1. Why a separate runbook exists
+
+G0–G3 were fully accepted. G4–G10 passed **offline software engineering** but retain unchecked **genuine source, economic, scientific and owner authorization** tasks. G11's integrated **synthetic-only** engineering is complete. There is currently **no accepted genuine live source stream, qualified original Research outcome, qualified Champion, approved true PAPER service or real-money execution authority**.
+
+The G11 coordinator is an **offline laboratory adapter**, not a deployable always-running original-source service. In particular, `require_authorized_champion`, `authorize_real_paper_release`, `real_paper_entry`, `authorize_challenger_paper` and `approve_model_promotion` deliberately refuse qualification/activation. Startup permission cannot bypass those code locks. Before the first continuous Observation run, a **new public-data-only production-safe intake/run-control/service layer** must be engineered and independently reviewed; changes require regression and exact SHA evidence on both VPSs. Never connect the G11 synthetic lab signer to a production release.
+
+The user's concern about unnecessary future restarts is a design requirement: install/start the **minimum source-only Observation collector once it is release-ready**, add later reviewed functionality through separately deployed/configured, restart-aware stages as needed, and retain exact epoch and custody across **every** real stop, restart, upgrade or network gap. Do not promise “no future restarts”: any necessary restart must be approved, logged, fail-closed and revalidated.
+
+## 2. Frozen operating responsibilities and constraints
+
+| Responsibility | Observation VPS | Execution VPS |
+| --- | --- | --- |
+| Public USD-M 100-market finalized lightweight selection/candles | Owns source process after source-only approval | No duplicate raw collector |
+| Frozen 20-market trade/quote/mark source with actual raw-byte custody | Owns and archives source evidence only after approval | Receives independently verified off-host sealed copy, no fabricated origin |
+| 40 maximum simultaneous virtual Research slots | Only after source-qualified G4 and specific Research activation | No execution |
+| G7 Learning/G8 training | Approved offline/batch from immutable source-qualified snapshots | Not needed to ingest raw source |
+| Frozen model inference and model comparison | Observation, gated and immutable | Independently validates all proposed actions |
+| Actual Champion PAPER (later Challenger PAPER) | Sends signed, explicitly authorized immutable recommendations only | True separately owner-authorized *paper simulation*, independent book/guardian, never exchange orders |
+| Future actual-money execution | No order authority | G12 is a **different, separately requested and approved project** |
+
+**Always enforce:** 100 lightweight broad; 200 market directions; BTC among frozen 20 deep; up to 40 **concurrent** virtual hypotheses, not 40 required starts; one experiment per coin-side; five-minute boundary for expensive selection and slot replacement; lightweight first-touch/trailing and source-health monitoring between boundaries; no heavy model refresh per tick. Source monitoring never stops merely because entry capacity is full. Financial/source authority defaults to NONE; no genuine original grade assigned based on shape, a copied digest, a synthetic fixture, or an unverified source claim. Never assume an exchange fill from virtual pricing.
+
+## 3. Approval model — separate and narrow
+
+**A. PUBLIC-OBSERVATION-ONLY approval (not yet granted):** permits only a specifically reviewed public unauthenticated market-data intake process on Observation VPS, initial limited canary then declared 100/20 scope, storage/restore checks and controlled restarts. It permits **no virtual experiment that purports to have actual source qualification**, no model route, no PAPER/testnet/REAL order, no credentials or private Binance API. The owner must separately acknowledge expected resource/disk exposure, public network destinations, observability and shutdown operator.
+
+**B. VIRTUAL-RESEARCH-ONLY activation approval (not yet granted):** after independently verified original source integrity and storage operations, allows G5 source-qualified *non-executing* forward virtual hypotheses on Observation VPS, never money or exchange orders. Must not backdate eligibility across G4 gaps.
+
+**C. FIRST CHAMPION PAPER-ONLY approval (not yet granted):** only after G7 original scientific review and G8 independently qualified frozen initial Champion, with a separately signed/reviewed model and risk release; Execution VPS runs guarded PAPER simulation; no Binance private/order route. Does **not** need a Challenger first.
+
+**D. LATER CHALLENGER PAPER-ONLY and any reviewed routing/promotion (not yet granted):** separate G10 paper protocol and owner decision, requires a newly qualified Challenger and common prospective genuine PAPER window; no automatic promotion.
+
+**E. REAL TRADING/G12:** excluded. Requires a newly scoped user request and independent technical, financial and exchange-account safety approval. Absolutely no automatic transition from A–D.
+
+A failed or absent signoff at any stage means **HOLD**, not implied consent. A verbal “proceed with review” or this runbook's creation is not an operational start order.
+
+## 4. Controlled commissioning sequence and pass/hold gates
+
+### CS-00 — Freeze baseline, discover deployment gaps, prepare OFFLINE
+
+- [ ] Pin current GitHub branch/source tree/SHA and verify checksums of the exact intended deployable bundle on BOTH target VPSs; preserve G11 regression at `PYTHONDONTWRITEBYTECODE=1`, and rerun before any live intake.
+- [ ] Audit actual host process/services/storage/permissions and any remaining older NBOT artifacts. Record stable system identity, CPU, RAM, disk and boot/restart health; do not assume earlier readings are still current. The old Observation G8 temporary directory is separate housekeeping, **not** a startup blocker unless independently shown unsafe.
+- [ ] Design and independently audit a **nontrading public-only continuously runnable Observation service/runner**. G11's existing offline code is not that runner. Start OFF; avoid private/order imports, API keys, account sessions, endpoint escalation, or default network connections. Document precise data routes, network egress policy, time sync, heartbeat, process supervisor/watchdog, bounded queues, backpressure, drain/fsync/shutdown and restart lock.
+- [ ] Build a durable evidence store, readable dashboards/logs, capacity thresholds, alert channels, retention/compaction rules, and chosen **off-host** archive destination/provider, access controls and storage budget. The existing Product Vision says owner has NOT chosen an archive provider, permanent quota or deletion policy. Do **not** auto-delete genuine raw evidence or promise perpetual retention.
+- [ ] Define the operating version/configuration matrix: immutable event sources, safety flags, checked signatures, permitted users, clock skew tolerance, source health, 100/20 cohort freeze, 40-slot boundaries, NO_TRADE, restart epochs and recovery. Prove a cold start without turning on collectors.
+- [ ] Predeclare objective source/capacity/performance thresholds, sample windows and qualified reviewer for each subsequent phase. Do not quietly lower thresholds to get a PASS.
+- [ ] Run fail-closed deployment-specific security tests on both VPSs: read-only public route allowed; private, trading, signing, model promotion and live paper rejected; network unavailable, malformed source, disk full, clock drift, duplicate ID and process kill all HOLD. Establish rollback to known good binary/config and full record-preserving archival.
+- **Gate CS-00:** independent review and accepted deployment/evidence infrastructure, both VPS regression, explicit source-only authorization readiness. **Nothing started yet.**
+
+### CS-01 — One-host minimal public source canary (owner approval A required)
+
+- [ ] Owner authorizes exact code SHA, process, host, public endpoints, capture window, max resource budget, storage destination and stop rules. Document who may shut it down.
+- [ ] Start one narrowly limited **public market data only** canary on Observation VPS (e.g., BTC first). No private API requests, keys, positions, virtual financial score, PAPER or REAL engine.
+- [ ] Capture server/session route/epoch, TLS transport verification as applicable, exact public-source payload bytes, receive vs event clocks, sequence/aggregate continuity, bid/ask/trade/mark alignment, raw hash and fsynced segment chain. Transport authenticity alone is not independent proof of every market fill.
+- [ ] Exercise deliberate network interruption, process restart, wrong-time or missing frames and disk/quota veto **safely on a controlled test session**; preserve unknown intervals/epoch HOLD, never retroactively backfill gaps as certain first-touch data. Recovery through public REST may give context, not fictitious trade/quote path.
+- [ ] Confirm latency/resource headroom and complete, *read-only*, deterministic replay of the canary.
+- **Gate CS-01:** canary can run, stop, restart and fail CLOSED while keeping provenance; otherwise rollback/STOP and re-review.
+
+### CS-02 — Original 100-broad/20-deep source commissioning (close G4-06-A/B/C/D/E)
+
+- [ ] Freeze a valid timestamped 100-market eligible broad cohort and deterministic selected deep 20, including BTC; prevent post-outcome symbol swaps. Verify 200 coin-side status records per five-minute event.
+- [ ] For **all 20** selected markets, independently verify complete intended public TRADE, QUOTE and MARK coverage, epoch/ID continuity and opening warm-up. The prior G4 one-shot probe contained **19/20 symbol trade coverage and 47 underlying trade-ID discontinuities**: explicitly investigate/resolve or record as HOLD, never silently declare 20/20.
+- [ ] Validate as-of times, source-known-before-decision rules, disconnected/reconnected source epochs, missing/out-of-order trade IDs, stalled book, stale/crossed quote, funding/mark availability; mark uncertain positions/trials HOLD. Preserve full denominator and the original raw bytes.
+- [ ] Measure actual burst rates and sustainable ingestion/CPU/RSS/p99/disk throughput and queue depth on **both** tiny VPSs; demonstrate that collecting 20 deep streams leaves headroom for 100 lightweight and future virtual Research.
+- [ ] Prove sealed ORIGINAL source segment copies transferred to a physically separate host/destination, independent checksum/custody-manifest verification, readable replay and a deliberate source-host interruption/recovery. G11's cross-VPS *synthetic* archive test does NOT satisfy this.
+- [ ] Run a declared meaningful soak, including source reconnections and documented peak periods. Proposed checkpoints: initial canary observation, several-hour monitored 20-market assessment, and longer multi-session/24–72-hour evaluation if rate/availability require it. **The duration and thresholds are proposed, not existing passed milestones**; sign them off prospectively based on measured rates and safety.
+- [ ] Decide and prove retention/rollover/storage exhaustion behavior, access controls and no unauthorized deletion before allowing a persistent collector.
+- **Gate CS-02 / G4:** every G4-06-A/B/C/D accepted by independent reviewer, G4-06-E parent checked only then. Failure of a symbol or custody condition remains explicit HOLD; do not relabel 19/20 as complete.
+
+### CS-03 — Genuine source-qualified virtual Research (G5-06-B/C; approval B required)
+
+- [ ] Only after G4 accepted, owner permits a source-validated *non-executing* Research runtime. Keep financial authority NONE.
+- [ ] Link **actual** causal 5-minute Observation/Exploration/selection events and deep manifest to frozen new virtual intents. Admit no more than free slots across max 40 and at most one per coin-side; no arbitrary target starts.
+- [ ] Follow active stop/target/trailing events between five-minute boundaries from verified incremental source paths, including direction, epoch and quote semantics. NEVER infer exact first-touch from an ambiguous OHLC bar or assumed REST reconstruction.
+- [ ] Test zero vacancies, fewer candidates than vacancies, simultaneous exits, every 40 occupied, duplicates, gap/restart with uncertainty holding occupied slots, original source and durable audit. Expensive Exploration can pause when full but minimum active/source safety monitoring cannot.
+- **Gate CS-03 / G5:** independently proved original-source first-touch for prospective trials with proper censor/HOLD; no real or paper action.
+
+### CS-04 — Verified original economic labels, recovery and source custody (G6-06-A/B/C/D)
+
+- [ ] Pair virtual entry/exit with independently dated bid/ask and a predeclared executable-side fill/cost model; include entry+exit fees, plausible slippage, position-specific **settled** funding covering full time window, liquidity/missingness and unknown paths.
+- [ ] Keep G6 statuses distinct: truly source/economic-qualified, modeled synthetic, cost pending, source held, ambiguous, censored or incomplete. Never promote “virtual target hit” into a true after-cost profit or exchange order fill.
+- [ ] Independently replay the real original archive and economic audit on the receiving VPS, verify missing/unsynced tail and shutdown/reconnect semantics; measure live multi-session CPU/disk/I/O and source retention envelopes.
+- **Gate CS-04 / G6:** independent original-source, first-touch, after-cost and off-host proofs, or HOLD with unresolved rows retained.
+
+### CS-05 — Original-source Learning and scientific approval (G7-06-A/B/C)
+
+- [ ] Accumulate genuinely new, prospective, individually matured source-qualified Research results with full selection denominator, NO_TRADE, censoring, cost/source evidence and dependence/time-block grouping. **The first review checkpoint is 2,000 *independent* original outcomes (currently 0/2,000), not 2,000 detector tags or a forced entry quota.**
+- [ ] Predeclare time-separated, embargoed train/validation/holdout, multiple market regimes, risk/uncertainty and failure criteria; never select models on future results or cherry-pick winning periods.
+- [ ] Conduct and sign an independent model-science review; insufficient independence, bad sources, future leakage, weak after-cost advantage or missing trades yields HOLD, not a forced model.
+- **Gate CS-05 / G7:** independently reviewed real source-qualified dataset/science; no paper authority yet.
+
+### CS-06 — Qualified first Champion and freeze (G8-06-A/B/C)
+
+- [ ] Train on admitted G7 original evidence under predeclared protocol; preserve frozen model code/feature/candidate/holdout hashes and untouched later period.
+- [ ] Independently validate no fabricated source, quality, selection bias, drift, fees/funding or missing-evidence optimism; test NO_TRADE, resource impact and recovery. Approve a first Champion only by its actual science and separate owner review.
+- **Gate CS-06 / G8:** signed accepted frozen real-evidence Champion or HOLD. A G11 lab-trained digest alone remains unqualified.
+
+### CS-07 — Champion-only **PAPER** forward trial (G9-06-A/B/C/D; owner approval C)
+
+- [ ] First Champion PAPER may proceed **without a Challenger** only after original model acceptance and a fresh **explicit PAPER-ONLY owner release**; separately verify non-order-capable Execution VPS runtime, risk guardian, signed proposals, source freshness, full cost/funding, independent stop/time rules and one paper position maximum.
+- [ ] Use a prospective monitored paper window, record NO_TRADE and all attempted/vetoed simulated entries, independently journal cash/fees/funding/stop/position/restarts, treat uncertain state as occupied HOLD. No actual account order, testnet order, hidden API key or model promotion.
+- [ ] Independently review original source, model/guardian fairness, risk, drawdown and operational integrity; owner decides RETAIN/HOLD/REJECT and whether to keep PAPER running. G9 parent stays unchecked until approved genuine forward paper acceptance.
+
+### CS-08 — Later qualified Challenger **PAPER** contest (G10-06-A/B/C/D; owner approval D)
+
+- [ ] After G9, collect the additionally required **new, matured independent original** Research outcomes and independently qualify an actually distinct Challenger. The additional 2,000 is a review checkpoint; cannot count the first Champion's original cohort twice.
+- [ ] Before trial, freeze both model SHA, common source/time/regimes, capital/risk policy and forward evaluation/abstention criteria. Separate Champion/Challenger paper cash/positions/stops and provenance, independently reviewed on the same prospective source conditions.
+- [ ] Evaluate ≥100 true settled PAPER trades per model **when meaningful**, without forcing entries, and report time/regime, source health, costs, risk/return/drawdown, NO_TRADE, skipped events and censoring.
+- [ ] Independent reviewer returns RETAIN/REJECT/HOLD/RECOMMEND_PROMOTE; actual routing stays unchanged until a **separate explicit owner-signed promotion/rollback** decision. Never autonomously replace Champion.
+- **Gate CS-08 / G10:** true owner-approved paired PAPER evidence accepted, otherwise HOLD. G12 stays locked even if G10 later completes.
+
+## 5. Universal telemetry and evidentiary proof pack
+
+A PASS claim needs an immutable per-run proof pack in the companion register with:
+
+1. Unique run ID, UTC and IST timestamps, stage, mode/authority, source and executable/config SHA, intended VPS role, operator and independent reviewer, explicit owner approval reference and predeclared thresholds.
+2. Public source route, UTC event-time/receipt-time/decision-time clock, instrument/deep-universe manifest, sequence and epoch, authentic recorded raw bytes/digest chain, observed gaps, source-status denominator, any quarantines and explicit UNVERIFIED original claims.
+3. Memory RSS/cgroup peaks, CPU percent, latency p50/p95/p99, queue depth, fsync jitter, disk and segment growth, archive provider/quota/copy receipts, independent destination checksum/replay and headroom against prospectively approved limits.
+4. Actual stage/quality counts: observed/held/missing, evaluated/abstained, virtual admitted/active/closed/censored/HOLD, cost-qualified vs cost-pending, independent Science blocks, PAPER settled per book, model promotions and actual exchange orders.
+5. Fault injection / unexpected incident timeline and exact recovered source epoch, replayed journals, uncertain-position handling and kill/restart outcomes; nothing missing silently.
+6. Reproduction instructions, hashes, reviewer decision (PASS, HOLD, FAIL), corrective commit/issue, remaining gates and owner's separate next-phase authorization. **No source-grade/financial authority upgrades by documentation alone.**
+
+Store the runbook/checklist/summary links in GitHub docs and maintain an immutable evidence archive separately from any GitHub repository **when source files are high-volume or contain sensitive operational detail**. Do not commit SSH private keys, passwords, raw credentials or large raw source captures to GitHub. Evidence must be source-verifiable and available after a VPS failure. Document retention before starting.
+
+## 6. Emergency stop, fault containment, controlled restart and rollback
+
+**Triggers for immediate HOLD/stop new actions:** unknown/rewound clock; source gap/stale quote; unexpected symbol/sequence/epoch; inconsistent price/cost/funding; incomplete archive; uncertain checkpoint/unsynced RAM; missing required off-host receipt; disk nearing protected reserve; memory/CPU starvation or missed 5-minute deadline; changed model/config without approval; any private/order route/credential exposure; double paper/virtual occupancy; unreviewed restart or contract corruption.
+
+**Response:** (a) stop new selection/admissions/orders; (b) preserve current raw/journal/cursor state with an explicit gap/epoch/HOLD; (c) halt the *source-only* process when necessary to protect the host or evidence, without deleting old data; (d) notify owner/reviewer and record incident; (e) independently verify sealed archive and outstanding uncertainty on both VPSs; (f) restore only from an identified, previously accepted version/config; (g) require new narrow owner approval for resumption after materially changed source/financial risk. Do not repeatedly auto-restart through a source gap and claim continuity.
+
+**Version/rollout rule:** a reviewed deployable change requires source SHA, full regression, dry startup with network/order routes forbidden, independent host headroom, explicit change window, a controlled stop/drain/snapshot/epoch procedure and rollback proof. Use feature isolation and batch learning so the public collector need not restart for normal offline Learning changes, but record any necessary restart.
+
+## 7. What must be decided before CS-01 is runnable
+
+- **Original public-source runtime/service** does not yet have a separately accepted always-on source-only deployment package; code must be built and verified under CS-00, not improvised during first startup.
+- **Owner's narrow source-only activation authorization** remains absent.
+- **Original-source off-host archive destination, storage budget, retention and deletion policy** not yet selected/approved. Genuine long-running capture must not exceed finite capacity.
+- **Monitors/stop owner, on-call coverage, communication/alert route, soak window and independently reviewed hard resource budgets** not yet signed off.
+- **G4 original 20/20 source continuity and the known 47 trade-ID discontinuities** not resolved.
+- **Model/PAPER/REAL releases** stay permanently separate and disabled until their own requirements.
+
+No go-live test or first service command should be presented as automatically authorized because this runbook exists.
+
+## 8. Current authoritative state and next action
+
+| Gate | Status on publication |
+| --- | --- |
+| G0–G3 | [x] accepted |
+| G4–G10 | [ ] genuine original-source/science/PAPER parents HOLD; offline software complete |
+| G11 | [x] **offline engineering** accepted: 430/430 BOTH VPSs |
+| CS-00 / nontrading commissioning readiness | [ ] proposed, not yet accepted |
+| CS-01 / owner permission to start **public market observation** | [ ] **NOT GRANTED** |
+| CS-02 → CS-08 / real evidence and PAPER gates | [ ] NOT STARTED |
+| G12 real money | [ ] **OUT OF SCOPE / LOCKED** |
+
+**Immediate next work if the owner approves *development of commissioning infrastructure*, not startup:** complete CS-00 preflight, define the source-only deployment contract, archive location/quota, owner stop/monitor duties and signoff form; independently test this before seeking a separate CS-01 public observation start authorization. All G4–G10 unmatched [ ] tasks remain unchanged in the Owner and Engineering Roadmaps.
