@@ -88,6 +88,38 @@ class PublicOnlyTests(unittest.TestCase):
                     epoch=2,received_ms=NOW+1000)
         self.assertEqual(r.state,"SOURCE_HOLD")
 
+    def test_CSRT09_isolated_stale_quote_discarded_and_fresh_resumes(self):
+        x=SourceOnlyIntake(SYMBOLS)
+        old=frame("QUOTE",received=NOW-8000)
+        status=x.observe(kind="QUOTE",raw=old,epoch=1,received_ms=NOW)
+        self.assertEqual(status.state,"STALE_SOURCE_EVENT_SKIPPED")
+        self.assertEqual(status.reason,"EVENT_FUTURE_OR_STALE")
+        self.assertFalse(status.source_qualified)
+        self.assertEqual(x.status()["stale_quote_mark_skipped"],1)
+        self.assertEqual(x.status()["quarantined_pairs"],0)
+        current=x.observe(kind="QUOTE",raw=frame("QUOTE",received=NOW+1000),
+                          epoch=1,received_ms=NOW+1000)
+        self.assertEqual(current.state,"LOCAL_FRAME_NOT_INDEPENDENTLY_QUALIFIED")
+        self.assertEqual(x.status()["consecutive_stale_pairs"],0)
+
+    def test_CSRT10_repeated_stale_quote_hard_hold(self):
+        x=SourceOnlyIntake(SYMBOLS)
+        for i in range(3):
+            z=x.observe(kind="QUOTE",raw=frame("QUOTE",received=NOW-8000+i),
+                        epoch=1,received_ms=NOW+i)
+            self.assertEqual(z.state,"STALE_SOURCE_EVENT_SKIPPED")
+        z=x.observe(kind="QUOTE",raw=frame("QUOTE",received=NOW-7997),
+                    epoch=1,received_ms=NOW+3)
+        self.assertEqual(z.state,"SOURCE_HOLD")
+        self.assertEqual(x.status()["quarantined_pairs"],1)
+
+    def test_CSRT11_old_trade_cannot_soft_skip(self):
+        x=SourceOnlyIntake(SYMBOLS)
+        z=x.observe(kind="TRADE",raw=frame("TRADE",received=NOW-8000),
+                    epoch=1,received_ms=NOW)
+        self.assertEqual(z.state,"SOURCE_HOLD")
+        self.assertEqual(x.status()["stale_quote_mark_skipped"],0)
+
     def test_CSRT08_outside_cohort_and_wrong_type_denied(self):
         x=SourceOnlyIntake(SYMBOLS)
         with self.assertRaises(CollectorHold):
