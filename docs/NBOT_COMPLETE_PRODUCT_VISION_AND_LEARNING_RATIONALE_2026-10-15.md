@@ -1,6 +1,6 @@
 # NBOT — Complete Product Vision, Learning Philosophy, and Reason for Every Major Component
 
-**Vision document, version 1.7 — 15 October 2026**
+**Vision document, version 1.8 — 15 October 2026**
 
 **Purpose:** Explain what NBOT is supposed to become, why it was conceived, what V4 taught us, why V5 includes virtual research trades, Champion/Challenger learning and paper trading, and how all of that serves a **single-position autonomous trading bot** rather than a needlessly complicated research institution.
 
@@ -870,7 +870,7 @@ The product is operationally ready for its *permitted mode* only when testing pr
 
 ## 8F. Practical operating design: original 50-only proposal (see newer provisional §8G)
 
-**Status:** Initial planning proposal. The newer §8G explores the owner's 200-coin broad discovery → 50 deep research → one actual-position architecture. Neither plan is an operational approval; resolve them through prospective design and offline tests.
+**Status:** Earlier planning proposal retained for historical context. The newer §8G now proposes **100 observed → 20 deeply researched → up to 40 active virtual research trades → one actual position or NO TRADE**. The old per-event virtual-start limits in §8F have been superseded by §8G's **vacancy-based five-minute refill**. Neither policy is an operational approval.
 
 **Prospective architecture proposal, 15 October 2026.** The owner has agreed to the seven product stages. This section makes the next design decisions concrete, before final engineering and operational failure rules are implemented. The parameter values below are **proposals to test and approve prospectively, not already validated thresholds or claims of completed code**.
 
@@ -1050,22 +1050,40 @@ The **Research admission policy** selects up to **20 deep-monitored symbols, inc
 
 The 20 are **the high-integrity research source budget**, not 20 recommended live positions. An eligible new market must not become paper/real trade-ready until independently verified current quotes, costs and risk controls exist.
 
-### C. Forty candidate possibilities do not mean forty NEW virtual trades every five minutes
+### C. A rolling pool of at most 40 active virtual research trades — refill vacancies at each five-minute candle close
 
-**Label all 40 LONG/SHORT possibilities per 20-coin five-minute event**. These compact candidate labels remain useful even when no hypothetical trade starts.
+**Owner's clarified rule (supersedes the old eight-new-per-event proposal):** Research may maintain **no more than 40 simultaneously ACTIVE virtual trades** across the selected 20 deep-research coins. These are hypothetical scientific experiments, **not 40 orders or 40 actual exchange positions**. The number of **new** virtual trades at a review is governed by **available capacity and genuine research eligibility**, not a fixed artificial quota of eight or any obligation to fill all 40 places.
 
-A virtual research trade additionally requires a qualified frozen entry, side, stop, target, horizon, initial risk, cost policy and original evidence plan. It is not an exchange order. Multiple pattern tags on one coin-side are not multiple independent virtual trades.
+Each coin and both directions are continually explored. A 20-coin deep cohort offers **40 coin-direction possibilities at a five-minute event**. At most **one active virtual experiment per coin × direction** is the proposed simple initial rule; multiple pattern tags on that same hypothesis do not create separate trades. Opposite-direction virtual experiments may coexist solely for research, but they are correlated—not two independent pieces of evidence.
 
-If 40 new four-hour virtual experiments begin at **every** five-minute event with no concurrency cap, the system could have **1,920 overlapping virtual experiments** (40 times 48 five-minute events). Twenty monitored symbols do not automatically prevent this.
+**What happens during the five-minute cycle:**
 
-**Recommended initial OFFLINE TEST policy:**
+1. **Between candle closes**, a shared original price/trade-source stream continues monitoring every active virtual experiment according to its **already frozen** entry, stop, target and maximum holding duration. If a stop or target is hit at 10:03, the observed first-touch chronology must be recorded as occurring at 10:03—not assumed to have happened at 10:05 when the next candle closes. The experiment may stop consuming active-path capacity after its terminal first-touch or timeout is **durably and validly established**, while later quote/cost verification proceeds separately.
+2. **At each fully closed five-minute candle**, independently verify/reconcile which of the previously active experiments have actually reached a stop, target, time limit or valid other policy-defined terminal state. A missing source path is **not** a verified profitable closure; quarantine it as PENDING/HOLD until the frozen rules permit a documented unresolved/censored terminal.
+3. **Count the active research-book slots** after durable reconciliation: **vacancies = 40 − number of still-active virtual experiments**. Never free a slot merely because a database row is missing, a process restarted or a candle looked favorable.
+4. **Explore the latest complete event** across the 100 broad observed coins, preserving all valid direction/structure/detector labels. Research evaluates the currently eligible LONG and SHORT alternatives within the **20 deeply monitored source-ready coins**.
+5. **Select replacement virtual experiments** only where Research finds suitable, source-qualified, prospectively frozen candidates and permitted unoccupied coin-side slots. Rank/admit under a versioned, diversity-aware policy that includes controls and does not select solely by the 24-detector match count or presumed profit.
+6. **Admit up to the number of free slots**; if only three suitable new experiments exist for seven vacancies, start **three**, and leave **four** unused. A full 40-active book starts zero. A book with 40 empty slots can admit up to 40 *only if* 40 distinct coin-side hypotheses genuinely satisfy the frozen eligibility, source and capacity policy.
+7. **Commit the resulting decisions and new intents idempotently**, preserving all rejected/unselected possibilities, admission reason codes, source/version hashes and the post-event active count. New virtual experiments must use current decision-time quotes/rules and cannot be assigned fictitious entries at earlier candle times.
 
-- Permit **at most 8 new virtual experiments per five-minute event** after prospectively defined scientific sampling; fewer or zero is valid.
-- Permit **at most one currently active experiment for a given symbol and side**; enforce a **global maximum of 40 active virtual experiments** across the 20 symbols. A simultaneous virtual LONG and SHORT on one coin is possible for controlled research, but highly dependent.
-- Keep the entire original 40-possibility denominator with reason codes for not admitting a virtual experiment. Sample across eligible regimes, coin structures, both directions, matched/no-pattern controls and current-model rejected opportunities, recording the sampling rule.
-- Evaluate 4, 8, 20 and 40 permissible starts in accelerated offline workload tests, always respecting the 40-active global cap. Decide the eventual limit using measured RAM, CPU, source I/O, sample diversity and usable fully qualified outcome yield, not guesswork.
+**Illustrative review example:**
 
-Under the **40-active cap**, at most 40 hypothetical positions exist concurrently, even if prior event-bound mathematical estimates are higher. This is a bound on virtual research bookkeeping, NOT a requirement to create 40 labels with verified trade results. Learning from 20 symbols may reduce regime/coin diversity and slow the genuinely qualified 2,000-outcome cohorts; benchmark that trade-off honestly.
+| Five-minute review at 10:05 | Count |
+| --- | ---: |
+| Previously active virtual experiments | 40 |
+| Verified experiments closed/expired since prior review | 7 |
+| Active experiments after reconciliation | 33 |
+| Free research slots | 7 |
+| Genuinely qualified new coin-side opportunities | 5 |
+| New virtual experiments admitted | 5 |
+| **Active after review** | **38** |
+| Remaining unused slots | 2 |
+
+**The number 40 is a concurrency ceiling, not a target, not 40 starts per five minutes, and not 40 realized after-cost labels per event.** It is perfectly acceptable to have zero, twelve, thirty-eight or forty active virtual experiments. Completed experiment economic results may still be awaiting independent fee/quote/funding verification after the price-path slot becomes free; keep those records pending in the durable research ledger, not in the active-trade book.
+
+**Recovery caveat:** On disconnect, corrupt trade chronology or unsynced-RAM crash, do not claim a previously active experiment closed successfully. Preserve its status, source gap and frozen horizon; resolve, censor or hold it according to a validated causal recovery/terminal policy before reuse of its active slot. Losing proof may reduce the count of *scientifically usable* outcomes even if the resource slot is eventually freed safely.
+
+**Implementation and workload test:** The trial must measure per-symbol shared first-touch processing, 40-active state, five-minute reconciliation, immediate terminal detection between candle closes, idempotent replacement, simultaneous closings, no eligible replacements, BTC/coin source gaps and missing economic witnesses. **Delete the former arbitrary eight-new-per-event admission gate** from the preferred product policy. Operational performance limits may still require bounded batch processing and safe backpressure, but any such technical limit must be derived from offline measurement and must never cause a false virtual result.
 
 ### D. Use the same canonical market evidence for Research and Trading Decisions
 
@@ -1121,7 +1139,7 @@ The main reduction is likely in **deep high-frequency trade/quote source I/O and
 
 1. **100-market selection:** Valid exchange membership, deduplicated top-turnover/gainer/loser cohorts including BTC, exclusion reasons, timestamps, and causal full 200 coin-direction Exploration records. Invalid inputs produce explicit HOLD.
 2. **20 deep-source admission:** Verify liquidity/cost/source prerequisites, BTC mandatory context, diverse regime controls, frozen shortlist and 40 directional possibilities without creating 24 separate trades for every detector.
-3. **Virtual control:** Verify max 40 active experiment identities, one per coin-side, reproducible selection, maximum 8 starts/event under the trial configuration, eligibility/abstention, correct settlement and no survivor-only learning denominator.
+3. **Virtual control:** Verify the rolling max-40 active book and one-per-coin-side constraint; detect actual stop/target first touch between candle closes; at each completed five-minute event reconcile genuinely ended experiments, calculate verified free slots and admit **only source-qualified replacements up to capacity**. Test simultaneous exits, 40 available eligible replacements, fewer eligible replacements than vacancies, all 40 occupied, restart gaps, idempotent records, NO TRADE and the complete candidate denominator; **no fixed eight-new-per-event quota**.
 4. **Performance:** Offline synthetic 100 broad / 20 deep event-stream, many active virtual intents; measure maximum RSS, CPU, event latency, raw source disk growth, replay cost, archive sealing and restart.
 5. **Recovery:** Crash before/after the compressed segment flush, corrupt source, missing aggregate trades and ambiguous 1s candles; no unverified original after-cost label after any source gap.
 6. **Full integration:** One synthetic-grade Observation→Exploration→Research→Learning→Training→Champion/Challenger→Paper path, with genuine-original grade locked until independent source/economic acceptance.
