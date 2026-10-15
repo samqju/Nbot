@@ -1,6 +1,6 @@
 # NBOT V5.1 — Your Plain-Language Development Roadmap
 
-**Roadmap version:** 1.0  
+**Roadmap version:** 1.1  
 **Date:** 15 October 2026  
 **Status:** A new beginning — planning and safety checks only; no trading authorization  
 **Product blueprint:** NBOT Complete Product Vision **V1.9** (separately copied **unchanged** into this branch)  
@@ -51,6 +51,31 @@ The earlier branches and GitHub history remain available as a library of example
 We will avoid: unused experiments, old competing strategy engines, duplicate price collectors, mixed virtual/paper/real accounts, and code that secretly connects to real trading.
 
 **Baseline means taking an inventory of the old system, not copying it.**
+
+### How we will actually copy the useful parts from older branches
+
+**Yes, we must deliberately copy proven, necessary code from older NBOT GitHub branches into new V5.1 files**, rather than re-create everything for no reason. But **we will NEVER bulk-copy the whole old application**.
+
+For each reusable item we will:
+
+1. **Find it:** Record its old branch, exact GitHub commit and original filename/function.
+2. **Understand it:** Check what the code really does, whether it depends on abandoned files, whether it touches trading/accounts, and whether its old tests were trustworthy.
+3. **Choose:** Mark it **Copy and adapt**, **Rewrite simply**, **Discard**, or **Keep only as reference**, explaining why.
+4. **Bring over only what is needed:** Put approved code into **new, clean V5.1 files** on our new branch. Do not change or delete the original.
+5. **Prove it works:** Run safe offline tests, including errors/restarts and the new Vision V1.9 requirements.
+6. **Tick it:** Immediately mark that small task complete **[x]** once its evidence passes, record its new GitHub commit, and then move to the next task.
+
+**Example:** We might inspect a V4 pattern detector, copy the useful detection logic into a newly designed V5.1 pattern module, remove unused strategy/order dependencies, and prove it uses only completed candles. The original V4 file stays unchanged. The checkbox for that *one detector's reviewed transfer* can be ticked as soon as its tests pass—even if the full Exploration milestone is still incomplete.
+
+### Our rule for ticks — every small task and every big milestone
+
+- **[ ] Not complete.** Includes in progress, awaiting review and HOLD; a separate note explains blockers.
+- **[x] Completed and verified.** Record the exact GitHub code commit, relevant test/review evidence and date.
+- **Never wait for a big stage to finish** before ticking each successfully completed little task.
+- **Never tick a big milestone** until its required smaller tasks AND the milestone's final acceptance tests have passed.
+- **Never inherit a PASS** solely because something worked in an old V4/V5 branch.
+- At the end of every development session, update **both roadmaps**, explain changes in ordinary language, and name the next unticked task.
+- If a past PASS later proves wrong, reopen and untick it with a clear reason; do not hide a regression.
 
 ## 4. The roadmap you can follow without being a developer
 
@@ -139,6 +164,83 @@ Test the whole sequence on **synthetic/offline inputs first**, with that evidenc
 The guardian must be able to independently reject a proposal and enforce the one-real-position rule. A good research model or paper result does **not** create real-money permission. A real trading project would need your fresh, explicit approval, suitable risk controls, exchange reconciliation and independent release testing.
 
 **Finished when:** Only if and when you authorize that completely separate phase.
+
+## 4A. Your live NBOT V5.1 checklist — small jobs and big milestones
+
+**This is the main owner-facing progress tracker.** The detailed engineering roadmap contains matching technical **G0–G12** tasks, all with their own tick boxes and proof register. Add any newly discovered small task to both appropriate roadmaps. A tick is only legitimate when its test/review evidence is recorded.
+
+### Initial branch and documentation
+
+- [x] **START-01:** New nbot-v5.1 branch created with **only three documents**, no imported old application files — verified from GitHub tree on 15 Oct 2026 (commit **472c3f54415e06715f8b28673eee7d3b545338d4**).
+- [x] **START-02:** Complete Vision V1.9 copied unchanged and both roadmaps created — GitHub verified on 15 Oct 2026 (same commit).
+- [ ] **Milestone 0 — Old NBOT preserved and safely assessed** (engineering G0)
+  - [ ] Identify the important historical branches, files and tests without changing them.
+  - [ ] Confirm which old components may be useful or risky.
+  - [ ] Present the owner with the starting situation and seek permission before copying application code.
+- [ ] **Milestone 1 — Detailed list of code to copy/rebuild finished** (engineering G0)
+  - [ ] List old V4 detectors, market-data tools, research evidence checks, paper book and risk protections with exact source links.
+  - [ ] Give each an easy choice: **COPY / REWRITE / DISCARD / REFERENCE** with the reason.
+  - [ ] Identify conflicts between previous NBOT and Vision V1.9.
+  - [ ] Agree on the first safe, approved component to copy into V5.1.
+- [ ] **Milestone 2 — Our new clean program foundation works** (engineering G1)
+  - [ ] Approve a simple new directory/module layout.
+  - [ ] Copy/rebuild just the required first helpers, not their old unused dependencies.
+  - [ ] Pass offline smoke, source and no-trading safety tests.
+- [ ] **Milestone 3 — Observe up to 100 coins** (engineering G2)
+  - [ ] Choose eligible high-volume, top-gaining and top-losing coins with no duplicates and BTC always included.
+  - [ ] Reliably record completed five-minute candles and detect missing/old information.
+  - [ ] Test on simulated 100-coin market data and measure resource requirements.
+- [ ] **Milestone 4 — Explore structures and directions** (engineering G3)
+  - [ ] Verify/copy the required original **24 pattern detectors** safely, one reviewed item at a time.
+  - [ ] Describe BTC conditions and each coin's trend and price structure using information known at the time.
+  - [ ] Produce honest LONG, SHORT, unavailable and skipped-capacity labels; pass the accuracy tests.
+- [ ] **Milestone 5 — Select the 20 deeply researched coins** (engineering G4)
+  - [ ] Write fair selection rules based on tradability, structure, previous evidence and variety.
+  - [ ] Keep BTC and record why every chosen or excluded coin was selected or rejected.
+  - [ ] Check original market/quote sources and prove source quality plus storage capacity.
+- [ ] **Milestone 6 — Rolling maximum-40 virtual-trade pool works** (engineering G5)
+  - [ ] Freeze each experiment's direction, entry, exit, stop, trailing and duration policy.
+  - [ ] Track stops/targets at the actual price-event time without storing every message in SQLite.
+  - [ ] Every five minutes, verify which trades finished and reuse ONLY genuinely available slots for suitable new opportunities.
+  - [ ] Pass limits, simultaneous exits, no-opportunity, restart and trailing-stop tests.
+- [ ] **Milestone 7 — Crash recovery and true after-cost results work** (engineering G6)
+  - [ ] Verify original price, quote, fee, slippage and funding evidence needed to score research.
+  - [ ] Recover trusted history after failures; never invent wins from missing seconds or unsupported 1-second candles.
+  - [ ] Verify compressed source storage, archive/restore and safe disk quotas.
+- [ ] **Milestone 8 — Reliable Learning works** (engineering G7)
+  - [ ] Separate valid matured outcomes from pending, synthetic, incomplete or ambiguous observations.
+  - [ ] Check results under different BTC/market conditions while accounting for overlapping coin moves.
+  - [ ] Meet and review independent evidence-quality checkpoints or explicitly record HOLD.
+- [ ] **Milestone 9 — First qualified trained strategy works** (engineering G8)
+  - [ ] Train only on earlier qualified outcomes with a frozen data cutoff.
+  - [ ] Test the model on later untouched periods and against doing no trade.
+  - [ ] Record a repeatable model version or reject it if evidence is weak.
+- [ ] **Milestone 10 — First approved Champion PAPER testing works** (engineering G9)
+  - [ ] Resolve the old V5 conflict requiring two models before a first Champion paper trial.
+  - [ ] Build an independent paper guardian that rejects unsafe or unauthorised proposals.
+  - [ ] Approve paper-only mode separately, test one paper position and reconcile its accounting.
+- [ ] **Milestone 11 — Champion versus Challenger comparison works** (engineering G10)
+  - [ ] Qualify and freeze a Challenger only after appropriate additional research.
+  - [ ] Run fair, separately accounted paper portfolios on the same forward market period.
+  - [ ] Produce an understandable KEEP / REJECT / HOLD / RECOMMEND CHANGE report with no automatic promotion.
+- [ ] **Milestone 12 — Whole loop and VPS load are proven** (engineering G11)
+  - [ ] Demonstrate all seven stages with authentic contract boundaries in offline scenarios.
+  - [ ] Test errors, interruptions, source-grade limitations and safe NO TRADE choices.
+  - [ ] Show the real CPU/RAM/disk/headroom numbers before considering any permitted operational rollout.
+- [ ] **Milestone 13 — Optional future REAL trading (NOT APPROVED)** (engineering G12)
+  - [ ] Obtain a separate explicit authorization from the owner.
+  - [ ] Independently verify single-real-position, protective stops, exchange-order reconciliation and emergency controls.
+  - [ ] Carry out a separate real-money release review; until then, keep real execution LOCKED.
+
+### Record of every verified tick
+
+| When (IST) | Small task or milestone | Evidence (GitHub commit and tests) | Meaning in everyday language |
+| --- | --- | --- | --- |
+| 2026-10-15 | [x] START-01 | 472c3f54415e06715f8b28673eee7d3b545338d4 / verified three-file tree | The clean branch exists and does not carry old code |
+| 2026-10-15 | [x] START-02 | Same commit / Vision blob matches original | The approved product vision is safely copied |
+| *Next review* | [ ] Milestone 0/1 component inventory | Pending | Decide what from the old branches deserves copying |
+
+**Use [ ] and [x] on the individual subtasks throughout development.** The roadmap itself should be updated with a new GitHub commit as work is completed. No stage above is yet checked as completed.
 
 ## 5. What happens if something goes wrong?
 
