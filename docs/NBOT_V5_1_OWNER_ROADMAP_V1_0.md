@@ -1,8 +1,8 @@
 # NBOT V5.1 — Your Plain-Language Development Roadmap
 
-**Roadmap version:** 1.2 (updated for completed G3)  
+**Roadmap version:** 1.3 (G4 verified partial engineering with explicit source HOLD)  
 **Date:** 15 October 2026  
-**Status (current, 15 October 2026):** **Owner Milestones 0, 1, 2, 3 AND 4 COMPLETE** (engineering G0–G3), including the original 24 historical V4 detectors as **hypotheses only**, up to 100 symbols × LONG/SHORT =200 records, 157/157 regression tests and 100×2×24 benchmarks passed on BOTH VPSs, and public read-only 100→200 evidence. **Milestone 5 / G4 NEXT. No permanent bot service, virtual research trades, paper or real trading approval.**  
+**Status (current, 15 October 2026):** **Milestones 0–4/G0–G3 [x] COMPLETE**. **Milestone 5/G4 [ ] HOLD (partly built)**: G4-01 100→20 with BTC, G4 raw public socket/segment/funding code, **186/186 tests on BOTH VPSs** and 3,600-frame synthetic deep-20 benchmark PASS; actual public sample **3,077 WSS frames** but **47 trade-continuity gaps and only 19/20 trade-stream coverage**, so full original source custody is NOT qualified. **G4 parent unchecked; G5–G12 untouched, no installed services or virtual/paper/real trading.**  
 **Product blueprint:** NBOT Complete Product Vision **V1.9** (separately copied **unchanged** into this branch)  
 **Companion:** NBOT V5.1 Engineering Roadmap V1.0  
 **Repository/branch:** samqju/Nbot / nbot-v5.1
@@ -251,10 +251,24 @@ The guardian must be able to independently reject a proposal and enforce the one
   - [x] **G3-06-A — Real public read-only market integration tested:** On Observation-VPS, 100 qualified Binance USD-M markets including BTC had valid 96-candle public history; G3 reported **200 full direction rows**, zero source missing, **200 capacity-skipped** (since research slots have NOT been approved), all NO_TRADE, 24 detector state slots each. 103 public HTTP source receipts and G3 output replayed, no orders.
   - [x] **G3-06-B — Strictly no trading/services:** No permanent VPS program or NBOT service installed, no trading API keys, original fee/quote/profit proof or live/paper trade; temporary public test receipts were removed afterward.
   - [x] **G3-06-C — Entire G3 PASS:** All source lineage, test/negative fixtures, causal 200-way denominator, resource benchmarks, read-only real market receipt evidence verified. **G4 next; all trade permissions still LOCKED**.
-- [ ] **Milestone 5 — Select the 20 deeply researched coins** (engineering G4)
-  - [ ] Write fair selection rules based on tradability, structure, previous evidence and variety.
-  - [ ] Keep BTC and record why every chosen or excluded coin was selected or rejected.
-  - [ ] Check original market/quote sources and prove source quality plus storage capacity.
+- [ ] **Milestone 5 — Select and independently source the 20 deeply researched coins (G4 PARTIALLY BUILT; real source HOLD, NOT COMPLETE)**. See [exact G4 evidence/blocker report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G4_ENGINEERING_PROGRESS_AND_HOLD_20261015.md), **db4d3e77cbe854e21cba1d7d04d4b8d0b564f87b**.
+  - [x] **G4-01-A — Qualified 100-coin starting universe:** Source-checked G2/BTC universe and both G3 directional records used at decision time; missing/future/unqualified inputs rejected.
+  - [x] **G4-01-B — Only 20 coins, BTC compulsory:** Up to 20 unique, frozen selected coin list and all remaining exclusions. Selection is NOT a trade and every new coin says WARMUP_HOLD.
+  - [x] **G4-01-C — Fair policy and controls:** Include volume/gainers/losers/controls with transparent membership, deterministic rotating sampling and recorded prospective selection probabilities. Do not rank by 24 pattern matches or pretend scientific profitability.
+  - [x] **G4-01-D — 8 independent shortlist tests PASS:** BTC, duplicates, wrong source time, full 100 denominator, missing slots, inclusion fairness and smaller cohort.
+  - [x] **G4-02-A — Correct public USD-M feeds identified:** Binance routes for public bid/ask, actual aggregated trades and mark-price/funding indicators checked against October 2026 official docs. No private data/order endpoints.
+  - [x] **G4-02-B — Byte-exact source gate implemented:** Verify raw stream, route, coin, epoch, time, bid/ask, mark and separate aggregate IDs for EACH coin; fail closed on gaps. Multi-coin interleave tests PASS.
+  - [x] **G4-03-A — Small bounded compressed source receipts:** Hash-chained gzip, raw message bytes, source epochs, disk limits and strict replay; no expensive per-frame SQLite writes or silent evidence pruning.
+  - [x] **G4-03-B — Failure, replay and restart tests:** Corrupted/torn writes, quota, file ownership, bad source frames, multiple coin cursors, restart SOURCE_HOLD tested.
+  - [x] **G4-04-A — Funding honesty:** Mark stream's estimated next funding rate is not settled funding. Separate public BTC settled-funding response verified, but this is not proof of real or virtual account charges. Five funding-specific tests PASS.
+  - [x] **G4-05-A — Full G1–G4 tests on BOTH VPSs:** **186/186 PASS EACH** on Python3.12.3, exact tested GitHub source `07186992fdfc8b2fc1b66e39b6d78513ee23891e`.
+  - [x] **G4-05-B — Bounded synthetic 20-coin stress on both VPSs:** 3,600 raw frame fixtures, 60 compressed source segments, 20 restart HOLDs, complete hash replay. p99 **53.325ms Observation /60.251ms Execution**; ~35.5MiB RSS and 243,436-byte compressed receipts, all declared budgets PASS.
+  - [x] **G4-05-C — Actual public Binance source test completed honestly:** 100 source-qualified symbols, selected real 20 with BTC, 103 raw public REST receipts then **3,077 public WSS frames replayed**. All 20 have quote and mark frames; aggregate trades valid for only 19, and **47 trade-ID gaps/rejections** occurred. Exact original source readiness therefore **NOT ACCEPTED**.
+  - [ ] **G4-06-A — All 20 must have clean original trade/quote/mark history:** The actual sample did NOT meet the clean 20/20 trade-source requirement. Missing prices cannot be replaced by 5-minute candles.
+  - [ ] **G4-06-B — Real sustained 20-source bandwidth/disk/endurance:** Simulated CPU/RAM/disk passes do not prove genuine peak trade traffic, reconnects, 24-hour operation or long-run segment headroom.
+  - [ ] **G4-06-C — Independent source/economic quality:** Locally received public TLS WSS data is not exchange-signed, public last funding not actual position-specific funding, and sample quotes do not prove executable trade fills.
+  - [ ] **G4-06-D — Real separate-host backup/restore:** Temporary replay of local gzip receipts passed; independent source archive off-host retention, verified restore and real interruption qualification remain to prove.
+  - [ ] **G4-06-E — PARENT G4 ACCEPTANCE remains HOLD:** Do NOT tick this or advance G5 until every original-source and long-run restore gate above is proved. No VPS bot services or trade permissions are enabled.
 - [ ] **Milestone 6 — Rolling maximum-40 virtual-trade pool works** (engineering G5)
   - [ ] Freeze each experiment's direction, entry, exit, stop, trailing and duration policy.
   - [ ] Track stops/targets at the actual price-event time without storing every message in SQLite.
@@ -347,7 +361,12 @@ The guardian must be able to independently reject a proposal and enforce the one
 | 2026-10-15 | [x] G3-05 actual tests and 200-direction performance on both VPSs | **157/157 PASS each**, p99 **571.799/549.342ms**, memory ~42MiB | Stage fits the measured synthetic small-VPS work budget |
 | 2026-10-15 | [x] G3-06 one-time real public market intake 100→200 | **fae1e2edc5f9403ccaf4b23e596176e89a2cfaf1**, 100 eligible BTC-including public histories, 200 capacity-mask rows, 103 raw-source receipts replayed | Tested full G3 public integration while refusing fake trade capacity |
 | 2026-10-15 | [x] **Owner Milestone 4 / all G3 COMPLETE** | [Full G3 report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G3_FINAL_ACCEPTANCE_20261015.md), **fae1e2edc5f9403ccaf4b23e596176e89a2cfaf1** | Safe descriptive exploration accepted; no profitable model or paper/real order |
-| *Next review* | [ ] G4-01 fair BTC-including 100→20 deep research shortlist | NOT STARTED | Build source-qualified and fairly sampled 20-deep market selection, original trade/quote/funding receipts, quotas and recovery, then independent tests |
+| 2026-10-15 | [x] G4-01 frozen 100→20 BTC+control selection | [G4 evidence report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G4_ENGINEERING_PROGRESS_AND_HOLD_20261015.md), **db4d3e77cbe854e21cba1d7d04d4b8d0b564f87b** | 8 selection tests PASS, source-qualified cohort and honest pending warm-up, complete inclusion/exclusion/fair probabilities |
+| 2026-10-15 | [x] G4-02 and G4-03 public source parser/segment recorder | **db4d3e77cbe854e21cba1d7d04d4b8d0b564f87b**, verified 11 segment and 5 route test cases | 20-source quote/trade/mark contract, raw compressed byte SHA and restart HOLD, no orders |
+| 2026-10-15 | [x] G4-04 settled public funding contract | **db4d3e77cbe854e21cba1d7d04d4b8d0b564f87b**, 5 tests + actual BTC 2 settled events | Never confuse indicative funding with settled history or position-specific trading cost |
+| 2026-10-15 | [x] G4-05 two-VPS engineering tests and deep-20 stress | **186/186 PASS each**, exact `07186992...` code SHA | Both 3,600-frame benchmark PASS; latency, RAM and compressed source receipt budget measured |
+| 2026-10-15 | [x] G4-05 actual public source audit run | **db4d3e77cbe854e21cba1d7d04d4b8d0b564f87b** | 3,077 real WSS frames replayed; 20/20 quote+mark, 19/20 trades and 47 gap HOLDs recorded rather than hidden |
+| *Next review* | [ ] **G4-06-A real 20/20 original-source gap-free evidence** | **HOLD — actual live-source deficits** | Source epochs/trade gaps, sustained rates, separate-host restore and independent custody must PASS before G4 parent can complete |
 
 **Use [ ] and [x] on the individual subtasks throughout development.** Owner milestones 0 and 1 (engineering G0) are now completed; **the first application development milestone (G1) and all trading stages remain open.**
 
@@ -407,7 +426,7 @@ At the end of each milestone, request a compact progress report answering:
 **Owner's guiding statement:** NBOT V5.1 should be **small enough to understand, cautious enough to trust, and able to improve from authentic evidence**. An empty trade slot and NO TRADE are perfectly legitimate outcomes.
 
 
-**CURRENT verified status 15 October 2026: Owner Milestones 0,1,2,3 AND 4 complete — engineering G0, G1, G2, G3 passed separately within their scopes.** Final G3 **157/157 regression tests PASS on EACH VPS**, original 24 V4 rule identities/golden cases pinned, complete 100×2×24 synthetic measured capacity under limits and 100 actual public USD-M histories→200 honest G3 capacity masks (0 trades), proof [G3 final report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G3_FINAL_ACCEPTANCE_20261015.md), commit **fae1e2edc5f9403ccaf4b23e596176e89a2cfaf1**. **Milestone 5/G4 and G5–G12 remain OPEN**; there is no permanent live service, private Binance account, research economic qualification or paper/real authorization.
+**CURRENT latest gate truth, 15 October 2026:** Milestones 0–4/G0–G3 PASS. Milestone 5/G4 **[ ] HOLD** despite many completed [x] G4 components. New **186/186 tests passed independently on EACH VPS**, real public source capture **3,077 WSS messages** with **47 unresolved trade-ID gap reports** and only **19/20 markets with valid trade frames**. Source grade/24h rate/off-host restore are **NOT** independently accepted. [G4 progress/HOLD proof](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G4_ENGINEERING_PROGRESS_AND_HOLD_20261015.md), **db4d3e77cbe854e21cba1d7d04d4b8d0b564f87b**. G5–G12 and all service/trading modes remain LOCKED.
 
 
 ### G1-01 — First clean code and offline test completion (15 Oct 2026)
@@ -507,3 +526,13 @@ Every line is a descriptive setup **hypothesis**, not permission to enter a trad
 - [x] **All 24 individual V4 detectors audited and individually checked.** A detection does NOT mean a good strategy or a valid trade.
 - [x] **G3 full completion:** 157/157 tests on both VPSs; G3 public 100×2 source/capacity records replayed; 100×2×24 speed/memory/disk benchmark PASS. **Owner Milestone 4 [x].**
 - [ ] **G4 deep-20 research source selection and custody, next:** still awaits actual original source, selection and future offline engineering acceptance. G5+ all locked.
+
+
+### Later G4 source engineering checkpoint and unresolved next item — 15 Oct 2026
+
+- [x] **G4 partial documentation persisted:** [G4 completed subtasks plus live-source HOLD report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G4_ENGINEERING_PROGRESS_AND_HOLD_20261015.md), commit **db4d3e77cbe854e21cba1d7d04d4b8d0b564f87b**. 100→20 BTC freeze and prospectively recorded controls; three public USD-M source routes, segment SHA/gzip replay and independent public settled-funding validation built; 186/186 Python3.12.3 tests on EACH VPS and 20×3×60 benchmark PASS.
+- [x] **Actual public 20-source trial and limitation recorded:** 3,077 raw public WSS frames replayed, 20/20 quote and mark but 19/20 trade, **47 aggregate-ID/underlying trade continuity gaps** and insufficient sustained original source retention. This is source HOLD, not G4 pass.
+- [ ] **G4-06-A currently NEXT:** prove clean source warm-up for every one of the frozen 20 coins including BTC. Do not compensate for gaps with REST candles, retroactive detector matches or artificial trades.
+- [ ] **G4-06-B/C/D/E:** independent long-term public WSS throughput/disk, source evidence custody/settled funding and actual off-host restore, then final G4 parent acceptance only if all PASS.
+
+**Permanent status:** G0 [x], G1 [x], G2 [x], G3 [x], **G4 [ ] HOLD**, G5–G12 [ ]. No services started; no virtual, paper or real trading opened.
