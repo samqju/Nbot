@@ -63,6 +63,9 @@ class HistoricalDetectorParity(unittest.TestCase):
         self.assertEqual(len(rules.REGISTRY),24)
         self.assertEqual(len({r.id for r in rules.REGISTRY}),24)
         self.assertEqual(len(examples()),19)
+        # Independently extracted by AST from historical V4 commit (no import).
+        self.assertEqual(rules.CATALOG_DIGEST,
+                         "17cf229ef8beb30e1bc54bc22a0025e2ffed65e3088b915cec17e51e032dad4b")
         self.assertEqual(tuple(r.id for r in rules.REGISTRY[:5]),
             ("TREND_CONTINUATION_V1","TREND_PULLBACK_V1","STRETCHED_REVERSAL_V1",
              "VOLATILITY_EXPANSION_V1","RELATIVE_STRENGTH_V1"))
