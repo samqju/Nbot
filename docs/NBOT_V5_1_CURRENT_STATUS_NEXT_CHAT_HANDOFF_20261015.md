@@ -1,5 +1,8 @@
 # NBOT V5.1 — Current Status and Next-Chat Handoff
 
+> **NEW CHAT: START HERE FIRST — 15 October 2026 live status:** [Latest comprehensive G1–G4+ recovery handoff](NBOT_V5_1_NEXT_CHAT_START_HERE_LIVE_G1_G3_PASS_G4_BTC_QUOTE_HOLD_20261015.md). G1–G3 **initial live source/data/record pipeline PASS in limited scopes** (100 public markets, 200 recorded directions with zero detector evaluations because capacity was gated), G4 **[ ] HOLD** after **12,572** public source frames and all 20×3 feeds reached, repeated BTCUSDT `bookTicker EVENT_FUTURE_OR_STALE`. Source-only bounded canaries exited; no NBOT production daemon, PAPER or real trading. Last live executable SHA `6b7491d8a903cbc248c85327a20919d68f05292f`. Genuine 8-file backup saved on Observation VPS, [ ] WinSCP owner desktop copy. **Do NOT read older "not started/no real records" subsections as current.**
+
+
 **Updated:** 15 October 2026 (G10 fair two-book Challenger/Promoter LAB 400 tests and two-VPS 100+100 benchmark PASS; original PAPER/promotion HOLD; next G11 offline)  
 **Repository:** [samqju/Nbot](https://github.com/samqju/Nbot), branch **`nbot-v5.1`**, not `main`.  
 **Authoritative, unmodified product blueprint:** [Vision V1.9](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_COMPLETE_PRODUCT_VISION_V1_9.md).  
@@ -375,3 +378,12 @@ The backup script is NOT a general filesystem archive and intentionally omits un
 **Verified manual source backup created:** `/home/ubuntu/NBOT_Backups/NBOT_V5.1_records_20261015T152427Z_12d35662.tar.gz`, SHA `af306b0decb2dd8753d8049b943f214085d33950ae65118fbf02b580042a5250`; matching .sha256 present, `sha256sum -c` PASS. **[ ] User WinSCP local 1TB desktop copy still to be performed.** Never claim desktop has this archive until transferred. Original and diagnostic receipts retained intact.
 
 **NEXT ONE BLOCKER:** measure actual BTC bookTicker raw exchange `E` timestamp vs socket receipt and diagnose 20-symbol WSS backlog; ensure small per-symbol quarantine/recovery if truly necessary and keep quote/mark/economic-source certainty. Repeat time-limited public-only canary with no stale-source global failure and at least two genuine five-minute boundaries before approving any permanent start. CS-00 offline engineering acceptance remains; CS-01 sustained startup [ ] HOLD, G4–G10 genuine science/PAPER gates [ ] HOLD, G12 real LOCKED.
+
+
+## CRITICAL NEXT-CHAT HANDOFF CONFIRMATION — AFTER LIVE G4 STOP
+
+**This final block is authoritative over the earlier 2026-10-15 handoff progression.** A genuine public-only startup was *attempted with user approval*; G1/G2 initial Binance evidence and G3 directional receipt generation passed limited live checks. G4 received all 60 market × source-kind cursors but **failed sustained first-touch-quality original QUOTE freshness** on BTCUSDT, forcing a safe stop. No amount of 569/569 offline test passes changes this real observed HOLD. Source-only WSS service is **NOT running or permanently installed** by the reported last host audit.
+
+[START HERE NEXT CHAT](NBOT_V5_1_NEXT_CHAT_START_HERE_LIVE_G1_G3_PASS_G4_BTC_QUOTE_HOLD_20261015.md) explains: what passed and did not; latest code SHA; corrected Binance underlying `f/l` trade-ID semantics; stale QUOTE/MARK skip vs four-consecutive HOLD; reason to instrument Binance raw `E` timestamps, VPS UTC/NTP offset, queue backlog and per-symbol intake; exact 103,117-byte genuine backup and SHA; remaining owner WinSCP action; tested-source revisions; all G4–G10 original/PAPER/real gates. Read that doc before making changes. Do NOT silently merge historical diagnostic directories into the Learning dataset.
+
+**One engineering priority only:** fix BTC bookTicker `EVENT_FUTURE_OR_STALE` under live 20-symbol observation without increasing the 5-second admissibility threshold or relabeling missing data as valid. Then independently verify new tests on both hosts and obtain separate explicit public-only approval for another bounded canary; permanent daemon/PAPER/REAL have no inherited authorization.
