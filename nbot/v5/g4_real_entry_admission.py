@@ -7,14 +7,14 @@ Returns a local reference-risk geometry or explicit hold. NEVER SCORED.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from contextlib import closing
+from contextlib import closing, nullcontext
 from decimal import Decimal
 import json
 from pathlib import Path
 import sqlite3
 
 from nbot.v5.g4_segment_quotes import VerifiedSegmentQuotes
-from nbot.v5.g4_source_binding import bind_from_frozen_observation_copy
+from nbot.v5.g4_source_binding import bind_from_frozen_observation_copy, ReadOnlyBindingSession
 from nbot.v5.g4_forward_entry_quote import (
     independent_asof_entry_quote,policy_quote_mapping,
 )
@@ -43,7 +43,7 @@ class RealResearchAdmission:
 
 def admit_research_entry(*,g1_snapshot: str|Path,raw_source_vault: str|Path,
                          registry_file: str|Path,event_open_ms:int,
-                         symbol:str,side:str, audit_cache=None) -> RealResearchAdmission:
+                         symbol:str,side:str, audit_cache=None, source_audit_cache=None) -> RealResearchAdmission:
     if type(event_open_ms) is not int or event_open_ms<0 or event_open_ms%INTERVAL_MS:
         raise ValueError("G4_ADMISSION_EVENT_INVALID")
     if side not in ("LONG","SHORT") or not isinstance(symbol,str) or not symbol.endswith("USDT"):
@@ -68,16 +68,23 @@ def admit_research_entry(*,g1_snapshot: str|Path,raw_source_vault: str|Path,
     except (OSError,ValueError,TypeError,KeyError):
         return hold("POLICY_REGISTRY_UNVERIFIABLE")
 
-    bound=bind_from_frozen_observation_copy(
-        db_path=g1_snapshot,event_open_ms=event_open_ms,
-        symbol=symbol,side=side)
+    if source_audit_cache is not None:
+        if (not isinstance(source_audit_cache,ReadOnlyBindingSession)
+                or source_audit_cache.path!=Path(g1_snapshot).resolve()):
+            return hold("ORIGINAL_SOURCE_AUDIT_SESSION_INVALID")
+        bound=source_audit_cache.bound(event_open_ms,symbol,side)
+    else:
+        bound=bind_from_frozen_observation_copy(
+            db_path=g1_snapshot,event_open_ms=event_open_ms,
+            symbol=symbol,side=side)
     if bound.state!="SOURCE_BOUND":
         return hold("ORIGINAL_G1_G2_G3_DENOMINATOR_HELD",*bound.reasons)
     try:
         path=Path(g1_snapshot)
-        with closing(sqlite3.connect(path.resolve().as_uri()+"?mode=ro",
-                             uri=True,timeout=10)) as db:
-            db.execute("BEGIN")
+        context=(nullcontext(source_audit_cache.db) if source_audit_cache is not None else
+                 closing(sqlite3.connect(path.resolve().as_uri()+"?mode=ro",uri=True,timeout=10)))
+        with context as db:
+            if source_audit_cache is None: db.execute("BEGIN")
             old=db.execute(
                 "SELECT record_json FROM g1f_candidate_events "
                 "WHERE event_open_ms=? AND symbol=? AND direction=?",

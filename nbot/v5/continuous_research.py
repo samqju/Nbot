@@ -19,7 +19,7 @@ from nbot.v5.g4_segment_replay import verified_ram_vault
 from nbot.v5.g4_segment_quotes import VerifiedSegmentQuotes
 from nbot.v5.g4_incremental_path import original_segment_price_path, original_segment_price_paths
 from nbot.v5.g4_real_entry_admission import admit_research_entry
-from nbot.v5.g4_source_binding import bind_from_frozen_observation_copy
+from nbot.v5.g4_source_binding import bind_from_frozen_observation_copy, ReadOnlyBindingSession
 from nbot.v5.g4_live_outcomes import follow_original_path
 from nbot.v5.g4_research_ledger import init_offline_ledger, freeze_label_intent, maturity_calendar,append_terminal
 from nbot.v5.research_store import ResearchStore
@@ -139,10 +139,11 @@ class ContinuousResearch:
         """For compressed sources, use only a bounded, independently verified
         RAM-backed replay view. Missing evidence is never promoted to outcomes.
         """
-        return self._tick_from_source(
-            now_ms,max_events=max_events,vault_path=self.vault)
+        with ReadOnlyBindingSession(self.source) as source_audit:
+            return self._tick_from_source(
+                now_ms,max_events=max_events,vault_path=self.vault,source_audit=source_audit)
 
-    def _tick_from_source(self, now_ms, *, max_events, vault_path):
+    def _tick_from_source(self, now_ms, *, max_events, vault_path, source_audit=None):
         if type(max_events) is not int or not 1<=max_events<=3:
             raise ValueError("RESEARCH_BATCH_BOUNDS")
         selected=bounded_original_event_batch(
@@ -194,7 +195,8 @@ class ContinuousResearch:
                 identity="candidate:"+c["decision_id"]
                 if self.store.db.execute("SELECT 1 FROM research_journal WHERE identity=?",(identity,)).fetchone():continue
                 admission=admit_research_entry(g1_snapshot=self.source,raw_source_vault=vault_path,
-                                               registry_file=self.registry,event_open_ms=event,symbol=c["symbol"],side=c["side"],audit_cache=audit)
+                                               registry_file=self.registry,event_open_ms=event,symbol=c["symbol"],side=c["side"],audit_cache=audit,
+                                               source_audit_cache=source_audit)
                 features=None;feature_reasons=[]
                 try:features=causal_features(c,g3)
                 except (KeyError,TypeError,ValueError) as exc:feature_reasons=[type(exc).__name__+":CAUSAL_FEATURES_UNAVAILABLE"]

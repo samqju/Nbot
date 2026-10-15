@@ -79,9 +79,40 @@ def bind_from_frozen_observation_copy(*, db_path: str | Path, event_open_ms: int
         return _hold(event_open_ms, symbol, side, {"G4_BIND_SQLITE_OR_EVIDENCE_INVALID"})
 
 
-def _check(db: sqlite3.Connection, event: int, symbol: str, side: str) -> BindingAudit:
+class ReadOnlyBindingSession:
+    """One integrity check per immutable SQLite read transaction, not per side.
+
+    The snapshot remains open for the bounded event batch. Neither appends nor
+    changes arriving from another connection can invalidate its checked pages.
+    """
+    def __init__(self, path):
+        path=Path(path)
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("G4_BIND_SNAPSHOT_NOT_REGULAR_FILE")
+        self.path=path.resolve()
+        self.db=sqlite3.connect(self.path.as_uri()+"?mode=ro",uri=True,timeout=8)
+        try:
+            self.db.execute("BEGIN")
+            if self.db.execute("PRAGMA quick_check").fetchone()[0]!="ok":
+                raise ValueError("G4_BIND_SQLITE_INTEGRITY_FAILED")
+        except BaseException:
+            self.db.close()
+            raise
+
+    def bound(self, event, symbol, side):
+        return _check(self.db,event,symbol,side,integrity_checked=True)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.db.close()
+
+
+def _check(db: sqlite3.Connection, event: int, symbol: str, side: str,
+           *, integrity_checked=False) -> BindingAudit:
     issues: set[str] = set()
-    if db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+    if not integrity_checked and db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
         return _hold(event, symbol, side, {"G4_BIND_SQLITE_INTEGRITY_FAILED"})
     cohort = db.execute(
         "SELECT cohort_digest,symbols_json FROM g1f_universe_snapshots"
