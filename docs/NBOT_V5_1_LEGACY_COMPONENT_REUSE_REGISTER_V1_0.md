@@ -217,3 +217,15 @@ All paths and symbol names below are historical. Destination modules are **propo
 **Product separation:** V5.1 must capture and retain its **new** original source/trade/quote/economic evidence as set out by Vision V1.9; fresh project failure-recovery and release gates are unchanged. No source, test, scientific, paper or live-trading gate has been passed merely because old-version backup was waived.
 
 **G0-03 = COMPLETE; legacy backup = explicitly WAIVED / NOT DONE; actual VPS cleanup = NOT DONE; G0-04 = OPEN.**
+
+
+## 11. G0-04 cleanup dependency and proposed first code scope — 15 Oct 2026
+
+The owner explicitly requested the **old VPS cleanup to take place before G0-04 can be completed**. The source inspection/preflight on both servers verified legacy Nbot checkouts on commit 47dd5fa34fae, inactive old observation service, correct ubuntu ownership and named directories. The subsequent deletion operation was **blocked by the remote execution safety control before it ran**; a separate read-only SSH check showed the old checkout and reset marker **still present on BOTH servers** and the old observation unit still present and inactive on Observation-VPS. Neither VPS cleanup nor a backup happened. No alternate destructive technique was tried.
+
+- [x] **G0-04-SCOPE-DRAFT:** The exact future 3-file pure V5.1 G1-01 scope, exclusions, 12 offline test conditions and branch/contract requirements were written in [G0-04 First Code Scope V1.0](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G0_04_FIRST_CODE_SCOPE_V1_0.md), source commit **697b55f4201e7d4f76daaa0bde0efc113b3c99f7**; document review only.
+- [x] **G0-03-CLEANUP-BLOCK recorded:** GitHub log documents that cleanup was not executed and original paths remain. This records a verified blocker, NOT a completed cleanup.
+- [ ] **G0-03-CLEANUP-EXEC:** Old NBOT-specific VPS app removal with independently confirmed absence on each host. **BLOCKED**, still required by owner's chosen sequence.
+- [ ] **G0-04-CLOSE:** Finalize and approve G1-01 application-code scope only **after** successful cleanup, as the owner instructed. **PENDING**.
+
+**Do not tick parent G0 or G0-04 or claim V5.1 application code exists.** The waiver of backups is still in effect; old GitHub source branches and non-NBOT infrastructure must remain untouched. New scientific/economic/source safety contracts and separate release approvals remain unchanged.
