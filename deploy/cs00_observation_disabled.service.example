@@ -1,0 +1,29 @@
+# NBOT V5.1 CS-00 OFFLINE UNINSTALLABLE SAFETY SAMPLE — NEVER ENABLE.
+# This is a DOCUMENTATION-ONLY systemd placeholder, not a real runner.
+# DO NOT copy to /etc/systemd/system or enable/start it during CS-00.
+# CS-01 requires a NEW independently reviewed public-data-only service unit,
+# signed owner approval and tested runtime. THIS unit always refuses startup.
+[Unit]
+Description=NBOT V5.1 CS-00 OFFLINE-ONLY (DO NOT INSTALL)
+RefuseManualStart=yes
+ConditionPathExists=/nonexistent/nbot-cs01-owner-approval-is-not-present
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/false
+Restart=no
+User=nobody
+Group=nogroup
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+MemoryMax=256M
+CPUQuota=50%
+LimitNOFILE=128
+UMask=0077
+
+# No [Install] section: even when copied it has no install target.
