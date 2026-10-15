@@ -1,8 +1,8 @@
 # NBOT V5.1 — Your Plain-Language Development Roadmap
 
-**Roadmap version:** 1.4 (G5 offline Research code proved, source-linked acceptance still HOLD)  
+**Roadmap version:** 1.5 (G6 offline engineering validated; G5 40-slot restart test PASS; real G4/G5/G6 startup checks held)  
 **Date:** 15 October 2026  
-**Status (current, 15 October 2026):** **Milestones 0–4 (G0–G3) COMPLETE**. **Milestone 5/G4 [ ] HOLD** pending genuine full 20-source live continuity/endurance/off-host retention. **Milestone 6/G5 [ ] HOLD** pending separate final tests/live-original input, **but its complete OFFLINE virtual Research software is built and 224/224 tests PASS on EACH VPS**; 40-active/24-review synthetic benchmark within p99/RSS/disk limits on both. A strengthened full-40 restart benchmark was committed after the successful test revision and needs rerun. Owner approved deferring live checks to later controlled startup, not treating them as passed. **No services, virtual research runtime, paper/real trading enabled; G6–G12 remain OPEN.**  
+**Status (current, 15 October 2026):** **G0–G3 COMPLETED**. **G4 original public market source, G5 original price-first-touch, G6 verified genuine after-cost economics/off-host archive all remain [ ] HOLD** while we complete remaining offline NBOT development. G6 software implemented with **254/254 tests PASS on BOTH actual VPSs**, 1,440-frame source/archive benchmark PASS; improved G5 crash-with-all-40-active virtual paths now PASSED on BOTH VPSs, so **G5-06-A has been checked**. G4/G5/G6 original-source and operational archive checks are deferred to later separately authorized controlled startup, not waived or approved for trading. G7–G12 [ ], all permanent services/paper/real trading LOCKED.  
 **Product blueprint:** NBOT Complete Product Vision **V1.9** (separately copied **unchanged** into this branch)  
 **Companion:** NBOT V5.1 Engineering Roadmap V1.0  
 **Repository/branch:** samqju/Nbot / nbot-v5.1
@@ -284,13 +284,26 @@ The guardian must be able to independently reject a proposal and enforce the one
   - [x] **G5-05-A:** 38 G5 tests plus 186 earlier tests **224/224 PASS on Observation-VPS AND Execution-VPS** at identical Python3.12.3 source revision `2efea2cccb086a1f292ae90c1eaac414620f342b`.
   - [x] **G5-05-B:** Actual small-VPS OFFLINE capacity measured independently: **40 peak virtual hypotheses**, 600 simulated entries/600 cost-pending closures over 24 candle reviews; p99 **197.077/194.434 ms**, RAM ~40MiB, journal ~1.25MB, quotas met on BOTH VPSs.
   - [x] **G5-05-C:** Stronger full-40-slots-occupied crash/restart test harness added to GitHub; initial passing benchmark had ended with 0 occupied and was insufficient as a full 40-restart proof. The strengthened test remains **unexecuted**, and has its own unchecked line below.
-  - [ ] **G5-06-A — Execute the improved full-40-restart benchmark on BOTH VPSs:** Code amended after last passing test, remote launch blocked. Must show all 40 restored as HOLD, none freed/qualified, and safe CPU/RAM/disk.
+  - [x] **G5-06-A — Improved crash with ALL 40 slots occupied PASSED on BOTH VPSs.** Same source SHA `029cda1d75138fc1bf96f3502021ca5a236693c9`; **40/40 still occupied RESTART_HOLD**, no false reopened slots, no qualified returns, both 24-review synthetic journal benchmarks within p99/RSS/disk limits (p99 186.430ms Observation /195.132ms Execution). [G6 evidence and independent retest](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G6_OFFLINE_ENGINEERING_ACCEPTANCE_AND_SOURCE_HOLD_20261015.md). Previous blocked launch superseded by completed authorized tests.
   - [ ] **G5-06-B — Real original-source Research test later at controlled startup:** G4 must first pass true continuous original trade/quote/mark and off-host evidence. Synthetic price-path results cannot be called genuine Research outcomes or used for Learning.
   - [ ] **G5-06-C — Entire parent G5 not yet accepted:** Keep this milestone unchecked until both open checks above pass. All virtual/paper/real runtime modes remain LOCKED.
-- [ ] **Milestone 7 — Crash recovery and true after-cost results work** (engineering G6)
-  - [ ] Verify original price, quote, fee, slippage and funding evidence needed to score research.
-  - [ ] Recover trusted history after failures; never invent wins from missing seconds or unsupported 1-second candles.
-  - [ ] Verify compressed source storage, archive/restore and safe disk quotas.
+- [ ] **Milestone 7 — Recovery and true after-cost results (G6): OFFLINE SOFTWARE BUILT AND TESTED; actual source/off-host acceptance remains HOLD**. [Detailed G6 254-test/two-VPS source and limitations report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G6_OFFLINE_ENGINEERING_ACCEPTANCE_AND_SOURCE_HOLD_20261015.md), tested SHA `029cda1d75138fc1bf96f3502021ca5a236693c9`.
+  - [x] **G6-01-A:** Reviewed historical source/candle recovery, segment recorder and cost-accounting code and kept only necessary safe design pieces; did not transplant old expensive SQLite or old unstable 50-market code.
+  - [x] **G6-01-B:** Recover only authenticated-in-format, truly finalized five-minute public Futures candles; missing/duplicate or not-yet-closed prices HOLD. A corrected candle cannot pretend to reconstruct each trade or bid/ask.
+  - [x] **G6-01-C:** Checked official USD-M Futures history endpoint's supported interval list and **did not invent 1-second Futures candles**. An OHLC candle crossing both target and stop cannot tell which happened first and remains unresolved.
+  - [x] **G6-02-A:** Verified public Binance Futures aggregate-trade recovery rules (up to 1,000 records per page, recent ~48-hour source horizon) and wrote an explicit limit/clock contract. No API keys, no order or private endpoints.
+  - [x] **G6-02-B:** Original-shaped trade-ID and individual underlying trade ID gap checks reject missing, duplicate, future or reordered records. Even complete public aggregate trades alone do NOT establish executable quotes/cost or profit.
+  - [x] **G6-03-A:** Entry and exit bids/asks, clock freshness, independently declared fees/slippage and settled funding coverage now have strict typed evidence contracts; never silently assume a missing cost equals zero.
+  - [x] **G6-03-B:** Model LONG/SHORT net-return after quote, slippage, both sides' fees and signed funding using Decimal. **This is LAB MODELED ONLY, not genuine after-cost trading profit** until actual original data is independently verified. Zero training-qualified outcomes are generated.
+  - [x] **G6-04-A:** New finite sealed and owner-private G4 compressed segment archive, raw byte/size SHA checks, no silent overwrite, reject partial/corrupt/unsafe/over-quota files.
+  - [x] **G6-04-B:** Verified restored source file integrity locally with an independent replay and hash chain in a fresh temporary directory, while correctly recording that off-host/source-origin restore has NOT been proved.
+  - [x] **G6-05-A:** **254/254 regression tests passed on EACH VPS** — Observation 15.779 seconds; Execution 16.514 seconds; 30 new G6 tests plus 224 old, both Python 3.12.3.
+  - [x] **G6-05-B:** Tested 20 coins ×3 market sources ×24 rounds = **1,440 synthetic raw frames** and 24 compressed segments, all independently replayed from sealed local archive; 24 candle context/24 modeled cost checks. p99 **50.938ms/61.420ms**, ~29MiB RAM and ~198KB archive+source disk, both VPS budgets PASS.
+  - [x] **G6-05-C:** In same acceptance retest, G5's upgraded 40 occupied crash-restart/40 held test PASSED separately on both hosts; no false virtual win or freed slot.
+  - [ ] **G6-06-A — Genuine original source after-cost outcomes:** Requires truly gap-free original G4 trade+bid/ask/mark; complete G5 first touch; verified fees, slippage and settled funding during hypothetical holding period. Existing modeled outcomes count **zero** as genuine profitable evidence.
+  - [ ] **G6-06-B — REAL independent second-host source archive and restoration:** Verified local temporary source copy is not second VPS restore. Need independently check actual sealed original source archive and recovered source epochs during allowed future startup.
+  - [ ] **G6-06-C — Real continuous-market throughput and crash/endurance:** The short simulated 24-cycle benchmark is not sustained 20-market source rates, disk rollover, fresh reconnects or physical loss of unsynced memory. Verify these at the approved startup.
+  - [ ] **G6-06-D — Parent G6 remains unchecked:** Wait until real G4 original source, G5 original first-touch and the three G6 checks PASS; user explicitly asked to postpone verification, NOT to waive it. No service or trading enabled.
 - [ ] **Milestone 8 — Reliable Learning works** (engineering G7)
   - [ ] Separate valid matured outcomes from pending, synthetic, incomplete or ambiguous observations.
   - [ ] Check results under different BTC/market conditions while accounting for overlapping coin moves.
@@ -561,3 +574,15 @@ Every line is a descriptive setup **hypothesis**, not permission to enter a trad
 - [ ] **G5 parent / Owner Milestone 6 final signoff:** HOLD until both unverified checks PASS. **Offline coding can continue into G6 while these checks remain tracked; does not unlock virtual/paper/REAL runtime.**
 
 **Current status:** G0–G3 complete; **G4 [ ] source HOLD**, **G5 [ ] full acceptance HOLD (offline code/test implemented)**; G6–G12 not yet accepted. All services and exchange order permissions remain disabled.
+
+
+### Milestone 7/G6 new engineering progress and later full-40-restart verification (15 October 2026)
+
+- [x] **G6 offline software, tests and measurements:** [Final G6 recovery/economics/archival evidence and HOLD report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G6_OFFLINE_ENGINEERING_ACCEPTANCE_AND_SOURCE_HOLD_20261015.md), exact tested GitHub revision `029cda1d75138fc1bf96f3502021ca5a236693c9`. **254/254 PASS on BOTH target VPSs**, 20×3×24 =1,440 market-source fixtures and exact segment replay, p99 **50.938/61.420ms**, source+sealed archive disk **198,169 bytes**, RAM **29,744/29,628KiB**. Zero source-qualified trades/economic training labels; no Binance order.
+- [x] **G5-06-A full40 crash restart test updated to PASS:** 40/40 active virtual lab hypotheses restored occupying SOURCE/RESTART HOLD on BOTH independent hosts; p99 186.430/195.132ms, journal 1.30MB; older earlier "unexecuted" narrative is superseded.
+- [ ] **G4 live original data** remains prerequisite for future market-source acceptances; initial 20-market public WSS capture had 47 trade gaps and only 19/20 valid trade-source symbols.
+- [ ] **G5 original-scientific first-touch** remains unqualified; no lab model is a real bid/ask execution or after-cost win.
+- [ ] **G6 original economic/independent off-host and true resource proof** remains startup priority. A locally restored synthetic archive is NOT a physical second-host source backup.
+- [ ] **G6 parent** remains HOLD. Continue offline engineering of G7–G11 only, without calling synthetic results scientifically qualified or starting NBOT services or paper/real trading.
+
+**Verified current state:** G0 [x], G1 [x], G2 [x], G3 [x], **G4 [ ] original market source HOLD**, **G5 [ ] source-integrated virtual Research HOLD** (full40 crash now PASS), **G6 [ ] original economics + off-host restore HOLD** (offline code/test PASS), G7–G12 [ ].
