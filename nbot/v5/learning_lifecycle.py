@@ -41,10 +41,19 @@ class LearningLifecycle:
                     "paper_authority": "NONE", "real_money_authority": "NONE"}
         role = "CHAMPION" if not approved else "CHALLENGER"
         lower = approved[0]["max_settled_ms"] + self.protocol.embargo_ms if approved else -1
+        frozen=None
+        for (raw,) in self.store.db.execute(
+                "SELECT body FROM research_journal WHERE kind='LEARNING_COHORT_FROZEN' ORDER BY seq DESC"):
+            candidate=json.loads(raw)
+            if candidate["role"]==role:
+                if not self.store.db.execute("SELECT 1 FROM research_journal WHERE identity=?",
+                        ("learning-rejected-cohort:"+candidate["data"]["dataset_sha256"],)).fetchone():
+                    frozen=candidate
+                break
         # Bounded scientific snapshot, never an unbounded historical list.
         rows = []
-        for (raw,) in self.store.db.execute(
-                "SELECT body FROM research_journal WHERE kind='QUALIFIED_OUTCOME' ORDER BY seq"):
+        for (raw,) in (() if frozen else self.store.db.execute(
+                "SELECT body FROM research_journal WHERE kind='QUALIFIED_OUTCOME' ORDER BY seq")):
             row = json.loads(raw)["row"]
             if row["grade"] != self.grade:
                 raise ValueError("LEARNING_MIXED_EVIDENCE_GRADE")
@@ -52,17 +61,29 @@ class LearningLifecycle:
                 rows.append(row)
                 if len(rows) > MAX_ROWS:
                     raise ValueError("LEARNING_COHORT_CAPACITY_HOLD")
+        if frozen:
+            rows=frozen["data"]["rows"]
+            epochs=frozen["epochs"]
         data = dataset(rows, cutoff_ms=now_ms, grade=self.grade)
+        if frozen and data["dataset_sha256"]!=frozen["data"]["dataset_sha256"]:
+            raise ValueError("LEARNING_FROZEN_COHORT_TAMPER")
         report = evaluate(data, self.protocol)
         self.store.append("learning-report:"+report["report_sha256"],"LEARNING_REPORT",now_ms,
                           {"role":role,"report":report,"grade":self.grade})
         if report["status"] != "REVIEW_REQUIRED":
             return {"state":"SCIENCE_HOLD","role":role,"report":report,"paper_authority":"NONE"}
+        if self.store.db.execute("SELECT 1 FROM research_journal WHERE identity=?",
+                ("learning-rejected-cohort:"+data["dataset_sha256"],)).fetchone():
+            return {"state":"HOLDOUT_REJECTED","role":role,"paper_authority":"NONE"}
+        if frozen is None:
+            self.store.append("learning-cohort:"+data["dataset_sha256"],"LEARNING_COHORT_FROZEN",now_ms,
+                              {"role":role,"data":data,"epochs":epochs,"paper_authority":"NONE"})
         context = {"role":role,"grade":self.grade,"dataset_sha256":data["dataset_sha256"],
                    "qualified_training_outcomes":len(rows),"report":report}
         training = self._review(report["report_sha256"],"G5_TRAINING",context,now_ms)
         if training is None:
-            return {"state":"AWAITING_G5_REVIEW","role":role,"paper_authority":"NONE"}
+            return {"state":"AWAITING_G5_REVIEW","role":role,
+                    "report_sha256":report["report_sha256"],"paper_authority":"NONE"}
         # Chronological train/calibration/holdout, with the existing 4h embargo.
         ordered = data["rows"]
         boundary = ordered[int(len(ordered)*0.7)]["decision_ms"]
@@ -79,6 +100,8 @@ class LearningLifecycle:
             self.store.append("learning-rejected:"+model["model_sha256"],"LEARNING_MODEL_REJECTED",now_ms,
                               {"role":role,"model_sha256":model["model_sha256"],
                                "reason":"HOLDOUT_EDGE_OR_RISK","paper_authority":"NONE"})
+            self.store.append("learning-rejected-cohort:"+data["dataset_sha256"],"LEARNING_COHORT_REJECTED",now_ms,
+                              {"dataset_sha256":data["dataset_sha256"],"model_sha256":model["model_sha256"]})
             return {"state":"HOLDOUT_REJECTED","role":role,"paper_authority":"NONE"}
         context.update(model=model,additional_nonoverlapping_outcomes=len(rows) if approved else 0)
         release = self._review(model["model_sha256"],"G6_PROMOTE",context,now_ms)

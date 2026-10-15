@@ -38,8 +38,13 @@ class LearningLifecycleTests(unittest.TestCase):
 
     def test_positive_edge_still_requires_independent_review(self):
         self.populate()
-        result=self.lifecycle(reviewer=None).advance(self.now,epochs=2)
+        lifecycle=self.lifecycle(reviewer=None)
+        result=lifecycle.advance(self.now,epochs=2)
         self.assertEqual(result["state"],"AWAITING_G5_REVIEW")
+        extra=row(2200)
+        self.store.append("qualified:"+extra["label_id"],"QUALIFIED_OUTCOME",extra["settled_ms"],{"row":extra})
+        again=lifecycle.advance(self.now+1,epochs=100)
+        self.assertEqual(result["report_sha256"],again["report_sha256"])
 
     def test_mixed_grade_is_rejected_before_training(self):
         self.populate(count=2,change=lambda r:r.update(grade="ORIGINAL"))
