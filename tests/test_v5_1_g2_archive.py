@@ -81,15 +81,17 @@ class PublicSourceArchiveTests(unittest.TestCase):
 
     def test_A08_quota_no_auto_delete(self):
         archive=PublicSourceArchive(self.root,budget_bytes=1024*1024)
+        failed=False
         for i in range(300):
-            p=self.response(received=i,payload=(b'{"blob":"'+b'a'*10000+b'"}'))
+            # Incompressible-ish, fully deterministic public-only fixture.
+            digits=hashlib.shake_256(str(i).encode()).hexdigest(4000).encode()
+            p=self.response(received=i,payload=b'{"blob":"'+digits+b'"}')
             try: archive.append(p)
             except PublicArchiveHold as err:
-                self.assertIn("FULL",str(err));break
-        else:
-            # Compression of repeated data can be unusually good; 300
-            # duplicates differ in timestamp and remain well below 1 MiB.
-            self.assertTrue(len(archive.replay())==300)
+                self.assertIn("FULL",str(err))
+                failed=True
+                break
+        self.assertTrue(failed,"archive never exhausted its finite disk budget")
         self.assertGreater(len(archive.replay()),0)
 
     def test_A09_archive_does_not_create_directory_or_write_on_import(self):
