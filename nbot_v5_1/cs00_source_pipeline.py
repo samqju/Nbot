@@ -108,7 +108,7 @@ class SourceOnlyPipeline:
                 "source_sha256":source_sha256,
                 "grade":"UNQUALIFIED_SOURCE_EVENT",
                 "financial_authority":"NONE"}
-        raw=(json.dumps(record,sort_keys=True,separators=(",",":"))+"\\n").encode("ascii")
+        raw=(json.dumps(record,sort_keys=True,separators=(",",":"))+"\n").encode("ascii")
         with state_gate(root):
             fd=os.open(folder/"source_anomalies.jsonl",
                        os.O_WRONLY|os.O_CREAT|os.O_APPEND|
