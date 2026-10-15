@@ -188,6 +188,34 @@ class DeepSegmentTests(unittest.TestCase):
         self.assertIn("BTCUSDT",self.rec.epoch_holds)
         self.assertNotIn("ETHUSDT",self.rec.epoch_holds)
 
+    def test_A12_underlying_id_gap_needs_review_not_false_ws_loss(self):
+        first=frame(id=5)
+        second=json.loads(frame(id=6))
+        # AggTrade IDs 5->6 are complete; Binance may omit transaction
+        # types from underlying trade IDs 12 and 13.
+        second["data"]["f"]=14
+        second["data"]["l"]=15
+        second=json.dumps(second,separators=(",",":")).encode()
+        self.rec.append(kind="TRADE",raw=first,received_at_ms=NOW,epoch=1)
+        result=self.rec.append(kind="TRADE",raw=second,received_at_ms=NOW,epoch=1)
+        self.assertEqual(result.agg_id,6)
+        self.assertEqual(self.rec.underlying_id_gap_reviews,1)
+        self.assertFalse(self.rec.epoch_holds)
+        self.rec.flush()
+        rows,old,num=self.rec.replay()
+        self.assertEqual(len(rows),2)
+        self.assertEqual(self.rec.last_replay_underlying_id_gap_reviews,1)
+
+    def test_A13_underlying_trade_overlap_still_hard_hold(self):
+        first=frame(id=5)
+        second=json.loads(frame(id=6))
+        second["data"]["f"]=11
+        second["data"]["l"]=12
+        second=json.dumps(second,separators=(",",":")).encode()
+        self.rec.append(kind="TRADE",raw=first,received_at_ms=NOW,epoch=1)
+        with self.assertRaisesRegex(DeepSegmentHold,"UNDERLYING_REORDER"):
+            self.rec.append(kind="TRADE",raw=second,received_at_ms=NOW,epoch=1)
+
     def test_A09_constructor_no_file_side_effect(self):
         child=self.root/"missing"
         new=DeepSegmentRecorder(child,symbols=SYMBOLS)
