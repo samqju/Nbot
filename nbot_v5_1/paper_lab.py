@@ -239,6 +239,10 @@ class ChampionLabPaperBook:
                 reasons+=("EXIT_SPREAD_BAD",)
         except (PaperHold,AttributeError):
             reasons+=("EXIT_QUOTE_INVALID",)
+        if (type(costs) is PaperCosts and
+                (type(costs.funding_from_ms) is not int or
+                 costs.funding_from_ms>pos["entered_ms"])):
+            reasons+=("FUNDING_HOLDING_PERIOD_NOT_COVERED",)
         if reasons:
             self._append("PATH_HOLD",now_ms,{"decision_id":pos["decision_id"],
                   "reasons":list(sorted(set(reasons)))})
