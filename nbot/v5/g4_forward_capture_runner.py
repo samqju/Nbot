@@ -301,6 +301,8 @@ def main(argv=None) -> int:
                    help="Opt in to capped source research, after capacity review")
     p.add_argument("--continuous-observe",action="store_true",
                    help="No scheduled disconnect; hard archive/rate guards still HOLD")
+    p.add_argument("--rollover-destination",
+                   help="Explicit private mounted archive; verified copies precede hot-disk release")
     a=p.parse_args(argv)
     try:
         symbols=source_cohort_file(Path(a.cohort_manifest).read_bytes())
@@ -336,7 +338,8 @@ def main(argv=None) -> int:
                 segment_root.mkdir(mode=0o700)
             vault=SegmentedForwardSource(
                 segment_root,symbols=symbols,
-                max_disk_bytes=a.max_db_mib*1024*1024)
+                max_disk_bytes=a.max_db_mib*1024*1024,
+                rollover_destination=a.rollover_destination)
             vault.audit()  # Verify every independent persisted segment.
             report=asyncio.run(run_bounded(
                 vault=vault,endpoints=endpoints,connector=_RealConnector(),

@@ -103,6 +103,7 @@ class OfflineBindingTests(unittest.TestCase):
     def test_entire_top50_100_sides_and_original_g3_sha_are_required(self):
         x=self.check()
         self.assertEqual(x.state,"SOURCE_BOUND")
+
         self.assertEqual(x.eligible_population,50)
         self.assertEqual(x.candidate_population,100)
         self.assertEqual(len(x.g3_feature_sha256),64)
@@ -110,6 +111,24 @@ class OfflineBindingTests(unittest.TestCase):
         self.assertEqual(x.order_authority,"NONE")
         self.assertEqual(x.model_training_authority,"NONE")
         self.assertIn("NOT_EXCHANGE_SIGNED",x.source_grade)
+
+    def test_batch_binding_checks_integrity_once_and_holds_one_read_snapshot(self):
+        from nbot.v5.g4_source_binding import ReadOnlyBindingSession
+        with sqlite3.connect(self.path) as db:
+            db.execute("PRAGMA journal_mode=WAL")
+        with ReadOnlyBindingSession(self.path) as session:
+            statements=[]
+            session.db.set_trace_callback(statements.append)
+            before=session.bound(EVENT,"BTCUSDT","LONG")
+            self.assertEqual(before.state,"SOURCE_BOUND")
+            # Tampering is restricted to this disposable synthetic test DB.
+            with sqlite3.connect(self.path) as other:
+                other.execute("UPDATE g1f_candidate_events SET record_sha=? WHERE symbol='BTCUSDT'",("0"*64,))
+            after=session.bound(EVENT,"BTCUSDT","LONG")
+            self.assertEqual(before,after)
+            self.assertFalse(any("quick_check" in s for s in statements))
+        with ReadOnlyBindingSession(self.path) as new_snapshot:
+            self.assertEqual(new_snapshot.bound(EVENT,"BTCUSDT","LONG").state,"HOLD")
 
     def test_short_and_other_coin_can_bind(self):
         self.assertEqual(self.check("COIN10USDT","SHORT").state,"SOURCE_BOUND")

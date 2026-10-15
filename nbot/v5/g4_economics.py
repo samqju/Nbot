@@ -71,7 +71,10 @@ def assess_quote_constrained_net(
     *, path: PathReplay, candidate: Mapping, policy: Mapping,
     entry_quote: Mapping | None, exit_quote: Mapping | None,
     economic_witness: Mapping | None, audit_at_ms: int,
+    evidence_grade: str = "ORIGINAL",
 ) -> EconomicReplay:
+    if evidence_grade not in ("ORIGINAL", "SYNTHETIC"):
+        raise ValueError("G4_ECONOMIC_EVIDENCE_GRADE")
     if not isinstance(path,PathReplay) or not isinstance(candidate,Mapping) or not isinstance(policy,Mapping):
         raise ValueError("G4_ECONOMIC_INPUT_INVALID")
     did=path.candidate_id
@@ -89,7 +92,7 @@ def assess_quote_constrained_net(
     if not isinstance(economic_witness,Mapping):
         reasons.append("ORIGINAL_ECONOMIC_WITNESS_MISSING")
         economic_witness={}
-    if economic_witness.get("source_grade")!="ORIGINAL_QUOTE_FEE_FUNDING_WITNESSES":
+    if economic_witness.get("source_grade")!=evidence_grade+"_QUOTE_FEE_FUNDING_WITNESSES":
         reasons.append("ECONOMIC_SOURCE_GRADE_INVALID")
     for field in ("quote_source_sha256","fee_source_sha256",
                   "slippage_policy_sha256","funding_source_sha256"):
@@ -113,9 +116,10 @@ def assess_quote_constrained_net(
     slip=_d(economic_witness.get("slippage_rate"))
     funding=_d(economic_witness.get("funding_quote_per_unit"))
     stop=_d(policy.get("stop_price"),positive=True)
+    reference=_d(policy.get("entry_reference_price"),positive=True)
     if (fee is None or not Decimal("0")<=fee<=Decimal("0.01")
             or slip is None or not Decimal("0")<=slip<=Decimal("0.01")
-            or funding is None or stop is None):
+            or funding is None or stop is None or reference is None):
         reasons.append("MODELED_FEE_SLIPPAGE_FUNDING_RISK_INVALID")
     # Funding_quote_per_unit is a signed, ORIGINAL-source-verified cash flow:
     # positive means a modeled charge; negative means credit. Never infer 0.
@@ -137,7 +141,9 @@ def assess_quote_constrained_net(
         else:
             entry=entry_bid*(1-slip)
             final=exit_ask*(1+slip)
-        risk=sign*(entry-stop)
+        # R is frozen at the hypothetical decision. Modeled slippage changes
+        # the numerator, never retrospectively rescales the declared risk unit.
+        risk=sign*(reference-stop)
         if risk<=0:
             return EconomicReplay("HOLD",("MODELED_RISK_GEOMETRY_INVALID",),did)
         fee_quote=fee*(entry+final)

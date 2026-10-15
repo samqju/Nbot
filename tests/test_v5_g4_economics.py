@@ -50,6 +50,16 @@ class G4EconomicTests(unittest.TestCase):
     def test_identical_inputs_are_deterministic(self):
         self.assertEqual(run(),run())
 
+    def test_net_r_uses_frozen_risk_unit_and_exact_side_correct_costs(self):
+        from decimal import Decimal,localcontext
+        result=run()
+        with localcontext() as ctx:
+            ctx.prec=34
+            entry=Decimal("100.05")*Decimal("1.0001")
+            exit_=Decimal("109.90")*Decimal("0.9999")
+            expected=(exit_-entry-Decimal("0.0005")*(entry+exit_)-Decimal("0.01"))/Decimal("5")
+        self.assertEqual(Decimal(result.modeled_net_r),expected)
+
     def test_missing_entry_quote_is_hold(self):
         self.assertIn("ENTRY_ORIGINAL_QUOTE_INVALID",
                       run(lambda pa,c,p,e,x,w:e.update(receipt_sha256=None)).reasons)

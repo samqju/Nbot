@@ -162,7 +162,12 @@ def append_terminal(db: sqlite3.Connection, label_id: str, payload: Mapping) -> 
             raise ValueError("G4_TERMINAL_PREMATURE")
         if state=="SCORED":
             if (grade!="QUOTE_CONSTRAINED_SIMULATION"
-                    or payload.get("original_sources_independently_verified") is not True
+                    or not (
+                        (payload.get("evidence_grade", "ORIGINAL") == "ORIGINAL"
+                         and payload.get("original_sources_independently_verified") is True)
+                        or (payload.get("evidence_grade") == "SYNTHETIC"
+                            and payload.get("synthetic_sources_independently_verified") is True
+                            and payload.get("original_sources_independently_verified") is False))
                     or not _sha(payload.get("path_sha256"))
                     or not _sha(payload.get("quote_cost_sha256"))
                     or not _sha(payload.get("label_sha256"))
@@ -217,26 +222,23 @@ def maturity_calendar(db: sqlite3.Connection, *, asof_ms: int) -> dict:
     """
     if type(asof_ms) is not int or asof_ms<0:
         raise ValueError("G4_MATURITY_CLOCK_INVALID")
-    rows=db.execute(
-        "SELECT i.label_id,i.event_open_ms,i.maturity_at_ms,t.terminal_status "
-        "FROM g4_label_intents i LEFT JOIN g4_label_terminals t "
-        "ON i.label_id=t.label_id").fetchall()
     status={"PENDING":0,"MATURE_BUT_UNRESOLVED":0,
             "SCORED":0,"PATH_ONLY":0,"CENSORED":0,"UNRESOLVED":0}
-    scored_events=set()
-    for label_id,event,maturity,terminal in rows:
-        if terminal is None:
-            state="PENDING" if asof_ms<maturity else "MATURE_BUT_UNRESOLVED"
-        else:
-            state=terminal
-        status[state]+=1
-        if state=="SCORED":
-            scored_events.add(event)
+    for state,count in db.execute(
+            "SELECT COALESCE(t.terminal_status, CASE WHEN i.maturity_at_ms>? "
+            "THEN 'PENDING' ELSE 'MATURE_BUT_UNRESOLVED' END), COUNT(*) "
+            "FROM g4_label_intents i LEFT JOIN g4_label_terminals t "
+            "ON i.label_id=t.label_id GROUP BY 1",(asof_ms,)):
+        status[state]=count
+    scored_events=db.execute(
+        "SELECT COUNT(DISTINCT i.event_open_ms) FROM g4_label_intents i "
+        "JOIN g4_label_terminals t ON i.label_id=t.label_id "
+        "WHERE t.terminal_status='SCORED'").fetchone()[0]
     return {
-        "total_frozen_intents":len(rows),
+        "total_frozen_intents":sum(status.values()),
         "status_counts":status,
         "qualified_economic_outcomes":status["SCORED"],
-        "distinct_scored_five_minute_events":len(scored_events),
+        "distinct_scored_five_minute_events":scored_events,
         "training_gate_unlocked":False,
         "automatic_paper_or_live_authority":"NONE",
     }

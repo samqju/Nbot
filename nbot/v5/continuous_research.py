@@ -17,13 +17,13 @@ import time
 from nbot.v5.g4_forward_entry_quote import IndependentSourceAudit
 from nbot.v5.g4_segment_replay import verified_ram_vault
 from nbot.v5.g4_segment_quotes import VerifiedSegmentQuotes
-from nbot.v5.g4_incremental_path import original_segment_price_path
+from nbot.v5.g4_incremental_path import original_segment_price_path, original_segment_price_paths
 from nbot.v5.g4_real_entry_admission import admit_research_entry
-from nbot.v5.g4_source_binding import bind_from_frozen_observation_copy
+from nbot.v5.g4_source_binding import bind_from_frozen_observation_copy, ReadOnlyBindingSession
 from nbot.v5.g4_live_outcomes import follow_original_path
 from nbot.v5.g4_research_ledger import init_offline_ledger, freeze_label_intent, maturity_calendar,append_terminal
 from nbot.v5.research_store import ResearchStore
-from nbot.v5.science import Protocol, dataset, evaluate, digest, canonical, causal_features, verify_review
+from nbot.v5.science import MAX_ROWS, Protocol, dataset, evaluate, digest, canonical, causal_features, verify_review
 
 
 def ro(path):
@@ -107,7 +107,12 @@ def bounded_original_event_batch(source, store, *, start_event_ms, max_events):
 
 
 class ContinuousResearch:
-    def __init__(self, *, source, vault, registry, root, protocol, start_event_ms):
+    def __init__(self, *, source, vault, registry, root, protocol, start_event_ms,
+                 grade="ORIGINAL", economic_provider=None, reviewer_key=None):
+        if grade not in ("ORIGINAL", "SYNTHETIC"):
+            raise ValueError("RESEARCH_GRADE_INVALID")
+        self.grade, self.economic_provider, self.reviewer_key = grade, economic_provider, reviewer_key
+        self.learning = None
         root=Path(root)
         if root.is_symlink() or not root.is_dir() or root.stat().st_mode & 0o077:
             raise ValueError("RESEARCH_ROOT_NOT_PRIVATE")
@@ -123,34 +128,22 @@ class ContinuousResearch:
         init_offline_ledger(self.labels)
         self.store.append("research-protocol","PROTOCOL",protocol.declared_ms,
                           {"protocol":asdict(protocol),"start_event_ms":start_event_ms})
+        try:
+            self.store.append("research-grade", "EVIDENCE_GRADE", protocol.declared_ms,
+                              {"grade": grade, "order_authority": "NONE"})
+        except BaseException:
+            self.close()
+            raise
 
     def tick(self, now_ms, *, max_events=1):
         """For compressed sources, use only a bounded, independently verified
         RAM-backed replay view. Missing evidence is never promoted to outcomes.
         """
-        vault_path=Path(self.vault)
-        if vault_path.is_dir() and not vault_path.is_symlink():
-            with ExitStack() as stack:
-                view=vault_path
-                try:
-                    with ro(self.source) as db:
-                        cohort=db.execute(
-                            "SELECT symbols_json FROM g1f_universe_snapshots LIMIT 1").fetchone()
-                    if cohort is None:
-                        raise ValueError("G4_G1_FROZEN_COHORT_MISSING")
-                    view,_=stack.enter_context(verified_ram_vault(
-                        vault_path,symbols=json.loads(cohort[0]),
-                        max_frames=100000,max_view_mib=128))
-                except (ValueError,OSError,sqlite3.DatabaseError):
-                    # Only archive mounting failures become source HOLD;
-                    # internal scientific processing bugs must never be swallowed.
-                    view=vault_path
-                return self._tick_from_source(
-                    now_ms,max_events=max_events,vault_path=view)
-        return self._tick_from_source(
-            now_ms,max_events=max_events,vault_path=self.vault)
+        with ReadOnlyBindingSession(self.source) as source_audit:
+            return self._tick_from_source(
+                now_ms,max_events=max_events,vault_path=self.vault,source_audit=source_audit)
 
-    def _tick_from_source(self, now_ms, *, max_events, vault_path):
+    def _tick_from_source(self, now_ms, *, max_events, vault_path, source_audit=None):
         if type(max_events) is not int or not 1<=max_events<=3:
             raise ValueError("RESEARCH_BATCH_BOUNDS")
         selected=bounded_original_event_batch(
@@ -202,7 +195,8 @@ class ContinuousResearch:
                 identity="candidate:"+c["decision_id"]
                 if self.store.db.execute("SELECT 1 FROM research_journal WHERE identity=?",(identity,)).fetchone():continue
                 admission=admit_research_entry(g1_snapshot=self.source,raw_source_vault=vault_path,
-                                               registry_file=self.registry,event_open_ms=event,symbol=c["symbol"],side=c["side"],audit_cache=audit)
+                                               registry_file=self.registry,event_open_ms=event,symbol=c["symbol"],side=c["side"],audit_cache=audit,
+                                               source_audit_cache=source_audit)
                 features=None;feature_reasons=[]
                 try:features=causal_features(c,g3)
                 except (KeyError,TypeError,ValueError) as exc:feature_reasons=[type(exc).__name__+":CAUSAL_FEATURES_UNAVAILABLE"]
@@ -211,7 +205,12 @@ class ContinuousResearch:
                     c["source_digest"]=admission.original_candidate_sha256
                     label=freeze_label_intent(self.labels,c,admission.policy_geometry)
                 else:label=None
+                with ro(self.source) as source_db:
+                    g2_row=source_db.execute(
+                        "SELECT payload_sha FROM g2_quote_witness WHERE event_open_ms=? AND symbol=?",
+                        (event,c["symbol"])).fetchone()
                 payload={"candidate":c,"admission":asdict(admission),"label_id":label,
+                         "g2_quote_sha256":g2_row[0] if g2_row else None,
                          "features":features,"feature_reasons":feature_reasons,
                          "regime":regime,
                          "g3_feature_known_ms":g3.get("valid_from_ms"),"order_authority":"NONE"}
@@ -219,6 +218,23 @@ class ContinuousResearch:
             self.store.append("event:"+str(event),"EVENT_COMPLETE",now_ms,{"event_ms":event,"candidate_population":100})
         pending=bounded_pending_path_page(self.labels,self.store)
         scan_end=(pending[-1][2],pending[-1][0]) if pending else None
+        batch_paths={}
+        if pending and Path(vault_path).is_dir():
+            requests=[]
+            for label_id,raw,_ in pending:
+                if self.store.db.execute("SELECT 1 FROM research_journal WHERE identity=?",("path:"+label_id,)).fetchone():
+                    continue
+                intent=json.loads(raw)
+                saved=self.store.db.execute("SELECT body FROM research_journal WHERE identity=?",
+                                            ("candidate:"+intent["decision_id"],)).fetchone()
+                if saved:
+                    requests.append((json.loads(saved[0])["candidate"],intent["frozen_policy"]))
+            if requests:
+                try:
+                    batch_paths=original_segment_price_paths(
+                        segment_dir=vault_path,requests=requests,audit_at_ms=now_ms)
+                except (ValueError,OSError,sqlite3.DatabaseError):
+                    batch_paths={}
         if pending and audit is None and not Path(vault_path).is_dir():
             try:
                 audit=IndependentSourceAudit(vault_path)
@@ -230,12 +246,10 @@ class ContinuousResearch:
             stored=self.store.db.execute("SELECT body FROM research_journal WHERE identity=?",("candidate:"+intent["decision_id"],)).fetchone()
             if stored is None:continue
             candidate=json.loads(stored[0])["candidate"]
-            if isinstance(audit,VerifiedSegmentQuotes):
+            if Path(vault_path).is_dir():
                 try:
-                    path=asdict(original_segment_price_path(
-                        segment_dir=vault_path,candidate=candidate,
-                        policy=intent["frozen_policy"],audit_at_ms=now_ms))
-                except (ValueError,OSError,sqlite3.DatabaseError):
+                    path=asdict(batch_paths[candidate["decision_id"]])
+                except (KeyError,ValueError,OSError,sqlite3.DatabaseError):
                     path={"state":"HOLD","reasons":[
                         "G4_INCREMENTAL_SEGMENT_OR_SOURCE_INTEGRITY_HOLD"]}
             elif audit is not None:
@@ -263,13 +277,93 @@ class ContinuousResearch:
                                "label_id":scan_end[1],
                                "max_rows":250,"scanned":len(pending),
                                "order_authority":"NONE"})
+        self.advance_economics(now_ms)
         rows=self.verified_rows()
-        d=dataset(rows,cutoff_ms=now_ms,grade="ORIGINAL")
+        d=dataset(rows,cutoff_ms=now_ms,grade=self.grade)
         report=evaluate(d,self.protocol)
         self.store.append("g5:"+report["report_sha256"],"G5_REPORT",now_ms,report)
         telemetry=self.telemetry(now_ms)
         telemetry["g5"]=report
+        if self.learning is not None:
+            telemetry["learning"]=self.learning.advance(now_ms)
         return telemetry
+
+    def advance_economics(self, now_ms, *, max_rows=250):
+        """Replayable outbox: persist verified row before downstream acknowledgement.
+
+        Provider returns (evidence package, independent review), or None while
+        pending. Missing costs never expire into an invented economic label.
+        No producer has a built-in reviewer key. Operational service wiring is
+        separately gated; this direct-call path also supports offline tests.
+        """
+        if type(max_rows) is not int or not 1 <= max_rows <= 250:
+            raise ValueError("G4_ECONOMIC_BATCH_BOUNDS")
+        if self.economic_provider is None:
+            return 0
+        from nbot.v5.g4_economic_handoff import economic_row
+        cursor=self.store.db.execute(
+            "SELECT body FROM research_journal WHERE kind='ECONOMIC_SCAN_CURSOR' ORDER BY seq DESC LIMIT 1").fetchone()
+        last_seq=json.loads(cursor[0])["last_seq"] if cursor else 0
+        sql=(
+            "SELECT p.identity,p.body,p.seq FROM research_journal p "
+            "LEFT JOIN research_journal q ON q.identity='qualified:' || substr(p.identity,6) "
+            "WHERE p.kind='ORIGINAL_PRICE_PATH' AND q.identity IS NULL AND p.seq>? "
+            "ORDER BY p.seq LIMIT ?")
+        rows=self.store.db.execute(sql, (last_seq,max_rows)).fetchall()
+        if not rows and last_seq:
+            rows=self.store.db.execute(sql,(0,max_rows)).fetchall()
+        accepted=0
+        for identity, raw, _seq in rows:
+            saved=json.loads(raw); label=saved["label_id"]
+            intent=json.loads(self.labels.execute(
+                "SELECT intent_json FROM g4_label_intents WHERE label_id=?", (label,)).fetchone()[0])
+            population=json.loads(self.store.db.execute(
+                "SELECT body FROM research_journal WHERE identity=?",
+                ("candidate:"+intent["decision_id"],)).fetchone()[0])
+            try:
+                supplied=self.economic_provider(population,intent,saved["path"],now_ms)
+            except (OSError,ValueError,KeyError,TypeError) as exc:
+                body={"label_id":label,"reason":"INDEPENDENT_EVIDENCE_UNAVAILABLE:"+str(exc),
+                      "grade":self.grade,"order_authority":"NONE"}
+                self.store.append("economic-provider-hold:"+digest(body),"ECONOMIC_HOLD",now_ms,body)
+                continue
+            if supplied is None:
+                self.store.append("economic-request:"+label,"ECONOMIC_REVIEW_REQUEST",now_ms,
+                                  {"label_id":label,"grade":self.grade,"population":population,
+                                   "intent":intent,"path":saved["path"],"order_authority":"NONE"})
+                continue
+            package, review=supplied
+            try:
+                row, calculation=economic_row(
+                    population=population,intent=intent,path=saved["path"],
+                    package=package,review=review,reviewer_key=self.reviewer_key,
+                    now_ms=now_ms,grade=self.grade)
+            except (ValueError,KeyError,TypeError) as exc:
+                body={"label_id":label,"evidence_sha256":digest(package),
+                      "reason":str(exc),"grade":self.grade,"order_authority":"NONE"}
+                self.store.append("economic-hold:"+digest(body),"ECONOMIC_HOLD",now_ms,body)
+                continue
+            # Stable settled timestamp makes terminal retry identical after a
+            # crash between the two separate durable databases.
+            terminal={"status":"SCORED","source_grade":"QUOTE_CONSTRAINED_SIMULATION",
+                      "evidence_grade":self.grade,"settled_at_ms":row["settled_ms"],
+                      "exit_at_ms":row["exit_ms"],"exit_reason":saved["path"]["exit_reason"],
+                      "early_exit_source_proof_sha256":row["lineage"]["path"],
+                      "original_sources_independently_verified":self.grade=="ORIGINAL",
+                      "synthetic_sources_independently_verified":self.grade=="SYNTHETIC",
+                      "path_sha256":row["lineage"]["path"],"quote_cost_sha256":row["lineage"]["cost"],
+                      "label_sha256":row["row_sha256"],"net_r":repr(row["net_r"]),
+                      "gross_r":repr(row["gross_r"]),"order_authority":"NONE"}
+            append_terminal(self.labels,label,terminal)
+            self.store.append("qualified:"+label,"QUALIFIED_OUTCOME",row["settled_ms"],
+                              {"row":row,"independent_review":review,
+                               "economic_evidence":package,"calculation":calculation})
+            accepted+=1
+        if rows:
+            seq=self.store.db.execute("SELECT COALESCE(MAX(seq),0)+1 FROM research_journal").fetchone()[0]
+            self.store.append("economic-cursor:"+str(seq),"ECONOMIC_SCAN_CURSOR",now_ms,
+                              {"last_seq":rows[-1][2],"scanned":len(rows)})
+        return accepted
 
     def accept_verified_export(self, export, review, reviewer_key, now_ms):
         """Only independent source reviewers may make rows eligible for G5.
@@ -277,6 +371,8 @@ class ContinuousResearch:
         They must bind original hashes to G1-G4 receipts and recompute costs.
         Producer booleans or raw source counts cannot authorize this import.
         """
+        if self.grade != "ORIGINAL":
+            raise ValueError("G4_ORIGINAL_EXPORT_IN_SYNTHETIC_LAB_FORBIDDEN")
         verify_review(review,key=reviewer_key,subject_sha256=digest(export),purpose="G4_OUTCOME_EXPORT",now_ms=now_ms)
         checked=dataset(export["rows"],cutoff_ms=now_ms,grade="ORIGINAL")
         for row in checked["rows"]:
@@ -309,7 +405,12 @@ class ContinuousResearch:
             self.store.append("qualified:"+row["label_id"],"QUALIFIED_OUTCOME",now_ms,{"row":row,"independent_review":review})
 
     def verified_rows(self):
-        return [json.loads(r[0])["row"] for r in self.store.db.execute("SELECT body FROM research_journal WHERE kind='QUALIFIED_OUTCOME'")]
+        rows=[json.loads(r[0])["row"] for r in self.store.db.execute(
+            "SELECT body FROM research_journal WHERE kind='QUALIFIED_OUTCOME' ORDER BY seq LIMIT ?",
+            (MAX_ROWS+1,))]
+        if len(rows)>MAX_ROWS:
+            raise ValueError("G5_RESEARCH_COHORT_CAPACITY_HOLD")
+        return rows
 
     def telemetry(self,now_ms):
         """Stream original candidate counts without loading the full journal.
@@ -398,6 +499,10 @@ def main():
     p.add_argument("--max-events-per-cycle",type=int,default=3)
     p.add_argument("--max-catchup-seconds",type=int,default=120)
     p.add_argument("--once",action="store_true")
+    p.add_argument("--economic-inbox")
+    p.add_argument("--economic-reviewer-key-file")
+    p.add_argument("--learning-review-inbox")
+    p.add_argument("--learning-reviewer-key-file")
     a=p.parse_args()
     if not 60<=a.interval_seconds<=600:raise ValueError("RESEARCH_INTERVAL_BOUNDS")
     os.umask(0o077)
@@ -416,8 +521,21 @@ def main():
         a.start_event_ms=template.spec["activates_at_ms"]
     if a.start_event_ms%300000:
         raise ValueError("G4_RESEARCH_START_NOT_EVENT_ALIGNED")
+    from nbot.v5.review_inbox import EconomicInbox, LearningReviewInbox, private_path
+    if bool(a.economic_inbox)!=bool(a.economic_reviewer_key_file) or bool(a.learning_review_inbox)!=bool(a.learning_reviewer_key_file):
+        raise ValueError("INDEPENDENT_INBOX_AND_KEY_REQUIRED_TOGETHER")
+    provider=EconomicInbox(a.economic_inbox) if a.economic_inbox else None
+    key=private_path(a.economic_reviewer_key_file).read_bytes() if provider else None
+    protocol=Protocol(**json.loads(Path(a.protocol).read_text()))
     engine=ContinuousResearch(source=a.source,vault=a.vault,registry=a.registry,root=a.root,
-                              protocol=Protocol(**json.loads(Path(a.protocol).read_text())),start_event_ms=a.start_event_ms)
+                              protocol=protocol,start_event_ms=a.start_event_ms,
+                              economic_provider=provider,reviewer_key=key)
+    if a.learning_review_inbox:
+        from nbot.v5.learning_lifecycle import LearningLifecycle
+        engine.learning=LearningLifecycle(
+            engine.store,protocol=protocol,grade="ORIGINAL",
+            reviewer=LearningReviewInbox(a.learning_review_inbox),
+            reviewer_key=private_path(a.learning_reviewer_key_file).read_bytes())
     try:
         while True:
             started=time.monotonic()
