@@ -128,6 +128,12 @@ def _price_path_machine(*, candidate, policy, audit_at_ms):
             continue
         if rec["at_ms"]>audit_at_ms:
             continue
+        # All receipt/segment bytes still pass read_segments' independent
+        # chain audit. Raw market chronology outside this intent's required
+        # interval does not need decoding again for every overlapping intent.
+        # Route OPEN/CLOSE/restart markers above are always consumed.
+        if rec["at_ms"]<decision-5000 or after_horizon:
+            continue
         if rec["state"]!="SOURCE_RECORDED":
             if rec["at_ms"]>=decision-5000 and not after_horizon and selected is None:
                 reasons.add("G4_INCREMENTAL_HELD_SOURCE_FRAME")
