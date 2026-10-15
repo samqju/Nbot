@@ -176,7 +176,7 @@ def select_from_public_responses(
         raise PublicMarketHold("G2_PUBLIC_SOURCE_CLOCK_HOLD")
     receipts = tuple(sorted((s.kind, s.body_sha256, s.received_at_ms)
                             for s in sources))
-    return select_universe(exchange.body, ticker.body, book.body,
+    return select_universe(exchange.body, ticker.body, None if book is None else book.body,
                            history_closed, source_health,
                            source_received_at_ms=min(received),
                            selected_at_ms=selected_at_ms,
