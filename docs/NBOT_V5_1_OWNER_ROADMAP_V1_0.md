@@ -606,7 +606,7 @@ Every line is a descriptive setup **hypothesis**, not permission to enter a trad
 
 [Permanent G7 complete evidence report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G7_OFFLINE_LEARNING_ACCEPTANCE_AND_GENUINE_EVIDENCE_HOLD_20261015.md), commit **225bc79f289ee93b2845061e7022c0d883507bff**, exact tested G7 source SHA `49cb90bc35a8e6c79dcf4cebf8db0edc1f0cfc4d`. New clean G7 code `learning_contract.py`, `learning_science.py`, `learning_snapshots.py`, 31 direct tests and a 2,000-example capacity benchmark. Both VPSs independently **285/285 PASS** Python3.12.3 in 17.310/17.401 seconds; synthetic 2,000-row /100 shared-BTC-market-block benchmark PASS p99 row creation **50.129/9.070ms**, RSS **24,308/24,196KiB**, disk **134,381B**, CPU 1.787/1.890s. Every result NO_MODEL / NO_TRADE and zero genuine after-cost training rows. The test includes positive-looking fake market wins to prove these still cannot unlock a model.
 
-- [x] G7-01 full decision-time BTC/coin/regime/detector/frozen-plan features and source grade plus honest maturation HODLs, old science audit.
+- [x] G7-01 full decision-time BTC/coin/regime/detector/frozen-plan features and source grade plus honest maturation HOLDs, old science audit.
 - [x] G7-02 pending/held/censored status denominator, fair prospective inclusion fractions, correlated BTC/coin/direction grouping and no duplicate 24 detector labels.
 - [x] G7-03 earlier/later market separation with dependence purging, reproducible uncertainty, model-vs-no-trade comparator that always abstains without qualified originals.
 - [x] G7-04 finite owner-private hashed/fsynced laboratory evidence and corruption/forged “passed” object rejection.
