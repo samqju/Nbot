@@ -35,7 +35,8 @@ def quote(at=AT,side="LONG",bid=None,ask=None):
     return PaperQuote("BTCUSDT",at,bid or "100",ask or "100.1",H)
 
 def costs(at=AT,**changes):
-    return replace(PaperCosts("0.0004","0.0005","0.01",at,H,H,H),**changes)
+    return replace(PaperCosts("0.0004","0.0005","0.01",at,H,H,H,
+                  funding_from_ms=AT-1000000),**changes)
 
 
 class G9Tests(unittest.TestCase):
@@ -267,6 +268,21 @@ class G9Tests(unittest.TestCase):
     def test_P33_quote_future_timestamp_never_accepted(self):
         r=self.b.simulate_entry(proposal(),quote(at=AT+1),costs(),now_ms=AT)
         self.assertIn("QUOTE_STALE_OR_UNVERIFIED",r["reasons"])
+
+    def test_P35_missing_funding_start_date_veto(self):
+        r=self.b.simulate_entry(proposal(),quote(),
+                costs(funding_from_ms=None),now_ms=AT)
+        self.assertIn("FEE_SLIPPAGE_FUNDING_UNVERIFIED",r["reasons"])
+
+    def test_P36_late_funding_start_holds_exit_and_occupied(self):
+        self.admit()
+        r=self.b.simulate_mark_or_exit(
+               quote(at=AT+500,bid="105.3",ask="105.4"),
+               costs(at=AT+500,funding_from_ms=AT+1),now_ms=AT+500)
+        self.assertEqual(r["status"],"SOURCE_OR_COST_HOLD")
+        self.assertTrue(self.b.state.occupied)
+        self.assertEqual(self.b.state.settled,0)
+        self.assertTrue(self.b.restart_hold)
 
     def test_P34_no_automatic_champion_promotion_from_lab_model(self):
         self.assertEqual(self.b.state.status,"LAB_LOCKED_NO_PAPER_RELEASE")
