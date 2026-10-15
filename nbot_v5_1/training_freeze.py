@@ -27,7 +27,7 @@ class FreezeHold(ValueError):pass
 
 
 def _dir(path):
-    if (type(path) is not Path or not path.is_absolute() or
+    if (not isinstance(path,Path) or not path.is_absolute() or
         path.is_symlink() or not path.is_dir()):
         raise FreezeHold("G8_PRIVATE_ARTIFACT_DIR_REQUIRED")
     s=path.stat()
