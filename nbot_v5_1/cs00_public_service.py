@@ -29,7 +29,7 @@ from .cs00_history_recovery import HistoricalAggTradeRecovery,SourceRecoveryHold
 from .cs00_compact_backup import CompactBackupHold
 
 VERSION="NBOT_V5_1_CS00_FOREGROUND_PUBLIC_ONLY_SERVICE_V1"
-SHA=re.compile(r"[a-f0-9]{64}\Z")
+SHA=re.compile(r"[a-f0-9]{40}\Z")
 ACTION=re.compile(r"CS01-OWNER-[A-Za-z0-9-]{8,80}\Z")
 
 class PublicServiceHold(ValueError):pass
