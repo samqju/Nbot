@@ -59,6 +59,7 @@ class GuardedPaper:
             raise
 
     def unlock(self, envelope, now_ms):
+        self.release = None
         # No runtime key defaults. A synthetic release cannot enter original DB.
         stage = envelope.get("body", {}).get("release_stage", "COMPARISON") if isinstance(envelope, dict) else "COMPARISON"
         allowed = {BOOKS[0]} if stage == "CHAMPION_ONLY" else set(BOOKS)
@@ -91,8 +92,8 @@ class GuardedPaper:
                     "SELECT 1 FROM research_journal WHERE identity=?",
                     ("model-revoked:"+model,)).fetchone():
                 raise ValueError("PAPER_MODEL_INVALID_OR_REVOKED")
-        self.release = envelope
         self.store.append("release:"+digest(envelope), "RELEASE", now_ms, envelope)
+        self.release = envelope
 
     def revoke_model(self, model_sha256, envelope, now_ms):
         body = verify_review(envelope, key=self.reviewer_key,
@@ -100,6 +101,7 @@ class GuardedPaper:
                              purpose="G7_MODEL_REVOCATION", now_ms=now_ms)
         if body.get("grade") != ("SYNTHETIC" if self.synthetic else "ORIGINAL"):
             raise ValueError("PAPER_REVOCATION_GRADE")
+        self.release = None
         self.store.append("model-revoked:"+model_sha256,"MODEL_REVOKED",now_ms,
                           {"model_sha256":model_sha256,"review":envelope})
         self.kill("MODEL_APPROVAL_REVOKED",now_ms)

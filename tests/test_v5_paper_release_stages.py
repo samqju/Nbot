@@ -49,6 +49,12 @@ class ReleaseStagesTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"TWO_QUALIFIED_MODELS_REQUIRED"):
             self.paper.unlock(self.release(release_stage="COMPARISON"),BASE)
 
+    def test_invalid_replacement_release_relocks_existing_engine(self):
+        self.paper.unlock(self.release(),BASE)
+        with self.assertRaises(ValueError):
+            self.paper.unlock(self.release(owner_paper_authorized=False),BASE)
+        self.assertEqual(self.paper.reconcile()["paper_state"],"LOCKED")
+
     def test_revocation_is_durable_and_restart_reconciles_open_position(self):
         self.paper.unlock(self.release(),BASE)
         self.paper.submit(proposal(),quote(),economics(),BASE)
