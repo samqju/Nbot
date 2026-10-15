@@ -54,6 +54,8 @@ class DeepSegmentRecorder:
         self.root=root;self.symbols=symbols;self.quota_bytes=quota_bytes
         self.queue=[];self.queued_bytes=0
         self.cursors={}
+        self.underlying_id_gap_reviews=0
+        self.last_replay_underlying_id_gap_reviews=0
         self.epoch_holds=set()
         self.last_receipt=ZERO;self.next_id=1
 
@@ -107,6 +109,7 @@ class DeepSegmentRecorder:
         old=ZERO
         output=[]
         replay_cursors={}
+        underlying_reviews=0
         for idx in ids:
             stem=f"segment-{idx:08d}"
             packed=self._read(self.root/(stem+".gz"),MAX_BYTES)
@@ -149,15 +152,25 @@ class DeepSegmentRecorder:
                 if ev.kind=="TRADE":
                     key=(ev.kind,ev.symbol,ev.epoch)
                     prior=replay_cursors.get(key,(None,None))
+                    # Binance aggTrade excludes some exchange-originated
+                    # transactions. The *aggregate* ID is the transport
+                    # continuity cursor; a gap in underlying f/l is a
+                    # reviewable source diagnostic, not a lost WSS frame.
+                    if prior[1] is not None:
+                        if ev.first_trade_id<=prior[1]:
+                            raise DeepSegmentHold("G4_SEGMENT_UNDERLYING_REORDER")
+                        if ev.first_trade_id>prior[1]+1:
+                            underlying_reviews+=1
                     check=verify_frame(kind=item["kind"],raw=raw,
                          received_at_ms=item["received_at_ms"],
                          source_epoch=item["epoch"],selected_symbols=self.symbols,
-                         prior_agg_id=prior[0],prior_last_trade_id=prior[1])
+                         prior_agg_id=prior[0])
                     if check.state=="HOLD":
                         raise DeepSegmentHold("G4_SEGMENT_TRADE_CONTINUITY")
                     replay_cursors[key]=(ev.agg_id,ev.last_trade_id)
                 output.append((ev,raw))
             old=_sha(meta)
+        self.last_replay_underlying_id_gap_reviews=underlying_reviews
         return tuple(output),old,len(ids)
 
     def attach(self):
@@ -182,9 +195,17 @@ class DeepSegmentRecorder:
             self.epoch_holds.add(initial.symbol)
             raise DeepSegmentHold(initial.reason or "G4_SEGMENT_SOURCE_HOLD")
         oldid,lastid=self.cursors.get((kind,initial.symbol,epoch), (None,None))
+        # Retain strict aggregate-ID continuity and reject reversed trade
+        # order. Underlying exchange transaction IDs may skip legitimately.
+        if kind=="TRADE" and lastid is not None:
+            if initial.first_trade_id<=lastid:
+                self.epoch_holds.add(initial.symbol)
+                raise DeepSegmentHold("G4_SEGMENT_UNDERLYING_REORDER")
+            if initial.first_trade_id>lastid+1:
+                self.underlying_id_gap_reviews+=1
         ev=verify_frame(kind=kind,raw=raw,received_at_ms=received_at_ms,
               source_epoch=epoch,selected_symbols=self.symbols,
-              prior_agg_id=oldid,prior_last_trade_id=lastid)
+              prior_agg_id=oldid)
         if ev.state=="HOLD":
             self.epoch_holds.add(ev.symbol)
             raise DeepSegmentHold(ev.reason or "G4_SEGMENT_SOURCE_HOLD")
