@@ -14,6 +14,7 @@ import json
 import os
 import re
 import stat
+from contextlib import nullcontext
 
 from .observation_store import CompactObservationStore
 from .exploration_store import ExplorationStore
@@ -77,7 +78,7 @@ class SourceOnlyStateWriter:
 
     def record_boundary(self,book,snapshot,batch):
         if (snapshot.event_open_ms!=batch.event_open_ms or
-                snapshot.snapshot_id!=batch.observation_snapshot_id):
+                snapshot.universe_sha!=batch.universe_sha or\n                snapshot.decision_at_ms!=batch.decision_at_ms):
             raise StateCheckpointHold("CS00_STATE_G2_G3_CAUSAL_MISMATCH")
         n=f"checkpoint_{snapshot.event_open_ms:016d}.json"
         with state_gate(self.root):
@@ -138,7 +139,7 @@ class SourceOnlyStateWriter:
             for item in doc["files"]:
                 if (type(item) is not dict or
                         type(item.get("path")) is not str or
-                        not item["path"].startswith(("observations/","exploration/"))
+                        not re.fullmatch(r"(observations/(manifest|event)_[a-f0-9]{64}\\.json|exploration/g3_[0-9]{16}_[a-f0-9]{64}\\.json\\.gz)",item["path"])
                         or type(item.get("sha256")) is not str or
                         not re.fullmatch("[a-f0-9]{64}",item["sha256"])):
                     raise StateCheckpointHold("CS00_STATE_PATH_OR_DIGEST")
