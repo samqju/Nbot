@@ -145,6 +145,9 @@ class DeepSegmentTests(unittest.TestCase):
         name="segment-00000001.gz"
         (self.root/name).write_bytes(b"a"*1024*1024)
         (self.root/name).chmod(0o600)
+        self.rec.queue=[{"kind":"TRADE","raw_b64":"","raw_sha256":"0"*64,
+                         "received_at_ms":NOW,"epoch":1}]
+        self.rec.queued_bytes=1
         with self.assertRaises(DeepSegmentHold):self.rec.flush()
 
     def test_A07_owner_private_and_unknown_filename_fails(self):
