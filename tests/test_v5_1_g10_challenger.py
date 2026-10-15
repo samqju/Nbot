@@ -13,7 +13,8 @@ from nbot_v5_1.research_journal import ResearchJournal,JournalHold
 from nbot_v5_1.challenger_lab import (
     LabChallengerCohort,CompetitionProtocol,SharedLabEvent,
     DualBookCompetition,CHAMPION,CHALLENGER,
-    authorize_challenger_paper,approve_model_promotion)
+    authorize_challenger_paper,approve_model_promotion,
+    classify_lab_recommendation)
 from test_v5_1_g9_paper import policy as base_policy,quote,costs,AT,H,KEY,MODEL
 
 # Deliberately distinct frozen LAB model and HMAC keys, never production keys.
@@ -341,6 +342,42 @@ class G10Tests(unittest.TestCase):
         one=self.engine.books[CHAMPION]
         one.state=replace(one.state,cash="999999999")
         with self.assertRaises(PaperHold):self.engine.review()
+
+    def test_C41_genuine_promotion_diagnostic_only_even_positive_lab(self):
+        diag=classify_lab_recommendation(
+            champion_return="0.01",challenger_return="0.10",
+            champion_drawdown=".01",challenger_drawdown=".01",
+            max_drawdown=".05",improvement_buffer=".02")
+        self.assertEqual(diag,"LAB_WOULD_RECOMMEND_PROMOTE_NOT_ACTIONABLE")
+        with self.assertRaises(PaperHold):approve_model_promotion()
+
+    def test_C42_bad_challenger_downside_yields_reject_lab_only(self):
+        diag=classify_lab_recommendation(
+            champion_return=".01",challenger_return=".5",
+            champion_drawdown=".01",challenger_drawdown=".07",
+            max_drawdown=".05",improvement_buffer=".02")
+        self.assertEqual(diag,"LAB_REJECT_RISK")
+
+    def test_C43_identical_results_retain_incumbent_lab_only(self):
+        diag=classify_lab_recommendation(
+            champion_return=".03",challenger_return=".03",
+            champion_drawdown=".01",challenger_drawdown=".01",
+            max_drawdown=".05",improvement_buffer=".02")
+        self.assertEqual(diag,"LAB_RETAIN_INCUMBENT")
+
+    def test_C44_tiny_improvement_remains_inconclusive_hold(self):
+        diag=classify_lab_recommendation(
+            champion_return=".03",challenger_return=".031",
+            champion_drawdown=".01",challenger_drawdown=".01",
+            max_drawdown=".05",improvement_buffer=".02")
+        self.assertEqual(diag,"LAB_HOLD_INCONCLUSIVE")
+
+    def test_C45_fake_negative_drawdown_cannot_pass_review(self):
+        with self.assertRaises(PaperHold):
+            classify_lab_recommendation(champion_return=".03",
+                challenger_return=".10",champion_drawdown="-.01",
+                challenger_drawdown="0",max_drawdown=".05",
+                improvement_buffer=".02")
 
     def test_C36_wrong_context_window_or_cohort_time_holds(self):
         with self.assertRaises(PaperHold):
