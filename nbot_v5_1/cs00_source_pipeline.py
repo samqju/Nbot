@@ -1,0 +1,125 @@
+"""CS-00 OFFLINE SOURCE-ONLY G2/G3/G4 integration. No network/start/orders."""
+from __future__ import annotations
+from dataclasses import dataclass
+from pathlib import Path
+import threading
+from .core import FiveMinuteEvent
+from .observation import ObservationBook,ClosedBar
+from .exploration import explore_event
+from .deep_selection import choose_deep
+from .deep_segments import DeepSegmentRecorder,DeepSegmentHold
+from .cs00_source_runtime import SourceOnlyIntake,CollectorHold
+from .cs00_supervisor import SourceOnlySupervisor,Heartbeat
+from .cs00_commissioning import CommissioningHold
+
+VERSION="NBOT_V5_1_CS00_SOURCE_PIPELINE_V1"
+
+@dataclass(frozen=True)
+class SourceBoundary:
+    event_open_ms:int
+    broad:int
+    directions:int
+    deep:int
+    deep_sha256:str
+    metadata_healthy:int
+    metadata_holds:int
+    raw_gaps:int
+    source_class:str="LOCAL_UNQUALIFIED_NO_ORIGINAL_RELEASE"
+    action:str="NO_TRADE"
+    financial_authority:str="NONE"
+
+class SourceOnlyPipeline:
+    """Injected finalized bars and raw public-shaped frames; never opens sockets."""
+    def __init__(self,observation:ObservationBook,*,recorder_root:Path|None=None,
+                 quota_bytes:int=64*1024*1024):
+        if type(observation) is not ObservationBook or len(observation.manifest.symbols)!=100:
+            raise CommissioningHold("CS00_PIPELINE_BROAD100_REQUIRED")
+        self.observation=observation;self.recorder_root=recorder_root
+        self.quota=quota_bytes;self.last_event_ms=None
+        self.deep=None;self.recorder=None;self.intake=None
+        self.supervisor=SourceOnlySupervisor()
+        self.lock=threading.RLock();self.boundaries=0
+        self.source_frames=0;self.source_gap_count=0
+        self.active=False
+
+    def on_closed_bar(self,bar:ClosedBar,*,decision_at_ms:int):
+        with self.lock:
+            if self.last_event_ms is not None and bar.open_ms<=self.last_event_ms:
+                raise CommissioningHold("CS00_PIPELINE_BAR_RETROACTIVE")
+            return self.observation.ingest(bar,decision_at_ms=decision_at_ms)
+
+    def on_boundary(self,event:FiveMinuteEvent)->SourceBoundary:
+        with self.lock:
+            if (type(event) is not FiveMinuteEvent or
+                    self.last_event_ms is not None and
+                    event.event_open_ms<=self.last_event_ms):
+                raise CommissioningHold("CS00_PIPELINE_BOUNDARY_REPLAY")
+            snap=self.observation.snapshot(event)
+            e=explore_event(self.observation,event,capacity_slots=0)
+            c=choose_deep(self.observation.manifest,e,count=20)
+            if (len(snap.rows)!=100 or len(e.rows)!=200 or
+                    len(c.symbols)!=20 or "BTCUSDT" not in c.symbols or
+                    not c.no_trade or e.evaluated_pairs):
+                raise CommissioningHold("CS00_PIPELINE_100_200_20_INVALID")
+            if self.deep is None:
+                self.deep=c
+                self.intake=SourceOnlyIntake(tuple(c.symbols))
+                if self.recorder_root is not None:
+                    self.recorder=DeepSegmentRecorder(self.recorder_root,
+                       symbols=tuple(c.symbols),quota_bytes=self.quota)
+            elif c.symbols!=self.deep.symbols:
+                self.source_gap_count+=1
+            self.last_event_ms=event.event_open_ms;self.boundaries+=1
+            return SourceBoundary(event.event_open_ms,100,200,20,
+                                  self.deep.manifest_sha,snap.healthy_count,
+                                  snap.hold_count,self.source_gap_count)
+
+    def ingest_offline_frame(self,*,kind:str,raw:bytes,received_ms:int,epoch:int):
+        with self.lock:
+            if self.intake is None or self.recorder is None:
+                raise CommissioningHold("CS00_PIPELINE_SOURCE_NOT_FROZEN")
+            try:
+                status=self.intake.observe(kind=kind,raw=raw,
+                                          epoch=epoch,received_ms=received_ms)
+                if status.state!="LOCAL_FRAME_NOT_INDEPENDENTLY_QUALIFIED":
+                    self.source_gap_count+=1
+                    return status
+                self.recorder.append(kind=kind,raw=raw,
+                                     received_at_ms=received_ms,epoch=epoch)
+                self.source_frames+=1
+                return status
+            except (CollectorHold,DeepSegmentHold) as exc:
+                self.source_gap_count+=1
+                if kind in ("TRADE","QUOTE","MARK") and type(received_ms) is int and received_ms>0:
+                    self.intake.mark_disconnect(kind=kind,at_ms=received_ms)
+                raise CommissioningHold("CS00_PIPELINE_SOURCE_QUARANTINE") from exc
+
+    def seal(self):
+        with self.lock:
+            if self.recorder is None:
+                raise CommissioningHold("CS00_PIPELINE_NO_RECORDER")
+            return self.recorder.flush()
+
+    def heartbeat(self,*,at_ms:int,rss_kib:int,free_disk_bytes:int,
+                  queue_depth:int,boundary_lag_ms:int)->dict:
+        with self.lock:
+            return self.supervisor.assess(Heartbeat(
+                at_ms,self.source_frames,self.source_gap_count,
+                queue_depth,rss_kib,free_disk_bytes,boundary_lag_ms))
+
+    def emergency_hold(self,*,at_ms:int,reason:str):
+        with self.lock:
+            if self.intake:
+                for k in ("TRADE","QUOTE","MARK"):
+                    self.intake.mark_disconnect(kind=k,at_ms=at_ms)
+            self.source_gap_count+=1
+            return self.supervisor.emergency_stop(at_ms=at_ms,reason=reason)
+
+    def status(self):
+        return {"schema":VERSION,"boundaries":self.boundaries,
+                "source_frames":self.source_frames,
+                "source_gap_count":self.source_gap_count,
+                "source_grade":"LOCAL_UNQUALIFIED_NO_ORIGINAL_RELEASE",
+                "active":False,"original_virtual_allowed":False,
+                "paper_enabled":False,"testnet_enabled":False,
+                "real_enabled":False,"financial_authority":"NONE"}
