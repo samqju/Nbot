@@ -884,3 +884,24 @@ The backup script is NOT a general filesystem archive and intentionally omits un
 **Owner backup preserved on Observation-VPS:** `/home/ubuntu/NBOT_Backups/NBOT_V5.1_records_20261015T152427Z_12d35662.tar.gz`, SHA256 `af306b0decb2dd8753d8049b943f214085d33950ae65118fbf02b580042a5250`, matching `.sha256` locally verified. [ ] Owner has transferred it via WinSCP to desktop. Do NOT delete original/canary evidence or silently count unqualified records as Learning rows.
 
 **Historical-source audit note:** this later canary evidence supersedes earlier statements that CS-01 never ran or that no real records exist. The full CS-00 offline engineering and safety tests remain recorded; the **full operational signoff remains [ ]**. The owner's request to start public Observation was honored through *bounded canaries only*; it did not authorize PAPER/REAL or a permanent autonomous collector. Do not restart automatically. Read the linked current handoff rather than attempting to repeat CS-00 from scratch.
+
+
+## G4 QUOTE BACKLOG FORENSICS — MEASURED 15 OCT 2026
+
+**LATEST CORRECTED DIAGNOSIS (supersedes the earlier BTC-only description):** The BTCUSDT quote freshness HOLD is part of a **multi-symbol high-frequency QUOTE lag ramp**, not a demonstrated BTC market malfunction. An entirely **read-only** analysis of genuine saved CS01 `segment-*.gz` frames from five previous canaries compared Binance raw `E` event time with V5.1 `received_at_ms` (timestamp stamped AFTER WebSocket `read_message` return).
+
+| Archived genuine canary | Accepted QUOTE frames | ALL-symbol start → end median event-to-receipt lag |
+|---|---:|---:|
+| diagnostic-2 | 3,060 | 429ms → 653ms |
+| diagnostic-3 | 7,096 | 562ms → **4,474ms** |
+| diagnostic-4 | 17,459 | 444ms → **4,402ms** |
+| diagnostic-5 | 10,009 | 448ms → **4,466ms** |
+| diagnostic-6 | 10,242 | 940ms → **4,545ms** |
+
+Last accepted-run window held 10,242 QUOTE frames across 7.254s, **about 1,412 QUOTE frames/sec**, with BTC end-run median 4,633ms; OTHER symbols shared similar delays. In diagnostic-6, BTC TRADE median ~641ms and MARK median ~180ms. This is **strong evidence of a quote-stream throughput/backpressure bottleneck**, not definite proof the Binance upstream or one particular Python line is responsible. Frames rejected at age>5000ms are absent from accepted G4 segment archives; source anomaly ledger records their exclusion, not their full raw exchange `E`. Do NOT count saved max<5000ms as source health proof.
+
+**V4 has a useful tested *design reference***: old `main` `nbot/observation/wss_transport.py` has an async fast receiver and bounded queue (4096); old `live_two_tier.py` supports separate feed shards/per-symbol market-data gap invalidation. Do not copy V4 wholesale or its weaker receipt-time-only quote freshness semantics. V5.1 currently processes all 20-symbol QUOTE payloads synchronously on ONE socket worker, unlike separate TRADE/MARK workers. The engineering priority is instrument E→wire-read→queue→process timing and test isolated BTC vs sharded 5/20 symbol loads, then implement bounded backpressure-aware receiving **without relaxing V5.1's strict 5-second source-age requirement**, hard aggTrade continuity or scientific HOLD.
+
+**Evidence register:** [Full per-run source-forensic + V4 architecture comparison](NBOT_V5_1_G4_REAL_QUOTE_LATENCY_FORENSICS_V4_CODE_COMPARISON_20261015.md); [Read-only inspection script](../scripts/cs01_readonly_latency_forensics.py). Neither action started NBOT or altered its executable public-only service. **[x] observed source-age ramp quantified, [x] V4 code reviewed, [ ] source-vs-socket-vs-consumer delay decomposition, [ ] V4-inspired tested clean transport change, [ ] sustained healthy 20/20 G4 source canary, [ ] original first touch/economics, [ ] owner WinSCP transfer.** Current G1–G3 initial live PASS limited, G4 sustained HOLD, NO PAPER/REAL, no permanent process start.
+
+**Next assistant:** Read this newest section along with [current definitive next-chat handoff](NBOT_V5_1_NEXT_CHAT_START_HERE_LIVE_G1_G3_PASS_G4_BTC_QUOTE_HOLD_20261015.md). Older comments merely calling it a 'BTC issue' are historical partial descriptions; most QUOTE symbols see the common age ramp.
