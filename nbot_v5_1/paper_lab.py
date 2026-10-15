@@ -98,7 +98,8 @@ class ChampionLabPaperBook:
                         exposure>cash*dec(self.policy.max_exposure_multiple) or
                         fee>cash):
                         raise PaperHold("G9_LEDGER_RISK_VIOLATION")
-                    cash-=fee;fees+=fee
+                    fees+=fee
+                    cash=start+realized-fee
                     pos=dict(body)
                 elif action=="TRAIL_CHECKPOINT":
                     if pos is None or held or body.get("decision_id")!=pos["decision_id"]:
@@ -119,6 +120,7 @@ class ChampionLabPaperBook:
                         # No invented exit/outcome; the entry fee remains
                         # a debit in the audited LAB cash reconciliation.
                         realized-=dec(pos["entry_fee"])
+                        cash=start+realized
                         censored+=1
                     elif body.get("result")=="LAB_SIMULATED_SETTLEMENT":
                         if held:raise PaperHold("G9_HELD_POSITION_FALSE_SETTLEMENT")
@@ -131,8 +133,8 @@ class ChampionLabPaperBook:
                         if (gross!=dec(body["gross"]) or net!=dec(body["net"])
                                 or body.get("reason") not in ("STOP","TARGET","HORIZON")):
                             raise PaperHold("G9_LEDGER_GROSS_NET_RECONCILE")
-                        cash+=gross-closefee-fund
                         fees+=closefee;funding+=fund;realized+=net
+                        cash=start+realized
                         settled+=1
                         peak=max(peak,cash)
                     else:raise PaperHold("G9_TERMINAL_TYPE")
