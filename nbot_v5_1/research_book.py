@@ -21,6 +21,7 @@ from .research_intent import FrozenIntent,ResearchHold,number,from_record,MAX_AC
 from .research_journal import ResearchJournal,JournalHold,ZERO
 
 G5_SCHEMA="NBOT_V5_1_G5_VIRTUAL_BOOK_V1"
+_EXCLUSION_REASONS=frozenset({"SOURCE_UNRECOVERABLE", "ORIGINAL_QUOTE_UNRECOVERABLE", "MARK_OR_COST_UNRECOVERABLE"})
 TERMINAL_REASONS=frozenset({"STOP","TARGET","TRAILING_STOP","HORIZON"})
 ACTIVE_STATES=frozenset({"ACTIVE_SYNTHETIC_PATH","SOURCE_HOLD","RESTART_HOLD"})
 
@@ -87,6 +88,9 @@ class VirtualResearchBook:
         self.active:dict[str,_Path]={}
         self.by_pair:dict[tuple[str,str],str]={}
         self.closed:dict[str,VirtualTerminal]={}
+        # Unrecoverable paths remain auditable but cannot score or train.
+        # seen_ids prevents retroactive reuse.
+        self.excluded:dict[str,dict]={}
         self.seen_ids:set[str]=set()
         self.last_review_ms:int|None=None
         self.source_heads:dict[str,tuple[int,int,int]]={}
@@ -175,7 +179,17 @@ class VirtualResearchBook:
                     raise JournalHold("G5_REPLAY_BAD_SOURCE_HOLD")
                 self.source_held.add(name)
             elif op=="CENSOR":
-                raise JournalHold("G5_UNSUPPORTED_RELEASE_OF_SOURCE_HOLD")
+                id=data.get("intent_id")
+                if (id not in self.active
+                        or self.active[id].state not in ("SOURCE_HOLD","RESTART_HOLD")
+                        or set(data)!= {"intent_id","reason","recovery_proof_sha256"}
+                        or data["reason"] not in _EXCLUSION_REASONS
+                        or type(data["recovery_proof_sha256"]) is not str
+                        or len(data["recovery_proof_sha256"])!=64
+                        or any(x not in "0123456789abcdef" for x in data["recovery_proof_sha256"])):
+                    raise JournalHold("G5_CENSOR_REQUIRES_HELD_SOURCE_AND_RECOVERY_PROOF")
+                self.excluded[id] = dict(data)
+                self._drop(id)
             else:
                 raise JournalHold("G5_REPLAY_UNKNOWN_OP")
         # No restart can assert that unsynced RAM tail/trailing path was intact.
@@ -422,11 +436,36 @@ class VirtualResearchBook:
                 raise ResearchHold("G5_SOURCE_HOLD_ARGS")
             self._hold_symbol(symbol,at_ms,reason)
 
+    def exclude_unrecoverable(self, intent_id:str, *, at_ms:int,
+                              reason:str, recovery_proof_sha256:str)->dict:
+        """CENSOR a held irrecoverable LAB Research experiment; never score it.
+
+        Caller must independently preserve reviewable evidence of recovery
+        failure. This path has zero ORIGINAL/PAPER/REAL release authority.
+        """
+        with self.lock:
+            if (type(intent_id) is not str or intent_id not in self.active
+                    or self.active[intent_id].state not in ("SOURCE_HOLD","RESTART_HOLD")
+                    or type(at_ms) is not int or at_ms<=0
+                    or reason not in _EXCLUSION_REASONS
+                    or type(recovery_proof_sha256) is not str
+                    or len(recovery_proof_sha256)!=64
+                    or any(x not in "0123456789abcdef" for x in recovery_proof_sha256)):
+                raise ResearchHold("G5_CENSOR_NOT_HELD_OR_PROOF_MISSING")
+            payload={"intent_id":intent_id,"reason":reason,
+                     "recovery_proof_sha256":recovery_proof_sha256}
+            self._log("CENSOR",at_ms,payload)
+            self.excluded[intent_id]=dict(payload)
+            self._drop(intent_id)
+            return dict(payload, learning_eligible=False,
+                        profitability_eligible=False, financial_authority="NONE")
+
     def status(self)->dict:
         return {"schema":G5_SCHEMA,"active":self.occupied,
                 "vacancies":self.vacancies,
                 "held":sum(x.state!="ACTIVE_SYNTHETIC_PATH" for x in self.active.values()),
                 "cost_pending":len(self.closed),
+                "unrecoverable_excluded":len(self.excluded),
                 "qualified_after_cost":0,
                 "financial_authority":"NONE",
                 "source_grade":"SYNTHETIC_OFFLINE_TEST_ONLY",
