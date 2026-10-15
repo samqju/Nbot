@@ -1,5 +1,8 @@
 # NBOT V5.1 — G4 Deep-20 Source Engineering: Verified Progress & Explicit HOLD
 
+> **LATEST G4 STATUS (15 Oct 2026):** Later owner-approved public-only CS-01 canaries received 20 symbols × (TRADE, QUOTE, MARK), **all 60 cursors observed**, up to **12,572 frames** in the last run. **[ ] G4 sustained original evidence HOLD:** repeated **BTCUSDT bookTicker `EVENT_FUTURE_OR_STALE`** forced safe stop (exit 2). Earlier reported **47 underlying `f/l` trade-ID anomalies require semantic review**; they are not automatically missing aggregate `a` IDs. See [LATEST G1–G4 STATUS + NEXT-CHAT HANDOFF](NBOT_V5_1_NEXT_CHAT_START_HERE_LIVE_G1_G3_PASS_G4_BTC_QUOTE_HOLD_20261015.md) and [live test report](NBOT_V5_1_FIRST_LIVE_CS01_PUBLIC_ONLY_CANARY_ACTUAL_RESULTS_AND_BTC_QUOTE_HOLD_20261015.md). Historic test descriptions below remain period-accurate but are NOT the latest G4 source gate.
+
+
 **Date:** 15 October 2026 IST  
 **Branch:** `nbot-v5.1`, repository `samqju/Nbot`  
 **Exact last fully tested source commit:** `07186992fdfc8b2fc1b66e39b6d78513ee23891e`  
@@ -64,3 +67,17 @@ The **very next uncompleted item** is **G4-06-A: prove clean current original-pu
 **Release safety:** All existing V5.1 and legacy services remain STOPPED/UNINSTALLED, no virtual/paper/real trading order permitted, no money at risk. Owner's old-installation no-backup waiver does NOT waive data safety for newly generated G4 source evidence. No permanent source files were collected during this one-shot test; the downloaded test sample was held in temporary directory and deleted.
 
 **Final status:** G0 [x] · G1 [x] · G2 [x] · G3 [x] · **G4 [ ] HOLD** (many tested tasks [x], blockers above [ ]) · G5–G12 [ ]. Parent G4 must NOT be checked without its real original source and restore proofs.
+
+## Latest real G4 acceptance delta — 15 Oct 2026
+
+- [x] Public-only Binance TLS WSS TRADE/QUOTE/MARK smoke succeeded.
+- [x] Combined 20-deep symbol group and all 60 stream/symbol cursors received genuine feed messages; source receipts persisted in the V5.1 records root and diagnostic roots.
+- [x] Underlying `f/l` ID discontinuity is now counted as review signal, **not automatically lost aggTrade `a` frame**. True aggTrade ID gaps/reorders still fail closed; former 47 alarms need independently adjudicated original evidence.
+- [x] Isolated stale book/mark events are excluded from economic/source qualification and separately journaled; repeated four-in-a-row still causes the safe source HOLD.
+- [ ] **G4-06-A/G4 parent continuous original-source source freshness:** latest 12,572-frame canary **failed** repeated `QUOTE:BTCUSDT:EVENT_FUTURE_OR_STALE`; source grade remains HOLD.
+- [ ] Identify root cause with exchange E event time vs VPS receipt/NTP/combined 20-symbol queue delay; test isolated BTC and full loads before correcting code. Removing per-frame backup flock did NOT solve it.
+- [ ] Qualify full 20/20 continuous source, genuine 5-minute boundary endurance, gap recovery, original off-host evidence, spread/mark/funding witnesses and independently tested scientific economics.
+- [ ] Full latest SHA 569-test suite on Observation-VPS; 569/569 latest SHA PASS Execution-VPS, Observation full 569/569 PASS at previous SHA plus targeted latest tests.
+- [ ] Permanent Observation startup remains NOT APPROVED/NOT INSTALLED. No PAPER or REAL activity.
+
+**Next action:** instrument & fix verified BTC bookTicker ingress staleness, then rerun both VPS regression plus a separately owner-approved bounded public-only canary. Consult [new chat start-here file](NBOT_V5_1_NEXT_CHAT_START_HERE_LIVE_G1_G3_PASS_G4_BTC_QUOTE_HOLD_20261015.md).
