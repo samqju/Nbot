@@ -140,10 +140,14 @@ class SourceOnlyPipeline:
                        reason=status.reason or status.state,
                        source_sha256=status.raw_sha256)
                     return status
-                with (state_gate(self.state_writer.root)
-                      if self.state_writer is not None else nullcontext()):
-                    self.recorder.append(kind=kind,raw=raw,
-                                         received_at_ms=received_ms,epoch=epoch)
+                # Only the in-memory bounded queue changes here; no
+                # filesystem state is published. OS-locking on each high
+                # frequency quote caused receiver backpressure in the live
+                # 20-market canary. Sealed evidence is still protected by
+                # state_gate() and fsynced in seal(); backups contain only
+                # complete, sealed source segments, never torn frames.
+                self.recorder.append(kind=kind,raw=raw,
+                                     received_at_ms=received_ms,epoch=epoch)
                 self.source_frames+=1
                 return status
             except (CollectorHold,DeepSegmentHold) as exc:
