@@ -145,3 +145,15 @@ These hashes prove an identity for the inspected bytes **at a moment**. They are
 - [ ] **G0-04:** First narrow new application-code scope review; separate milestone.
 
 **Final G0-03 disposition:** **COMPLETE**, closed by live inventory plus the owner's explicit decision that **no legacy backup shall be made**. **Backup outcome: NOT DONE / WAIVED**, not verified. **VPS cleanup outcome: NOT DONE**. Remaining G0-04 and new-code gates continue separately.
+
+
+## 9. Verified owner-executed cleanup after waiver (15 Oct 2026)
+
+**New later evidence, superseding the forward-looking cleanup status in §§1–8:** The owner manually executed guarded old-NBOT-only cleanup commands in both PuTTY sessions, supplied successful PuTTY outputs, and the assistant independently reconnected to **both** VPSs using read-only SSH checks on 15 Oct 2026 at **05:30:38Z (Execution)** and **05:30:43Z (Observation)**. Complete audit and path-by-path after-state: [G0 Cleanup Completion](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G0_CLEANUP_COMPLETION_20261015.md), GitHub commit **81dadf68a9949b847fd8f38336c5d532eab861cd**.
+
+- [x] **G0-03-CLEANUP-EXEC (later result):** Both `/home/ubuntu/Nbot` installations absent, both empty old `nbot-final-reset-20261014` markers absent; retired Observation-VPS `nbot-v5-g1g2g3-observation.service` file absent; no name-matched NBOT unit/process; remote verifications exit 0. Scope of PASS is the specifically checked old application paths/services, **not exhaustive all-system erasure**.
+- [x] Owner-directed NO-BACKUP waiver retained correctly: **NO backup/restore was created or verified**, and legacy VPS-only research/paper state may be permanently lost. The old GitHub historical source branches are not deleted.
+- [x] Existing VPS SSH still works; no V5.1 software installed, no new unit started and no trading authorization changed.
+- [x] **G0-03 completed and cleanup formally verified**; earlier HOLD statements represent historical chronology only. G0-04 first-code scope is separately accepted; new G1 implementation remains open.
+
+**New final status:** G0-03 and its owner-requested cleanup are **PASS**. Remaining work follows the clean V5.1 roadmap; the legacy backup waiver applies only to **OLD** VPS installations.
