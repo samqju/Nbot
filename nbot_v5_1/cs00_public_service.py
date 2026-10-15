@@ -142,7 +142,7 @@ class FuturePublicObservationService:
                     break
             ws.close()
         except (PublicSocketHold,OSError,ValueError) as e:
-            self.errs.append("PUBLIC_SOURCE_HOLD:"+str(e)[:80])
+            self.errs.append("PUBLIC_SOURCE_HOLD:"+str(e)[:200])
             self.pipeline.emergency_hold(
                 at_ms=max(1,int(time.time()*1000)),reason="PUBLIC_SOCKET_UNKNOWN")
             self.request_stop("SOURCE_DISCONNECT_NO_AUTO_RESTART")
