@@ -284,6 +284,9 @@ class OfflineObservationRunner:
             result = self.recorder.append(
                 kind=kind, raw=raw,
                 received_at_ms=received_at_ms, epoch=epoch)
+        except DeepSegmentHold:
+            self.alarms.append("ORIGINAL_SHAPED_SYNTHETIC_SOURCE_GAP")
+            return False
         finally:
             self.pending_frame_count -= 1
         if result.state == "HOLD":
@@ -361,7 +364,12 @@ def write_immutable_offline_report(directory: Path, name: str, payload: dict):
     fd=os.open(path, os.O_WRONLY|os.O_CREAT|os.O_EXCL|
                getattr(os,"O_NOFOLLOW",0),0o600)
     try:
-        os.write(fd,raw)
+        remainder=memoryview(raw)
+        while remainder:
+            written=os.write(fd,remainder)
+            if written<=0:
+                raise CommissioningHold("CS00_REPORT_SHORT_WRITE")
+            remainder=remainder[written:]
         os.fsync(fd)
     finally:
         os.close(fd)
