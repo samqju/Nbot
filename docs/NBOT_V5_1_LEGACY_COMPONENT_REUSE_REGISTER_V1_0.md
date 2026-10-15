@@ -128,7 +128,8 @@ All paths and symbol names below are historical. Destination modules are **propo
 
 - [ ] Pin *each chosen port* to exact blob SHA and complete direct/transitive dependency graph, prove no hidden network/private/order/old-DB effects.
 - [ ] Independently evaluate test sufficiency per port and choose smallest precise V5.1 destination/contract; add missing negative cases.
-- [ ] Inspect VPSs/backup/source-retention inventory under newly granted owner access before any cleanup; preserve old historical evidence, no destructive actions while uncertain.
+- [x] Inspect both VPSs, old services, evidence sources, disk/RAM, backup paths and limits without cleanup — completed **15 Oct 2026**, G0-03 report commit **aea9a21776d4fcf4521ac4d55ca9aa083f5fdf28**; SQLite read-only quick_check ok, old observation service disabled; **backup/restore readiness remains HOLD**.
+- [ ] Produce and verify coherent, independent off-host backups for both VPSs and an isolated restore rehearsal before any cleanup (G0-03-R1/R2); currently HOLD.
 - [ ] Obtain review of precise G1-01 module layout and scope before that first application-code change; do not treat broad VPS/GitHub maintenance permission as real-order permission.
 - [ ] Run V5.1 code tests; no V5.1 application tests can run before V5.1 application code exists.
 - [ ] Independently validate latest Binance USD-M source recovery/API assumptions and measured VPS capacity before deployment.
@@ -180,8 +181,23 @@ All paths and symbol names below are historical. Destination modules are **propo
 - [x] **G0-02-B — Trace complete static call/import graph for selected pure helpers and document excluded SQLite/old-50 paths; verified 15 Oct 2026 by complete source-file review.**
 - [x] **G0-02-C — Inspect parent/package version identity and old tests; document missing cases, source-grade limits and hidden-effect boundaries; verified 15 Oct 2026 by GitHub source/fixture review.**
 - [x] **G0-02-D — Specify exact independent V5.1 G1-01 files/contracts and 12 concrete offline acceptance checks; verified 15 Oct 2026 by architecture/document review.**
-- [ ] **G0-03** VPS preservation/backup/restart/capacity inventory. Owner's PuTTY/VPS authorization allows a future *carefully scoped* inspection, but does not itself show verified backup or safe-to-delete data.
+- [x] **G0-03** VPS inventory and backup assessment completed via authorized read-only SSH on 15 Oct 2026; proof commit **aea9a21776d4fcf4521ac4d55ca9aa083f5fdf28**. **No restorable NBOT backup verified; cleanup remains HOLD.**
+- [ ] **G0-03-R1/R2** Create and independently restore secure copies (incl. SQLite WAL state), verify off-host recovery, then review any exact cleanup scope. Not accomplished by an inventory.
 - [ ] First **G1-01 application coding, test execution and separate roadmap G1 gate acceptance**. G0-02 marks the *audit* complete, not a successful code migration or runtime safety test.
 - [ ] Remaining R01–R27 component-specific audits and any broader technical qualification needed before their individual transfers.
 
-**Status: G0-02 audit PASS on source-document evidence only; G0 as a whole remains [ ] while G0-03 preservation and first-port code-scope review are open.** Vision V1.9 and old GitHub branches remain unchanged. No deployment, paper unlock or real-money trading authorization has been exercised. Owner approval of G0-02 is not itself a scientific or financial release.
+**Status: G0-02 audit PASS; G0-03 inventory/assessment PASS, but G0 as a whole remains [ ] while independently restorable backups/cleanup safeguards and G0-04 first-port scope review are open.** Vision V1.9 and old GitHub branches remain unchanged. No deployment, paper unlock or real-money trading authorization has been exercised. Owner approval of G0-02 is not itself a scientific or financial release.
+
+
+## 9. G0-03 — Actual two-VPS preservation and backup inventory (15 Oct 2026)
+
+**Full dated live evidence:** [G0-03 VPS Preservation and Backup Assessment](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G0_03_VPS_PRESERVATION_BACKUP_ASSESSMENT_20261015.md), report commit **aea9a21776d4fcf4521ac4d55ca9aa083f5fdf28**.
+
+- [x] **G0-03 A–E — Assessment PASS:** Authenticated as ubuntu via both authorized saved PuTTY profiles, reviewed disk/RAM/swap, historical Git heads, disabled/inactive observation service, data and receipt counts, SQLite trio and its read-only quick_check, local backup folders, selected SHA-256 manifests, and documented a recovery plan. No server files/services/orders changed.
+- [x] **Important preservation finding:** Both VPSs still have legacy HEAD 47dd5fa34fae2f222ad23ce521c0c5034c1cadc8; Execution-VPS has 253 paper observation receipts; Observation-VPS has a source/evidence SQLite database (~3.9 MB) **plus WAL (~4.1 MB)** and two historical V3.9 model artifacts. None should be cleaned, even if its service is inactive.
+- [x] **Risk flagged:** Observation-VPS two inspected NBOT backup directories were **empty**. /var/backups contained OS package backups. Cloud/off-host backups NOT verified, so no recoverable copy/restore test was proven.
+- [ ] **G0-03-R1 backup readiness:** Prove coherent SQLite backup including committed WAL, protected old data/paper receipts, encrypted off-host copy and isolated restore. HOLD.
+- [ ] **G0-03-R2 safe cleanup:** Scope exact changes only after R1 and reviewed rollback. HOLD.
+- [ ] **G0-04 first application code scope review:** Open; G1-01 not yet imported or tested.
+
+**Result:** G0-03 assessment [x] but **safe-to-clean [ ]**, overall G0 [ ], G1 [ ], paper and real trading LOCKED. No legacy branch or VPS app state was altered for G0-03.
