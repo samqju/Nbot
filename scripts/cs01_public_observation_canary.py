@@ -26,7 +26,6 @@ from nbot_v5_1.cs00_public_service import FutureCs01Permit,FuturePublicObservati
 
 URLS={
     "TRADE":"wss://fstream.binance.com/market/stream?streams=btcusdt@aggTrade",
-    "QUOTE":"wss://fstream.binance.com/public/stream?streams=btcusdt@bookTicker",
     "MARK":"wss://fstream.binance.com/market/stream?streams=btcusdt@markPrice@1s",
 }
 ACTION="CS01-OWNER-PUBLIC-ONLY-CANARY-20261015"
@@ -94,6 +93,9 @@ def main():
         "financial_authority":"NONE",
         "pipeline":pipe.status() if pipe else None,
         "deep_symbols":list(pipe.deep.symbols) if pipe and pipe.deep else None,
+        "quote_stream_subscribed":False,
+        "market_feeds":["TRADE","MARK"],
+        "simulated_fill_assumption":"INSTANT_MARKET_MODELED_COST_NO_ORDERS",
         "source_cursor_pairs":len(pipe.intake.cursor) if pipe and pipe.intake else None,
         "source_receipt_files": len(list((state/"evidence").glob("segment-*.json"))),
     }
