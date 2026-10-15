@@ -75,6 +75,7 @@ def replay_official_daily_zip(*,zip_path:Path,checksum_bytes:bytes,
             or received_at_ms<recovery.gap_end_ms or
             received_at_ms<recovery.now_ms):
         raise DailyArchiveHold("CS00_ARCHIVE_RECOVERY_SCOPE_INVALID")
+    recovery.advance_clock(received_at_ms)
     # No bare authoritative source grade: bytes and .CHECKSUM consistency
     # are necessary but not independently cryptographic exchange signatures.
     pages=0;scanned=0
