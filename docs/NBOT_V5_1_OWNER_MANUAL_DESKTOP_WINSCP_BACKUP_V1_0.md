@@ -1,5 +1,8 @@
 # NBOT V5.1 — Owner Manual Desktop Backup Using WinSCP
 
+> **LATEST LIVE UPDATE (15 Oct 2026):** This guide's older "NO_V5_1_RECORDS_YET" wording describes **before** the public-only CS-01 canary. Genuine (though **NOT G4 scientifically qualified**) Observation/G3/source records NOW exist on Observation VPS. `~/nbot-backup` already created one **8-file, 103,117-byte** locally hash-verified archive and sidecar in `/home/ubuntu/NBOT_Backups/`. **[ ] Owner WinSCP desktop transfer remains outstanding.** See [current startup handoff](NBOT_V5_1_NEXT_CHAT_START_HERE_LIVE_G1_G3_PASS_G4_BTC_QUOTE_HOLD_20261015.md).
+
+
 **Owner decision (15 October 2026):** Keep a second copy of NBOT's valuable records on the owner's existing **1 TB Windows desktop hard disk**, transferred manually through WinSCP. No cloud purchase or automatic service.
 
 ## Every backup: one PuTTY command and one WinSCP transfer
@@ -55,3 +58,12 @@ Versioned code: [manual backup tool](../scripts/nbot_v5_1_owner_backup.py), [14 
 **Genuine unfinished steps REMAIN UNCHECKED, not skipped:** [ ] C4/C5 independent actual owner desktop WinSCP copy/restore and verified genuine retention/capacity; [ ] B4 genuine volatile original public WSS 20/20 TRADE/QUOTE/MARK and G4 old 47 ID semantics (requires future separately authorized source-only CS-01); [ ] actual G4 source evidence quota/endurance, exact quote/mark/funding price/cost, post-restart historical replay with real exchange; [ ] D3/D4 actual deployed source watchdog, responsible operator/alerts/rollback signoff (not installed); [ ] E2 full prestart operator commissioning acceptance; [ ] full CS-00 parent GO; [ ] CS-01 separate owner source start authority; [ ] G4–G10 original scientific/PAPER parents; [ ] G12 real money. **Do not equate offline engineering complete with startup approved.**
 
 **Next owner-facing command** (once authentic data is produced after future CS-01 approval): `~/nbot-backup` on PuTTY Observation VPS, then copy both dated archive and SHA256 from `/home/ubuntu/NBOT_Backups/` into the owner's 1 TB Windows desktop via WinSCP. User currently does not need to run this while genuine records are absent. No cloud spend or background backup daemon.
+
+## Current first-real-records manual backup (15 Oct 2026)
+
+**[x] Owner's backup tool works on real public-source-derived NBOT records and locally verifies the archive:**
+`/home/ubuntu/NBOT_Backups/NBOT_V5.1_records_20261015T152427Z_12d35662.tar.gz` (103,117 bytes, 8 files).
+
+**Expected SHA256:** `af306b0decb2dd8753d8049b943f214085d33950ae65118fbf02b580042a5250`. The corresponding `.tar.gz.sha256` companion exists. On-VPS check `sha256sum -c` passed.
+
+**[ ] Owner's next action:** download BOTH matching files with WinSCP to a chosen directory on the 1 TB Windows desktop and verify the local archive hash. This is not claimed to have happened. Do NOT delete the only valid VPS copy or the original unqualified source receipts. Future new backups still use `~/nbot-backup`. Scientific G4 and permanent Observation remain HOLD; see [latest handoff](NBOT_V5_1_NEXT_CHAT_START_HERE_LIVE_G1_G3_PASS_G4_BTC_QUOTE_HOLD_20261015.md).
