@@ -2,7 +2,7 @@
 
 **Roadmap version:** 1.1  
 **Date:** 15 October 2026  
-**Status:** DESIGN / OFFLINE PREPARATION ONLY — NOT IMPLEMENTED, NOT RELEASED  
+**Status (current, 15 October 2026):** **G0 [x], G1 [x], G2 [x] engineering-complete; G3–G12 [ ]**. V5.1 code exists on `nbot-v5.1` and was independently tested on both VPSs. **No permanent collector service, paper/testnet/real trading release or independently qualified original trade/quote economics.** Earlier sections retain historical status at their dates.  
 **Repository / future development branch:** samqju/Nbot / nbot-v5.1  
 **Product authority:** NBOT Complete Product Vision V1.9, copied **verbatim** to this branch  
 **Owner-friendly companion:** NBOT V5.1 Plain-Language Development Roadmap V1.0
