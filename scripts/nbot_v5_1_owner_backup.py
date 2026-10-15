@@ -14,6 +14,7 @@ atomic live-service checkpoint without the future writer lock integration.
 from __future__ import annotations
 import hashlib
 import gzip
+import zlib
 import fcntl
 import time
 from contextlib import contextmanager
@@ -349,8 +350,9 @@ def _verify_original_segment_pairs(root:Path):
                                         ensure_ascii=True,allow_nan=False).encode("ascii")
                     or len(packed)>1024*1024):
                 raise ValueError("segment hash chain")
-            body=gzip.decompress(packed)
-            if (len(body)>1024*1024 or
+            obj=zlib.decompressobj(16+zlib.MAX_WBITS)
+            body=obj.decompress(packed,1024*1024+1)
+            if (len(body)>1024*1024 or not obj.eof or obj.unused_data or
                     data.get("body_sha256")!=hashlib.sha256(body).hexdigest()):
                 raise ValueError("segment body")
         except (ValueError,TypeError,OSError,EOFError) as exc:
