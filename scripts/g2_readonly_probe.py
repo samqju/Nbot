@@ -17,7 +17,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from nbot_v5_1.core import FiveMinuteEvent, INTERVAL_MS
-from nbot_v5_1.public_market import PublicUsdMClient, PublicMarketHold
+from nbot_v5_1.public_market import PublicUsdMClient, PublicMarketHold, select_from_public_responses
 from nbot_v5_1.universe import select_universe, UniverseHold
 from nbot_v5_1.observation import ObservationBook, rest_closed_bar
 from nbot_v5_1.source_archive import PublicSourceArchive, PublicArchiveHold
@@ -99,8 +99,8 @@ def probe(*, enabled: bool, max_history_requests: int = 140,
     freshness_ms = now_ms - source_clock
     if freshness_ms > 60_000:
         raise UniverseHold(f"G2_PROBE_UNIVERSE_SOURCE_STALE_AFTER_HISTORY:{freshness_ms}")
-    selected = select_universe(ex.body,tick.body,book.body,history_count,history_health,
-                    source_received_at_ms=source_clock,selected_at_ms=now_ms)
+    selected = select_from_public_responses(ex,tick,book,history_count,history_health,
+                    selected_at_ms=now_ms)
     book_state = ObservationBook(selected)
     for symbol in selected.symbols:
         if symbol not in verified_bars or not book_state.bootstrap(
