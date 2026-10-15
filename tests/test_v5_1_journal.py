@@ -200,14 +200,6 @@ class JournalContractTests(unittest.TestCase):
         self.assertEqual(self.log.append(event).event, event)
         self.assertEqual(self.log.replay()[0].event, event)
 
-    def test_J17_two_distinct_appenders_share_ordered_chain(self):
-        another = AppendOnlyJournal(self.path)
-        a = self.log.append(self.ev(1))
-        b = another.append(self.ev(2))
-        c = self.log.append(self.ev(3))
-        self.assertEqual([r.sequence for r in self.log.replay()], [1, 2, 3])
-        self.assertEqual(another.replay(), (a, b, c))
-
     def test_J18_parallel_process_append_uses_one_integrity_chain(self):
         import subprocess
         import sys
@@ -232,6 +224,14 @@ for n in range(base, base + 6):
         self.assertEqual(len(records), 18)
         self.assertEqual([r.sequence for r in records], list(range(1, 19)))
         self.assertEqual(len({r.event.event_id for r in records}), 18)
+
+    def test_J17_two_distinct_appenders_share_ordered_chain(self):
+        another = AppendOnlyJournal(self.path)
+        a = self.log.append(self.ev(1))
+        b = another.append(self.ev(2))
+        c = self.log.append(self.ev(3))
+        self.assertEqual([r.sequence for r in self.log.replay()], [1, 2, 3])
+        self.assertEqual(another.replay(), (a, b, c))
 
     def test_J15_reopen_existing_journal_after_restart(self):
         first = self.log.append(self.ev())
