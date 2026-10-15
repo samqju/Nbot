@@ -618,9 +618,9 @@ After G1 closure, the owner directed completion of every G2 subphase and exhaust
 
 [Complete G4 tested-code/source progress and blockers](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G4_ENGINEERING_PROGRESS_AND_HOLD_20261015.md), commit **db4d3e77cbe854e21cba1d7d04d4b8d0b564f87b**. Source tested: **`07186992fdfc8b2fc1b66e39b6d78513ee23891e`**. Both target VPSs independently passed **186/186** Python 3.12.3 unit/integration/failure tests and 20 market ×3 raw stream ×60 synthetic cycle p99/RSS/CPU/disk benchmark. A real one-shot public Binance USD-M capture obtained **3,077 raw public WSS frames** with 20/20 quote+mark, **19/20 trade**, **47 trade-ID continuity warnings**. Public historic BTC settled-funding fetch also confirmed raw SHA and two historical settlements, but these are NOT proof of a simulated position-specific charge. No runtime/market service or order access enabled.
 
-- [x] G4-01 fair 100→20 frozen BTS-including subset, auditable selection/exclusion/propensities.
+- [x] G4-01 fair 100→20 frozen BTC-including subset, auditable selection/exclusion/propensities.
 - [x] G4-02 public-only routed USD-M original-trade/quote/mark format plus per-coin source-epoch ID HOLD, code and tests.
-- [x] G4-03 byte-exact compressed finite source segment/replay, hash/fync, corruption/partial/ quota/ restart HOLD, code and tests.
+- [x] G4-03 byte-exact compressed finite source segment/replay, hash/fsync, corruption/partial/ quota/ restart HOLD, code and tests.
 - [x] G4-04 public historic settled funding grade separate from indicative mark and from account/virtual costs, tests + one real BTC REST witness.
 - [x] G4-05 full 186-case two-host regression, 3,600-message synthetic deep-20 workload and actual 3,077-message one-shot public audit with limitations preserved.
 - [ ] **G4-06-A FIRST OPEN:** real 20/20 fully warm original-source trade/quote/mark epochs, no unresolved trade-ID holes; reselect a fresh source-qualified cohort at a future as-of event if necessary, never rewrite prior membership in hindsight.
