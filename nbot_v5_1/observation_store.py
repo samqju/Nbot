@@ -178,7 +178,8 @@ class CompactObservationStore:
                              "turnover": e.quote_turnover, "change": e.change_percent}
                             for e in manifest.entries],
                 "rejected": [list(r) for r in manifest.rejected],
-                "qualified_count": manifest.qualified_count}
+                "qualified_count": manifest.qualified_count,
+                "public_receipts": [list(r) for r in manifest.public_receipts]}
         return self._store(f"manifest_{manifest.selection_digest}.json", body)
 
     def put_snapshot(self, snapshot: ObservationSnapshot) -> str:
