@@ -124,6 +124,41 @@ class G3StoreTests(unittest.TestCase):
         self.assertEqual(len(list(self.root.iterdir())),1)
         self.assertTrue((self.root/name).exists())
 
+    def test_P11_fake_qualified_cost_or_source_is_rejected_even_with_rehash(self):
+        import hashlib
+        for field,value in (("cost_state","AFTER_COST_QUALIFIED"),
+                            ("source_grade","ORIGINAL_VERIFIED")):
+            with self.subTest(field=field):
+                for file in self.root.iterdir():
+                    file.unlink()
+                name=self.store.append(self.batch())
+                file=self.root/name
+                receipt=json.loads(gzip.decompress(file.read_bytes()))
+                receipt["batch"]["rows"][0][field]=value
+                body=json.dumps(receipt["batch"],sort_keys=True,
+                                separators=(",",":"),ensure_ascii=True).encode()
+                receipt["sha256"]=hashlib.sha256(body).hexdigest()
+                file.write_bytes(gzip.compress(json.dumps(receipt,sort_keys=True,
+                      separators=(",",":"),ensure_ascii=True).encode(),mtime=0))
+                with self.assertRaisesRegex(ExplorationStoreHold,"EVIDENCE_GRADE_INVALID"):
+                    self.store.replay()
+
+    def test_P12_record_cannot_claim_evaluated_when_pattern_skipped(self):
+        import hashlib
+        name=self.store.append(self.batch())
+        file=self.root/name
+        receipt=json.loads(gzip.decompress(file.read_bytes()))
+        row=receipt["batch"]["rows"][0]
+        self.assertEqual(row["status"],"OBSERVED")
+        row["patterns"][PATTERN_IDS[0]]="NOT_EVALUATED_CAPACITY"
+        body=json.dumps(receipt["batch"],sort_keys=True,
+                        separators=(",",":"),ensure_ascii=True).encode()
+        receipt["sha256"]=hashlib.sha256(body).hexdigest()
+        file.write_bytes(gzip.compress(json.dumps(receipt,sort_keys=True,
+                  separators=(",",":"),ensure_ascii=True).encode(),mtime=0))
+        with self.assertRaisesRegex(ExplorationStoreHold,"EVALUATION_MASK_CONTRADICTION"):
+            self.store.replay()
+
     def test_P10_constructor_does_not_create_any_file(self):
         path=self.root/"empty"
         s=ExplorationStore(path)
