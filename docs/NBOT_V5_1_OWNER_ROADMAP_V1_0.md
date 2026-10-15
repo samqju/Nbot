@@ -1,8 +1,8 @@
 # NBOT V5.1 — Your Plain-Language Development Roadmap
 
-**Roadmap version:** 1.6 (G7 Learning code and 285 tests PASS both VPS; real 2,000-evidence checkpoint HOLD)  
+**Roadmap version:** 1.7 (G8 offline frozen-model Training 319 tests PASS on both VPSs; real Champion qualification HOLD)  
 **Date:** 15 October 2026  
-**Status (current, 15 October 2026):** G0–G3 [x] complete, **G4–G6 parent [ ] HOLD** pending original market sources, real first-touch, economic evidence and off-host recovery; **G7 Learning offline software completed and tested: 285/285 tests on BOTH VPSs, 2,000 SYNTHETIC laboratory examples over only 100 shared market blocks, zero genuinely qualified results, NO_MODEL/NO_TRADE**. G7 parent [ ] because the real 2,000 independent matured after-cost learning-evidence checkpoint remains **0/2000**. Your decision to keep NBOT stopped while continuing G8+ offline is preserved. No collector, virtual/live research, paper or real trading started.  
+**Status (current, 15 October 2026):** G0–G3 [x] fully accepted. **G4–G7 parent [ ] genuine 20-market source/first-touch/after-cost/2,000 original matured Learning HOLD. G8 [ ] actual initial Champion training HOLD, BUT G8 offline software is BUILT/TESTED: 319/319 total G1–G8 tests on each real Python3.12.3 VPS**, 2,000 synthetic LAB examples /100 shared BTC market groups and two-VPS model replay benchmark PASS. Laboratory +36.40R is artificial test only, NO genuine qualified results or money authority. NBOT services remain STOPPED at your request; G9–G12 [ ], paper/real trading still locked.  
 **Product blueprint:** NBOT Complete Product Vision **V1.9** (separately copied **unchanged** into this branch)  
 **Companion:** NBOT V5.1 Engineering Roadmap V1.0  
 **Repository/branch:** samqju/Nbot / nbot-v5.1
@@ -322,10 +322,24 @@ The guardian must be able to independently reject a proposal and enforce the one
   - [ ] **G7-06-A — First 2,000 genuinely independent matured virtual-trade outcomes:** Still **0/2000** today. We need real qualified G4 market records, G5 forward paths, and G6 after-fee/slippage/funding evidence first. Lab examples will NEVER count.
   - [ ] **G7-06-B — Independently validate genuine market/regime advantage and uncertainty:** After enough original evidence, compare against doing nothing on untouched later BTC/market periods, check diversity, losses and repeated strategy trials. Having 2,000 outcomes alone NEVER guarantees a qualified strategy.
   - [ ] **G7-06-C — Entire parent G7 cannot be marked passed yet:** Offline Learning engine is done/tested; genuine scientifically proven Learning release requires both open checks, plus G4–G6 accepted sources. No qualified Champion/paper/real authorization.
-- [ ] **Milestone 9 — First qualified trained strategy works** (engineering G8)
-  - [ ] Train only on earlier qualified outcomes with a frozen data cutoff.
-  - [ ] Test the model on later untouched periods and against doing no trade.
-  - [ ] Record a repeatable model version or reject it if evidence is weak.
+- [ ] **Milestone 9 — First qualified trained strategy (G8): Offline model system tested, original-source Champion acceptance HOLD**. [G8 detailed 319-case both-VPS test and genuine science HOLD report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G8_OFFLINE_TRAINING_ACCEPTANCE_AND_ORIGINAL_SCIENCE_HOLD_20261015.md), commit **6d467c2f9b17c1eaea94347ebd3fe060005dfbba**.
+  - [x] **G8-01-A — Carefully reviewed old Training versions:** Audited old R21 science, R24 V4 ranking, R25 V4 model factory; rebuilt only necessary ideas, no old model/database/unsafe rank-is-profit code copied.
+  - [x] **G8-01-B — Freeze every training rule BEFORE looking at results:** New prospective cutoff, earlier and later evaluation periods, embargo, one simple model family, minimum sample groups, finite CPU/RAM/disk and explicit nonzero economic cost buffer with SHA/version.
+  - [x] **G8-01-C — Source truth cannot be bypassed:** G8 accepts ONLY synthetic laboratory data in current tests. A fabricated original verified status, changed data hash, or artificially high profit can never unlock a true Champion or paper/real model.
+  - [x] **G8-02-A — Small reproducible model with bounded cost:** One easy-to-understand BTC market regime + overall market regime + LONG/SHORT conditional model, maximum 10,000 evidence rows and 32 condition variants, conservative return confidence. Unseen conditions say NO_TRADE.
+  - [x] **G8-02-B — Never train on future outcomes:** Only matured earlier BTC-event groups train; skip overlapping market-event periods and verify untouched later market blocks independently, no random split of correlated data.
+  - [x] **G8-02-C — No forced trading from relative rankings:** Hypothetical decisions require positive lower-bound return above a realistic economic buffer; but actual authority always NO_TRADE. Missing data, unknown regimes, insufficient independent cases abstain.
+  - [x] **G8-03-A — Fair later laboratory test:** Compare selected one-at-a-time synthetic alternatives against always NO TRADE, include drawdown/worst case/abstentions/participation and horizon occupancy, not merely winning percentages.
+  - [x] **G8-03-B — Repeatable freeze/version record:** Every model includes original dataset SHA, earlier train-row digest, cutoff, protocol hash, condition coefficients and immutable model hash, qualification=0. Same data generates EXACT same model hash on both VPSs.
+  - [x] **G8-04-A — Private safe model card:** Small, versioned, non-executable JSON, hash/owner-private folder, 1MiB single and 4MiB total cap, file+directory sync, no silent overwrite, failures on tamper/paper authorization.
+  - [x] **G8-04-B — Independent restore verification:** Rebuilds frozen training policy and model after reading card; checks model/data/holdout fingerprints again. Even a changed model object cannot bypass safety.
+  - [x] **G8-05-A — 319/319 TESTS PASS BOTH VPSs:** 34 G8 new tests and 285 previous regressions, Observation 20.229 seconds, Execution 19.110 seconds, Python3.12.3 and source SHA `12ef09ebdf0d1bdfa6903f4dc8f1759110a41e68`. Initial 3 path-type test errors corrected before full pass.
+  - [x] **G8-05-B — Tested 2,000 laboratory examples and froze/reopened model on BOTH VPSs:** 100 shared BTC blocks, 49 earlier trained, 49 later tested, 2 purged; artificial portfolio +36.40R vs NO_TRADE=0R is **NOT** genuine money/profit. Exact same frozen model SHA on both; 2,128-byte card verified; p99 48.991/29.691ms, RAM ~25MiB; budget PASS. Financial/order authority NONE.
+  - [x] **G8-05-C — NBOT services remain stopped:** No exchange account, real position, API keys, observation market collector or paper mode started; tests in isolated temporary GitHub clones.
+  - [ ] **G8-05-D — Temporary folder housekeeping:** Execution-VPS test checkout safely removed; Observation-VPS isolated test folder `/tmp/nbot-g8-c0qNaV` still requires confirmed removal using approved access (tool cleanup command blocked). Do not delete other directories or claim cleanup complete.
+  - [ ] **G8-06-A — Truly matured 2,000 independent original Research outcomes:** Current actual qualified Learning count remains **0/2000**. Only genuine G4 market feed → G5 Research original paths → G6 verified costs → G7 independent science can qualify this.
+  - [ ] **G8-06-B — Genuine after-cost Champion proved on later market periods:** Need strong independently source-verified positive edge relative to NO TRADE with uncertainty, regimes and drawdown; synthetic scores do not qualify.
+  - [ ] **G8-06-C — Parent first real Champion model approval:** HOLD pending 06-A/B, G7 source checks and later independent owner paper release (G9). No approved Champion today.
 - [ ] **Milestone 10 — First approved Champion PAPER testing works** (engineering G9)
   - [ ] Resolve the old V5 conflict requiring two models before a first Champion paper trial.
   - [ ] Build an independent paper guardian that rejects unsafe or unauthorised proposals.
@@ -616,3 +630,18 @@ Every line is a descriptive setup **hypothesis**, not permission to enter a trad
 - [ ] **G7 parent Milestone 8:** HOLD, cannot check genuine Learning even though all coding/testing stages [x].
 
 **Current:** G0 [x] G1 [x] G2 [x] G3 [x] FULL. G4 [ ] original-source HOLD, G5 [ ] original-path HOLD, G6 [ ] source after-cost/off-host HOLD, **G7 [ ] genuine source-qualified scientific Learning HOLD (offline fully coded and tested)**. G8/G9/G10/G11/G12 [ ] next offline development. NBOT permanently stopped, no virtual source engine, PAPER or REAL mode activated.
+
+
+### Milestone 9 / G8 offline model Training development report (15 Oct 2026)
+
+[Permanent G8 code, 319 regressions, 2,000 LAB freeze/test and pending real Champion acceptance](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G8_OFFLINE_TRAINING_ACCEPTANCE_AND_ORIGINAL_SCIENCE_HOLD_20261015.md), commit **6d467c2f9b17c1eaea94347ebd3fe060005dfbba**; tested SHA `12ef09ebdf0d1bdfa6903f4dc8f1759110a41e68`. No future-data use, 34 new G8 M01–M34 tests plus 285 earlier = **319/319 on both target VPSs**, 2,000 synthetic/100 BTC dependent market-block workload and independent SHA model-card replay PASS; 49 train/49 untouched LAB holdout/2 purged, 0 real qualified outcomes, +36.40R simulated laboratory only, no money or scientific model claim.
+
+- [x] G8-01 safely audit old Training/R24 ranking and freeze predeclared training, independent source/maturity/cost gates.
+- [x] G8-02 bounded BTC/market/side condition model and leak-free purged earlier/later data, positive lower bound required for *LAB hypothetical* only.
+- [x] G8-03 test against doing nothing in separate later LAB periods, fair one-hypothesis occupancy and drawdown/abstention.
+- [x] G8-04 owner-private finite fsynced, non-executable JSON frozen LAB-only model card with SHA independent replay and tamper/false-authority rejects.
+- [x] G8-05 both-VPS 319 tests+benchmark positive/negative PASS; no services or actual orders.
+- [ ] G8-05-D small cleanup: isolated Observation-VPS temp source folder `/tmp/nbot-g8-c0qNaV` requires authorized removal after tool safety block; Execution test tree removed.
+- [ ] G8-06 actual 2,000 genuinely matured independent after-cost virtual outcomes **0/2000**; original source regime/scientific Champion edge and owner approval unavailable, so do NOT check entire parent G8.
+
+**Current owner status:** G0–G3 [x], G4–G7 original source/science [ ] HOLD, **G8 original Champion [ ] HOLD despite completed offline 319-case engineering**, G9–G12 [ ]. NBOT stopped; next optional offline G9 paper guardian DESIGN may proceed without enabling paper mode or claiming a qualified Champion. All legacy V5 two-model-first-paper conflict must be reviewed in G9.
