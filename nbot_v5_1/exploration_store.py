@@ -82,6 +82,22 @@ def _parse(body: bytes) -> dict:
             raise ExplorationStoreHold("G3_PATTERN_STATE_INVALID")
         if r["status"] != "OBSERVED" and any(v != r["status"] for v in patterns.values()):
             raise ExplorationStoreHold("G3_MASK_CONTRADICTION")
+        if r["status"] == "OBSERVED" and any(v not in ("MATCH","NO_MATCH","UNAVAILABLE")
+                                               for v in patterns.values()):
+            raise ExplorationStoreHold("G3_EVALUATION_MASK_CONTRADICTION")
+        if (type(r.get("selection_groups")) is not list
+                or any(type(tag) is not str for tag in r["selection_groups"])
+                or r.get("source_grade") != "CLOSED_PUBLIC_CANDLE_METADATA_NOT_ORIGINAL"
+                or r.get("cost_state") != "QUOTE_SLIPPAGE_FEE_FUNDING_UNVERIFIED"
+                or r.get("liquidity_state") not in
+                   ("UNIVERSE_LIQUIDITY_METADATA_ONLY","UNIVERSE_STALE")):
+            raise ExplorationStoreHold("G3_EVIDENCE_GRADE_INVALID")
+        p = r.get("inclusion_probability")
+        if type(p) not in (int,float) or not 0<=p<=1:
+            raise ExplorationStoreHold("G3_PROPENSITY_INVALID")
+        if r["status"] == "NOT_EVALUATED_SOURCE" and (
+                type(r.get("source_reason")) is not str or not r["source_reason"]):
+            raise ExplorationStoreHold("G3_SOURCE_MASK_REASON_MISSING")
     coins = {sym for sym,side in names}
     if len(names) != 2*len(coins) or any((s,side) not in names for s in coins for side in SIDES):
         raise ExplorationStoreHold("G3_PAIR_DENOMINATOR_INVALID")
