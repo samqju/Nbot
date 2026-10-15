@@ -46,7 +46,7 @@ class DeepSegmentRecorder:
     cursors and byte SHA, but cannot sign exchange-origin traffic.
     """
     def __init__(self,root:Path,*,symbols:tuple[str,...],quota_bytes:int=64*1024*1024):
-        if (type(root) is not Path or not root.is_absolute() or root.is_symlink()
+        if (not isinstance(root, Path) or not root.is_absolute() or root.is_symlink()
                 or type(symbols) is not tuple or not 1<=len(symbols)<=20
                 or len(symbols)!=len(set(symbols)) or "BTCUSDT" not in symbols
                 or type(quota_bytes) is not int or not 1024*1024<=quota_bytes<=1024*1024*1024):
