@@ -1,2 +1,0 @@
-# NBOT V3 pinned runtime dependencies.
-websockets==17.2

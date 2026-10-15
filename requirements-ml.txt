@@ -1,3 +1,0 @@
-# Observation/Learning-only nonlinear learner dependencies.
-# Execution does not install or import these packages.
-lightgbm==4.7.0
