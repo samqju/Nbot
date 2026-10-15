@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import tempfile
 from pathlib import Path
 import sys
 import time
@@ -19,9 +20,11 @@ from nbot_v5_1.core import FiveMinuteEvent, INTERVAL_MS
 from nbot_v5_1.public_market import PublicUsdMClient, PublicMarketHold
 from nbot_v5_1.universe import select_universe, UniverseHold
 from nbot_v5_1.observation import ObservationBook, rest_closed_bar
+from nbot_v5_1.source_archive import PublicSourceArchive, PublicArchiveHold
 
 
-def probe(*, enabled: bool, max_history_requests: int = 140) -> dict:
+def probe(*, enabled: bool, max_history_requests: int = 140,
+          archive: PublicSourceArchive | None = None) -> dict:
     if type(enabled) is not bool or not enabled:
         raise PublicMarketHold("G2_EXPLICIT_PUBLIC_NETWORK_PERMISSION_REQUIRED")
     if type(max_history_requests) is not int or not 100 <= max_history_requests <= 160:
@@ -30,6 +33,9 @@ def probe(*, enabled: bool, max_history_requests: int = 140) -> dict:
     ex = client.exchange_info()
     tick = client.tickers_24hr()
     book = client.book_tickers()
+    if archive is not None:
+        for receipt in (ex, tick, book):
+            archive.append(receipt)
     if (type(ex.body) is not dict or type(tick.body) is not list
             or type(book.body) is not list):
         raise UniverseHold("G2_PROBE_API_SCHEMA_CHANGED")
@@ -63,6 +69,8 @@ def probe(*, enabled: bool, max_history_requests: int = 140) -> dict:
     for symbol in order[:max_history_requests]:
         try:
             response = client.closed_klines(symbol, limit=100)
+            if archive is not None:
+                archive.append(response)
             if type(response.body) is not list:
                 raise ValueError("KLINES_NOT_ARRAY")
             # The *last* REST kline may still be forming. Never accept it
@@ -104,6 +112,8 @@ def probe(*, enabled: bool, max_history_requests: int = 140) -> dict:
     event = book_state.snapshot(FiveMinuteEvent(open_ms,now_ms))
     root = hashlib.sha256(json.dumps(sorted(history_receipts),
                          separators=(",",":")).encode()).hexdigest()
+    archived = archive.replay() if archive is not None else ()
+    archived_bytes = sum((archive.root/r.name).stat().st_size for r in archived) if archive is not None else 0
     return {
         "schema":"NBOT_V5_1_G2_PUBLIC_SMOKE_V1",
         "public_only":True,"source_grade":"PUBLIC_REST_METADATA_NOT_ORIGINAL",
@@ -125,6 +135,12 @@ def probe(*, enabled: bool, max_history_requests: int = 140) -> dict:
         "manifest_sha":selected.selection_digest,
         "event_sha":event.snapshot_id,
         "request_weight":client.weight_used,
+        "archive_replay_receipts":len(archived),
+        "archive_compressed_bytes":archived_bytes,
+        "archive_source_root":hashlib.sha256(json.dumps(sorted(
+             (r.response.kind,r.response.received_at_ms,r.response.body_sha256)
+             for r in archived),separators=(",",":")).encode()).hexdigest() if archived else None,
+        "archive_is_unauthenticated_public_rest":True,
         "no_orders":True,
     }
 
@@ -136,10 +152,17 @@ if __name__=="__main__":
     ap.add_argument("--max-history-requests",type=int,default=140)
     args=ap.parse_args()
     try:
-        print(json.dumps(probe(enabled=args.public_network,
-                               max_history_requests=args.max_history_requests),
-                         sort_keys=True),flush=True)
-    except (PublicMarketHold,UniverseHold,ValueError) as exc:
+        # All original public bytes are captured, fsynced, then hash-checked
+        # by replay; the test archive is automatically deleted afterwards.
+        # Do not confuse this temporary probe with operational source storage.
+        with tempfile.TemporaryDirectory(prefix="nbot-g2-public-replay-") as d:
+            archive=PublicSourceArchive(Path(d),budget_bytes=64*1024*1024)
+            result=probe(enabled=args.public_network,
+                         max_history_requests=args.max_history_requests,
+                         archive=archive)
+            print(json.dumps(result,sort_keys=True),flush=True)
+        print("G2_PUBLIC_ARCHIVE_REPLAYED_AND_TEMP_CLEANED",flush=True)
+    except (PublicMarketHold,PublicArchiveHold,UniverseHold,ValueError) as exc:
         print(json.dumps({"status":"G2_PUBLIC_PROBE_HOLD",
               "reason":str(exc),"no_orders":True}),flush=True)
         sys.exit(2)
