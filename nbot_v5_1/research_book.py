@@ -90,6 +90,7 @@ class VirtualResearchBook:
         self.seen_ids:set[str]=set()
         self.last_review_ms:int|None=None
         self.source_heads:dict[str,tuple[int,int,int]]={}
+        self.source_held:set[str]=set()
         self.head=ZERO
         self._recover()
 
@@ -174,6 +175,7 @@ class VirtualResearchBook:
                 raise JournalHold("G5_REPLAY_UNKNOWN_OP")
         # No restart can assert that unsynced RAM tail/trailing path was intact.
         self.source_heads={}
+        self.source_held={x.intent.symbol for x in self.active.values()}
         for id,path in tuple(self.active.items()):
             if path.state=="ACTIVE_SYNTHETIC_PATH":
                 self._log("PATH_HOLD",path.intent.declared_at_ms,
@@ -237,7 +239,8 @@ class VirtualResearchBook:
                 # G4 20 market WARMUP_HOLD must never become 'qualified' here.
                 if (intent.source_grade!="SYNTHETIC_OFFLINE_TEST_ONLY"
                         or not intent.research_only or intent.financial_authority!="NONE"
-                        or key in self.by_pair or intent.intent_id in self.seen_ids):
+                        or key in self.by_pair or intent.intent_id in self.seen_ids
+                     or intent.symbol in self.source_held):
                     bad+=1;continue
                 screened[key]=intent
             available=self.vacancies
@@ -291,6 +294,7 @@ class VirtualResearchBook:
                           "status":"SOURCE_HOLD","reason":reason})
                 path.state="SOURCE_HOLD"
         self.source_heads.pop(sym,None)
+        self.source_held.add(sym)
 
     def ingest(self,tick:SyntheticTick):
         """Consume ONE shared synthetic original-shaped coin event, O(active pair).
@@ -310,8 +314,6 @@ class VirtualResearchBook:
             price=number(tick.price)
             paths=[self.active[id] for (sym,_),id in self.by_pair.items()
                    if sym==tick.symbol and self.active[id].state=="ACTIVE_SYNTHETIC_PATH"]
-            if not paths:
-                return ()
             old=self.source_heads.get(tick.symbol)
             if (old is not None and (tick.source_epoch!=old[0]
                     or tick.aggregate_id!=old[1]+1 or tick.at_ms<old[2])
@@ -320,7 +322,14 @@ class VirtualResearchBook:
                            or tick.at_ms<p.intent.activates_at_ms for p in paths)):
                 self._hold_symbol(tick.symbol,tick.at_ms,"EPOCH_GAP_OR_UNKNOWN_ENTRY_PATH")
                 return ()
+            if tick.symbol in self.source_held:
+                return ()
+            # Track the shared per-symbol cursor even with no active
+            # experiment. Later admissions cannot silently skip an observed
+            # gap that occurred while all research slots were vacant.
             self.source_heads[tick.symbol]=(tick.source_epoch,tick.aggregate_id,tick.at_ms)
+            if not paths:
+                return ()
             events=[]
             for path in paths:
                 if path.intent.intent_id not in self.active:continue
@@ -413,4 +422,5 @@ class VirtualResearchBook:
                 "qualified_after_cost":0,
                 "financial_authority":"NONE",
                 "source_grade":"SYNTHETIC_OFFLINE_TEST_ONLY",
-                "last_review_ms":self.last_review_ms}
+                "last_review_ms":self.last_review_ms,
+                "source_held_symbols":len(self.source_held)}
