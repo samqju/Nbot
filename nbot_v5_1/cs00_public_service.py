@@ -133,6 +133,13 @@ class FuturePublicObservationService:
                             self.recovery_scheduler.admit(gap,now_ms=received)
                         except (SourceRecoveryHold,ValueError) as e:
                             self.errs.append("RECOVERY_TASK_HOLD:"+str(e)[:60])
+                if current.state=="SOURCE_HOLD":
+                    # A retrospective recovery task never repairs a live
+                    # decision-time source epoch. Stop any new intake now.
+                    self.pipeline.emergency_hold(
+                        at_ms=received,reason="LIVE_SOURCE_GAP_FORCED_HOLD")
+                    self.request_stop("LIVE_SOURCE_GAP_NO_UNQUALIFIED_CONTINUATION")
+                    break
             ws.close()
         except (PublicSocketHold,OSError,ValueError) as e:
             self.errs.append("PUBLIC_SOURCE_HOLD:"+str(e)[:80])
@@ -182,7 +189,8 @@ class FuturePublicObservationService:
         from scripts.g2_readonly_probe import probe
         slot={}
         def on_event(book,event):
-            app=SourceOnlyPipeline(book,recorder_root=self.root)
+            app=SourceOnlyPipeline(book,recorder_root=self.root/"evidence",
+                                   state_root=self.root)
             app.on_boundary(event)
             slot["pipeline"]=app
             return {"source_only":True,"financial_authority":"NONE"}
