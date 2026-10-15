@@ -138,6 +138,7 @@ class SourceOnlyPipeline:
         return {"schema":VERSION,"boundaries":self.boundaries,
                 "source_frames":self.source_frames,
                 "source_gap_count":self.source_gap_count,
+                "underlying_trade_id_review_events":(self.recorder.underlying_id_gap_reviews if self.recorder else 0),
                 "source_grade":"LOCAL_UNQUALIFIED_NO_ORIGINAL_RELEASE",
                 "active":self.active,"durable_state_root_attached":self.state_writer is not None,
                 "original_virtual_allowed":False,
