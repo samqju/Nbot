@@ -35,6 +35,10 @@ class ResearchJournal:
             raise ValueError("G5_JOURNAL_CONFIG")
         self.path=path
         self.limit=limit_bytes
+        # An authenticated-in-process append cursor after initial full replay.
+        # A changed inode/size/mtime (another writer or tamper) is HOLD, not
+        # silently accepted. No per-transition full-journal rescans.
+        self._cache=None  # (head,seq,bytes,inode,mtime_ns)
 
     def _open(self):
         parent=self.path.parent
@@ -101,7 +105,9 @@ class ResearchJournal:
             fd=self._open()
             try:
                 fcntl.flock(fd,fcntl.LOCK_EX)
-                rows,head,_=self._read_fd(fd)
+                rows,head,size=self._read_fd(fd)
+                stat_result=os.fstat(fd)
+                self._cache=(head,len(rows),size,stat_result.st_ino,stat_result.st_mtime_ns)
                 return rows,head
             finally:os.close(fd)
 
@@ -113,10 +119,18 @@ class ResearchJournal:
             fd=self._open()
             try:
                 fcntl.flock(fd,fcntl.LOCK_EX)
-                rows,head,used=self._read_fd(fd)
+                fs=os.fstat(fd)
+                cached=self._cache
+                if cached is not None:
+                    head,seq,used,inode,mtime=cached
+                    if fs.st_ino!=inode or fs.st_size!=used or fs.st_mtime_ns!=mtime:
+                        raise JournalHold("G5_JOURNAL_UNEXPECTED_EXTERNAL_CHANGE")
+                else:
+                    rows,head,used=self._read_fd(fd)
+                    seq=len(rows)
                 if expected_head!=head:
                     raise JournalHold("G5_JOURNAL_CONCURRENT_HEAD_CONFLICT")
-                record={"v":VERSION,"seq":len(rows)+1,"previous":head,
+                record={"v":VERSION,"seq":seq+1,"previous":head,
                         "action":action,"at_ms":at_ms,"payload":payload}
                 record["sha"]=hashlib.sha256(canon(record)).hexdigest()
                 body=canon(record)+b"\n"
@@ -132,5 +146,8 @@ class ResearchJournal:
                 dfd=os.open(self.path.parent,os.O_RDONLY|os.O_DIRECTORY)
                 try:os.fsync(dfd)
                 finally:os.close(dfd)
+                fresh=os.fstat(fd)
+                self._cache=(record["sha"],seq+1,used+len(body),
+                             fresh.st_ino,fresh.st_mtime_ns)
                 return record["sha"]
             finally:os.close(fd)
