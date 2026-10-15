@@ -43,11 +43,15 @@ class SourceStatus:
     source_qualified:bool=False
     financial_authority:str="NONE"
 
-def public_routes(symbols:tuple[str,...])->tuple[RoutePlan,...]:
+def public_routes(symbols:tuple[str,...],*,trade_only:bool=False)->tuple[RoutePlan,...]:
     if (type(symbols) is not tuple or len(symbols)!=20
             or len(set(symbols))!=20 or "BTCUSDT" not in symbols):
         raise CollectorHold("CS00_EXACT_20_AND_BTC_REQUIRED")
+    if type(trade_only) is not bool:
+        raise CollectorHold("CS00_TRADE_ONLY_MODE_INVALID")
     urls=stream_urls(symbols)
+    if trade_only:
+        urls={k:v for k,v in urls.items() if k in ("TRADE","MARK")}
     for kind,url in urls.items():
         if (not url.startswith("wss://fstream.binance.com/")
                 or "/private" in url or "/user" in url
@@ -55,7 +59,8 @@ def public_routes(symbols:tuple[str,...])->tuple[RoutePlan,...]:
                     tuple(f"{x.lower()}@"+suffix for x in symbols
                           for suffix in ("aggTrade","bookTicker","markPrice@1s")))):
             raise CollectorHold("CS00_PUBLIC_WSS_ROUTE_ONLY")
-    return tuple(RoutePlan(kind,urls[kind],symbols) for kind in ("TRADE","QUOTE","MARK"))
+    return tuple(RoutePlan(kind,urls[kind],symbols) for kind in
+                 (("TRADE","MARK") if trade_only else ("TRADE","QUOTE","MARK")))
 
 class SourceOnlyIntake:
     """OFFLINE injected raw frames. Holds an epoch on any unexpected gap.
