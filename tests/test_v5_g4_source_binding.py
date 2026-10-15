@@ -104,6 +104,14 @@ class OfflineBindingTests(unittest.TestCase):
         x=self.check()
         self.assertEqual(x.state,"SOURCE_BOUND")
 
+        self.assertEqual(x.eligible_population,50)
+        self.assertEqual(x.candidate_population,100)
+        self.assertEqual(len(x.g3_feature_sha256),64)
+        self.assertEqual(x.scored_outcomes,0)
+        self.assertEqual(x.order_authority,"NONE")
+        self.assertEqual(x.model_training_authority,"NONE")
+        self.assertIn("NOT_EXCHANGE_SIGNED",x.source_grade)
+
     def test_batch_binding_checks_integrity_once_and_holds_one_read_snapshot(self):
         from nbot.v5.g4_source_binding import ReadOnlyBindingSession
         with sqlite3.connect(self.path) as db:
@@ -121,13 +129,6 @@ class OfflineBindingTests(unittest.TestCase):
             self.assertFalse(any("quick_check" in s for s in statements))
         with ReadOnlyBindingSession(self.path) as new_snapshot:
             self.assertEqual(new_snapshot.bound(EVENT,"BTCUSDT","LONG").state,"HOLD")
-        self.assertEqual(x.eligible_population,50)
-        self.assertEqual(x.candidate_population,100)
-        self.assertEqual(len(x.g3_feature_sha256),64)
-        self.assertEqual(x.scored_outcomes,0)
-        self.assertEqual(x.order_authority,"NONE")
-        self.assertEqual(x.model_training_authority,"NONE")
-        self.assertIn("NOT_EXCHANGE_SIGNED",x.source_grade)
 
     def test_short_and_other_coin_can_bind(self):
         self.assertEqual(self.check("COIN10USDT","SHORT").state,"SOURCE_BOUND")
