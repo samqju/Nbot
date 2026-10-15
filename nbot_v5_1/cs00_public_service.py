@@ -79,6 +79,7 @@ class FuturePublicObservationService:
         self.errs=[]
         self.last_feed_received_ms={}
         self.launch_ms=None
+        self.trade_only=True  # owner trade-print + mark profile; never subscribe quotes
 
     def status(self):
         return {"schema":VERSION,"source_process_started":self.started,
@@ -197,7 +198,7 @@ class FuturePublicObservationService:
             return {"source_only":True,"financial_authority":"NONE"}
         self.started=True
         try:
-            probe(enabled=True,on_event=on_event)
+            probe(enabled=True,on_event=on_event,trade_only=self.trade_only)
             if "pipeline" not in slot:raise PublicServiceHold("CS00_BOOTSTRAP_UNAVAILABLE")
             self.pipeline=slot["pipeline"]
             self.pipeline.active=True
@@ -208,7 +209,8 @@ class FuturePublicObservationService:
                 BudgetedPublicRest(allow_public_network=True,
                                    weight_budget=MAX_SERVICE_REST_WEIGHT))
             from .cs00_source_runtime import public_routes
-            for route in public_routes(tuple(self.pipeline.deep.symbols)):
+            for route in public_routes(tuple(self.pipeline.deep.symbols),
+                                       trade_only=self.trade_only):
                 t=threading.Thread(target=self._worker,
                         args=(route.kind,route.uri,1),daemon=True)
                 self.workers.append(t);t.start()
@@ -242,7 +244,7 @@ class FuturePublicObservationService:
                         break
                     if (now-self.launch_ms>120000 and
                             any(now-self.last_feed_received_ms.get(k,self.launch_ms)>120000
-                                for k in ("TRADE","QUOTE","MARK"))):
+                                for k in ("TRADE","MARK"))):
                         self.pipeline.emergency_hold(
                             at_ms=now,reason="WSS_ROUTE_STALE_HOLD")
                         self.request_stop("SOURCE_STALE_NO_AUTO_RESTART")
