@@ -1,8 +1,8 @@
 # NBOT V5.1 — Your Plain-Language Development Roadmap
 
-**Roadmap version:** 1.7 (G8 offline frozen-model Training 319 tests PASS on both VPSs; real Champion qualification HOLD)  
+**Roadmap version:** 1.8 (G9 one-Champion LAB paper guardian 355 tests/two-VPS benchmark PASS; actual PAPER release HOLD)  
 **Date:** 15 October 2026  
-**Status (current, 15 October 2026):** G0–G3 [x] fully accepted. **G4–G7 parent [ ] genuine 20-market source/first-touch/after-cost/2,000 original matured Learning HOLD. G8 [ ] actual initial Champion training HOLD, BUT G8 offline software is BUILT/TESTED: 319/319 total G1–G8 tests on each real Python3.12.3 VPS**, 2,000 synthetic LAB examples /100 shared BTC market groups and two-VPS model replay benchmark PASS. Laboratory +36.40R is artificial test only, NO genuine qualified results or money authority. NBOT services remain STOPPED at your request; G9–G12 [ ], paper/real trading still locked.  
+**Status (current, 15 October 2026):** G0–G3 fully [x]. G4–G8 original market source/first-touch/after-cost/2,000 independent matured Learning/qualified Champion [ ] HOLD. **G9 offline Champion-first independent paper guardian now built and tested: 355/355 combined regression tests on EACH Python3.12.3 VPS, 100 LAB simulated settlements/100 second-position vetoes, all source/order authority NONE; full owner PAPER activation parent G9 [ ] HOLD.** We have NOT started NBOT Observation or Execution services, paper/testnet or real trading, and have not invented a qualified Champion or obtained paper-only authorization. G10–G12 remain future.
 **Product blueprint:** NBOT Complete Product Vision **V1.9** (separately copied **unchanged** into this branch)  
 **Companion:** NBOT V5.1 Engineering Roadmap V1.0  
 **Repository/branch:** samqju/Nbot / nbot-v5.1
@@ -340,10 +340,24 @@ The guardian must be able to independently reject a proposal and enforce the one
   - [ ] **G8-06-A — Truly matured 2,000 independent original Research outcomes:** Current actual qualified Learning count remains **0/2000**. Only genuine G4 market feed → G5 Research original paths → G6 verified costs → G7 independent science can qualify this.
   - [ ] **G8-06-B — Genuine after-cost Champion proved on later market periods:** Need strong independently source-verified positive edge relative to NO TRADE with uncertainty, regimes and drawdown; synthetic scores do not qualify.
   - [ ] **G8-06-C — Parent first real Champion model approval:** HOLD pending 06-A/B, G7 source checks and later independent owner paper release (G9). No approved Champion today.
-- [ ] **Milestone 10 — First approved Champion PAPER testing works** (engineering G9)
-  - [ ] Resolve the old V5 conflict requiring two models before a first Champion paper trial.
-  - [ ] Build an independent paper guardian that rejects unsafe or unauthorised proposals.
-  - [ ] Approve paper-only mode separately, test one paper position and reconcile its accounting.
+- [ ] **Milestone 10 — FIRST Champion PAPER (G9): OFFLINE safety engine proven, real owner-approved PAPER stage HOLD.** [Detailed G9 completed code/tests and real RELEASE check list](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G9_OFFLINE_CHAMPION_PAPER_ENGINEERING_AND_RELEASE_HOLD_20261015.md), commit **0b23bf38096509aafd61096039b78be4bb06b662**, tested code SHA `fa2111e32bd0da4c36bf4fe58a7da14f4936c815`.
+  - [x] **G9-01-A — Old two-model-before-first-paper mistake FIXED in new design:** Compared original V5 old guarded_paper and competing V5 execution engine. FIRST paper experiment eventually needs only one **independently qualified Champion** and YOUR separate paper-only approval. Challenger can arrive later. No unsafe legacy SQLite or second paper engine copied.
+  - [x] **G9-01-B — Freeze independent Champion-only rules:** The new safety policy limits risk to 2% maximum upper bound, at most one simulated paper-like position, exposure at most 1× cash, drawdown and stop controls, clock and quote limits; present mode is LAB_ONLY and CANNOT activate PAPER or REAL.
+  - [x] **G9-01-C — Tamper-proof LAB proposal identity and authentication:** Model version, policy/source SHA, market proposal ID, coin/side, stop/target, expected lower-after-cost benefit, idempotency and expiry are signed with a LAB-only HMAC. A modified or stale message, unqualified model, fake owner signature or real/paper claim is rejected. This is **NOT** a production paper release key.
+  - [x] **G9-02-A — Independent price/source/cost/risk vetoes:** Fresh bid/ask, spread, stop/target and risk geometry, size/leverage, evidence SHA, fee/slippage and FULL simulated holding-interval funding coverage start and end are required; invalid/unknown source remains HOLD and is never counted as profitable.
+  - [x] **G9-02-B — Exactly one Champion LAB position, no forced trade:** Even 100 attempted second positions were rejected in measured tests; different coin, direction, matching pattern cannot evade the single-position book limit. No Challenger required for first LAB mock, but true PAPER still locked.
+  - [x] **G9-03-A — Realistic simulated LONG and SHORT paper-like accounting:** LAB-only entry at LONG ASK/SHORT BID and exit LONG BID/SHORT ASK, plus slippage, both fees and signed funding, fixed stop/target, frozen risk size, all labeled hypothetical, NEVER actual exchange orders or approved paper fills.
+  - [x] **G9-03-B — Protective stops and source uncertainty:** Check stop/target before moving trailing, LONG trails only rise, SHORT trails only fall; missing/ambiguous source, stale quotes or funding period records remain occupied HOLD and cannot fabricate a win or released trading slot.
+  - [x] **G9-03-C — Audited cash/fee/funding/drawdown:** Every LAB admission/close/trail/hold and censored restart is replayed and balances independently recalculated. Repeated rounding and censure entry-fee reconciliation failures were found and fixed before final 355-test run, without hiding failed initial test runs.
+  - [x] **G9-04-A — Private small permanent-ready audit mechanics, currently LAB only:** Separate bounded 16MiB G9 LAB journal with chained SHA, file-and-directory disk sync, owner-private access, no per-raw-tick SQLite and strict policy/model/grade checks, no silent deletion.
+  - [x] **G9-04-B — Unresolved position never vanishes on restart:** One interrupted position remains exactly one occupied RESTART_HOLD; an explicitly audited LAB censure records the opening fee and creates no fake profit. No paper release persists across reboot.
+  - [x] **G9-05-A — All 355 tests PASS on BOTH VPSs:** 319 prior G1–G8 plus 36 G9 checks P01–P36, Observation 18.826s and Execution 19.385s on Python3.12.3 and identical GitHub source revision.
+  - [x] **G9-05-B — Measured full 100-cycle Champion LAB paper-like benchmark PASS on BOTH:** 100 simulated entries/settlements, 100 second-position veto, max 1 occupied at once, one restart-held and censored; p99 **113.381ms Observation /108.130ms Execution**, RAM ~23MiB, journal 209,048B, quotas PASS, genuine qualified Champion 0, actual paper or exchange orders 0.
+  - [x] **G9-05-C — Safe temporary test cleanup and NO service startups:** All G9 temporary source/test trees were removed from both VPSs with separate success confirmations. NBOT remained stopped. Separate old G8 Observation temporary file housekeeping still open.
+  - [ ] **G9-06-A — Produce a TRULY qualified initial Champion:** Actual source-qualified G7 Learning outcomes remain **0/2,000**, and genuine G8 Champion missing until G4–G8 source/economic/scientific acceptance passes.
+  - [ ] **G9-06-B — Owner's explicit PAPER-ONLY approval and independently signed live-grade release:** Still NOT authorized. New LAB HMAC cannot be used to unlock real PAPER and a production release guardian must independently authenticate original verified quotes/costs and the qualified Champion.
+  - [ ] **G9-06-C — Actual approved Champion-only PAPER field trial and reconciliation:** No authorised running paper engine, no true 100 paper settlements or full live-source fault acceptance. Synthetic G9 ledger results do not count as actual PAPER results.
+  - [ ] **G9-06-D — G9 parent cannot be checked yet:** Must pass A/B/C plus separate owner paper-only authorization; no automatic paper/real mode or unapproved Champion.
 - [ ] **Milestone 11 — Champion versus Challenger comparison works** (engineering G10)
   - [ ] Qualify and freeze a Challenger only after appropriate additional research.
   - [ ] Run fair, separately accounted paper portfolios on the same forward market period.
@@ -645,3 +659,20 @@ Every line is a descriptive setup **hypothesis**, not permission to enter a trad
 - [ ] G8-06 actual 2,000 genuinely matured independent after-cost virtual outcomes **0/2000**; original source regime/scientific Champion edge and owner approval unavailable, so do NOT check entire parent G8.
 
 **Current owner status:** G0–G3 [x], G4–G7 original source/science [ ] HOLD, **G8 original Champion [ ] HOLD despite completed offline 319-case engineering**, G9–G12 [ ]. NBOT stopped; next optional offline G9 paper guardian DESIGN may proceed without enabling paper mode or claiming a qualified Champion. All legacy V5 two-model-first-paper conflict must be reviewed in G9.
+
+
+### Milestone 10/G9 latest Champion-first paper guardian engineering and real release HOLD (15 October 2026)
+
+[Permanent dated G9 complete tested offline paper-ledger/guardian and independent PAPER release HOLD report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G9_OFFLINE_CHAMPION_PAPER_ENGINEERING_AND_RELEASE_HOLD_20261015.md), commit **0b23bf38096509aafd61096039b78be4bb06b662**, tested code/source SHA `fa2111e32bd0da4c36bf4fe58a7da14f4936c815`. Old R22 two-model release mistake reconciled: **one QUALIFIED Champion alone can later be owner-approved for first PAPER**, no Challenger initially, one position/book, G10 Challenger later. New pure LAB-only HMAC paper-guardian and fee/funding/cash ledger, restart/source HOLD, at most one position and true no-paper-release lock, **355/355 tests EACH VPS**, benchmark 100 LAB settles/100 blocked second opens/1 crash-held, p99 113.381/108.130ms; all synthetic, zero financial or owner paper authority.
+
+- [x] G9-01 reviewed conflicting historical paper engines, new frozen initial Champion-only policy, safe LAB signature and model/mode/session identity.
+- [x] G9-02 independent quote/source/date, fee/slip/full funding interval/risk/leverage/spread, single-position and NO_TRADE guardian.
+- [x] G9-03 hypothetical bid/ask based LONG/SHORT book, stop/target/trailing protection, reproducible cash/fees/funding and true restart cash audit.
+- [x] G9-04 owner-private bounded fsynced SHA ledger, torn/concurrent/duplicate/source HOLD and independently replayed position on crash.
+- [x] G9-05 **355/355 tests** and 100 LAB settlement stress, 100 duplicate-position veto, 1 restart hold PASS on BOTH hosts; all G9 test temp trees removed; ZERO NBOT service startup.
+- [ ] G9-06-A genuine independently qualified G8 Champion: 0/2000 truly qualified Learning outcomes; no Champion yet.
+- [ ] G9-06-B separate authentic OWNER PAPER-only authorisation and original-feed source/cost qualified risk guardian: no approval yet.
+- [ ] G9-06-C genuine owner-approved first Champion paper simulation on Execution VPS with paper-account/stop/restart monitors: not started.
+- [ ] G9-06-D entire G9 actual PAPER stage: HOLD despite offline engineering success.
+
+**Owner release status:** G0–G3 [x]; G4–G9 parent original-source/scientific/PAPER activation [ ] HOLD; G10–G12 next for offline code, paper and real funds LOCKED, services STOPPED. The old G8 Observation test-only `/tmp/nbot-g8-c0qNaV` is still a separately documented cleanup concern and was not falsely ticked.
