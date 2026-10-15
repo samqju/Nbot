@@ -7,7 +7,7 @@ from unittest.mock import patch
 from nbot_v5_1.cs00_public_service import (
     FutureCs01Permit,FuturePublicObservationService,PublicServiceHold)
 
-SHA="a"*64
+SHA="a"*40
 
 def approval(**kwargs):
     d=dict(project="NBOT_V5.1",branch="nbot-v5.1",
@@ -37,7 +37,7 @@ class CS00FuturePublicServiceTests(unittest.TestCase):
 
     def test_CSSVC03_wrong_revision_denied_before_network(self):
         with self.assertRaises(PublicServiceHold):
-            self.app.run_foreground(permit=approval(exact_commit_sha="b"*64),
+            self.app.run_foreground(permit=approval(exact_commit_sha="b"*40),
                                     expected_exact_sha=SHA)
         self.assertFalse(self.app.started)
 
