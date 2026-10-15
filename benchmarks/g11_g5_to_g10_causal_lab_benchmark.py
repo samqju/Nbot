@@ -120,7 +120,7 @@ def run():
             min_test_blocks=5,min_context_blocks=5,
             cost_buffer_r="0.10",random_search_attempts=1)
         proof=pipe.review_science(
-            cutoff_ms=END_DECISION+STEPS*INTERVAL_MS,
+            cutoff_ms=END_DECISION+(STEPS+3)*INTERVAL_MS,
             protocol=protocol_train)
         if (proof.synthetic_rows!=STEPS or proof.genuine_original_rows!=0
                 or not proof.lab_model_sha or proof.release_action!="HOLD"):
