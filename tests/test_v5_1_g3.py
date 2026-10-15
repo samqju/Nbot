@@ -72,7 +72,11 @@ class ExplorationTests(unittest.TestCase):
         self.assertEqual(len(a.rows),200)
         self.assertEqual({r.inclusion_probability for r in a.rows if r.status=="OBSERVED"},
                          {17/200})
-        self.assertTrue(all(r.inclusion_probability==0 for r in a.rows if r.status!="OBSERVED"))
+        # The hash-rotating policy gives every admissible pair the same
+        # prospective K/N inclusion chance; being skipped doesn't turn its
+        # true design inclusion probability into zero retrospectively.
+        self.assertTrue(all(r.inclusion_probability==17/200
+                            for r in a.rows if r.status=="NOT_EVALUATED_CAPACITY"))
 
     def test_E06_source_and_capacity_missingness_are_distinct(self):
         self.bootstrap()
@@ -168,6 +172,44 @@ class ExplorationTests(unittest.TestCase):
         result=explore_event(self.book,self.event,capacity_slots=1)
         self.assertEqual(result.source_skipped_pairs,2)
         self.assertEqual(result.evaluated_pairs,198)
+
+    def test_E16_selection_tags_and_cost_quality_never_invented(self):
+        self.bootstrap()
+        batch=explore_event(self.book,self.event,capacity_slots=1,evaluation_limit=3)
+        for row in batch.rows:
+            item=next(e for e in self.universe.entries if e.symbol==row.symbol)
+            self.assertEqual(row.selection_groups,item.groups)
+            self.assertEqual(row.cost_state,"QUOTE_SLIPPAGE_FEE_FUNDING_UNVERIFIED")
+            self.assertEqual(row.liquidity_state,"UNIVERSE_LIQUIDITY_METADATA_ONLY")
+            self.assertEqual(row.source_route,"public_rest")
+            self.assertEqual(row.source_epoch,0)
+        self.assertIn("BTC_MANDATORY",batch.rows[0].selection_groups)
+
+    def test_E17_sampling_propensity_retained_for_nonselected_but_eligible(self):
+        self.bootstrap()
+        for symbol in self.universe.symbols[1:6]:
+            self.book.mark_gap(symbol,reason="GAP")
+        b=explore_event(self.book,self.event,capacity_slots=1,evaluation_limit=9)
+        self.assertEqual(b.eligible_pairs,190)
+        self.assertEqual(b.evaluated_pairs,9)
+        self.assertEqual(b.source_skipped_pairs,10)
+        self.assertEqual(b.capacity_skipped_pairs,181)
+        for row in b.rows:
+            expected=0.0 if row.status=="NOT_EVALUATED_SOURCE" else 9/190
+            self.assertEqual(row.inclusion_probability,expected)
+
+    def test_E18_old_cohort_never_qualifies_after_max_universe_age(self):
+        self.bootstrap()
+        # Advance event beyond the 90-min cohort lease without updating its
+        # membership; all 200 records must report SOURCE hold, no signals.
+        from nbot_v5_1.exploration import MAX_UNIVERSE_AGE_MS
+        advanced=FiveMinuteEvent(
+            self.event.event_open_ms+MAX_UNIVERSE_AGE_MS,
+            self.event.decision_at_ms+MAX_UNIVERSE_AGE_MS)
+        batch=explore_event(self.book,advanced,capacity_slots=1)
+        self.assertEqual(batch.source_skipped_pairs,200)
+        self.assertTrue(all(r.source_reason=="UNIVERSE_STALE" for r in batch.rows))
+        self.assertTrue(all(r.inclusion_probability==0 for r in batch.rows))
 
     def test_E15_no_order_network_or_legacy_imports(self):
         from nbot_v5_1 import exploration, detector_rules
