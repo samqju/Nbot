@@ -24,6 +24,7 @@ MAX_ROWS = 1000
 MAX_BODY_BYTES = 2 * 1024 * 1024
 RECENT_MS = 48 * 3600 * 1000
 MAX_GAP_AGG_IDS = 500_000
+MAX_UNFROZEN_PATH_IDS = 10_000
 MAX_GAP_DURATION_MS = 48 * 3600 * 1000
 _SYMBOL = re.compile(r"[A-Z0-9]{3,24}\Z")
 _SHA = re.compile(r"[a-f0-9]{64}\Z")
@@ -103,7 +104,9 @@ class HistoricalAggTradeRecovery:
 
     def __init__(self, *, experiment_id: str, symbol: str,
                  first_agg_id: int, last_agg_id: int,
-                 gap_start_ms: int, gap_end_ms: int, now_ms: int):
+                 gap_start_ms: int, gap_end_ms: int, now_ms: int,
+                 side: str | None = None, stop: str | None = None,
+                 target: str | None = None):
         if (type(experiment_id) is not str or not _SHA.fullmatch(experiment_id)
                 or type(symbol) is not str or not _SYMBOL.fullmatch(symbol)
                 or not symbol.endswith("USDT")
@@ -115,6 +118,23 @@ class HistoricalAggTradeRecovery:
                 or gap_end_ms > now_ms
                 or gap_end_ms - gap_start_ms > MAX_GAP_DURATION_MS):
             raise SourceRecoveryHold("CS00_RECOVERY_REQUEST_INVALID")
+        if (side is None) != (stop is None) or (side is None) != (target is None):
+            raise SourceRecoveryHold("CS00_RECOVERY_FROZEN_PRICE_PLAN_REQUIRED")
+        if side is not None:
+            if side not in ("LONG", "SHORT"):
+                raise SourceRecoveryHold("CS00_RECOVERY_SIDE_INVALID")
+            stop_price = number(stop)
+            target_price = number(target)
+            if (side == "LONG" and stop_price >= target_price
+                    or side == "SHORT" and stop_price <= target_price):
+                raise SourceRecoveryHold("CS00_RECOVERY_PRICE_GEOMETRY_INVALID")
+        elif last_agg_id - first_agg_id + 1 > MAX_UNFROZEN_PATH_IDS:
+            raise SourceRecoveryHold("CS00_RECOVERY_LARGE_GAP_NEEDS_FROZEN_PRICE_PLAN")
+        self.side = side
+        self.stop_price = number(stop) if stop is not None else None
+        self.target_price = number(target) if target is not None else None
+        self._first_touch: PriceTouch | None = None
+        self._trade_count = 0
         self.experiment_id = experiment_id
         self.symbol = symbol
         self.first_id = first_agg_id
@@ -207,7 +227,24 @@ class HistoricalAggTradeRecovery:
         # Never store ambiguous pages as verified trade paths.
         if self.reasons:
             return self.state
-        self.rows.extend((a, tm, price) for a, tm, price, _, _ in temp)
+        # A frozen price plan evaluates the first touch while streaming and
+        # does NOT retain millions of tuples in RAM; only a bounded page is
+        # materialized, plus hashes/cursors and the first touch.
+        if self.side is None:
+            self.rows.extend((a, tm, price) for a, tm, price, _, _ in temp)
+        else:
+            for agg_id, tm, price, _, _ in temp:
+                if self._first_touch is not None:
+                    break
+                stopped = (price <= self.stop_price if self.side == "LONG"
+                           else price >= self.stop_price)
+                targeted = (price >= self.target_price if self.side == "LONG"
+                            else price <= self.target_price)
+                if stopped or targeted:
+                    self._first_touch = PriceTouch(
+                        "TRADED_PRICE_FIRST_TOUCH_ONLY",
+                        "STOP" if stopped else "TARGET", tm, agg_id)
+        self._trade_count += len(temp)
         self.pages.append(sha256(raw).hexdigest())
         self.next_id = expected
         self.last_time_ms = prev_time
@@ -228,13 +265,19 @@ class HistoricalAggTradeRecovery:
         return RecoveryProof(
             VERSION, self.experiment_id, self.symbol,
             self.first_id, self.last_id, self.first_time_ms,
-            self.last_time_ms, len(self.rows), self.state,
+            self.last_time_ms, self._trade_count, self.state,
             tuple(self.reasons), tuple(self.pages), digest)
 
     def traded_price_first_touch(self, *, side: str, stop: str,
                                  target: str) -> PriceTouch:
         if self.state != RECOVERED_STATE:
             return PriceTouch("UNQUALIFIED_SOURCE_HOLD", None, None, None)
+        if self.side is not None:
+            if (side != self.side or number(stop) != self.stop_price
+                    or number(target) != self.target_price):
+                raise SourceRecoveryHold("CS00_RECOVERY_FROZEN_PLAN_CHANGED")
+            return (self._first_touch if self._first_touch is not None else
+                    PriceTouch("TRADED_PRICE_NO_TOUCH_OBSERVED", None, None, None))
         if side not in ("LONG", "SHORT"):
             raise SourceRecoveryHold("CS00_RECOVERY_SIDE_INVALID")
         stop_d = number(stop)
