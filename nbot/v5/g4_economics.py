@@ -71,7 +71,10 @@ def assess_quote_constrained_net(
     *, path: PathReplay, candidate: Mapping, policy: Mapping,
     entry_quote: Mapping | None, exit_quote: Mapping | None,
     economic_witness: Mapping | None, audit_at_ms: int,
+    evidence_grade: str = "ORIGINAL",
 ) -> EconomicReplay:
+    if evidence_grade not in ("ORIGINAL", "SYNTHETIC"):
+        raise ValueError("G4_ECONOMIC_EVIDENCE_GRADE")
     if not isinstance(path,PathReplay) or not isinstance(candidate,Mapping) or not isinstance(policy,Mapping):
         raise ValueError("G4_ECONOMIC_INPUT_INVALID")
     did=path.candidate_id
@@ -89,7 +92,7 @@ def assess_quote_constrained_net(
     if not isinstance(economic_witness,Mapping):
         reasons.append("ORIGINAL_ECONOMIC_WITNESS_MISSING")
         economic_witness={}
-    if economic_witness.get("source_grade")!="ORIGINAL_QUOTE_FEE_FUNDING_WITNESSES":
+    if economic_witness.get("source_grade")!=evidence_grade+"_QUOTE_FEE_FUNDING_WITNESSES":
         reasons.append("ECONOMIC_SOURCE_GRADE_INVALID")
     for field in ("quote_source_sha256","fee_source_sha256",
                   "slippage_policy_sha256","funding_source_sha256"):

@@ -107,7 +107,11 @@ def bounded_original_event_batch(source, store, *, start_event_ms, max_events):
 
 
 class ContinuousResearch:
-    def __init__(self, *, source, vault, registry, root, protocol, start_event_ms):
+    def __init__(self, *, source, vault, registry, root, protocol, start_event_ms,
+                 grade="ORIGINAL", economic_provider=None, reviewer_key=None):
+        if grade not in ("ORIGINAL", "SYNTHETIC"):
+            raise ValueError("RESEARCH_GRADE_INVALID")
+        self.grade, self.economic_provider, self.reviewer_key = grade, economic_provider, reviewer_key
         root=Path(root)
         if root.is_symlink() or not root.is_dir() or root.stat().st_mode & 0o077:
             raise ValueError("RESEARCH_ROOT_NOT_PRIVATE")
@@ -123,6 +127,8 @@ class ContinuousResearch:
         init_offline_ledger(self.labels)
         self.store.append("research-protocol","PROTOCOL",protocol.declared_ms,
                           {"protocol":asdict(protocol),"start_event_ms":start_event_ms})
+        self.store.append("research-grade", "EVIDENCE_GRADE", protocol.declared_ms,
+                          {"grade": grade, "order_authority": "NONE"})
 
     def tick(self, now_ms, *, max_events=1):
         """For compressed sources, use only a bounded, independently verified
@@ -211,7 +217,12 @@ class ContinuousResearch:
                     c["source_digest"]=admission.original_candidate_sha256
                     label=freeze_label_intent(self.labels,c,admission.policy_geometry)
                 else:label=None
+                with ro(self.source) as source_db:
+                    g2_row=source_db.execute(
+                        "SELECT payload_sha FROM g2_quote_witness WHERE event_open_ms=? AND symbol=?",
+                        (event,c["symbol"])).fetchone()
                 payload={"candidate":c,"admission":asdict(admission),"label_id":label,
+                         "g2_quote_sha256":g2_row[0] if g2_row else None,
                          "features":features,"feature_reasons":feature_reasons,
                          "regime":regime,
                          "g3_feature_known_ms":g3.get("valid_from_ms"),"order_authority":"NONE"}
@@ -263,13 +274,71 @@ class ContinuousResearch:
                                "label_id":scan_end[1],
                                "max_rows":250,"scanned":len(pending),
                                "order_authority":"NONE"})
+        self.advance_economics(now_ms)
         rows=self.verified_rows()
-        d=dataset(rows,cutoff_ms=now_ms,grade="ORIGINAL")
+        d=dataset(rows,cutoff_ms=now_ms,grade=self.grade)
         report=evaluate(d,self.protocol)
         self.store.append("g5:"+report["report_sha256"],"G5_REPORT",now_ms,report)
         telemetry=self.telemetry(now_ms)
         telemetry["g5"]=report
         return telemetry
+
+    def advance_economics(self, now_ms, *, max_rows=250):
+        """Replayable outbox: persist verified row before downstream acknowledgement.
+
+        Provider returns (evidence package, independent review), or None while
+        pending. Missing costs never expire into an invented economic label.
+        No producer has a built-in reviewer key. Operational service wiring is
+        separately gated; this direct-call path also supports offline tests.
+        """
+        if type(max_rows) is not int or not 1 <= max_rows <= 250:
+            raise ValueError("G4_ECONOMIC_BATCH_BOUNDS")
+        if self.economic_provider is None:
+            return 0
+        from nbot.v5.g4_economic_handoff import economic_row
+        rows=self.store.db.execute(
+            "SELECT p.identity,p.body FROM research_journal p "
+            "LEFT JOIN research_journal q ON q.identity='qualified:' || substr(p.identity,6) "
+            "WHERE p.kind='ORIGINAL_PRICE_PATH' AND q.identity IS NULL "
+            "ORDER BY p.seq LIMIT ?", (max_rows,)).fetchall()
+        accepted=0
+        for identity, raw in rows:
+            saved=json.loads(raw); label=saved["label_id"]
+            intent=json.loads(self.labels.execute(
+                "SELECT intent_json FROM g4_label_intents WHERE label_id=?", (label,)).fetchone()[0])
+            population=json.loads(self.store.db.execute(
+                "SELECT body FROM research_journal WHERE identity=?",
+                ("candidate:"+intent["decision_id"],)).fetchone()[0])
+            supplied=self.economic_provider(population,intent,saved["path"],now_ms)
+            if supplied is None:
+                continue
+            package, review=supplied
+            try:
+                row, calculation=economic_row(
+                    population=population,intent=intent,path=saved["path"],
+                    package=package,review=review,reviewer_key=self.reviewer_key,
+                    now_ms=now_ms,grade=self.grade)
+            except (ValueError,KeyError,TypeError) as exc:
+                body={"label_id":label,"evidence_sha256":digest(package),
+                      "reason":str(exc),"grade":self.grade,"order_authority":"NONE"}
+                self.store.append("economic-hold:"+digest(body),"ECONOMIC_HOLD",now_ms,body)
+                continue
+            # Stable settled timestamp makes terminal retry identical after a
+            # crash between the two separate durable databases.
+            terminal={"status":"SCORED","source_grade":"QUOTE_CONSTRAINED_SIMULATION",
+                      "evidence_grade":self.grade,"settled_at_ms":row["settled_ms"],
+                      "exit_at_ms":row["exit_ms"],"exit_reason":saved["path"]["exit_reason"],
+                      "early_exit_source_proof_sha256":row["lineage"]["path"],
+                      "original_sources_independently_verified":True,
+                      "path_sha256":row["lineage"]["path"],"quote_cost_sha256":row["lineage"]["cost"],
+                      "label_sha256":row["row_sha256"],"net_r":repr(row["net_r"]),
+                      "gross_r":repr(row["gross_r"]),"order_authority":"NONE"}
+            append_terminal(self.labels,label,terminal)
+            self.store.append("qualified:"+label,"QUALIFIED_OUTCOME",row["settled_ms"],
+                              {"row":row,"independent_review":review,
+                               "economic_evidence":package,"calculation":calculation})
+            accepted+=1
+        return accepted
 
     def accept_verified_export(self, export, review, reviewer_key, now_ms):
         """Only independent source reviewers may make rows eligible for G5.
@@ -277,6 +346,8 @@ class ContinuousResearch:
         They must bind original hashes to G1-G4 receipts and recompute costs.
         Producer booleans or raw source counts cannot authorize this import.
         """
+        if self.grade != "ORIGINAL":
+            raise ValueError("G4_ORIGINAL_EXPORT_IN_SYNTHETIC_LAB_FORBIDDEN")
         verify_review(review,key=reviewer_key,subject_sha256=digest(export),purpose="G4_OUTCOME_EXPORT",now_ms=now_ms)
         checked=dataset(export["rows"],cutoff_ms=now_ms,grade="ORIGINAL")
         for row in checked["rows"]:
