@@ -126,6 +126,8 @@ class RecoveryScheduler:
     def step(self,*,now_ms:int):
         if type(now_ms) is not int or now_ms<=0:
             raise RecoveryTransportHold("CS00_RECOVERY_CLOCK")
+        for rec in self.tasks.values():
+            rec.advance_clock(now_ms)
         # At most one network request per step. Schedule due tasks fairly.
         due=[key for key,r in self.tasks.items() if key not in self.hold_reasons
              and r.state=="RECOVERY_PENDING" and now_ms>=self.next_at[key]]
