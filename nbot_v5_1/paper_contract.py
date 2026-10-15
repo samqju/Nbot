@@ -19,6 +19,7 @@ LAB_GRADE="SYNTHETIC_OFFLINE_TEST_ONLY"
 SHA=re.compile(r"[a-f0-9]{64}\Z")
 SYMBOL=re.compile(r"[A-Z0-9]{3,24}\Z")
 NO_AUTHORITY="NONE"
+LAB_BOOKS=frozenset({"CHAMPION_LAB_ONLY","CHALLENGER_LAB_ONLY"})
 
 class PaperHold(ValueError):pass
 
@@ -136,7 +137,7 @@ def sign_lab_proposal(body:dict,lab_key:bytes):
     if (type(lab_key) is not bytes or len(lab_key)<32 or
             type(body) is not dict or body.get("authority")!="NONE"
             or body.get("grade")!=LAB_GRADE or
-            body.get("book")!="CHAMPION_LAB_ONLY"):
+            body.get("book") not in LAB_BOOKS):
         raise PaperHold("G9_SIGNING_ONLY_FOR_LAB_NOT_PAPER")
     return hmac.new(lab_key,b"NBOT-G9-LAB-PROPOSAL-V1\n"+canonical(body),
                     "sha256").hexdigest()
@@ -145,8 +146,11 @@ def sign_lab_proposal(body:dict,lab_key:bytes):
 def assess_lab_proposal(*,proposal:SignedLabProposal|None,quote:PaperQuote|None,
                         costs:PaperCosts|None,policy:PaperPolicy,
                         known_model_sha256:str,lab_key:bytes,now_ms:int,
-                        occupied:bool=False,halted:bool=False)->PaperVeto:
+                        occupied:bool=False,halted:bool=False,
+                        expected_book:str="CHAMPION_LAB_ONLY")->PaperVeto:
     reasons=set()
+    if expected_book not in LAB_BOOKS:
+        reasons.add("INVALID_LAB_BOOK")
     try:policy.validate()
     except (PaperHold,ValueError,TypeError):reasons.add("POLICY_INVALID")
     if type(now_ms) is not int or now_ms<0:reasons.add("CLOCK_INVALID")
@@ -154,7 +158,7 @@ def assess_lab_proposal(*,proposal:SignedLabProposal|None,quote:PaperQuote|None,
         reasons.add("PROPOSAL_MISSING_OR_MALFORMED")
         proposal=None
     if proposal is not None:
-        if (proposal.book!="CHAMPION_LAB_ONLY" or proposal.grade!=LAB_GRADE
+        if (proposal.book!=expected_book or proposal.grade!=LAB_GRADE
                 or proposal.authority!="NONE"):
             reasons.add("PAPER_OR_REAL_AUTHORITY_UNAVAILABLE")
         if not sha(known_model_sha256) or proposal.model_sha256!=known_model_sha256:
