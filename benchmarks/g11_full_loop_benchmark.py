@@ -153,7 +153,7 @@ def bench():
             raise RuntimeError("G11_G7_FALSE_ECONOMIC_SCIENCE")
 
         # Authentic G8 training code with separately labeled synthetic
-        benchmark outcomes. Not the preceding COST_PENDING research results.
+        # benchmark outcomes. Not the preceding COST_PENDING research results.
         d = dataset(60, net="1.1")
         pipe.learning_rows = list(d.rows)
         trained = pipe.review_science(
