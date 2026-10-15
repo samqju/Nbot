@@ -1,6 +1,6 @@
 # NBOT — Complete Product Vision, Learning Philosophy, and Reason for Every Major Component
 
-**Vision document, version 1.0 — 15 October 2026**
+**Vision document, version 1.1 — 15 October 2026**
 
 **Purpose:** Explain what NBOT is supposed to become, why it was conceived, what V4 taught us, why V5 includes virtual research trades, Champion/Challenger learning and paper trading, and how all of that serves a **single-position autonomous trading bot** rather than a needlessly complicated research institution.
 
@@ -132,25 +132,39 @@ An especially important ability is learning **not to trade** in regimes that pro
 
 ---
 
-## 5. Why observe roughly 50 coins when NBOT will hold only one position?
+## 5. Why NBOT needs to observe the market
 
-Because a single-position bot still needs a broad **choice set**.
+**NBOT must understand the market before deciding whether to trade.** Watching the market is how it learns what different conditions look like, which opportunities may be promising, and when it is better to stay out.
 
-At a given moment, one coin may be overextended, another too illiquid, a third have an unusually costly spread and a fourth may offer a clean setup supported by relevant market history.
+### The main reasons
 
-If NBOT watches only the coin it last traded, it learns about a narrow and biased slice of the market. If it watches many coins, it can choose among opportunities and explicitly reject them all.
+1. **Understand different market conditions.** Recognize whether the market is trending up, trending down, moving sideways, becoming volatile, staying calm, or changing from one condition to another. The same setup may behave differently in each environment.
 
-Approximately 50 liquid coins is a **research and choice-set budget**, not a requirement to place 50 trades or track 50 live positions.
+2. **Understand how BTC influences the overall market.** Observe when altcoins follow BTC, react more strongly than BTC, move against BTC, or behave independently. Learn how a sudden BTC move changes other coins' risk and opportunities. Do not assume BTC controls every coin all the time.
 
-The current G1 design uses 50 USDT-M symbols including BTC, with up to 100 direction-specific records per completed five-minute event (LONG and SHORT for each coin). BTC also provides global market context.
+3. **Recognize and learn market structures.** Identify structures such as **double bottoms, double tops, cup-and-handle formations, range breakouts, breakout-and-retests, failed breakouts, support/resistance, trends and reversals**. Observe how they form, when they fail, and what happens afterward. These are structures to **study**, not automatic buy/sell orders; not every example is necessarily implemented in the original 24 V4 detectors.
 
-This observation breadth does not change the user's one-position operating rule.
+4. **Find and compare opportunities across coins.** An attractive setup on one coin may be weaker than another, or all available opportunities may be poor. Watching approximately 50 liquid coins gives NBOT a choice, **even though it should manage only one actual position at a time**.
 
-### Why include both LONG and SHORT?
+5. **Learn what really works in which conditions.** Record what the bot could see at the time, then study the later outcome of eligible opportunities—including ones it did not trade. This helps distinguish a visually convincing pattern from a setup with a credible advantage **after fees and other trading costs**.
 
-The same market condition can favor one direction, the opposite direction or neither. Observing both sides permits an honest comparison.
+6. **Understand risk and trading costs.** Watch volatility, liquidity, spread, price movement and relevant funding conditions. A good-looking pattern may still be too risky, too expensive or unsuitable for the intended stop-loss and target.
 
-But these directions are often **strongly dependent**: they refer to the same coin, price path, timestamp and market shock. A LONG plus a SHORT does not magically create two independent pieces of evidence.
+7. **Know when NOT to trade.** Recognize unclear structures, sudden market changes, poor liquidity, conflicting signals or missing/stale data. Market observation must help NBOT say **NO TRADE**, not push it to find an entry at every five-minute event.
+
+### What does this look like in practice?
+
+Suppose NBOT sees a possible **double bottom** on one coin and a **range breakout** on another. It also observes that BTC has just started falling sharply. Instead of buying because a pattern appeared, NBOT studies the BTC impact, the coin's price structure, available liquidity, likely costs and what its verified past research says about similar conditions. It may choose one opportunity—or **neither**.
+
+**Important distinction:** Observing a structure means **"this may be worth studying."** It does **not** mean **"place a trade."** A trading decision comes later, after economic evidence, model confidence and risk checks.
+
+### Why observe 50 coins and both directions?
+
+The current G1 research design observes **50 USDT-M symbols, including BTC**, with up to **100 LONG/SHORT directional candidate records** per completed five-minute event. These records describe what was observable; they are **not** 100 opened positions or 100 completed virtual trades.
+
+Both LONG and SHORT perspectives help NBOT compare different possible outcomes, but opposite-direction candidates from the same event can be dependent and must not be counted as independent successes.
+
+**Bottom line: NBOT observes the market to understand it, recognize opportunities, learn from outcomes, manage risk and know when to stay out—not simply to generate trades.**
 
 ---
 
