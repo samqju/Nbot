@@ -164,6 +164,15 @@ class AppendOnlyJournal:
                 or s.st_uid != os.getuid() or (s.st_mode & 0o077)):
             raise JournalIntegrityError("G1_JOURNAL_UNSAFE_FILE")
 
+    def _sync_parent(self) -> None:
+        """Sync parent directory entry; required on first create and duplicate retry."""
+        d = os.open(self.path.parent, os.O_RDONLY | os.O_DIRECTORY
+                    | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            os.fsync(d)
+        finally:
+            os.close(d)
+
     def _read_locked(self, fd: int) -> list[JournalReceipt]:
         size = os.fstat(fd).st_size
         if size > self.max_bytes:
@@ -203,6 +212,17 @@ class AppendOnlyJournal:
             raise ValueError("G1_JOURNAL_EVENT_TYPE_INVALID")
         if not self.path.parent.is_dir():
             raise JournalIntegrityError("G1_JOURNAL_PARENT_MISSING")
+        # A durable *new filename* requires syncing its parent directory too.
+        # Reject writable/shared parents so other users cannot swap the inode.
+        dir_flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
+        dir_fd = os.open(self.path.parent, dir_flags)
+        try:
+            parent = os.fstat(dir_fd)
+            if (not stat.S_ISDIR(parent.st_mode) or parent.st_uid != os.getuid()
+                    or parent.st_mode & 0o022):
+                raise JournalIntegrityError("G1_JOURNAL_UNSAFE_PARENT")
+        finally:
+            os.close(dir_fd)
         flags = (os.O_RDWR | os.O_CREAT | os.O_APPEND
                  | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0))
         fd = os.open(self.path, flags, 0o600)
@@ -213,6 +233,11 @@ class AppendOnlyJournal:
             for item in items:
                 if item.event.event_id == event.event_id:
                     if item.event == event:
+                        # A prior first-create may have failed to sync its
+                        # directory. A retry must not claim durable success
+                        # without fsyncing both file and directory.
+                        os.fsync(fd)
+                        self._sync_parent()
                         return item
                     raise JournalIntegrityError("G1_JOURNAL_REPLAY_CONFLICT")
             payload: dict[str, object] = {
@@ -232,6 +257,9 @@ class AppendOnlyJournal:
                     raise OSError("G1_JOURNAL_WRITE_FAILED")
                 view = view[written:]
             os.fsync(fd)
+            # Force the directory entry as well as the data to stable storage.
+            # If this fails, do not claim append success: retry is idempotent.
+            self._sync_parent()
             return JournalReceipt(len(items) + 1, digest, event)
         finally:
             os.close(fd)
