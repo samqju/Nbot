@@ -325,3 +325,21 @@ This **latest** checklist/roadmap reconciliation supersedes older CS-00 task row
 **Post-timeout independent audit:** both hosts reachable, `ps -eo comm=` showed no NBOT-named process, `systemctl list-units --all nbot*` none, no `/tmp/nbot-cs00-*` dirs. These are point-in-time checks only, not a substitute for ongoing monitoring. **Neither VPS service was started, installed, restarted, nor given new paper/real trading authority.**
 
 **Next owner action when ready:** agree a minimal durable off-host backup destination and retention/alert/operator details; then separately decide whether to authorize an actual public-market **CS-01** canary against a pinned reviewed SHA. The offline code acceptance is complete; the full operational approval remains HOLD.
+
+
+## Owner-selected one-command desktop WinSCP backup — 15 October 2026
+
+**This latest owner decision replaces the previous assumption that a paid object-storage provider or automatic laptop daemon is required.** The owner has an existing **1 TB Windows desktop hard drive** and will manually download dated NBOT records backups with **WinSCP** from the Observation-VPS when desired. No keys, purchases, new storage accounts, background jobs or NBOT startup.
+
+- [x] **CS-00-C4-OWNER DESTINATION SELECTED:** Existing 1 TB Windows desktop hard disk, **manual WinSCP** file transfer only; no cloud procurement.
+- [x] **CS-00-C4-UTILITY INSTALLED/TESTED:** On Observation VPS, `/home/ubuntu/nbot-backup` (`0700`) can be invoked with **`~/nbot-backup`**. Private source `/home/ubuntu/nbot-v5.1-state/` and output `/home/ubuntu/NBOT_Backups/` (`0700`), archive + SHA256 sidecar; no automatic deletion.
+- [x] **CS-00-C5-SYNTHETIC LOCAL FIXTURE:** Installed command created/checksummed one 579-byte synthetic-only backup and refused an empty state with `NO_V5_1_RECORDS_YET`; synthetic fixture and backup were removed by exact filename after proof.
+- [x] **CS-00-C4/C5 dedicated software acceptance:** Fourteen additional negative/manual backup tests; exact executable pinned code SHA `85a4b4a9186cbdb2f81c57bc3df06c9b70e754f9`; **553/553 PASS Observation VPS and 553/553 PASS Execution VPS**. Both isolated test checkouts removed. Installed utility file SHA256 `df8dbac184dc64b01cb5a2dcd4f44972eaf0169fd2908e99130f3e0040e97e11`.
+- [ ] **CS-00-C4 REAL WRITER INTEGRATION:** Future Observation service must save ALL authentic G2–G8 state, decisions, outcomes, models and selectively essential source/cost receipts into the approved root, and prove per-workload consistency across files before unattended live backup. Current Observation system is STOPPED and has zero permanent genuine records.
+- [ ] **CS-00-C5 ACTUAL OWNER DESKTOP COPY/RESTORE:** No WinSCP download to the owner's 1 TB desktop or actual live-record restore has yet been independently demonstrated. Future owner performs manual copy of **both** `.tar.gz` and `.sha256`, hash verification and retention review; never mark genuine G4-06-D original-source off-host grade using this synthetic fixture.
+- [ ] **CS-00-C4 measured live volume / manual retention schedule / disk-pressure monitoring** remain before full commissioning.
+- [ ] **Full CS-00 parent / CS-01 owner source-only startup** remain NOT AUTHORIZED/HOLD; G4–G10 authentic science/PAPER HOLD; G12 REAL LOCKED.
+
+**Owner's simple instructions:** [One-command Desktop Backup via WinSCP](NBOT_V5_1_OWNER_MANUAL_DESKTOP_WINSCP_BACKUP_V1_0.md). In PuTTY on Observation VPS run **`~/nbot-backup`**. If genuine record files exist and pass consistency checks, transfer both newly generated files from **`/home/ubuntu/NBOT_Backups/`** with WinSCP. At present it correctly says **NO RECORDS YET**: no false empty success and no live service started. Avoid old text claiming the owner must purchase/configure a provider for this chosen manual plan.
+
+The backup script is NOT a general filesystem archive and intentionally omits unrelated legacy branches/SSH keys. It verifies original file access and uses SQLite's native WAL-aware backup. A multi-file globally atomic snapshot still requires future live writer coordination; current code explicitly labels this limitation.
