@@ -66,6 +66,21 @@ class ContinuousIntegrationTests(unittest.TestCase):
         self.assertEqual(r["qualified_independently_reviewed_outcomes"],0)
         self.assertEqual(r["g7_paper_state"],"LOCKED")
 
+    def test_telemetry_streams_historical_candidates_without_model_row_list(self):
+        from unittest.mock import patch
+        original=self.engine.tick(COMMITTED+300)
+        self.assertEqual(original["candidate_population"],100)
+        # Telemetry is a read-only observer and must not materialize the
+        # entire qualified outcome list in RAM on each minute heartbeat.
+        with patch.object(self.engine,"verified_rows",
+                          side_effect=AssertionError("FULL_ROW_LIST_FORBIDDEN")):
+            report=self.engine.telemetry(COMMITTED+301)
+        self.assertEqual(report["candidate_population"],100)
+        self.assertEqual(report["qualified_independently_reviewed_outcomes"],0)
+        self.assertEqual(report["admission_states"],original["admission_states"])
+        self.assertEqual(report["hold_reasons"],original["hold_reasons"])
+        self.assertEqual(report["g7_paper_state"],"LOCKED")
+
     def test_v4_bounded_catchup_does_not_replay_completed_event(self):
         from nbot.v5.continuous_research import bounded_research_catchup
         first=bounded_research_catchup(self.engine,COMMITTED+300)
