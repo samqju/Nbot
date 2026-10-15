@@ -110,6 +110,16 @@ class CS00StateAndBackup(unittest.TestCase):
         with self.assertRaisesRegex(CommissioningHold,"RESTART_EPOCH_REVIEW"):
             second.on_boundary(FiveMinuteEvent(END_OPEN,END_DECISION))
 
+    def test_CSSTATE10_backup_fails_closed_while_writer_gate_held(self):
+        self.commit()
+        with state_gate(self.state):
+            with self.assertRaisesRegex(BackupHold,"STATE_IS_BUSY_BACKUP_RETRY"):
+                create_backup(state=self.state,destination=self.out)
+        self.assertEqual(SourceOnlyStateWriter(self.state).verify()["checkpoints"],1)
+        # Once the writer releases the lock, a new verified backup succeeds.
+        out=create_backup(state=self.state,destination=self.out)
+        self.assertEqual(out["status"],"BACKUP_CREATED_AND_LOCALLY_VERIFIED")
+
     def test_CSSTATE06_frozen_cohort_no_second_event(self):
         self.commit()
         with self.assertRaises(Exception):
