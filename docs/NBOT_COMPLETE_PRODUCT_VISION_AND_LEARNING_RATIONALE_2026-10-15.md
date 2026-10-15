@@ -1,6 +1,6 @@
 # NBOT — Complete Product Vision, Learning Philosophy, and Reason for Every Major Component
 
-**Vision document, version 1.6 — 15 October 2026**
+**Vision document, version 1.7 — 15 October 2026**
 
 **Purpose:** Explain what NBOT is supposed to become, why it was conceived, what V4 taught us, why V5 includes virtual research trades, Champion/Challenger learning and paper trading, and how all of that serves a **single-position autonomous trading bot** rather than a needlessly complicated research institution.
 
@@ -1022,116 +1022,115 @@ These are **minimum design principles**, not claims that every failure path has 
 
 ---
 
-## 8G. Proposed refinement — discover 200, deeply research 50, selectively trade at most one
+## 8G. Preferred simplified architecture: 100 observed → 20 researched → one actual position
 
-**Discussion proposal — not yet a final owner-approved replacement for §8F.** The owner suggests a wider discovery system: Observation initially identifies up to 200 coins from high trading turnover, leading gainers and leading losers; Exploration characterizes all of them; Research then identifies up to 50 coins deserving detailed virtual-trade investigation. Trading models use the same upstream discovery information for paper and future separately authorized real recommendations.
+**Prospective product decision, 15 October 2026.** The owner proposes reducing broad Observation from 200 to **100** coins, and deeper Research from 50 to **20** coins, so the existing small VPSs need fewer feeds, less original source storage and less simultaneous state. **This 100 → 20 → 1 design supersedes the earlier 200 → 50 discussion in this section.** It is a preferred architecture for offline engineering tests, NOT an implemented change, engineering signoff or authorization to start services.
 
-**Assessment:** The two-tier design is stronger in principle than choosing 50 solely by volume **if** it remains unbiased enough for learning, operates within measured VPS resources and does not confuse recognizable patterns with profitable opportunities. It needs an independently tested 200-coin lightweight intake and a separate 50-coin high-integrity source/virtual-research tier. Current V5 code supports only a 50-coin live/source cohort and cannot simply be configured to collect 200 with full G4 quality.
+### A. Choose 100 broad observation coins
 
-### 1. Up to 200-coin DISCOVERY universe — broad but lightweight
+Select up to **100 unique, eligible Binance USD-M USDT-margined and USDT-quoted TRADING PERPETUAL markets**, with BTCUSDT mandatory for market context.
 
-1. Use verified point-in-time Binance USDT-quoted/margined USD-M TRADING PERPETUAL contract and volume data, excluding unsupported, stale, newly unavailable or financially unsuitable instruments under prospectively reviewed criteria.
-2. Reserve BTC as a mandatory market reference and optionally an eligible candidate; never duplicate it between groups.
-3. **Provisional discovery composition** for evaluating this design, after common liquidity/data-quality gates and deduplication:
-   - About **100 highest turnover** eligible coins (including BTC if eligible).
-   - About **50 biggest 24-hour percentage gainers**, measured *as of the selection timestamp*.
-   - About **50 biggest 24-hour percentage losers**, measured *as of that same timestamp*.
-4. Overlap means there may be fewer than 200 unique coins. Fill remaining positions from other liquid eligible symbols by predeclared ranking when justified; **never add an illiquid coin solely to reach 200**. Another balanced composition may ultimately be better and must be evaluated rather than retrospectively chosen for winning results.
-5. Retain membership, input snapshots, turnover, percentage-change category, selection timestamp, rejected reasons, source identity and group tags in a versioned frozen discovery epoch. A coin can be both high-volume and a gainer; its category labels may overlap and are **not additional independent outcomes**.
-6. Evaluate the purpose of the **gainers/losers** categories carefully: they broaden observed extremes but also create momentum/volatility and survivorship/selection biases. Never infer that a top gainer should be a LONG or a top loser should be a SHORT. Control for extreme spread, liquidation events, unsuitable volatility and regime concentration.
-7. Keep this tier **lightweight**: as-of closed 5m candles and modest historical candle windows, BTC context, bounded relevant source and health status, and compact Exploration records. Do not subscribe to full 200-coin tick, order-book, quote and source-archival streams by default. Use market-wide public snapshots and a carefully rate-limited, bounded finalized-candle intake; prove rate/CPU/memory feasibility on the two existing VPSs.
+Use a provisional, deduplicated mix of **50 high-24h-USDT-turnover coins, 25 top percentage gainers and 25 top percentage losers** (as known at selection time). A coin may belong to multiple groups; preserve its category tags but never count it twice. Apply common liquidity, spread, adequate history, source-quality and exchange-status screens **before** considering it. Fill missing positions with other already-qualified liquid markets under a documented deterministic ranking, or observe fewer than 100 if the market cannot support 100 valid names.
 
-**The observation/exploration tier can understand broad price structures without yet knowing detailed hypothetical execution outcomes.** Broad labels must indicate partial, missing and source-uncertain states rather than imply that a 5m candle is full price/quote execution evidence.
+Top gainer means **interesting momentum**, not BUY. Top loser means **interesting weakness or reversal**, not SHORT. Do not use subsequent price movement to rewrite prior list membership.
 
-### 2. Exploration labels all 200 consistently before anyone selects the 50
+Keep this tier **lightweight**: validated completed five-minute candles, bounded recent history, BTC and overall-market context, and compact health/selection snapshots. Do not subscribe to or permanently archive every aggTrade, book and quote message for all 100 symbols. Use rate-limited, source-verified broad candle intake and record point-in-time universe changes. The current G1 implementation is **hard-capped at 50**; a separate 100-lightweight intake and safe cohort controls must be engineered and tested, not obtained by increasing a constant blindly.
 
-For every complete discovery-market event, record the full observed universe and eligible candidate denominator using **point-in-time features**:
+### B. Explore all 100; select 20 for deep research
 
-- BTC trend, sudden shock and volatility; overall market breadth and market regime.
-- Each coin's own trend, range/breakout, support/resistance and causally confirmed structure; relative strength, BTC correlation/divergence, liquidity, volatility and age of information.
-- Versioned states of the original **24 V4 pattern detectors**, with a clear distinction between implemented detectors and proposed extra chart formations such as double tops/bottoms or cup-and-handle.
-- Explicit LONG, SHORT and NO TRADE possibilities, detector absence, freshness and exclusion reasons.
-- Source/time IDs, original discovery-category membership and permanent event/candidate digests.
+For every complete five-minute broad observation event, Exploration describes all 100 coins and **both directions**, up to **200 coin-side observations**. Each observation records: valid source and decision time, BTC regime and sudden moves, overall market breadth/volatility, coin trend/structure/relative BTC strength, verified liquidity and source quality, the states of all **24 original V4 pattern detectors**, plausible LONG/SHORT and explicit NO TRADE or HOLD reasons.
 
-The complete discovery choice set is potentially **200 × 2 = 400 coin-direction observations per completed event**, but this is **NOT** 400 full virtual trades and should not create high-frequency SQLite write amplification. Label once per event in bounded batches.
+The **Research admission policy** selects up to **20 deep-monitored symbols, including BTCUSDT**, so there are exactly **40 possible coin-direction observations** when all 20 are valid. Selection should be determined by:
 
-### 3. Who chooses the deeper-research 50?
+1. **Reliable original source and tradability**: safe contract, liquid book, acceptable spread, adequate finished candles and fresh quote/trade/cost evidence.
+2. **Interesting causal structures and varied regimes**, not maximum detector-match count or biggest percentage increase.
+3. **Previously matured qualified economic evidence**, only if available before the shortlist event and scientifically defensible.
+4. **Research coverage and diversity**: BTC/coin market regimes, both directions, momentum/reversals/ranges, and some no-pattern or less-studied control opportunities. Avoid 20 strongly correlated coin directions masquerading as 20 independent findings.
+5. **A fixed cohort/admission clock and selection audit**: record why coins were included or excluded, source timing, policy version, identities and prospective inclusion probabilities for sampled controls. A new research member needs its own verifiable source warm-up; do not backfill original quote continuity.
 
-**Research may own the shortlist admission, but Learning and the current validated Champion can provide historical guidance.** Exploration supplies candidates; Research applies a **separate, predeclared, capacity-aware** admission policy.
+The 20 are **the high-integrity research source budget**, not 20 recommended live positions. An eligible new market must not become paper/real trade-ready until independently verified current quotes, costs and risk controls exist.
 
-Do **not** select the 50 only because those coins currently match more of the 24 detectors, or because an exploratory model claims they look profitable using unvalidated scores. That would recreate V4's rule-count bias and prevent learning about overlooked opportunities.
+### C. Forty candidate possibilities do not mean forty NEW virtual trades every five minutes
 
-Recommended 50-slot policy to test:
+**Label all 40 LONG/SHORT possibilities per 20-coin five-minute event**. These compact candidate labels remain useful even when no hypothetical trade starts.
 
-- **Tradability gate first**: original source availability, stable liquidity, feasible quote/spread/depth/risk, adequate history and acceptable cost evidence.
-- **Exploitation share**: allocate a bounded portion to currently promising configurations supported by **previously qualified** out-of-sample economic evidence, not just pattern counts.
-- **Exploration/control share**: preserve some stratified opportunity for under-studied BTC/coin regimes, both directions, weak/no-pattern candidates and random-but-eligible controls so learning does not become purely self-confirming. Declare allocation and inclusion probabilities prospectively.
-- **Diversity and dependence**: prevent 50 almost-identical BTC-driven momentum positions from masquerading as diverse independent market evidence.
-- **Frozen admission epoch**: persist why each coin was included/excluded and when; never rewrite membership or add yesterday's apparent winners retroactively. Dynamic source activation, if allowed, requires an independently proven warm-up and lossless evidence path.
+A virtual research trade additionally requires a qualified frozen entry, side, stop, target, horizon, initial risk, cost policy and original evidence plan. It is not an exchange order. Multiple pattern tags on one coin-side are not multiple independent virtual trades.
 
-**50 coins are the high-integrity G4 research coverage budget, not the number of possible trades and not a requirement to initiate 50 simultaneous virtual experiments.** Separate the per-coin deep coverage from the per-event bounded virtual-intent budget. Keep BTC available even when not selected as a tradable hypothesis.
+If 40 new four-hour virtual experiments begin at **every** five-minute event with no concurrency cap, the system could have **1,920 overlapping virtual experiments** (40 times 48 five-minute events). Twenty monitored symbols do not automatically prevent this.
 
-The final size **200 and 50** should be tested as resource/learning trade-offs rather than assumed sacred. If 200 broad sources or 50 deep streams cannot be handled on the existing VPS, reduce the effective size while preserving scientific transparency rather than compromising source integrity.
+**Recommended initial OFFLINE TEST policy:**
 
-### 4. Reuse the same discovery/exploration system for paper and future real decisions — with a source-readiness gate
+- Permit **at most 8 new virtual experiments per five-minute event** after prospectively defined scientific sampling; fewer or zero is valid.
+- Permit **at most one currently active experiment for a given symbol and side**; enforce a **global maximum of 40 active virtual experiments** across the 20 symbols. A simultaneous virtual LONG and SHORT on one coin is possible for controlled research, but highly dependent.
+- Keep the entire original 40-possibility denominator with reason codes for not admitting a virtual experiment. Sample across eligible regimes, coin structures, both directions, matched/no-pattern controls and current-model rejected opportunities, recording the sampling rule.
+- Evaluate 4, 8, 20 and 40 permissible starts in accelerated offline workload tests, always respecting the 40-active global cap. Decide the eventual limit using measured RAM, CPU, source I/O, sample diversity and usable fully qualified outcome yield, not guesswork.
 
-**Yes:** Observation and Exploration should generate **one canonical decision-time market snapshot**. Research uses it to decide what to study; the approved Champion uses it to score current trade opportunities; Challenger models use the same snapshot when comparing paper decisions. This prevents separate contradictory views of market regime or BTC state.
+Under the **40-active cap**, at most 40 hypothetical positions exist concurrently, even if prior event-bound mathematical estimates are higher. This is a bound on virtual research bookkeeping, NOT a requirement to create 40 labels with verified trade results. Learning from 20 symbols may reduce regime/coin diversity and slow the genuinely qualified 2,000-outcome cohorts; benchmark that trade-off honestly.
 
-**But not every coin among 200 is immediately trade-ready.** For paper or a future separately authorized actual entry, require that the coin has sufficient **fresh quote/depth/cost/risk evidence and independently verified source readiness** at that decision time. A coin that only has five-minute broad-discovery candles can be scored as interesting **but must not produce an executable proposal based on imagined intrabar quotes**.
+### D. Use the same canonical market evidence for Research and Trading Decisions
 
-A simple safe approach for initial release is:
+Do **not** create separate Observer/Explorer systems for virtual, Champion paper, Challenger paper and possible future real decisions.
 
-1. **Discover and label up to 200.**
-2. **Deep-monitor up to 50**, with prequalified trade-relevant quote/aggTrade/cost sources.
-3. **Champion ranks currently trade-ready opportunities among those 50**, or abstains.
-4. **Execution independently vets the recommendation.**
-5. **Only one actual position globally**, if real authority is ever separately granted.
+- One **100-coin Observation/Exploration snapshot** supplies BTC, market and individual-coin conditions to the shared learning architecture.
+- Only the **20 deeply monitored, independently trade-ready** symbols can initially generate actionable model proposals. Broad-candle-only coins may be interesting but cannot magically become executable without fresh bid/ask, order-book/size and source verification.
+- The **approved frozen Champion** can recommend the single best sufficiently qualified LONG/SHORT from the current eligible pool or **NO TRADE**. The Challenger may make separate paper-only proposals in a qualified comparison.
+- The **Execution guardian** independently validates current quotes, model version/approval, idempotency, actual position occupancy and risk/size/cost. Paper Champion/Challenger books have at most one independently simulated open position each under the proposed policy. Future separately approved actual trading has **at most ONE global real position**.
 
-A future improvement can allow the model to nominate a coin from the larger 200 list for **promotion to trade-ready monitoring**, but it must first obtain a new bounded source-generation and warm-up/verification period. It **cannot backfill a missing fresh order-book state or create a trade decision in the past**. Compare this dynamic version only after fair prospectively defined trials.
+Research and production selection have **different goals**: Research needs a scientifically balanced opportunity sample, whereas the Champion needs the most credible currently qualified economic opportunity. Never let shortlist generation become the same old V4 rule-count popularity ranking.
 
-The first 200 → 50 discovery process may be shared across research and trading, but the **goals of shortlist selection differ**: Research needs scientifically diverse evidence, while Trading needs the best **currently qualified after-cost opportunity**. Do not let the same retrospective winner-biased shortlist erase necessary research controls.
+### E. RAM, permanent source storage and interrupted-feed recovery
 
-### 5. One-second candle recovery — useful supplementary evidence, NOT automatic original tick/quote repair
+**Reducing the number of coins does not justify discarding the evidence a virtual result depends on.** Use a bounded three-layer design:
 
-**What public documentation currently supports:** Binance USD-M Futures common definitions list **1s** among candle intervals. Its currently published historical kline endpoint reference may list intervals starting at **1m**. Confirm actual **USDT-M /fapi/v1/klines** 1s response support, symbol/date history, continuity and request limits under a separately approved bounded verification before using it as an operational recovery contract. Binance Spot 1s availability alone would not prove Futures support.
+| Layer | Stored data and recovery role |
+| --- | --- |
+| **Small RAM windows** | Most recent quotes, completed-candle rings, source/feed health and active virtual-path state; rebuild only from authentic durable or new source |
+| **Immutable compact ledger** | Closed five-minute candles, 200 broad/40 deep directional labels, cohort decisions, virtual intents/results, processing cursors and paper books; **not one SQLite write per WebSocket frame** |
+| **Compressed original source segments** | Relevant **complete** high-frequency aggregated trades, quote and mark/funding evidence for the 20 deep-source symbols, losslessly recorded in bounded RAM microbatches and checksum/hash-linked durable files |
 
-A one-second candle contains **OHLC values but not the order of trades inside that second**. If stop and target both fall within its high-low range, we cannot prove which executed first. One-second candles also do not reproduce historical executable bid/ask spreads, limit-order queue position, actual fees/slippage or funding.
+One per-coin source stream should serve all the eligible active virtual hypotheses for that coin. Do not create 40 redundant WSS connections or replay the full original archive individually for each candidate. The current compressed G4 recorder already avoids individual frame-per-row SQLite inserts, but its finite disk cap still needs proper sealed archival, rollover and verified restore.
 
-**Recovery preference:**
+**Crash or interruption:**
 
-1. Replay and independently verify the original durably recorded receipt and source-segment chain.
-2. For missing futures market-trade segments, **try to recover matching original aggregate trades** with ID/time continuity from the correct Binance USD-M source within its documented windows/rate limits, or checksum-verifiable historical Futures archives where available. Record source provenance/grade of the repair.
-3. Use independently retrieved **1-second OHLC candles** (where the exact Futures endpoint and period are proven supported) to reconstruct **coarser price context** and identify definitely untouched or clearly ambiguous price intervals; otherwise use the supported coarser completed-candle interval for context only.
-4. If original trade chronology, exact stop/target first touch or needed entry/exit bid/ask cannot be verified, record **CANDLE_ONLY_CONTEXT / PRICE_PATH_AMBIGUOUS / EXIT_QUOTE_MISSING / UNRESOLVED** as appropriate to the frozen schema. **Do not upgrade those virtual results to the original independently qualified after-cost cohort** merely because a candle says the high/low crossed a level.
-5. Persist the original interruption and recovered-source provenance, use a new source epoch and require fresh quotes/independent Execution safety before any new authorized entry. Recovery of research evidence is never a reason to unilaterally reopen operational trading.
+1. Begin in LOCKED/HOLD; validate durable SQLite, source manifests and complete hash-chained segments. Detect any unsynced RAM tail and mark an explicit disconnected/restarted source epoch.
+2. Restore **finished candles** from source-overlapping Binance historical candle data when valid. Preserve the distinction between recovered candles and missing original trade/quote evidence.
+3. Where available, independently recover **complete original Binance USD-M aggregated trades** with validated sequence/clock/identity before allowing an original first-stop/target verdict.
+4. Historical **one-second candles**, if actually supported by the specific Binance USD-M Futures endpoint and available for the time/symbol, can repair coarse price **context**; they cannot reveal whether target or stop was touched first **within** a one-second candle when both were crossed, and cannot reconstruct original executable bid/ask, actual fills or missing funding receipts.
+5. A virtual intent dependent on an unverifiable interval becomes UNRESOLVED/CENSORED/HOLD, not a scientific win/loss or qualified after-cost outcome. Reconnect to fresh verified BTC and relevant coin quote/trade sources before new original-grade work.
+6. Independently reconcile the two paper books and any later separately authorized actual order/position; an unknown real position makes the one-position slot **occupied until proven otherwise**.
 
-**Example:** a one-second candle has high above the target and low below the stop. Either could have happened first, so even a one-second historical candle cannot certify a win. A gap-free series of original aggregate trades can, subject to source validity and compatible exit-price convention.
+Full original evidence needed for ongoing intents must remain verifiable. Stop new virtual admission if disk headroom or independent archival custody fails; never silently overwrite or prune the only source copy.
 
-For initial scientific qualification, prefer **complete original trade-path and independently reviewed quote/cost evidence**. Secondary 1s-candle reconstruction can be separately labeled exploratory evidence and help reduce unknown context, but must not be silently pooled with strictly qualified original outcomes.
+**External factual verification required:** Binance USD-M Futures common references may recognize a 1s interval while particular historical kline endpoints list different allowed intervals. Confirm actual exchange endpoint support, history depth and rate limits **before** promising automatic one-second recovery. Spot 1s candles are not a substitute for futures market prices.
 
-### 6. Recommended source/storage tiers for small VPSs
+### F. Split the workload without adding new heavy running services
 
-| Tier | Scope | Durable artifacts | Performance strategy |
-| --- | --- | --- | --- |
-| **Discovery / Observation** | Up to 200 liquid eligible USDT-M symbols with BTC always included | Completed candles, source-health checks, broad market and selection snapshots | Lightweight public snapshots, bounded closed-candle feeds, compact event batches; **no 200-market raw tick archive** |
-| **Exploration** | All valid discovered coins, both directions and 24 detector states | Compact market-event/coin/side/structure labels and complete 400-side denominator | Derive once from shared feature windows; transactional batches; no per-frame SQLite |
-| **Deep Research** | Up to 50 independently selected eligible symbols, with bounded virtual hypotheses | Immutable virtual intents/outcomes and verified trade/quote/funding source custody | Original high-frequency inputs to bounded RAM, compressed hash-chain segment files; shared per-symbol incremental path updates |
-| **Inference** | Frozen Champion/Challenger against current valid broad snapshot; actionable subset must be trade-ready | Small versioned recommendations, abstentions, source and expiry IDs | Light model inference, not online training/replay |
-| **Paper / future Live** | One Execution guardian, paper comparison books and a separately authorized future global one-position executor | Separate cash/position/order/fill/accounting ledgers | No duplicate 200- or 50-coin deep source pipeline on Execution by default; independent fresh-market/cost/risk checks still required |
+| Work | VPS | Design |
+| --- | --- | --- |
+| Observe 100 markets and explore 200 coin-directions | **Observation** | Lightweight finalized candles, bounded feature history, event batches and no 100-symbol raw-tick archive |
+| Deep 20 original-source markets, up to 40 active virtual experiments | **Observation** | Bounded source writer, shared per-symbol incremental trade-path updates, durable intent/economic labels |
+| Learning/Training | **Observation, or separately approved offline compute if load testing requires** | Batch offline from immutable qualified snapshots, outside real-time collector deadlines |
+| Approved Champion/Challenger inference | **Observation** | Lightweight fixed model evaluation of the same market event |
+| Paper orders, stops and separate accounting | **Execution** | One guarded paper subsystem, two independent logical books when a comparison is authorized |
+| Stage 6 model comparison | **Observation** | Small reviewed paper/equity/decision summaries, not a duplicate raw market collector |
+| Future separately approved real execution | **Execution** | Independent risk veto, exchange reconciliation and at most one real position |
 
-**Hardware reality:** the current V5 source and candidate interfaces were built and tested around a **maximum 50-coin cohort**. A broader 200-coin discovery layer, the admission bridge, rate limits, feature correctness, source-health accounting, local RAM and I/O bounds require new source code and offline stress acceptance. This design note does **not** grant authority to run the collectors or to increase process limits by configuration.
+The main reduction is likely in **deep high-frequency trade/quote source I/O and archives** when going from 50 to 20, though high-volume BTC may dominate actual load. The RAM savings from fewer broad candle windows are real but may be modest; paper book RAM is mostly determined by the number of open simulated positions and accounting history, not 20 versus 50 watched symbols.
 
-### 7. Recommended tests before choosing between 50-only and 200→50
+### G. Offline engineering acceptance before activating services
 
-1. Offline simulate **200 broad 5m markets** with BTC context, overlapping volume/gainer/loser groups, missing symbols and variable liquidity. Prove exactly correct unique membership, source times and complete candidate denominator.
-2. Compare original top-50-by-volume, 200→50 **pattern-count** (negative control), and 200→50 **economic/coverage-based predeclared** selection on untouched chronological periods, keeping opportunity budgets and source-grade differences explicit.
-3. Prove high-frequency source collection is **only** admitted for the deep-50 tier, with bounded RAM/disk and no overload or lost five-minute events.
-4. Simulate startup/warm-up and changing shortlist. No coin enters trade-ready state without required fresh source, stable risk/cost quality and causal feature history.
-5. Simulate genuine-format trade-gap reconstruction with complete original aggregate trades versus ambiguous 1s candle. Only a correctly verified complete source may qualify the after-cost original label.
-6. Model rate limits, archive capacity, crash/restart, outage, corrupt data, partial retrieval and stale BTC state; no false original continuity or automatic paper/live authority.
-7. Keep G5's real 2,000-outcome gate and additional disjoint Challenger cohort, and test model comparison on a common forward paper period before any proposed promotion.
+1. **100-market selection:** Valid exchange membership, deduplicated top-turnover/gainer/loser cohorts including BTC, exclusion reasons, timestamps, and causal full 200 coin-direction Exploration records. Invalid inputs produce explicit HOLD.
+2. **20 deep-source admission:** Verify liquidity/cost/source prerequisites, BTC mandatory context, diverse regime controls, frozen shortlist and 40 directional possibilities without creating 24 separate trades for every detector.
+3. **Virtual control:** Verify max 40 active experiment identities, one per coin-side, reproducible selection, maximum 8 starts/event under the trial configuration, eligibility/abstention, correct settlement and no survivor-only learning denominator.
+4. **Performance:** Offline synthetic 100 broad / 20 deep event-stream, many active virtual intents; measure maximum RSS, CPU, event latency, raw source disk growth, replay cost, archive sealing and restart.
+5. **Recovery:** Crash before/after the compressed segment flush, corrupt source, missing aggregate trades and ambiguous 1s candles; no unverified original after-cost label after any source gap.
+6. **Full integration:** One synthetic-grade Observation→Exploration→Research→Learning→Training→Champion/Challenger→Paper path, with genuine-original grade locked until independent source/economic acceptance.
+7. **Paper / real safety:** Champion-first separately authorized paper stage, later two separate one-position paper books, model comparison, frozen releases and independent one-global-real-position refusal contract; no real exchange orders or service starts.
+8. **Capacity:** Continuous storage rollover and independently verified off-host archive or a clear retention/quotas HOLD; no unapproved deletion or impossible perpetual recording promises.
 
-**Product recommendation:** Move toward **200 broad discovery → 50 deep research/trade-readiness → one approved actual position or NO TRADE**. Retain scientific exploration/control slots so the system does not only prove that its current favorites are favorites. Adopt this over the earlier simple top-50 rule **only after** owner approval of the concept and successful 200-market offline engineering and resource acceptance.
+**Current engineering status:** The presently tested NBOT V5 source was built around 50 monitored coins and 100 directional candidate records. A 100-market lightweight discovery engine, independently selected 20-coin original G4 source cohort and 40-active virtual admission constraints are **design choices awaiting engineering and offline tests**. The 2,000 genuine qualified outcome requirement remains a scientific review checkpoint, not 2,000 mandatory real trades or an automatic training approval.
+
+**One-sentence objective: Observe 100, deeply research 20, learn honestly from up to 40 concurrent virtual hypotheses, choose only one qualified actual position—or NO TRADE.**
 
 ---
 
