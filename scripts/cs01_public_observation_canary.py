@@ -98,7 +98,7 @@ def main():
         "source_receipt_files": len(list((state/"evidence").glob("segment-*.json"))),
     }
     emit("CS01_PUBLIC_OBSERVATION_CANARY_RESULT",**result)
-    if (error or not pipe or pipe.source_frames<3 or pipe.source_gap_count>0
+    if (error or not pipe or pipe.source_frames<3 or pipe.hard_source_gap_count>0
             or app.exit_reason!="CS01_TIMED_CANARY_COMPLETED"
             or app.errs):
         return 2
