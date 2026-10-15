@@ -60,20 +60,49 @@ class GuardedPaper:
 
     def unlock(self, envelope, now_ms):
         # No runtime key defaults. A synthetic release cannot enter original DB.
-        if set(self.models) != set(BOOKS) or set(self.keys) != set(BOOKS):
+        stage = envelope.get("body", {}).get("release_stage", "COMPARISON") if isinstance(envelope, dict) else "COMPARISON"
+        allowed = {BOOKS[0]} if stage == "CHAMPION_ONLY" else set(BOOKS)
+        if stage not in ("CHAMPION_ONLY", "COMPARISON"):
+            raise ValueError("PAPER_RELEASE_STAGE_INVALID")
+        if set(self.models) != allowed or set(self.keys) != allowed:
             raise ValueError("PAPER_TWO_QUALIFIED_MODELS_REQUIRED")
         if (any(not isinstance(k, bytes) or len(k) < 32 for k in self.keys.values())
-                or self.keys[BOOKS[0]] == self.keys[BOOKS[1]]):
+                or (len(allowed) == 2 and self.keys[BOOKS[0]] == self.keys[BOOKS[1]])):
             raise ValueError("PAPER_SEPARATE_KEYS_REQUIRED")
         subject = digest({"models": self.models, "policy": self.policy,
                           "grade": "SYNTHETIC" if self.synthetic else "ORIGINAL"})
         body = verify_review(envelope, key=self.reviewer_key, subject_sha256=subject,
                              purpose="G7_PAPER_RELEASE", now_ms=now_ms)
-        if (any(body.get(k) is not True for k in ("g5_accepted", "g6_accepted", "g7_accepted", "champion_qualified", "challenger_qualified"))
+        gates = ("g5_accepted", "g7_accepted", "champion_qualified")
+        if not self.synthetic:
+            gates += ("owner_paper_authorized",)
+        if stage == "COMPARISON":
+            gates += ("g6_accepted", "challenger_qualified")
+        else:
+            # Roadmap sections 18.3 and 19 authorize the first Champion stage,
+            # but require a NEW explicit authenticated release, never fallback
+            # from a failing two-model release or an unsigned configuration.
+            gates += ("owner_paper_authorized", "g6_champion_validation_accepted")
+        if (any(body.get(k) is not True for k in gates)
                 or body.get("grade") != ("SYNTHETIC" if self.synthetic else "ORIGINAL")):
             raise ValueError("PAPER_SCIENTIFIC_GATES_LOCKED")
+        for model in self.models.values():
+            if not sha(model) or self.store.db.execute(
+                    "SELECT 1 FROM research_journal WHERE identity=?",
+                    ("model-revoked:"+model,)).fetchone():
+                raise ValueError("PAPER_MODEL_INVALID_OR_REVOKED")
         self.release = envelope
         self.store.append("release:"+digest(envelope), "RELEASE", now_ms, envelope)
+
+    def revoke_model(self, model_sha256, envelope, now_ms):
+        body = verify_review(envelope, key=self.reviewer_key,
+                             subject_sha256=model_sha256,
+                             purpose="G7_MODEL_REVOCATION", now_ms=now_ms)
+        if body.get("grade") != ("SYNTHETIC" if self.synthetic else "ORIGINAL"):
+            raise ValueError("PAPER_REVOCATION_GRADE")
+        self.store.append("model-revoked:"+model_sha256,"MODEL_REVOKED",now_ms,
+                          {"model_sha256":model_sha256,"review":envelope})
+        self.kill("MODEL_APPROVAL_REVOKED",now_ms)
 
     def kill(self, reason, now_ms):
         self.release = None
@@ -163,7 +192,7 @@ class GuardedPaper:
                           subject_sha256=digest({"models": self.models, "policy": self.policy, "grade": "SYNTHETIC" if self.synthetic else "ORIGINAL"}),
                           purpose="G7_PAPER_RELEASE", now_ms=now_ms)
             book = body.get("book")
-            if book not in BOOKS or not hmac.compare_digest(envelope.get("signature", ""), sign(body, self.keys[book])):
+            if book not in self.models or not hmac.compare_digest(envelope.get("signature", ""), sign(body, self.keys[book])):
                 raise ValueError("PAPER_AUTHENTICATION_FAILED")
             if (body.get("version") != "NBOT_V5_PAPER_V2" or body.get("model_sha256") != self.models[book]
                     or body.get("authority") != "PAPER" or body.get("side") not in ("LONG", "SHORT")
