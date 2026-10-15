@@ -328,5 +328,66 @@ class G5ResearchTests(unittest.TestCase):
         self.assertEqual(self.book.active[a.intent_id].seen,2)
         self.assertEqual(self.book.active[b.intent_id].seen,2)
 
+    def test_R30_inactive_coin_continuously_tracked_and_later_admitted(self):
+        self.book.ingest(self.tick("100",id=1))
+        self.book.ingest(self.tick("101",id=2,t=END_DECISION+1000))
+        self.assertEqual(self.book.source_heads["BTCUSDT"][1],2)
+        self.admit(self.plan())
+        # Arrival with next aggregate ID must remain acceptable.
+        self.book.ingest(self.tick("100",id=3,t=END_DECISION+2000))
+        self.assertEqual(self.book.status()["held"],0)
+        self.assertEqual(self.book.occupied,1)
+
+    def test_R31_idle_source_gap_remains_held_after_restart(self):
+        self.book.ingest(self.tick("100",id=1))
+        self.book.ingest(self.tick("101",id=3,t=END_DECISION+1000))
+        self.assertIn("BTCUSDT",self.book.source_held)
+        again=VirtualResearchBook(self.journal)
+        self.assertIn("BTCUSDT",again.source_held)
+        result=again.review(self.event,self.deep,lambda:(self.plan(),))
+        self.assertEqual(result.openings,0)
+        self.assertEqual(result.skipped_ineligible,1)
+
+    def test_R32_different_coin_trade_ids_are_independent(self):
+        second=next(s for s in self.deep.symbols if s!="BTCUSDT")
+        self.book.ingest(self.tick("100",symbol="BTCUSDT",id=5))
+        self.book.ingest(self.tick("100",symbol=second,id=1000))
+        self.admit(self.plan("BTCUSDT"),self.plan(second))
+        self.book.ingest(self.tick("100",symbol=second,id=1001,t=END_DECISION+4000))
+        self.book.ingest(self.tick("100",symbol="BTCUSDT",id=6,t=END_DECISION+4000))
+        self.assertEqual(self.book.status()["held"],0)
+        self.assertEqual(self.book.occupied,2)
+
+    def test_R33_two_same_event_review_denominator_has_all_40_pairs(self):
+        p=self.plan()
+        r=self.admit(p)
+        self.assertEqual(r.decision_denominator,40)
+        self.assertEqual(len(r.decision_rows),40)
+        self.assertEqual(len({(s,d) for s,d,_,_ in r.decision_rows}),40)
+        btc_long=next(t for t in r.decision_rows if t[:2]==("BTCUSDT","LONG"))
+        self.assertEqual(btc_long[2],"ADMITTED_SYNTHETIC")
+        self.assertEqual(btc_long[3],"1/1")
+        self.assertEqual(sum(1 for t in r.decision_rows if
+                             t[2]=="NOT_PROPOSED_OR_UNQUALIFIED"),39)
+
+    def test_R34_rejected_idle_gap_cannot_be_recovered_by_made_up_bar(self):
+        self.book.ingest(self.tick("100",id=1))
+        self.book.ingest(self.tick("105",id=3,t=END_DECISION+5000))
+        self.assertIn("BTCUSDT",self.book.source_held)
+        for id in (4,5,6):
+            self.book.ingest(self.tick("100",id=id,t=END_DECISION+6000+id))
+        r=self.admit(self.plan())
+        self.assertEqual(r.openings,0)
+        self.assertEqual(r.skipped_ineligible,1)
+
+    def test_R35_explicit_bad_source_status_never_mints_real_money(self):
+        from nbot_v5_1.research_intent import FrozenIntent
+        p=self.plan()
+        fake=replace(p,financial_authority="REAL")
+        with self.assertRaises(ResearchHold):
+            self.admit(fake)
+        self.assertFalse(self.book.closed)
+        self.assertEqual(self.book.status()["financial_authority"],"NONE")
+
 if __name__=="__main__":
     unittest.main()
