@@ -34,3 +34,27 @@ Prior CS01 quote-ingress failure stays real historical evidence; it was not a BT
 **Blueprint:** [Vision V1.10 trade-price-only amendment](NBOT_V5_1_PRODUCT_VISION_V1_10_TRADE_PRICE_ONLY_AMENDMENT_20261015.md), while V1.9 stays byte-for-byte unchanged.
 
 **DO NOT** install a persistent service, start PAPER/TESTNET/REAL, write an order, claim profitable Research, override V1.9 silently or qualify 2,000 outcomes from a modeled instant fill.
+
+
+## ACTUAL FINAL LIVE CS-01 RETEST — PASS (recorded after run)
+
+**Start:** 2026-10-15T16:56:46.529954Z; **duration cap:** 180 seconds; **process returned:** 0 (PASS) after precisely owner-approved **CS01_TIMED_CANARY_COMPLETED**. Manual foreground only; Observation VPS `python3` process and nbot systemd service list checked afterward, **both empty** at 17:02 UTC. The exact active canary source SHA was **`f474085753c3f88d81c66a00f00a6d13b8311ae9`**; `no_orders:true`, `financial_authority:NONE`, no accounts, no Model/PAPER/testnet/real activity.
+
+- [x] **Two-feed BTC smoke PASS:** BTC original `aggTrade` and `markPrice@1s` both received, no quote subscription.
+- [x] **Full 20-market TRADE+MARK 180s canary PASS:** `source_frames=32313`, exactly **40/40 source cursor pairs**, `source_gap_count=0`, `hard_source_gap_count=0`, `errors=[]`, `error=null`; all 20 recorded both kinds. Last live result `source_receipt_files=145` complete `.json` meta files.
+- [x] **No bid/ask fetch/subscription under ACTIVE CS01 profile:** a) 100 broad-market startup bootstrap explicitly `trade_only=True` and never calls REST `book_tickers()` b) combined WSS routes only **TRADE** and **MARK**, c) independently replayed evidence contained **ZERO quote frames**. Do not mistake preserved historical legacy functions for a live subscription.
+- [x] **Original raw custody read-only replay:** independent script `scripts/cs01_trade_only_readonly_replay.py` (written after the observed source-run, cannot affect its behavior), `DeepSegmentRecorder.replay()` SHA-256 verifies and restitches **145 hash-linked compressed segments** and **32,313 raw source records** without any repairs.
+  - `TRADE=29,372`, `MARK=2,941`; original distinct symbols `TRADE=20/20`, `MARK=20/20`.
+  - Maximum archived accepted Binance event `E` → host WebSocket receipt delay: **TRADE 236ms**, **MARK 397ms**. These are maxima **for accepted saved frames**, not independent proof of latency outside saved evidence or upstream-source authenticity.
+  - Original verified custody chain head **`647114e2ef27e3a67ba5402963b937f5efab0cb77a6f58580fa8842addbdb934`**.
+  - `reviewable_underlying_id_skips=51`. These are **underlying trade `f/l` ID** discontinuity review counters, NOT 51 broken `aggTrade a` IDs; no hard aggregate-ID gap observed, continue scientific semantic review.
+- [x] **New owner-private manual evidence archive generated/verified locally on VPS** (NOT yet downloaded to owner's 1TB Windows disk):
+  - `/home/ubuntu/NBOT_Backups/NBOT_V5.1_TRADE_ONLY_CS01_20261015T1656Z.tar.gz`
+  - `/home/ubuntu/NBOT_Backups/NBOT_V5.1_TRADE_ONLY_CS01_20261015T1656Z.tar.gz.sha256`
+  - File size **2,778,845 bytes**, 302 tar entries; `sha256sum -c` **PASS** on VPS.
+  - Archive sha256: **`de6f2c695867be361edd1d94ae2179632bf4de41d14991017e7566fcf1fee5f4`**. The previously preserved `20261015T152427Z` archive and checksum remain untouched.
+- [x] **Real public original G4 ingestion profile PASS for this 3-minute canary**, but **[ ] G4 overall continuous and independently qualified scientific source ACCEPTANCE remains HOLD**: this one canary was not multi-day, did not independently qualify source/exchange signature, did not span two full new five-minute boundaries, did not mature source-graded G5 virtual fills or cost-verified G6 outcomes, did not prove a Windows off-host backup restore. `pipeline.boundaries=1`, no source-graded virtual/PAPER/REAL result.
+
+**Source audit note:** Old 3-feed `bookTicker` stale HOlD remains true historical evidence; the new active mode eliminated that specific traffic channel, not source/clock/aggTrade/mark integrity risks. **Earlier 576 PASS are for active code SHA `781287...`; the canary tested `f474085...` with docs-only additions after `781287...`.** `b874b141...` is later *read-only replay script commit*, not live-service executable, and does not retroactively change the tested collector.
+
+**Outstanding [ ]:** independently run 5-min boundary and longer volatility/endurance of the new two-feed profile; authoritative grade and G5–G10 **no-quote modeled instant market-fill** versioned code/evidence rules; offhost WinSCP verification of these two archive files; retain original diagnostic roots. **Never count 32,313 source frames as Research wins**. This report should supersede provisional 'canary pending' paragraph above.
