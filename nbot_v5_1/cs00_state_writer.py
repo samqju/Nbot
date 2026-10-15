@@ -78,7 +78,8 @@ class SourceOnlyStateWriter:
 
     def record_boundary(self,book,snapshot,batch):
         if (snapshot.event_open_ms!=batch.event_open_ms or
-                snapshot.universe_sha!=batch.universe_sha or\n                snapshot.decision_at_ms!=batch.decision_at_ms):
+                snapshot.universe_sha!=batch.universe_sha or
+                snapshot.decision_at_ms!=batch.decision_at_ms):
             raise StateCheckpointHold("CS00_STATE_G2_G3_CAUSAL_MISMATCH")
         n=f"checkpoint_{snapshot.event_open_ms:016d}.json"
         with state_gate(self.root):
