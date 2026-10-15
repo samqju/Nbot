@@ -120,6 +120,27 @@ class CS00StateAndBackup(unittest.TestCase):
         out=create_backup(state=self.state,destination=self.out)
         self.assertEqual(out["status"],"BACKUP_CREATED_AND_LOCALLY_VERIFIED")
 
+    def test_CSSTATE11_stale_quote_is_journaled_and_backed_up_not_scored(self):
+        self.commit()
+        event=self.pipeline.ingest_offline_frame(
+            kind="QUOTE",raw=frame("QUOTE",received=NOW-8000),
+            received_ms=NOW,epoch=1)
+        self.assertEqual(event.state,"STALE_SOURCE_EVENT_SKIPPED")
+        self.assertEqual(self.pipeline.status()["soft_stale_quote_mark_skips"],1)
+        self.assertEqual(self.pipeline.status()["hard_source_gap_count"],0)
+        rec=self.state/"research"/"source_anomalies.jsonl"
+        self.assertTrue(rec.exists())
+        payload=rec.read_text()
+        self.assertIn("EVENT_FUTURE_OR_STALE",payload)
+        self.assertIn("UNQUALIFIED_SOURCE_EVENT",payload)
+        out=create_backup(state=self.state,destination=self.out)
+        man=_verify_archive(Path(out["backup"]))
+        self.assertIn("research/source_anomalies.jsonl",
+                      [f["path"] for f in man["files"]])
+        self.assertEqual(self.pipeline.heartbeat(at_ms=NOW,
+            rss_kib=50000,free_disk_bytes=1024*1024*1024,
+            queue_depth=0,boundary_lag_ms=100)["alerts"],())
+
     def test_CSSTATE06_frozen_cohort_no_second_event(self):
         self.commit()
         with self.assertRaises(Exception):
