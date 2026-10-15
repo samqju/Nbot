@@ -106,6 +106,7 @@ class DeepSegmentRecorder:
         files,ids=self._scan()
         old=ZERO
         output=[]
+        replay_cursors={}
         for idx in ids:
             stem=f"segment-{idx:08d}"
             packed=self._read(self.root/(stem+".gz"),MAX_BYTES)
@@ -145,6 +146,16 @@ class DeepSegmentRecorder:
                                 source_epoch=item["epoch"],selected_symbols=self.symbols)
                 if ev.state=="HOLD":
                     raise DeepSegmentHold("G4_SEGMENT_FRAME_INVALID")
+                if ev.kind=="TRADE":
+                    key=(ev.kind,ev.symbol,ev.epoch)
+                    prior=replay_cursors.get(key,(None,None))
+                    check=verify_frame(kind=item["kind"],raw=raw,
+                         received_at_ms=item["received_at_ms"],
+                         source_epoch=item["epoch"],selected_symbols=self.symbols,
+                         prior_agg_id=prior[0],prior_last_trade_id=prior[1])
+                    if check.state=="HOLD":
+                        raise DeepSegmentHold("G4_SEGMENT_TRADE_CONTINUITY")
+                    replay_cursors[key]=(ev.agg_id,ev.last_trade_id)
                 output.append((ev,raw))
             old=_sha(meta)
         return tuple(output),old,len(ids)
@@ -163,7 +174,14 @@ class DeepSegmentRecorder:
 
     def append(self,*,kind:str,raw:bytes,received_at_ms:int,epoch:int):
         # Never fill in source continuity from a REST candle or older segment.
-        oldid,lastid=self.cursors.get((kind,epoch), (None,None))
+        # The route carries interleaved coins: each coin has its OWN trade IDs.
+        # Verify basic raw fields before accessing its frozen source cursor.
+        initial=verify_frame(kind=kind,raw=raw,received_at_ms=received_at_ms,
+              source_epoch=epoch,selected_symbols=self.symbols)
+        if initial.state=="HOLD":
+            self.epoch_holds.add(initial.symbol)
+            raise DeepSegmentHold(initial.reason or "G4_SEGMENT_SOURCE_HOLD")
+        oldid,lastid=self.cursors.get((kind,initial.symbol,epoch), (None,None))
         ev=verify_frame(kind=kind,raw=raw,received_at_ms=received_at_ms,
               source_epoch=epoch,selected_symbols=self.symbols,
               prior_agg_id=oldid,prior_last_trade_id=lastid)
@@ -176,7 +194,7 @@ class DeepSegmentRecorder:
            "raw_sha256":ev.sha256,"received_at_ms":received_at_ms,"epoch":epoch})
         self.queued_bytes+=len(raw)
         if kind=="TRADE":
-            self.cursors[(kind,epoch)]=(ev.agg_id,ev.last_trade_id)
+            self.cursors[(kind,ev.symbol,epoch)]=(ev.agg_id,ev.last_trade_id)
         return ev
 
     def flush(self):
