@@ -1,8 +1,8 @@
 # NBOT V5.1 — Your Plain-Language Development Roadmap
 
-**Roadmap version:** 1.1  
+**Roadmap version:** 1.2 (updated for completed G3)  
 **Date:** 15 October 2026  
-**Status (current, 15 October 2026):** **Milestones 0, 1, 2, 3 COMPLETE** — G0 fresh-start preparation, G1 complete safe nontrading foundation, G2 read-only 100-coin Observation engineering. **Milestone 4 / G3 next.** Both VPSs passed 120/120 combined offline tests and the G2 100-coin synthetic capacity benchmark. **No permanently installed/running bot and no paper/testnet/real trading authorization.**  
+**Status (current, 15 October 2026):** **Owner Milestones 0, 1, 2, 3 AND 4 COMPLETE** (engineering G0–G3), including the original 24 historical V4 detectors as **hypotheses only**, up to 100 symbols × LONG/SHORT =200 records, 157/157 regression tests and 100×2×24 benchmarks passed on BOTH VPSs, and public read-only 100→200 evidence. **Milestone 5 / G4 NEXT. No permanent bot service, virtual research trades, paper or real trading approval.**  
 **Product blueprint:** NBOT Complete Product Vision **V1.9** (separately copied **unchanged** into this branch)  
 **Companion:** NBOT V5.1 Engineering Roadmap V1.0  
 **Repository/branch:** samqju/Nbot / nbot-v5.1
@@ -232,10 +232,25 @@ The guardian must be able to independently reject a proposal and enforce the one
   - [x] **G2-05-B:** Independently measured both VPSs with 100 coins ×96 closed bars, 120 events, 10 injected disconnects and full 100-row accounting: p99 event latency **51.867ms Observation**, **60.326ms Execution**, peak test RSS ~37 MiB, compact disk 2.71 MB; all limits PASS.
   - [x] **G2-05-C:** Tested byte-bound source integrity and negative cases, fixed all observed test/code faults, independently compared G2 source files/commit scope; old V3/V4/V5 runtimes never imported and all paper/live controls remain locked.
   - [x] **G2-06 — Entire G2 parent acceptance:** Full completed public read-only Observation engineering gate; all small tasks have test/source/resource proof **005d82324d7cb009e4939075b49e00e41e25f271**. No always-running service, scientific after-cost label, original tick stream or order access is implied.
-- [ ] **Milestone 4 — Explore structures and directions** (engineering G3)
-  - [ ] Verify/copy the required original **24 pattern detectors** safely, one reviewed item at a time.
-  - [ ] Describe BTC conditions and each coin's trend and price structure using information known at the time.
-  - [ ] Produce honest LONG, SHORT, unavailable and skipped-capacity labels; pass the accuracy tests.
+- [x] **Milestone 4 — Explore structures and directions (entire engineering G3 COMPLETE, 15 Oct 2026)**. All **157 offline tests passed on BOTH VPSs**; 100 coin ×2 sides ×24 historical pattern detectors processed within measured RAM/CPU/disk budgets, and actual read-only public source gave 200 honest capacity-masked records. [Full G3 evidence](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G3_FINAL_ACCEPTANCE_20261015.md), commit **fae1e2edc5f9403ccaf4b23e596176e89a2cfaf1**.
+  - [x] **G3-01-A — Historical 24 detectors all identified:** The original 24 V4 pattern IDs, their original meanings and their reference source hashes were verified; five describe general conditions and nineteen are mathematical candle patterns. The historical source was not copied wholesale.
+  - [x] **G3-01-B — Each original rule checked:** All 19 technical rules pass original positive fixtures for BOTH LONG and SHORT; all five original condition labels pass golden examples; missing BTC, flat markets, bad bars and unconfirmed swings do not create fake matches.
+  - [x] **G3-01-C — Safe code transfer:** Only required pure detector formulas copied/adapted; old database, paper trading/model-selection and original fixed-50 implementation are not imported. The new V5.1 wrapper has a separate version.
+  - [x] **G3-02-A — Time-safe coin market understanding:** Uses only verified finished five-minute candle history, BTC/overall market/coin trend and price structures; structures described as forming, confirmed, failed or uncertain where measurable.
+  - [x] **G3-02-B — Missing/old sources handled honestly:** Missing BTC never silently equals zero BTC movement; missing/gapped bars, uncertain market breadth and stale universe membership are unavailable/HOLD.
+  - [x] **G3-02-C — Source and costs not exaggerated:** Original volume/gainer/loser/BTC group tags, source checks and declared liquidity recorded; fees, funding, slippage and independent quote truth explicitly NOT VERIFIED. These are pattern descriptions, not successful trades.
+  - [x] **G3-03-A — Full 200 LONG/SHORT alternatives:** All 100 coins have both directional records, exactly 24 detector statuses per direction. No coin or opposite side disappears because of capacity or poor source.
+  - [x] **G3-03-B — Distinct missingness/statuses:** Separately record MATCH, NO_MATCH, UNAVAILABLE, NOT_EVALUATED_SOURCE, NOT_EVALUATED_CAPACITY and independent NO_TRADE. Missing BTC-specific information cannot be counted as a losing pattern.
+  - [x] **G3-03-C — Evaluate only when reported research capacity exists:** Default no vacant research slot => heavy pattern work skipped. A declared simulated vacant slot permits safe read-only rule checks, with fair/transparent deterministic selection and a recorded source-ready inclusion fraction.
+  - [x] **G3-03-D — Never treat patterns as orders:** Every candidate retains NONE order authority and NO_TRADE disposition, even when several patterns match. It cannot create virtual, paper or real positions.
+  - [x] **G3-04-A — Small compressed G3 evidence records:** Versioned private, finite, hash-checked, disk-synced and replayed 200-direction records preserve detector/source/capacity status with no silent deletion.
+  - [x] **G3-04-B — Negative tamper/restart checks:** Tests detect fake LIVE authorization, forged original/after-cost claims, masked rule changes, corrupted gzip, full disk, unsafe permissions, conflicting same-event evaluations and interrupted synchronization.
+  - [x] **G3-05-A — Full older and new tests on BOTH servers:** 67 G1 + 53 G2 + 37 G3 = **157/157 PASS on Observation-VPS AND independently Execution-VPS** (Python 3.12.3) at identical code revision `5d9707fe8521bbe17e96036aef0a5ec44a784a96`.
+  - [x] **G3-05-B — Genuine measured small-VPS capacity:** Each VPS tested 100×2×24 over 12 simulated events (2,400 complete records): 1,240 evaluated, 1,020 skipped for capacity, 140 skipped for gaps. Worst measured p99 **571.799ms Observation**, **549.342ms Execution**, ~42 MiB memory, 198,781 bytes compressed receipt disk. All budgets PASS.
+  - [x] **G3-05-C — Code and test results pinned:** Exact GitHub code revision/file hashes and test failures/fixes are documented. All revised functionality re-tested before G3 acceptance.
+  - [x] **G3-06-A — Real public read-only market integration tested:** On Observation-VPS, 100 qualified Binance USD-M markets including BTC had valid 96-candle public history; G3 reported **200 full direction rows**, zero source missing, **200 capacity-skipped** (since research slots have NOT been approved), all NO_TRADE, 24 detector state slots each. 103 public HTTP source receipts and G3 output replayed, no orders.
+  - [x] **G3-06-B — Strictly no trading/services:** No permanent VPS program or NBOT service installed, no trading API keys, original fee/quote/profit proof or live/paper trade; temporary public test receipts were removed afterward.
+  - [x] **G3-06-C — Entire G3 PASS:** All source lineage, test/negative fixtures, causal 200-way denominator, resource benchmarks, read-only real market receipt evidence verified. **G4 next; all trade permissions still LOCKED**.
 - [ ] **Milestone 5 — Select the 20 deeply researched coins** (engineering G4)
   - [ ] Write fair selection rules based on tradability, structure, previous evidence and variety.
   - [ ] Keep BTC and record why every chosen or excluded coin was selected or rejected.
@@ -325,7 +340,14 @@ The guardian must be able to independently reject a proposal and enforce the one
 | 2026-10-15 | [x] G2-05 all source safety tests on TWO VPSs | **005d82324d7cb009e4939075b49e00e41e25f271**, both Python3.12.3, **120/120 PASS** | Previous G1 safeguards still pass plus every newly tested G2 missing/stale/unknown/unsafe-data case |
 | 2026-10-15 | [x] G2-05 both 100-coin VPS stress measurements | **005d82324d7cb009e4939075b49e00e41e25f271**, 120 events, 10 disconnected simulated sources, p99 51.867 / 60.326ms, RAM ~37MiB, disk 2.71MB | Broad lightweight Observation meets the measured synthetic capacity of both small VPSs |
 | 2026-10-15 | [x] **G2-06 Owner Milestone 3 COMPLETE** | [Complete G2 acceptance report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G2_FINAL_ACCEPTANCE_20261015.md), commit **005d82324d7cb009e4939075b49e00e41e25f271** | Engineering source/selection/finality/host tests passed; continuous deployment and any trading remain separate permissions |
-| *Next review* | [ ] G3-01 causal detector review and two-direction Exploration | Not started | Audit exact 24 historical pattern detectors and create honest LONG/SHORT/HOLD/capacity statuses without profit inference |
+| 2026-10-15 | [x] G3-01 original 24 detector source review | **fae1e2edc5f9403ccaf4b23e596176e89a2cfaf1**, historic SHA and 5+19 golden fixtures | Exactly 24 old pattern descriptions are retained as **hypotheses**, not profitable strategies |
+| 2026-10-15 | [x] G3-02 real-time-causal BTC/market/coin structures | **fae1e2edc5f9403ccaf4b23e596176e89a2cfaf1**, strict G2 known-at bar export and 18 E-case tests | No future candle, missing BTC, old universe or fake verified cost silently becomes valid |
+| 2026-10-15 | [x] G3-03 all 100×2 alternatives and research-vacancy masks | **fae1e2edc5f9403ccaf4b23e596176e89a2cfaf1**, 200 rows ×24 detector states, no-source and no-capacity checks | Both LONG and SHORT remain visible even when there are no research slots |
+| 2026-10-15 | [x] G3-04 compressed full record and replay security tests | **fae1e2edc5f9403ccaf4b23e596176e89a2cfaf1**, 12 P-case tests | Tampered source/profit/order claims, disk full and corrupt entries are blocked |
+| 2026-10-15 | [x] G3-05 actual tests and 200-direction performance on both VPSs | **157/157 PASS each**, p99 **571.799/549.342ms**, memory ~42MiB | Stage fits the measured synthetic small-VPS work budget |
+| 2026-10-15 | [x] G3-06 one-time real public market intake 100→200 | **fae1e2edc5f9403ccaf4b23e596176e89a2cfaf1**, 100 eligible BTC-including public histories, 200 capacity-mask rows, 103 raw-source receipts replayed | Tested full G3 public integration while refusing fake trade capacity |
+| 2026-10-15 | [x] **Owner Milestone 4 / all G3 COMPLETE** | [Full G3 report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G3_FINAL_ACCEPTANCE_20261015.md), **fae1e2edc5f9403ccaf4b23e596176e89a2cfaf1** | Safe descriptive exploration accepted; no profitable model or paper/real order |
+| *Next review* | [ ] G4-01 fair BTC-including 100→20 deep research shortlist | NOT STARTED | Build source-qualified and fairly sampled 20-deep market selection, original trade/quote/funding receipts, quotas and recovery, then independent tests |
 
 **Use [ ] and [x] on the individual subtasks throughout development.** Owner milestones 0 and 1 (engineering G0) are now completed; **the first application development milestone (G1) and all trading stages remain open.**
 
@@ -385,7 +407,7 @@ At the end of each milestone, request a compact progress report answering:
 **Owner's guiding statement:** NBOT V5.1 should be **small enough to understand, cautious enough to trust, and able to improve from authentic evidence**. An empty trade slot and NO TRADE are perfectly legitimate outcomes.
 
 
-**CURRENT latest verified status 15 Oct 2026: Owner Milestones 0, 1, 2 and 3 COMPLETE (engineering G0, G1 and G2).** Full G2 now validated: **120/120 tests** on each of both VPSs, 100 actual public qualified USD-M markets/closed historical candle sets/BTC, 103 hash-replayed public receipts and 100×96×120 resource benchmarks within all declared limits. [G2 report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G2_FINAL_ACCEPTANCE_20261015.md), **005d82324d7cb009e4939075b49e00e41e25f271**. **Milestone 4/G3 and all later stages OPEN**; no continuous service deployed, no private Binance account or paper/real-money trading permission. Public REST OHLCV is NOT proof of original deep-20 trade/quote/funding/after-cost economics.
+**CURRENT verified status 15 October 2026: Owner Milestones 0,1,2,3 AND 4 complete — engineering G0, G1, G2, G3 passed separately within their scopes.** Final G3 **157/157 regression tests PASS on EACH VPS**, original 24 V4 rule identities/golden cases pinned, complete 100×2×24 synthetic measured capacity under limits and 100 actual public USD-M histories→200 honest G3 capacity masks (0 trades), proof [G3 final report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G3_FINAL_ACCEPTANCE_20261015.md), commit **fae1e2edc5f9403ccaf4b23e596176e89a2cfaf1**. **Milestone 5/G4 and G5–G12 remain OPEN**; there is no permanent live service, private Binance account, research economic qualification or paper/real authorization.
 
 
 ### G1-01 — First clean code and offline test completion (15 Oct 2026)
@@ -442,12 +464,46 @@ All small checks documented in this roadmap and the [Engineering Roadmap](https:
 - [x] **G2-04 — Genuine public read-only check:** A one-time HTTPS GET-only smoke sampled 100 actual qualified contracts with 96 confirmed finished five-minute bars each, BTC and 100 valid common-as-of states. **103** raw public source receipts hash-matched through temporary replay; **NO API keys or orders**.
 - [x] **G2-05 — Prove scale/safety:** 53 new G2 tests plus 67 prior G1 regressions = **120/120 PASS on EACH VPS Python3.12.3**. 100-coin ×120-event resource stress measured p95/p99/CPU/RSS/disk independently on both hosts, all budgets met.
 - [x] **G2-06 — COMPLETE G2:** [Complete final source/test/evidence report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G2_FINAL_ACCEPTANCE_20261015.md), **005d82324d7cb009e4939075b49e00e41e25f271**. G2 is a **read-only ENGINEERING acceptance**, not permission to start a production system or paper/live trading.
-- [ ] **G3-01 next:** exact provenance and safe copying/adaptation of each of the original 24 V4 detectors; causal market/BTC/coin structure, 200 directional selection-set accounting and skipped-capacity/source labels must be proved separately.
+- [x] **G3-01 through G3-06 COMPLETED after this earlier handoff note:** Original 24 V4 detectors individually audited, 100×2 causal full denominator, missing BTC/source/capacity masks, audited G3 record replay, **157/157 tests on both VPSs** and real read-only public 100→200/103-receipt evidence passed. Current [G3 full report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G3_FINAL_ACCEPTANCE_20261015.md), **fae1e2edc5f9403ccaf4b23e596176e89a2cfaf1**. **G4-01 now next, still unchecked.**
 
 **For next chats:** Open the G2 report and current Owner & Engineering Roadmaps in `samqju/Nbot` branch `nbot-v5.1`. Actual G2 code under `nbot_v5_1/{universe,observation,observation_store,public_market,source_archive}.py` was tested at commit `4ba07385bb06ad8cde2460d83953448386f1a751`. Do not return to old bot code as the running application. No permanent V5.1 VPS installation/service yet; full source-grade scientific research remains G4/G6 and paper/real releases locked. The owner's old-backup waiver never applies to new V5.1 market evidence.
 
 
 ### Permanent continuation pointer — 15 October 2026
 
-- [x] **Current source-of-truth status and new-chat handoff published:** [Current Status / Next-Chat Handoff](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_CURRENT_STATUS_NEXT_CHAT_HANDOFF_20261015.md). It pins the completed **G0 [x], full G1 [x] (all G1-01/02/03/04), full G2 [x]**, exact tested revision `4ba07385bb06ad8cde2460d83953448386f1a751`, 120 passing tests on both VPSs, real public source and synthetic 100-market benchmarks, limits, and next gate **G3 [ ]**.
+- [x] **Living chat handoff maintained for G3 completion:** [Current Status / Next-Chat Handoff](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_CURRENT_STATUS_NEXT_CHAT_HANDOFF_20261015.md) now pins **G0/G1/G2/G3 all [x]**, final G3 evidence **fae1e2edc5f9403ccaf4b23e596176e89a2cfaf1**, 157 passing tests on BOTH VPSs, original 24 rules, exact code SHA `5d9707fe...`, read-only 100→200 public mask proof; **G4 next [ ]**.
 - [x] **G1 final acceptance report clarified:** It now says **ENTIRE G1 PASSED** prominently and distinguishes historical G2-next wording from current G3-next status. No original G1 results were rewritten or reclassified as production/trading authorization.
+
+
+### G3 owner 24-detector individual checklist (15 October 2026)
+
+Every line is a descriptive setup **hypothesis**, not permission to enter a trade or proof of profitability. [Exact individually reviewed source and test details](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_LEGACY_COMPONENT_REUSE_REGISTER_V1_0.md) and [G3 final engineering acceptance](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G3_FINAL_ACCEPTANCE_20261015.md) (**fae1e2edc5f9403ccaf4b23e596176e89a2cfaf1**):
+
+- [x] **Detector 01: `TREND_CONTINUATION_V1`** — old source identity and context positive example tested; NO_TRADE remains mandatory.
+- [x] **Detector 02: `TREND_PULLBACK_V1`** — old source identity and context positive example tested; NO_TRADE remains mandatory.
+- [x] **Detector 03: `STRETCHED_REVERSAL_V1`** — old source identity and context positive example tested; NO_TRADE remains mandatory.
+- [x] **Detector 04: `VOLATILITY_EXPANSION_V1`** — old source identity and context positive example tested; NO_TRADE remains mandatory.
+- [x] **Detector 05: `RELATIVE_STRENGTH_V1`** — old source identity and context positive example tested; NO_TRADE remains mandatory.
+- [x] **Detector 06: `DONCHIAN_BREAKOUT_V1`** — old source identity and LONG & SHORT positive examples tested; NO_TRADE remains mandatory.
+- [x] **Detector 07: `BREAKOUT_RETEST_V1`** — old source identity and LONG & SHORT positive examples tested; NO_TRADE remains mandatory.
+- [x] **Detector 08: `FAILED_BREAKOUT_V1`** — old source identity and LONG & SHORT positive examples tested; NO_TRADE remains mandatory.
+- [x] **Detector 09: `RANGE_EDGE_REJECTION_V1`** — old source identity and LONG & SHORT positive examples tested; NO_TRADE remains mandatory.
+- [x] **Detector 10: `BOLLINGER_REENTRY_V1`** — old source identity and LONG & SHORT positive examples tested; NO_TRADE remains mandatory.
+- [x] **Detector 11: `RSI_RECLAIM_V1`** — old source identity and LONG & SHORT positive examples tested; NO_TRADE remains mandatory.
+- [x] **Detector 12: `EMA_CROSS_V1`** — old source identity and LONG & SHORT positive examples tested; NO_TRADE remains mandatory.
+- [x] **Detector 13: `EMA_PULLBACK_V1`** — old source identity and LONG & SHORT positive examples tested; NO_TRADE remains mandatory.
+- [x] **Detector 14: `MACD_CROSS_V1`** — old source identity and LONG & SHORT positive examples tested; NO_TRADE remains mandatory.
+- [x] **Detector 15: `SQUEEZE_BREAKOUT_V1`** — old source identity and LONG & SHORT positive examples tested; NO_TRADE remains mandatory.
+- [x] **Detector 16: `VOLUME_BREAKOUT_V1`** — old source identity and LONG & SHORT positive examples tested; NO_TRADE remains mandatory.
+- [x] **Detector 17: `VWAP_RECLAIM_V1`** — old source identity and LONG & SHORT positive examples tested; NO_TRADE remains mandatory.
+- [x] **Detector 18: `INSIDE_BAR_BREAKOUT_V1`** — old source identity and LONG & SHORT positive examples tested; NO_TRADE remains mandatory.
+- [x] **Detector 19: `OUTSIDE_BAR_REVERSAL_V1`** — old source identity and LONG & SHORT positive examples tested; NO_TRADE remains mandatory.
+- [x] **Detector 20: `ENGULFING_REVERSAL_V1`** — old source identity and LONG & SHORT positive examples tested; NO_TRADE remains mandatory.
+- [x] **Detector 21: `PIN_BAR_REJECTION_V1`** — old source identity and LONG & SHORT positive examples tested; NO_TRADE remains mandatory.
+- [x] **Detector 22: `MULTITIMEFRAME_TREND_V1`** — old source identity and LONG & SHORT positive examples tested; NO_TRADE remains mandatory.
+- [x] **Detector 23: `CONFIRMED_SWING_CONTINUATION_V1`** — old source identity and LONG & SHORT positive examples tested; NO_TRADE remains mandatory.
+- [x] **Detector 24: `BTC_RELATIVE_MOMENTUM_V1`** — old source identity and LONG & SHORT positive examples tested; NO_TRADE remains mandatory.
+
+- [x] **All 24 individual V4 detectors audited and individually checked.** A detection does NOT mean a good strategy or a valid trade.
+- [x] **G3 full completion:** 157/157 tests on both VPSs; G3 public 100×2 source/capacity records replayed; 100×2×24 speed/memory/disk benchmark PASS. **Owner Milestone 4 [x].**
+- [ ] **G4 deep-20 research source selection and custody, next:** still awaits actual original source, selection and future offline engineering acceptance. G5+ all locked.
