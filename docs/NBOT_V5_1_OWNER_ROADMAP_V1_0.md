@@ -445,3 +445,9 @@ All small checks documented in this roadmap and the [Engineering Roadmap](https:
 - [ ] **G3-01 next:** exact provenance and safe copying/adaptation of each of the original 24 V4 detectors; causal market/BTC/coin structure, 200 directional selection-set accounting and skipped-capacity/source labels must be proved separately.
 
 **For next chats:** Open the G2 report and current Owner & Engineering Roadmaps in `samqju/Nbot` branch `nbot-v5.1`. Actual G2 code under `nbot_v5_1/{universe,observation,observation_store,public_market,source_archive}.py` was tested at commit `4ba07385bb06ad8cde2460d83953448386f1a751`. Do not return to old bot code as the running application. No permanent V5.1 VPS installation/service yet; full source-grade scientific research remains G4/G6 and paper/real releases locked. The owner's old-backup waiver never applies to new V5.1 market evidence.
+
+
+### Permanent continuation pointer — 15 October 2026
+
+- [x] **Current source-of-truth status and new-chat handoff published:** [Current Status / Next-Chat Handoff](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_CURRENT_STATUS_NEXT_CHAT_HANDOFF_20261015.md). It pins the completed **G0 [x], full G1 [x] (all G1-01/02/03/04), full G2 [x]**, exact tested revision `4ba07385bb06ad8cde2460d83953448386f1a751`, 120 passing tests on both VPSs, real public source and synthetic 100-market benchmarks, limits, and next gate **G3 [ ]**.
+- [x] **G1 final acceptance report clarified:** It now says **ENTIRE G1 PASSED** prominently and distinguishes historical G2-next wording from current G3-next status. No original G1 results were rewritten or reclassified as production/trading authorization.
