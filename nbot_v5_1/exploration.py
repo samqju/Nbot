@@ -22,6 +22,7 @@ PATTERN_IDS = tuple(x.id for x in legacy.REGISTRY)
 TECH_IDS = PATTERN_IDS[5:]
 CATALOG_SHA = legacy.CATALOG_DIGEST
 DETECTOR_VERSION = "NBOT_V5_1_G3_ADAPTER_V1:" + CATALOG_SHA
+MAX_UNIVERSE_AGE_MS = 90 * 60_000  # absent a new cohort, fail closed
 if len(PATTERN_IDS) != 24 or len(set(PATTERN_IDS)) != 24 or len(TECH_IDS) != 19:
     raise RuntimeError("G3_DETECTOR_CATALOG_DRIFT")
 MASKS = frozenset(("MATCH", "NO_MATCH", "UNAVAILABLE",
@@ -43,6 +44,11 @@ class ExplorationRow:
     structure_maturity: str
     source_hash: str | None
     history_count: int
+    selection_groups: tuple[str, ...]
+    liquidity_state: str
+    cost_state: str
+    source_epoch: int | None
+    source_route: str | None
     inclusion_probability: float
     decision_id: str
     disposition: ObservationDisposition = ObservationDisposition.NO_TRADE
@@ -63,6 +69,11 @@ class ExplorationRow:
                 "maturity": self.structure_maturity,
                 "source_hash": self.source_hash,
                 "history_count": self.history_count,
+                "selection_groups": list(self.selection_groups),
+                "liquidity_state": self.liquidity_state,
+                "cost_state": self.cost_state,
+                "source_epoch": self.source_epoch,
+                "source_route": self.source_route,
                 "inclusion_probability": self.inclusion_probability,
                 "decision_id": self.decision_id,
                 "disposition": self.disposition.value,
@@ -176,8 +187,9 @@ def explore_event(
     if len(cohort) != len(snapshot.rows) or len(cohort) > 100 or len(cohort) < 1:
         raise ValueError("G3_DENOMINATOR_INVALID")
     histories = {s: book.history_asof(s, event) for s in cohort}
+    universe_stale = event.decision_at_ms-book.manifest.selected_at_ms>MAX_UNIVERSE_AGE_MS
     complete = {s: bars for s, bars in histories.items()
-                if len(bars) >= legacy.MIN_BARS
+                if len(bars) >= legacy.MIN_BARS and not universe_stale
                 and source_rows[s].state == "METADATA_CLOSED"}
     btc_history = complete.get("BTCUSDT")
     required = max(10, math.ceil(.8*len(cohort)))
@@ -212,7 +224,8 @@ def explore_event(
         own = histories[sym]
         if sym not in usable:
             state = "NOT_EVALUATED_SOURCE"
-            cause = "SOURCE_" + ("HOLD" if srow.state=="HOLD" else "INVALID_ATR")
+            cause = ("UNIVERSE_STALE" if universe_stale else
+                     "SOURCE_" + ("HOLD" if srow.state=="HOLD" else "INVALID_ATR"))
         elif (sym,side) not in evaluated:
             state = "NOT_EVALUATED_CAPACITY"
             cause = None
@@ -271,7 +284,12 @@ def explore_event(
         rows.append(ExplorationRow(sym,side,event.event_open_ms,state,cause,
                     tuple((name,detector[name]) for name in PATTERN_IDS),
                     btc_regime,market_regime,coin_regime,structure,maturity,
-                    fingerprint,len(own),probability if (sym,side) in evaluated else 0.0,
+                    fingerprint,len(own),
+                    next(e.groups for e in book.manifest.entries if e.symbol==sym),
+                    "UNIVERSE_LIQUIDITY_METADATA_ONLY" if not universe_stale else "UNIVERSE_STALE",
+                    "QUOTE_SLIPPAGE_FEE_FUNDING_UNVERIFIED",
+                    srow.source_epoch, srow.route,
+                    probability if (sym,side) in source_eligible and capacity_slots>0 else 0.0,
                     identity))
     if len(rows) != 2*len(cohort) or len({r.decision_id for r in rows})!=len(rows):
         raise ValueError("G3_DIRECTION_DENOMINATOR_INVALID")
