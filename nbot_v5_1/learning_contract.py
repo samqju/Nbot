@@ -177,6 +177,12 @@ def scientific_export(dataset:LearningDataset)->None:
 def verified_learning_count(dataset:LearningDataset)->int:
     if type(dataset) is not LearningDataset:
         raise LearningHold("G7_DATASET_TYPE")
-    if dataset.grade!="OFFLINE_LAB_NONSCIENTIFIC" or dataset.qualified_original!=0:
+    if (dataset.grade!="OFFLINE_LAB_NONSCIENTIFIC" or dataset.qualified_original!=0
+         or dataset.order_authority!="NONE"):
         raise LearningHold("G7_FORGED_SCIENTIFIC_DATASET")
+    # Dataclass constructors are public. Revalidate every row, cutoff and
+    # dataset digest at the science/snapshot boundary, not just on creation.
+    fresh=assemble_lab(dataset.rows,cutoff_ms=dataset.cutoff_ms)
+    if dataset!=fresh:
+        raise LearningHold("G7_DATASET_MANIFEST_OR_ROW_TAMPER")
     return 0
