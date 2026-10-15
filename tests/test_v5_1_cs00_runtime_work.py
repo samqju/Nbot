@@ -154,6 +154,21 @@ class SchedulerTests(unittest.TestCase):
             with self.assertRaises(RecoveryTransportHold):
                 c.get_page(bad,now_ms=T+20000)
 
+    def test_CSRW06_rate_limit_defers_not_recovery_failure(self):
+        def page(url,timeout):
+            return body([trade(10,T+1000)])
+        c=BudgetedPublicRest(allow_public_network=True,
+                             transport=page,weight_budget=20)
+        s=RecoveryScheduler(c)
+        s.admit(self.rec(),now_ms=T+20000)
+        first=s.step(now_ms=T+20000)
+        self.assertEqual(first.pages,1)
+        second=s.step(now_ms=T+21000)
+        self.assertEqual(second.attempts,0)
+        self.assertEqual(second.status,"RECOVERY_PENDING")
+        self.assertIsNone(second.reason)
+        self.assertGreater(second.next_attempt_ms,T+21000)
+
     def test_CSRW05_tasks_older_than_48h_become_archive_pending(self):
         s=RecoveryScheduler(BudgetedPublicRest(allow_public_network=True,
                     transport=lambda u,t:b"[]"))
