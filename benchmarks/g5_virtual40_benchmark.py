@@ -102,14 +102,37 @@ def benchmark():
                 counts["terminals"]+=len(r);frame_count+=1
             book.checkpoint(ev.decision_at_ms+120001)
             latencies.append((time.perf_counter()-begin)*1000)
+        # Dedicated crash-at-max-capacity case. Do not let a prior batch
+        # with zero remaining actives give a vacuous recovery pass.
+        if book.occupied:
+            raise RuntimeError("G5_PRE_RESTART_EXIT_STATE_UNEXPECTED")
+        restart_event=FiveMinuteEvent(END_OPEN+ROUNDS*INTERVAL_MS,
+                                     END_DECISION+ROUNDS*INTERVAL_MS)
+        def restart_supplier():
+            return tuple(freeze_intent(symbol=sym,side=side,
+                event_open_ms=restart_event.event_open_ms,
+                declared_at_ms=restart_event.decision_at_ms,
+                activates_at_ms=restart_event.decision_at_ms+1,
+                horizon_ms=INTERVAL_MS,entry_reference="100",
+                stop="95" if side=="LONG" else "105",
+                target="105" if side=="LONG" else "95",
+                cohort_sha=deep.manifest_sha,observation_sha="a"*64,
+                source_epoch=1,source_grade="SYNTHETIC_OFFLINE_TEST_ONLY")
+                for sym,side in all_pairs)
+        refill=book.review(restart_event,deep,restart_supplier)
+        if refill.openings!=40 or book.occupied!=40:
+            raise RuntimeError("G5_CRASH_AT_MAX_CAPACITY_NOT_ESTABLISHED")
+        counts["admitted"]+=refill.openings
         rows,head=journal.replay()
         used=(Path(root)/"g5.jsonl").stat().st_size
         if len(rows)<ROUNDS or book.status()["qualified_after_cost"]:
             raise RuntimeError("G5_JOURNAL_OR_ECONOMICS_FALSE_PASS")
-        # New process MUST quarantine every remaining active path and never
-        # retroactively claim missed stop/target after lost RAM/epoch.
-        restarted=VirtualResearchBook(journal)
-        if restarted.occupied!=book.occupied or restarted.status()["held"]!=restarted.occupied:
+        # Restart QUARANTINES EVERY in-flight hypothesis, no freed slots,
+        # no invented outcome, no optimistic trailing state.
+        restarted=VirtualResearchBook(ResearchJournal(Path(root)/"g5.jsonl"))
+        if (restarted.occupied!=40 or restarted.status()["held"]!=40
+                or restarted.vacancies!=0
+                or restarted.status()["qualified_after_cost"]):
             raise RuntimeError("G5_RESTART_INVENTED_CLOSURE")
         recovered_head=restarted.head
     rss=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
@@ -121,6 +144,7 @@ def benchmark():
        "ineligible_skips":counts["ineligible"],
        "closed_to_cost_pending":counts["terminals"],
        "held_on_restart":restarted.status()["held"],
+      "max_capacity_restart_probe":True,
        "qualified_after_cost":0,
        "p50_review_ms":round(percentile(latencies,.5),3),
        "p95_review_ms":round(percentile(latencies,.95),3),
