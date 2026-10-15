@@ -297,7 +297,7 @@ Gate: No live trading unless a distinct, explicit decision and technical safety 
   - [x] **G1-04-C — Independent no-release/no-deploy check:** No permanent `/home/ubuntu/Nbot` installed by testing, no NBOT application service started, no Binance account/order used, no legacy GitHub source branch changed.
   - [x] **G1-04-D — Owner safety/audit acceptance:** Complete G1-01/02/03 set, stdlib-only, versioned types, synthetic crash/metadata HOLD and 3.12 target-platform tests evidenced; physical power-cut, multi-host custody and real-source maturity **explicitly future gates**; proof **bb0df4b727e5817d47fe693206baba91e2706456**.
   - [x] **G1-04 final independent acceptance and G1 parent PASS**, 15 Oct 2026; source/clock, no-order guard, bounded audit/restart and tests fully reviewed. Paper/REAL release remain LOCKED. [Final report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G1_FINAL_ACCEPTANCE_20261015.md).
-  - [ ] **G2 — Next major engineering gate, read-only public Observation intake**, NOT STARTED; genuine original source, bounded high-frequency custody, 100-coin denominator and measured throughput belong to later independent gates.
+  **Next separate major gate is G2** (still [ ] below): public read-only Observation, genuine original source custody and measured 100-coin throughput are not part of G1.
 - [ ] **G2 — Lightweight 100-coin Observation complete**
   - [ ] Implement verified Binance USD-M eligibility, 50/25/25 overlapping groups, deduplication and BTC inclusion.
   - [ ] Add reliable completed-five-minute data, historical bootstrap, source-health, clock, source-epoch and gaps.
