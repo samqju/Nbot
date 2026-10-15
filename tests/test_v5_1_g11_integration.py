@@ -337,5 +337,54 @@ class G11FullIntegrationTests(unittest.TestCase):
         self.assertEqual(self.research.status()["qualified_after_cost"], 0)
 
 
+    def test_I28_plan_factory_consumes_actual_frozen_G3_G4(self):
+        self.ready()
+        seen = []
+        def factory(deep, batch):
+            seen.append((deep.manifest_sha, batch.batch_id))
+            return (freeze_intent(
+                symbol="BTCUSDT", side="LONG",
+                event_open_ms=self.event.event_open_ms,
+                declared_at_ms=self.event.decision_at_ms,
+                activates_at_ms=self.event.decision_at_ms+1,
+                entry_reference="100",stop="95",target="105",
+                horizon_ms=INTERVAL_MS,cohort_sha=deep.manifest_sha,
+                observation_sha=batch.batch_id,source_epoch=1,
+                source_grade="SYNTHETIC_OFFLINE_TEST_ONLY"),)
+        p = self.system.on_five_minute(self.event,plan_factory=factory)
+        self.assertEqual(len(seen),1)
+        self.assertEqual(p.admitted,1)
+        self.assertEqual(seen[0],(p.deep_sha,p.exploration_sha))
+        self.assertEqual(len(self.system._origins),1)
+
+    def test_I29_two_competing_plan_suppliers_are_rejected(self):
+        with self.assertRaisesRegex(IntegrationHold,"AMBIGUOUS"):
+            self.system.on_five_minute(
+                self.event,supplier=lambda:(),plan_factory=lambda d,b:())
+        self.assertEqual(self.system.history,[])
+        self.assertEqual(self.research.occupied,0)
+
+    def test_I30_factory_is_not_invoked_at_full_capacity(self):
+        self.ready()
+        from nbot_v5_1.deep_selection import choose_deep
+        b = explore_event(self.observation,self.event,capacity_slots=40)
+        deep=choose_deep(self.universe,b)
+        self.admission(*(self.plan(s,side) for s in deep.symbols
+                         for side in ("LONG","SHORT")))
+        new_open=END_OPEN+INTERVAL_MS
+        new_decision=END_DECISION+INTERVAL_MS
+        for sym in self.universe.symbols:
+            self.observation.ingest(
+                bar(sym,new_open,received=new_decision),
+                decision_at_ms=new_decision)
+        forbidden=[]
+        result=self.system.on_five_minute(
+            FiveMinuteEvent(new_open,new_decision),
+            plan_factory=lambda dep,bat:(forbidden.append(1),())[1])
+        self.assertEqual(forbidden,[])
+        self.assertEqual(result.capacity_after,40)
+        self.assertEqual(result.evaluated_directions,0)
+
+
 if __name__ == "__main__":
     unittest.main()
