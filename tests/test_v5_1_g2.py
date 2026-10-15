@@ -236,7 +236,7 @@ class KlineTests(unittest.TestCase):
         self.assertTrue(self.book.bootstrap(BTC,history(BTC),as_of_ms=END_DECISION))
         with self.assertRaises(ValueError): self.book.reconnect(BTC,next_epoch=0,route="public_rest")
         self.assertFalse(self.book.ingest(bar(BTC,END_OPEN+INTERVAL_MS,epoch=3,
-                      received=END_DECISION+INTERVAL_MS),
+                      received=END_DECISION+INTERVAL_MS+1),
                       decision_at_ms=END_DECISION+INTERVAL_MS))
         self.assertIn("FUTURE_RECEIPT",self.book.snapshot(self.event).rows[0].reasons)
 
@@ -336,7 +336,7 @@ class PublicClientTests(unittest.TestCase):
             captured.append(url)
             return b'{"symbols":[]}'
         c=PublicUsdMClient(allow_public_network=True,transport=transport,
-                            now=lambda: 1_000_000,weight_budget=50)
+                            now=lambda: 1_000_000,weight_budget=47)
         self.assertEqual(c.exchange_info().kind,"EXCHANGE_INFO")
         c.tickers_24hr()
         c.book_tickers()
