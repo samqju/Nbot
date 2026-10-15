@@ -25,8 +25,7 @@ def _positive(v):
     return n if n.is_finite() and n>0 else None
 
 
-def original_segment_price_path(*, segment_dir, candidate, policy,
-                                 audit_at_ms):
+def _price_path_machine(*, candidate, policy, audit_at_ms):
     """Sequential, constant-space, independently re-verified original path.
 
     Returns the established V5 PathReplay shape, with financial authority NONE.
@@ -99,7 +98,11 @@ def original_segment_price_path(*, segment_dir, candidate, policy,
         count+=1
         prior_agg,prior_last,last_time=row["a"],row["l"],row["T"]
 
-    for rec,raw in read_segments(segment_dir):
+    while True:
+        rec,raw = yield
+        if rec is None:
+            head=raw
+            break
         head=rec["chain_sha"]
         if rec["route"]!="market_aggtrade":
             continue
@@ -205,3 +208,48 @@ def original_segment_price_path(*, segment_dir, candidate, policy,
         path_start_trade_id=first,path_end_trade_id=prior_agg,
         path_trade_count=count,exit_reason=why,exit_at_ms=when,
         exit_trade_price=str(price),gross_path_r=str(gross))
+
+
+def original_segment_price_paths(*, segment_dir, requests, audit_at_ms):
+    """One independently verified archive pass for up to 250 active intents.
+
+    V4 incremental replay principle: O(active intents + one segment) memory,
+    route markers shared, each trade dispatched only to its symbol's intents.
+    No raw tick SQLite copy and no full archive scan per hypothesis.
+    Results are withheld until the entire source prefix has passed audit.
+    """
+    if not isinstance(requests, (list, tuple)) or not 1 <= len(requests) <= 250:
+        raise ValueError("G4_MULTIPATH_BATCH_BOUNDS")
+    machines, results, by_symbol = {}, {}, {}
+    for candidate, policy in requests:
+        identity=candidate["decision_id"]
+        if identity in machines or identity in results:
+            raise ValueError("G4_MULTIPATH_DUPLICATE_INTENT")
+        machine=_price_path_machine(candidate=candidate,policy=policy,audit_at_ms=audit_at_ms)
+        try:
+            next(machine)
+        except StopIteration as done:
+            results[identity]=done.value
+            continue
+        machines[identity]=machine
+        by_symbol.setdefault(candidate["symbol"],[]).append(machine)
+    head=None
+    for rec,raw in read_segments(segment_dir):
+        head=rec["chain_sha"]
+        if rec["route"] != "market_aggtrade":
+            continue
+        targets=machines.values() if rec["kind"] != "FRAME" else by_symbol.get(rec["symbol"],())
+        for machine in targets:
+            machine.send((rec,raw))
+    for identity,machine in machines.items():
+        try:
+            machine.send((None,head))
+        except StopIteration as done:
+            results[identity]=done.value
+    return results
+
+
+def original_segment_price_path(*, segment_dir, candidate, policy, audit_at_ms):
+    return original_segment_price_paths(
+        segment_dir=segment_dir,requests=[(candidate,policy)],audit_at_ms=audit_at_ms
+    )[candidate["decision_id"]]

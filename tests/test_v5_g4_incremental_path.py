@@ -134,6 +134,28 @@ class IncrementalG4PathTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"G4_SEGMENT_"):
             self.replay(T+1600)
 
+    def test_100_overlapping_paths_use_one_source_scan_and_match_individual(self):
+        from dataclasses import asdict
+        from unittest.mock import patch
+        from nbot.v5 import g4_incremental_path as module
+        self.ingest(101,T+1200,110)
+        self.vault.flush()
+        requests=[]
+        for i in range(100):
+            c,p=policy("LONG" if i%2 else "SHORT")
+            c["decision_id"]=format(i,"064x")
+            requests.append((c,p))
+        reader=module.read_segments
+        with patch.object(module,"read_segments",wraps=reader) as reads:
+            results=module.original_segment_price_paths(
+                segment_dir=self.root,requests=requests,audit_at_ms=T+1600)
+        self.assertEqual(reads.call_count,1)
+        self.assertEqual(len(results),100)
+        for c,p in requests[:2]:
+            single=module.original_segment_price_path(
+                segment_dir=self.root,candidate=c,policy=p,audit_at_ms=T+1600)
+            self.assertEqual(asdict(single),asdict(results[c["decision_id"]]))
+
 
 if __name__=="__main__":
     unittest.main()
