@@ -37,3 +37,21 @@
 - [ ] Full CS-00 operational readiness and owner permission for CS-01 genuine Observation startup remain unchecked. G4–G10 genuine-source/science/PAPER gates HOLD; G12 real LOCKED.
 
 Versioned code: [manual backup tool](../scripts/nbot_v5_1_owner_backup.py), [14 safety tests](../tests/test_v5_1_cs00_manual_owner_backup.py), [CS-00 master plan](NBOT_V5_1_CONTROLLED_STARTUP_AND_LIVE_EVIDENCE_MASTER_PLAN_V1_0.md).
+
+## FINAL CS-00 OFFLINE 563x2 RECORD CHECKPOINT AND MANUAL BACKUP ACCEPTANCE — 15 OCT 2026
+
+**[x] OFFLINE CODE AND RECORD SAFETY ACCEPTANCE ONLY, [ ] CS-00 FULL OPERATIONAL GO, [ ] CS-01 START PERMISSION.** Read [final 563-on-each-VPS original test and prestart evidence](NBOT_V5_1_CS00_563_TWO_VPS_FINAL_OFFLINE_RECORDS_BACKUP_AND_PRESTART_HOLDS_20261015.md) before older 430/464/491/539/553 sections.
+
+**Exact same independently tested executable code:** `a41b65ebb7795bb3e4312e9817e1567f1c1faf5d`; **563/563 PASS Observation VPS AND 563/563 PASS Execution VPS**, both synthetic source/resource benchmarks PASS; no actual Binance public WSS collected, no real original source or PAPER orders. Both isolated test checkouts removed. No NBOT services installed or running on either host.
+
+**Verified subtasks now CHECKED:**
+- [x] **B4-OFFLINE G2/G3 state integration:** source-only future public Observation code now durably persists original-shaped 100-observation snapshots, 200 G3 directional detector/label rows, immutable cohort manifest and final event checkpoint to `~/nbot-v5.1-state/{observations,exploration,journals}`; G4 compressed receipts to `evidence`. No original exchange/scientific release.
+- [x] **C4 source-writer/owner-backup consistency:** cross-process shared private POSIX lock; backups refuse concurrent/partial 3-file checkpoints, tampered G2/G3, interrupted G4 gzip/meta pair, altered hash chain, and unsafe files. Standalone owner backup file installed on Observation VPS, new SHA256 `e2578e326754415af0b5f4a9fa7aa50d81fb8c24cd3c87b7b6f57674fd11eb4e` (0700).
+- [x] **C4 owner destination/layout:** owner-selected existing **1 TB Windows desktop** manual WinSCP; Observation VPS seven private source-category folders (0700), backup destination (0700), with zero genuine records until owner-approved startup. Installed `~/nbot-backup` correctly refused empty source with `NO_V5_1_RECORDS_YET`; no fake archive.
+- [x] **D3 OFFLINE gap/restart veto:** source-only collector now requests emergency HOLD/stop on WSS source gap; persisted source segment replay forbids seamless epoch reuse after restart. No auto-trading/API keys enabled.
+- [x] **E1/R8 full offline independent 563-test/benchmark two-host acceptance and source cleanliness audit**.
+- [x] **C5 previous synthetic cross-VPS compact source+SQLite ledger restore**, preserved as *synthetic only*; owner manual WinSCP real-data transfer still unchecked.
+
+**Genuine unfinished steps REMAIN UNCHECKED, not skipped:** [ ] C4/C5 independent actual owner desktop WinSCP copy/restore and verified genuine retention/capacity; [ ] B4 genuine volatile original public WSS 20/20 TRADE/QUOTE/MARK and G4 old 47 ID semantics (requires future separately authorized source-only CS-01); [ ] actual G4 source evidence quota/endurance, exact quote/mark/funding price/cost, post-restart historical replay with real exchange; [ ] D3/D4 actual deployed source watchdog, responsible operator/alerts/rollback signoff (not installed); [ ] E2 full prestart operator commissioning acceptance; [ ] full CS-00 parent GO; [ ] CS-01 separate owner source start authority; [ ] G4–G10 original scientific/PAPER parents; [ ] G12 real money. **Do not equate offline engineering complete with startup approved.**
+
+**Next owner-facing command** (once authentic data is produced after future CS-01 approval): `~/nbot-backup` on PuTTY Observation VPS, then copy both dated archive and SHA256 from `/home/ubuntu/NBOT_Backups/` into the owner's 1 TB Windows desktop via WinSCP. User currently does not need to run this while genuine records are absent. No cloud spend or background backup daemon.
