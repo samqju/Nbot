@@ -100,7 +100,10 @@ class ReadOnlyBindingSession:
             raise
 
     def bound(self, event, symbol, side):
-        return _check(self.db,event,symbol,side,integrity_checked=True)
+        try:
+            return _check(self.db,event,symbol,side,integrity_checked=True)
+        except (sqlite3.Error,TypeError,KeyError,ValueError):
+            return _hold(event,symbol,side,{"G4_BIND_SQLITE_OR_EVIDENCE_INVALID"})
 
     def __enter__(self):
         return self

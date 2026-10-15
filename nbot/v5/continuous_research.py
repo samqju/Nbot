@@ -320,7 +320,13 @@ class ContinuousResearch:
             population=json.loads(self.store.db.execute(
                 "SELECT body FROM research_journal WHERE identity=?",
                 ("candidate:"+intent["decision_id"],)).fetchone()[0])
-            supplied=self.economic_provider(population,intent,saved["path"],now_ms)
+            try:
+                supplied=self.economic_provider(population,intent,saved["path"],now_ms)
+            except (OSError,ValueError,KeyError,TypeError) as exc:
+                body={"label_id":label,"reason":"INDEPENDENT_EVIDENCE_UNAVAILABLE:"+str(exc),
+                      "grade":self.grade,"order_authority":"NONE"}
+                self.store.append("economic-provider-hold:"+digest(body),"ECONOMIC_HOLD",now_ms,body)
+                continue
             if supplied is None:
                 self.store.append("economic-request:"+label,"ECONOMIC_REVIEW_REQUEST",now_ms,
                                   {"label_id":label,"grade":self.grade,"population":population,
