@@ -253,7 +253,7 @@ Gate: No live trading unless a distinct, explicit decision and technical safety 
 
 - [x] **SEED-01:** Created new documentation-only **nbot-v5.1** branch without importing legacy working files; verified its first tree contained three documents (15 Oct 2026, initial branch commit **472c3f54415e06715f8b28673eee7d3b545338d4**).
 - [x] **SEED-02:** Copied original Complete Vision **V1.9** byte-for-byte (Git blob **e965d63ae85467a6156cf6134ea001906c8ebe67**); owner and engineering roadmap V1.0 created (same commit).
-- [ ] **G0 — Read-only recovery and legacy inventory complete**
+- [x] **G0 — Legacy audit, owner-authorized fresh start, verified VPS cleanup and first-code scope COMPLETE (15 Oct 2026).** Exact named old NBOT files/services independently absent from both VPSs; GitHub evidence **81dadf68a9949b847fd8f38336c5d532eab861cd**; historical backups explicitly waived. G1 and future gates unchanged.
   - [x] Record old relevant branches and pin original source commits, historical CI/test status and available GitHub evidence — 15 Oct 2026, preliminary inventory in register commit **5d5133766b96ad3b21ab8b4c553e08740c3c7adb**; no new tests executed.
   - [x] Create Legacy Component Reuse Register covering candidate V4/V5 modules, origin, preliminary dependencies, named tests and COPY-AND-ADAPT / REIMPLEMENT / DISCARD / REFERENCE decisions — 27 entries, GitHub verified **5d5133766b96ad3b21ab8b4c553e08740c3c7adb**.
   - [x] Identify baseline risks: 50-vs-100/20/40, source-grade evidence gaps, archival pressure, first-Champion paper unlock mismatch, stale V3/V3.9/V4/V5 imports/IDs — C01–C12, same commit.
