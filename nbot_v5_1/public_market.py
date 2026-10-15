@@ -143,12 +143,13 @@ def select_from_public_responses(
     raw HTTP bytes remain public-source metadata, not exchange fill evidence.
     """
     from .universe import select_universe
-    sources = (exchange, ticker, book)
+    sources = (exchange, ticker) if book is None else (exchange, ticker, book)
     expected = (
         ("EXCHANGE_INFO", "/fapi/v1/exchangeInfo", dict),
         ("TICKER_24HR", "/fapi/v1/ticker/24hr", list),
-        ("BOOK_TICKER", "/fapi/v1/ticker/bookTicker", list),
-    )
+    ) + (() if book is None else (
+        ("BOOK_TICKER", "/fapi/v1/ticker/bookTicker", list),))
+
     for value, (kind, path, shape) in zip(sources, expected):
         if type(value) is not PublicResponse or value.kind != kind or value.path != path:
             raise PublicMarketHold("G2_PUBLIC_SOURCE_KIND_MISMATCH")
