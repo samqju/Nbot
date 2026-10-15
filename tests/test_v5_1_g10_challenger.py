@@ -313,6 +313,35 @@ class G10Tests(unittest.TestCase):
         self.assertEqual(r.financial_authority,"NONE")
         self.assertFalse(r.fair_real_paper_comparison)
 
+    def test_C37_bad_challenger_preflight_cannot_change_champion(self):
+        wrong=replace(market(0),challenger=replace(
+            market(0).challenger,source_sha256="f"*64))
+        with self.assertRaises(PaperHold):
+            self.engine.step(wrong)
+        self.assertFalse(self.engine.books[CHAMPION].state.occupied)
+        self.assertEqual(len(self.engine.events),0)
+
+    def test_C38_second_book_mid_event_failure_locks_whole_contest(self):
+        self.engine.books[CHALLENGER].restart_hold=True
+        with self.assertRaises(PaperHold):
+            self.engine.step(market(0))
+        self.assertTrue(self.engine.restarted)
+        self.assertTrue(self.engine.books[CHAMPION].state.occupied)
+        with self.assertRaises(PaperHold):self.engine.review()
+        with self.assertRaises(PaperHold):self.engine.step(market(1))
+
+    def test_C39_unreviewed_external_book_append_veto(self):
+        self.engine.step(market(0))
+        journal=self.engine.books[CHAMPION].journal
+        journal.append("REVIEW",T+1,{},expected_head=journal._cache[0])
+        with self.assertRaises(PaperHold):self.engine.review()
+
+    def test_C40_tampered_in_memory_book_cash_cannot_pass_review(self):
+        self.engine.step(market(0))
+        one=self.engine.books[CHAMPION]
+        one.state=replace(one.state,cash="999999999")
+        with self.assertRaises(PaperHold):self.engine.review()
+
     def test_C36_wrong_context_window_or_cohort_time_holds(self):
         with self.assertRaises(PaperHold):
             protocol(minimum_common_market_events=10).validate(self.p,self.co)
