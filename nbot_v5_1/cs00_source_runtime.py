@@ -7,6 +7,7 @@ Injection of verified raw public WSS frames is only an OFFLINE rehearsal.
 """
 from __future__ import annotations
 from dataclasses import dataclass
+from collections import deque
 from hashlib import sha256
 import json
 import re
@@ -69,7 +70,7 @@ class SourceOnlyIntake:
         self.symbols=symbols
         self.cursor:dict[tuple[str,str],SourceStatus]={}
         self.quarantine:set[tuple[str,str]]=set()
-        self.transitions:list[SourceStatus]=[]
+        self.transitions=deque(maxlen=256)  # bounded telemetry, not a second tick vault
         self._epochs:dict[str,int]={}
         self.processed=0
         self.authority="NONE"
@@ -92,7 +93,13 @@ class SourceOnlyIntake:
         try:
             # Envelope routes must be validated, then validated again against
             # the actual per-symbol cursor.
-            body=json.loads(raw)
+            def strict_pairs(pairs):
+                d={}
+                for k,v in pairs:
+                    if k in d:raise CollectorHold("CS00_INTAKE_DUPLICATE_JSON_FIELD")
+                    d[k]=v
+                return d
+            body=json.loads(raw,object_pairs_hook=strict_pairs)
             if type(body) is not dict or type(body.get("data")) is not dict:
                 raise CollectorHold("CS00_INTAKE_BAD_ENVELOPE")
             symbol=body["data"].get("s")
