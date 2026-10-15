@@ -1,5 +1,11 @@
 # NBOT V5.1 — Entire G1 Safe Foundation: Final Engineering Acceptance
 
+**FINAL G1 DECISION: ✅ ENTIRE G1 PASSED — G1-01 [x], G1-02 [x], G1-03 [x], G1-04 [x], and parent G1 [x]. No G1 subphase remains open.**
+
+**What was accepted:** Complete *nontrading/offline V5.1 application foundation*, including verified Python 3.12.3 tests on both VPSs. **Not accepted:** Binance order execution, paper/real trading, scientific original trade/quote custody, or unrestricted production deployment.
+
+**Later status update (15 October 2026):** G2 was subsequently completed as a **separate read-only 100-coin Observation engineering gate**. See [G2 final acceptance](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G2_FINAL_ACCEPTANCE_20261015.md) and the current [Owner Roadmap](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_OWNER_ROADMAP_V1_0.md) / [Engineering Roadmap](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_ENGINEERING_ROADMAP_V1_0.md). **G0, G1 and G2 are completed; G3 is next.** This later note does not change what G1 originally tested or authorize trading.
+
 **Date:** 15 October 2026 IST  
 **Branch:** `nbot-v5.1` (not `main`).  
 **Result:** **G1-01 [x], G1-02 [x], G1-03 [x], G1-04 final independent gate [x], parent G1 [x] — PASS for the nontrading offline foundation only.**  
@@ -72,4 +78,4 @@ PYTHONDONTWRITEBYTECODE=1 /usr/bin/time -f 'WALL_SEC=%e MAX_RSS_KIB=%M' \
 5. No permanent V5.1 folder or production checkout was deployed on the two VPSs. A temporary GitHub checkout was used solely to run Python 3.12.3 offline tests and was automatically removed. A simple subsequent read-only check confirmed absence of `/home/ubuntu/Nbot` from both hosts. There was **no systemd service start, secret inspection, paper order or real-money order**. No old GitHub branches were changed.
 6. Owner’s old NBOT VPS backup waiver **applied only to the deleted legacy installation**. All future NEW V5.1 scientific original-source evidence must satisfy independent new-source retention/restore/custody requirements as these modules are expanded.
 
-**Gate decision:** **G1 PASS as the nontrading offline program foundation**, not permission to start market streaming or trade. The next major gate is **G2, read-only public Observation intake**, with its own source/scale/clock/retention checks and separate release control.
+**Final G1 gate decision, 15 October 2026:** **ENTIRE G1 PASS — G1-01, G1-02, G1-03, G1-04, and parent G1 all [x]**, strictly for the nontrading offline foundation. No G1 subphase is pending. **Historical sequencing:** G2 was the next gate when this G1 report was issued; G2 has since been separately accepted. The current next gate is **G3 causal Exploration**. No previous offline-only G1 test may be relabeled as real source custody or paper/real trading authorization.
