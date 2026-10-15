@@ -1,6 +1,6 @@
 # NBOT V5.1 — Detailed Engineering and Recovery Roadmap
 
-**Roadmap version:** 1.0  
+**Roadmap version:** 1.1  
 **Date:** 15 October 2026  
 **Status:** DESIGN / OFFLINE PREPARATION ONLY — NOT IMPLEMENTED, NOT RELEASED  
 **Repository / future development branch:** samqju/Nbot / nbot-v5.1  
@@ -20,6 +20,25 @@ The latest relevant Vision sections, **8G and 8H**, govern intended **100 lightw
 **Safety mode at kickoff:** Documentation / offline synthetic only. No VPS service starts, live/paper order placement, exchange credentials, automated PR merge, data deletion or release permission. A new development milestone, test success or approved paper experiment must never create real-money authority.
 
 **Definitions:** "Paper" is a constrained simulated portfolio run through an independent guardian. "Virtual" is Research's prospective hypothetical experiment population; it is not a portfolio or exchange fill. "Live" requires separately authorized real exchange permission and confirmed fills. A quote-constrained simulation is not an executed order.
+
+## 0A. Mandatory selective copying from older NBOT branches
+
+**Explicit build instruction: the new V5.1 application WILL be assembled partly by copying approved, needed components or functions from older V4/V5 GitHub branches into NEW V5.1 files.** We are *not* committing to reimplement every working component; equally, we must *not* wholesale-copy the old repository, any branch's complete working tree, or unreviewed directories.
+
+For **each** candidate to be copied, follow this mandatory mini-checklist and tick items independently when completed:
+
+- [ ] Identify the exact old **branch + commit SHA + original path + symbols/functions**, and record the intended V5.1 module and purpose.
+- [ ] Read dependencies, imports, runtime side effects, data contracts, old strategy assumptions, test coverage and credential/network/order reachability. Decide **COPY-AND-ADAPT / REIMPLEMENT / DISCARD / KEEP AS REFERENCE** with a short reason.
+- [ ] Confirm the component is compatible with Vision V1.9: 100 lightweight/20 deep, 24 pattern tags not 24 proven strategies, honest source/economic grades, rolling 40 virtual intents, guarded paper-only/one-actual-position boundaries.
+- [ ] Copy **only the necessary source code** into freshly designed paths **on nbot-v5.1**, adapting imports and interfaces without carrying dead dependencies or legacy databases. Do not modify the source branch and do not touch the user's laptop.
+- [ ] Add/copy only relevant **approved tests**, augment with negative, source-gap, permission and compatibility cases, and run them safely **offline**, without trading/network side effects.
+- [ ] Record original provenance and new destination/commit, results, remaining issues and approval status in a versioned **Legacy Component Reuse Register**. Tick the module/task on its stage checklist only when its stated acceptance tests pass.
+
+If safe transfer is not established, leave the task **[ ]** and record HOLD; do not quietly replace it with fabricated success or missing assertions. Simple verbatim file copies are acceptable only when dependency review confirms the *entire file* is required and safe; otherwise copy just the necessary functions and rewrite surrounding structure.
+
+**Branch independence:** The legacy branches and their commits remain intact. The new branch's working tree begins with documentation only, despite its Git ancestry. Adding new application files to nbot-v5.1 in later explicitly authorized phases is expected and does not require copying unwanted historical files.
+
+**Explicit order:** Read-only inventory first → component-level owner review → approved targeted copying/new coding → offline tests → evidence-backed checklist update → advance to next gate.
 
 ## 1. Sources, project inheritance and known conflicts to investigate
 
@@ -206,6 +225,101 @@ Gate: A reviewer can audit each event back to correct source and label; document
 NOT INCLUDED in V5.1 initial implementation authorization. Deliverables only after fresh owner request and independent review: exchange order permissions, exchange-side stop protections, stale-order/idempotent reconciliation, one global live position including open pending/partial, kill controls, funding/fee ledger, separate paper mirror, approval and rollback procedures.
 
 Gate: No live trading unless a distinct, explicit decision and technical safety acceptance authorizes it.
+
+## 4A. Permanent milestone AND micro-task checklist — update as work completes
+
+**This checklist is mandatory in every future V5.1 development session.** A big milestone is **[ ]** until its *own* acceptance gate passes and every required small task beneath it is **[x]**. A small task may be ticked **[x] immediately once independently verified**, even while its parent milestone remains [ ]. NEVER wait for the whole stage to finish before recording a small achievement. NEVER tick a gate just because older NBOT previously had similar functionality.
+
+**How to maintain it:**
+
+1. At the **start** of every session, read this checklist and the owner-friendly checklist and report the exact last completed item and next open item.
+2. Work in small, auditable increments. **Add new subtasks to the correct gate as soon as they are discovered** (including fixes, tests and blockers), rather than hiding work between broad headings.
+3. Immediately upon completion of **each** small subtask, change its checkbox from **[ ] to [x]** and append a dated proof record: exact GitHub **commit or PR**, passing test or review evidence, and any source-data grade. An action is complete only when required evidence exists. If blocked, leave [ ] and add **HOLD + reason**, rather than ticking.
+4. When every required subtask and gate acceptance rule passes, tick the corresponding **top-level G milestone** and log the evidence. Keep any optional/future authority **locked** if never separately approved; do not label its tasks done by using fake credentials or synthetic results.
+5. **Update both engineering and owner checklists together** whenever progress changes, so the owner can see small and big achievements in plain English. Both files must remain synchronized in meaning; record exact filenames and GitHub commits, never a vague claim that it is "done".
+6. Preserve previous evidence and note any regression explicitly. If tests later fail, mark the affected completion **REOPENED / HOLD**, untick it, record the reason, and re-qualify before PASS.
+7. At the end of a session summarize **newly ticked items, unticked/blocked items, test results, modified files, exact branch/commit, current mode and next smallest task**. Don't create a manual worksheet outside GitHub to track progress.
+
+**Initial verified seed work (not proof that G0 is complete):**
+
+- [x] **SEED-01:** Created new documentation-only **nbot-v5.1** branch without importing legacy working files; verified its first tree contained three documents (15 Oct 2026, initial branch commit **472c3f54415e06715f8b28673eee7d3b545338d4**).
+- [x] **SEED-02:** Copied original Complete Vision **V1.9** byte-for-byte (Git blob **e965d63ae85467a6156cf6134ea001906c8ebe67**); owner and engineering roadmap V1.0 created (same commit).
+- [ ] **G0 — Read-only recovery and legacy inventory complete**
+  - [ ] Record old relevant branches and pin original source commits, CI/test status and current available GitHub evidence.
+  - [ ] Create Legacy Component Reuse Register covering candidate V4/V5 modules, origin, dependencies, test claims and COPY / REIMPLEMENT / DISCARD decisions.
+  - [ ] Identify baseline risks: 50-vs-100/20, evidence gaps, archival pressure and first-Champion paper unlock mismatch.
+  - [ ] Present a nontechnical summary and obtain approval for the **first narrowly scoped code-porting task**.
+- [ ] **G1 — New safe application foundation complete**
+  - [ ] Agree minimal V5.1 module/interface tree and source/mode authority contracts.
+  - [ ] Create approved clean files; port only reviewed source helpers with exact lineage.
+  - [ ] Add and pass offline smoke, no-order, no-network, data-schema and import-isolation tests.
+  - [ ] Audit accidental old dependencies and document initial measured resource footprint.
+- [ ] **G2 — Lightweight 100-coin Observation complete**
+  - [ ] Implement verified Binance USD-M eligibility, 50/25/25 overlapping groups, deduplication and BTC inclusion.
+  - [ ] Add reliable completed-five-minute data, historical bootstrap, source-health, clock, source-epoch and gaps.
+  - [ ] Persist compact event/selection records, as-of times and explicit unscorable reasons.
+  - [ ] Pass mock 100-market rate, duplicate, disconnect, source-lag and RAM/CPU tests.
+- [ ] **G3 — Causal Exploration and 24 detector states complete**
+  - [ ] Independently verify exact old V4 24-detector list, semantics and safe selective adapter copying.
+  - [ ] Encode BTC, market and individual-coin structures without future-data leakage.
+  - [ ] Represent up to 200 directional possibilities with MATCH / NO_MATCH / UNAVAILABLE and capacity-skipped states.
+  - [ ] Pass deterministic known-at feature tests, complete-denominator tests and no-forced-trade tests.
+- [ ] **G4 — Select 20 and establish authentic deep market sources**
+  - [ ] Implement transparent eligibility, source quality, regime diversity and Research/control-slot shortlist rules, BTC included.
+  - [ ] Record frozen 20-symbol membership, source warm-up, decisions and rejected coins.
+  - [ ] Integrate audited shared per-symbol original trade, quote and funding source custody with compressed hash-chained segments.
+  - [ ] Demonstrate gap handling, safe disk quota, replay, source identity and representative deep-20 workload.
+- [ ] **G5 — Rolling 40 virtual trades and trailing management complete**
+  - [ ] Implement prospective frozen intent/entry/stop/target/trailing/horizon and one active experiment per coin+side.
+  - [ ] Implement at-most-40 global active, verified intra-candle exits and forward source-first-touch tracking.
+  - [ ] Reconcile at closed five-minute events and admit suitable replacements only into proven vacancies; no eight-new-trade quota.
+  - [ ] Pass tests for all slots full, partial replacements, no valid candidate, trailing reversals, concurrency and idempotent restart.
+- [ ] **G6 — Independent virtual economics, data recovery and archival complete**
+  - [ ] Verify end-to-end original price-path, separate entry/exit quote, fee, slippage and settled-funding witnesses.
+  - [ ] Add interrupted WSS/crash/unsynced RAM source-epoch HOLD and honest unresolved/ambiguous outcomes.
+  - [ ] Validate exact USD-M historical second-candle or aggregate-trade retrieval assumptions **before using** them for recovery.
+  - [ ] Implement and prove bounded durable storage, hash-chain archive rotation/restore or declared HOLD on quota.
+  - [ ] Pass independent no-fake-fill/no-fake-label, gap, corruption, rate-limit, restart and disk-full tests.
+- [ ] **G7 — Learning from mature, qualified after-cost evidence complete**
+  - [ ] Build clean joining of historical known-at features to only genuinely qualified later outcomes.
+  - [ ] Preserve sample-inclusion masks, NO_TRADE, source missingness and shared BTC event dependence.
+  - [ ] Produce baseline and regime-conditional evaluation with chronological purged validation and uncertainty.
+  - [ ] Independently review 2,000-qualified-outcome checkpoint and scientific quality; HOLD if unmet.
+- [ ] **G8 — First frozen trained-model candidate complete**
+  - [ ] Establish training cutoff, eligible model family and bounded science job, with no order authority.
+  - [ ] Train only on qualified evidence and evaluate on later untouched market events.
+  - [ ] Freeze reproducible model artifact, features, policy hashes and NO_TRADE logic.
+  - [ ] Pass independent validation/approval or record reject/hold honestly.
+- [ ] **G9 — Independently guarded FIRST Champion-only paper test complete**
+  - [ ] Resolve the original V5 G7 two-model-first-paper contradiction under reviewed policy.
+  - [ ] Implement secure mode-scoped proposal and separate Champion Paper one-position ledger/guardian.
+  - [ ] Pass quote age, cost, trailing stop, accounting, risk veto, replay, restart and paper reconciliation tests.
+  - [ ] Obtain distinct **paper-only** owner release authorization and confirm NO real-order capability.
+- [ ] **G10 — Fair Challenger paper comparison and reviewed model promotion complete**
+  - [ ] Qualify/freeze Challenger from another independently reviewed prospective outcome cohort.
+  - [ ] Create separate Challenger Paper book using the same forward event window with independent cash/risk.
+  - [ ] Evaluate settled after-cost trades, drawdown, common-period risk and abstentions without forced trading.
+  - [ ] Produce RETAIN / HOLD / REJECT / RECOMMEND_PROMOTE with independent owner routing review; no autonomous model promotion.
+- [ ] **G11 — End-to-end integration and low-resource endurance complete**
+  - [ ] Show complete seven-stage synthetic-only path without fabricating original-grade evidence.
+  - [ ] Prove 100 lightweight, 20 deep, rolling 40, two paper books and one-position safety invariants together.
+  - [ ] Pass failures, security checks, source-grade gates and finite storage/restore scenarios.
+  - [ ] Report bounded VPS RAM/CPU/I/O/disk/latency and obtain reviewed paper-operational GO/HOLD.
+- [ ] **G12 — Future real trading release (NOT APPROVED; remains locked)**
+  - [ ] Obtain distinct, explicit owner authorization for a separately scoped real trading project.
+  - [ ] Review exchange account permissions, protective-order handling and actual pending/partial/position reconciliation.
+  - [ ] Independently prove one global real position and risk kill/veto/rollback behavior.
+  - [ ] Separate signed real-money release and production acceptance; no paper model can grant it.
+
+**Proof register format (append one record per tick, including tiny tasks):**
+
+| Date (IST) | Task ID | [x] or REOPENED/HOLD | Commit/PR or evidence | Test/result | Owner-facing explanation |
+| --- | --- | --- | --- | --- | --- |
+| 2026-10-15 | SEED-01 | [x] | 472c3f54415e06715f8b28673eee7d3b545338d4 | Git tree: 3 docs, no application files | New clean V5.1 branch exists; old sources remain on their branches |
+| 2026-10-15 | SEED-02 | [x] | 472c3f54415e06715f8b28673eee7d3b545338d4 | Vision source/copy blob SHA match | The approved Vision V1.9 was carried over unchanged |
+| *Next* | G0 component inventory | [ ] | *To be completed* | *Not yet checked* | Review the old source before deciding what to copy |
+
+**Do not interpret the two SEED checks as passing G0 or starting development.**
 
 ## 5. Work management: each gate's report format
 
