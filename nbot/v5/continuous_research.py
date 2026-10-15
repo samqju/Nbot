@@ -112,6 +112,7 @@ class ContinuousResearch:
         if grade not in ("ORIGINAL", "SYNTHETIC"):
             raise ValueError("RESEARCH_GRADE_INVALID")
         self.grade, self.economic_provider, self.reviewer_key = grade, economic_provider, reviewer_key
+        self.learning = None
         root=Path(root)
         if root.is_symlink() or not root.is_dir() or root.stat().st_mode & 0o077:
             raise ValueError("RESEARCH_ROOT_NOT_PRIVATE")
@@ -281,6 +282,8 @@ class ContinuousResearch:
         self.store.append("g5:"+report["report_sha256"],"G5_REPORT",now_ms,report)
         telemetry=self.telemetry(now_ms)
         telemetry["g5"]=report
+        if self.learning is not None:
+            telemetry["learning"]=self.learning.advance(now_ms)
         return telemetry
 
     def advance_economics(self, now_ms, *, max_rows=250):
