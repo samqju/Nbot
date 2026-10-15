@@ -389,5 +389,42 @@ class G5ResearchTests(unittest.TestCase):
         self.assertFalse(self.book.closed)
         self.assertEqual(self.book.status()["financial_authority"],"NONE")
 
+    def test_R36_journal_cached_writer_fails_on_external_same_size_tamper(self):
+        p=self.plan();self.admit(p)
+        path=self.journal.path
+        data=path.read_bytes()
+        # A same-length external overwrite must be noticed by mtime,
+        # not by simply trusting cached byte-count and hash.
+        changed=data.replace(b"LONG",b"SHRT",1)
+        self.assertEqual(len(changed),len(data))
+        path.write_bytes(changed)
+        import os
+        os.utime(path,ns=(path.stat().st_atime_ns,path.stat().st_mtime_ns+1000000))
+        with self.assertRaisesRegex(JournalHold,"UNEXPECTED_EXTERNAL_CHANGE"):
+            self.book.review(FiveMinuteEvent(END_OPEN+INTERVAL_MS,
+               END_DECISION+INTERVAL_MS),self.deep,lambda:())
+
+    def test_R37_independent_writer_conflict_not_lost(self):
+        first=self.plan()
+        self.admit(first)
+        other=ResearchJournal(self.journal.path)
+        records,otherhead=other.replay()
+        self.assertEqual(otherhead,self.book.head)
+        # Our original process makes another change after the other writer's
+        # checkpoint: external actor must HOLD on stale in-memory cursor.
+        self.book.checkpoint(END_DECISION+100)
+        with self.assertRaises(JournalHold):
+            other.append("REVIEW",END_DECISION+101,{"event_open_ms":END_OPEN},
+                         expected_head=otherhead)
+
+    def test_R38_journal_full_replay_revalidates_chain_after_many_records(self):
+        self.admit(self.plan())
+        self.book.checkpoint(END_DECISION+100)
+        again=ResearchJournal(self.journal.path)
+        items,head=again.replay()
+        self.assertGreaterEqual(len(items),3)
+        self.assertEqual(head,self.book.head)
+        self.assertEqual(items[-1]["seq"],len(items))
+
 if __name__=="__main__":
     unittest.main()
