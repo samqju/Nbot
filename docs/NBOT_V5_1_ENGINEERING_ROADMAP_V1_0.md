@@ -243,7 +243,7 @@ Gate: No live trading unless a distinct, explicit decision and technical safety 
 **G0-01 verified documentation work (not proof that G0 is complete):**
 
 - [x] **G0-01:** Commit the versioned register **docs/NBOT_V5_1_LEGACY_COMPONENT_REUSE_REGISTER_V1_0.md** with pinned historical source snapshots, 27 component candidates R01–R27, 12 conflicts C01–C12, test evidence grades and V5.1-only runtime identifier policy. **Date:** 15 Oct 2026 IST. **Evidence commit:** **5d5133766b96ad3b21ab8b4c553e08740c3c7adb**; GitHub file retrieved and checked. **Tests:** document/file check only; no application/unit tests, source-quality audit, VPS or deployment activity during this task.
-- [ ] **G0-02:** First selected component's complete dependency/security/source-grade/test audit, plus precise reviewed V5.1 destination.
+- [x] **G0-02:** Selected source `nbot/v5/observation_contract.py` blob `99b9544fe32239e7b707b6ea09a87a452210034b`, helper/test/package SHA audit and complete *selected pure-helper* standard-library call graph reviewed; exclude `MAX_SYMBOLS=50`, SQLite, legacy imports and `nbot/__init__.py` V3.0.0. Proposed `nbot_v5_1/{__init__.py,core.py}`, `tests/test_v5_1_core.py` with 12 negative/positive checks. **15 Oct 2026**, register audit commit **2ebcc62f9f13aa4c7ed532cca108d9c359c77363**. **Static review only: zero code imported/tests run.**
 - [ ] **G0-03:** VPS preservation and capacity inventory (without cleanup pending verified backup/rollback), despite new broad maintenance permission; no real-money release.
 
 **Initial verified seed work (not proof that G0 is complete):**
@@ -254,9 +254,9 @@ Gate: No live trading unless a distinct, explicit decision and technical safety 
   - [x] Record old relevant branches and pin original source commits, historical CI/test status and available GitHub evidence — 15 Oct 2026, preliminary inventory in register commit **5d5133766b96ad3b21ab8b4c553e08740c3c7adb**; no new tests executed.
   - [x] Create Legacy Component Reuse Register covering candidate V4/V5 modules, origin, preliminary dependencies, named tests and COPY-AND-ADAPT / REIMPLEMENT / DISCARD / REFERENCE decisions — 27 entries, GitHub verified **5d5133766b96ad3b21ab8b4c553e08740c3c7adb**.
   - [x] Identify baseline risks: 50-vs-100/20/40, source-grade evidence gaps, archival pressure, first-Champion paper unlock mismatch, stale V3/V3.9/V4/V5 imports/IDs — C01–C12, same commit.
-  - [ ] G0-02: complete **per-selected-component** transitive import, hidden network/credential/order/DB side-effect audit with exact source blob, old test fixtures and new interface contract; register findings remain preliminary.
+  - [x] G0-02: complete first **selected pure helpers** transitive standard-library call graph, exclude hidden network/credential/order/DB/old package effects, pin full old blob/test hashes and define new interface + T01–T12 test plan — register commit **2ebcc62f9f13aa4c7ed532cca108d9c359c77363**, 15 Oct 2026; static review only. **Other R01–R27 future port audits remain open.**
   - [ ] G0-03: with owner's newly granted VPS authority, first assess existing service/storage/backup/pin/retention metadata safely and document preservation/rollback before any cleanup; no destructive or operational VPS work in G0-01.
-  - [ ] Present exact G1-01 first-port scope for owner review and obtain approval for the **first narrowly scoped application-code task**; G0-01 authorized documentation only.
+  - [ ] G0-04: present exact G1-01 first-port scope and obtain owner decision before application-code transfer; G0-02 only audited source and proposed the new nontrading files. (The owner granted general GitHub/VPS maintenance permission; G1 coding remains a distinct roadmap task.)
 - [ ] **G1 — New safe application foundation complete**
   - [ ] Agree minimal V5.1 module/interface tree and source/mode authority contracts.
   - [ ] Create approved clean files; port only reviewed source helpers with exact lineage.
@@ -326,9 +326,11 @@ Gate: No live trading unless a distinct, explicit decision and technical safety 
 | 2026-10-15 | SEED-01 | [x] | 472c3f54415e06715f8b28673eee7d3b545338d4 | Git tree: 3 docs, no application files | New clean V5.1 branch exists; old sources remain on their branches |
 | 2026-10-15 | SEED-02 | [x] | 472c3f54415e06715f8b28673eee7d3b545338d4 | Vision source/copy blob SHA match | The approved Vision V1.9 was carried over unchanged |
 | 2026-10-15 | G0-01 source and conflict register | [x] | **5d5133766b96ad3b21ab8b4c553e08740c3c7adb**; [register](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_LEGACY_COMPONENT_REUSE_REGISTER_V1_0.md) | GitHub source/document review verified 27 candidates, 12 conflicts; no application tests | Safe parts identified without importing legacy or claiming scientific validation |
-| *Next* | G0-02 component-level dependency/side-effect audit | [ ] | *To be completed* | Require exact source blob and tests | Verify one safe pure component before writing V5.1 application code |
+| 2026-10-15 | G0-02 first pure-helper dependency/security/test audit | [x] | **2ebcc62f9f13aa4c7ed532cca108d9c359c77363**; [G0-02 appendix](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_LEGACY_COMPONENT_REUSE_REGISTER_V1_0.md) §8 | Complete selected-helper GitHub static source/test/package review; 12 *planned* offline tests, none executed | Identified a safe limited source of behavior; rejected old DB, fixed-50 and V3 package identity |
+| *Next* | G0-03 safe VPS evidence/backup/rollback inventory | [ ] | *Pending* | No VPS access in G0-02 | Determine what must be preserved before cleanup or deployment |
+| *Next* | G0-04 owner review of first G1-01 code scope | [ ] | *Pending* | G1-01 code not created | Approve exact first clean modules and tests before porting |
 
-**Do not interpret SEED or G0-01 checks as passing G0, G1 or any engineering/science/release gate.** The branch began with only three docs; G0-01 added this fourth document. The owner has since permitted potential VPS inspection and maintenance, but G0-01 performed no VPS operations. No explicit first application-code component approval, paper-release authorization or real-money trading release follows from this documentation approval.
+**Do not interpret SEED, G0-01 or G0-02 checks as passing G0, G1 or any engineering/science/release gate.** G0-02 confirms a *static GitHub dependency and test audit*, not passing V5.1 code tests or source-quality labels. The branch began with three docs and G0-01 added only this fourth document. The owner now authorizes GitHub/VPS maintenance, including PuTTY access via their laptop for those VPSs, but G0-01/G0-02 used only GitHub; no paper or real trading release was granted.
 
 ## 5. Work management: each gate's report format
 
@@ -365,13 +367,13 @@ Do **not** create all modules at once. Build the smallest vertical slice with so
 
 **Task:** Perform the read-only **Legacy Component Reuse Assessment** for NBOT V5.1.
 
-1. Open only authorized GitHub branches and the new three-document V5.1 branch. Do not touch user laptop or remote VPSs.
+1. **Historical initial-session instruction (completed):** GitHub-only review of the former three-document V5.1 seed. Later, the owner authorized controlled PuTTY/VPS maintenance; follow G0-03 preservation and safety rules, not this old read-only first-session constraint.
 2. Inventory relevant V4/V5 modules, automated tests, contracts and known source/economic hold gates from GitHub.
 3. Produce a precise component reuse register and map current code to **G0–G12**: what exists, what can be ported, what must be rewritten or newly implemented.
 4. Investigate current hard 50-market capacity, missing 100/20 bridge, full 24 detector adapter quality, raw-source archival, true after-cost label flow and first-Champion paper unlock mismatch.
 5. Propose the narrowest safe **first code change** only after inventory and owner authorization. Do not write code or open any PR on the first read-only session unless explicitly instructed.
 
-**Keep in view:** No laptop changes, VPS commands, service starts, paper/live orders, deletions, old-branch edits, secrets, merges or release authority without new explicit owner approval.
+**Current boundaries after owner authorization 15 Oct 2026:** GitHub work and NBOT-scoped use of PuTTY sessions `Execution-VPS` and `Observation-VPS` are permitted for development/maintenance; avoid unrelated laptop files and never reveal/move private keys. **Preserve legacy services/DBs/old branches and demonstrate verified backups and rollback before destructive cleanup**; do not merge into main, enable paper release or place/authorize real exchange orders without the appropriate separate acceptance/permission gates. G0-02 used GitHub only.
 
 ---
 
