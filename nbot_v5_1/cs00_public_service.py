@@ -12,6 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 import json
+import os
+import resource
 from pathlib import Path
 import re
 import threading
@@ -75,6 +77,8 @@ class FuturePublicObservationService:
         self.started=False
         self.exit_reason="NOT_STARTED_CS00"
         self.errs=[]
+        self.last_feed_received_ms={}
+        self.launch_ms=None
 
     def status(self):
         return {"schema":VERSION,"source_process_started":self.started,
@@ -99,6 +103,7 @@ class FuturePublicObservationService:
             while not self.stop_event.is_set():
                 data=ws.read_message()
                 received=int(time.time()*1000)
+                self.last_feed_received_ms[kind]=received
                 before=None
                 try:
                     frame=json.loads(data)
@@ -186,6 +191,10 @@ class FuturePublicObservationService:
             probe(enabled=True,on_event=on_event)
             if "pipeline" not in slot:raise PublicServiceHold("CS00_BOOTSTRAP_UNAVAILABLE")
             self.pipeline=slot["pipeline"]
+            self.pipeline.active=True
+            self.pipeline.supervisor.started=True
+            self.pipeline.supervisor.state="PUBLIC_SOURCE_HOLD_UNQUALIFIED"
+            self.launch_ms=int(time.time()*1000)
             self.recovery_scheduler=RecoveryScheduler(
                 BudgetedPublicRest(allow_public_network=True,
                                    weight_budget=MAX_SERVICE_REST_WEIGHT))
@@ -195,6 +204,8 @@ class FuturePublicObservationService:
                         args=(route.kind,route.uri,1),daemon=True)
                 self.workers.append(t);t.start()
             last_boundary=self.pipeline.last_event_ms
+            last_health_ms=0
+            last_boundary_lag_ms=0
             while not self.stop_event.is_set():
                 if any(not t.is_alive() for t in self.workers):
                     self.request_stop("PUBLIC_WORKER_DIED")
@@ -206,7 +217,27 @@ class FuturePublicObservationService:
                         self._update_100_closed_bars(event_open_ms=event_open_ms)
                         self.pipeline.on_boundary(FiveMinuteEvent(event_open_ms,now))
                         last_boundary=event_open_ms
+                        last_boundary_lag_ms=max(0,now-(event_open_ms+INTERVAL_MS))
                 self.pipeline.seal()
+                if now-last_health_ms>=1000:
+                    st=os.statvfs(self.root)
+                    free=st.f_bavail*st.f_frsize
+                    rss=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+                    depth=len(self.pipeline.recorder.queue) if self.pipeline.recorder else 0
+                    h=self.pipeline.heartbeat(at_ms=now,rss_kib=rss,
+                        free_disk_bytes=free,queue_depth=depth,
+                        boundary_lag_ms=last_boundary_lag_ms)
+                    last_health_ms=now
+                    if h["state"]=="EMERGENCY_SOURCE_HOLD":
+                        self.request_stop("RESOURCE_SOURCE_HEALTH_HOLD")
+                        break
+                    if (now-self.launch_ms>120000 and
+                            any(now-self.last_feed_received_ms.get(k,self.launch_ms)>120000
+                                for k in ("TRADE","QUOTE","MARK"))):
+                        self.pipeline.emergency_hold(
+                            at_ms=now,reason="WSS_ROUTE_STALE_HOLD")
+                        self.request_stop("SOURCE_STALE_NO_AUTO_RESTART")
+                        break
                 if self.recovery_scheduler.tasks:
                     self.recovery_scheduler.step(now_ms=now)
                 self.stop_event.wait(1)
@@ -219,6 +250,9 @@ class FuturePublicObservationService:
             if self.pipeline:
                 try:self.pipeline.seal()
                 except Exception:self.exit_reason="SHUTDOWN_SEAL_UNCERTAIN_HOLD"
+            if self.pipeline:
+                self.pipeline.active=False
+                self.pipeline.supervisor.started=False
             self.started=False
 
 MAX_SERVICE_REST_WEIGHT=300
