@@ -254,7 +254,7 @@ The guardian must be able to independently reject a proposal and enforce the one
 - [x] **G0-04-F4:** T01–T12 offline tests and required proof for G1-01 defined; no tests executed — same evidence.
 - [x] **G0-04 — First-code scope finalized and accepted:** Owner instructed us on 15 Oct 2026 to complete the code-scope review while they handle the manual VPS cleanup. **7c624de187e274fe40172e64d03b8697f6e1f7aa**, [approved scope](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G0_04_FIRST_CODE_SCOPE_V1_0.md). This is **scope approval only**, not application files or operating authorization.
 
-**Current state (15 Oct 2026):** G0-01, G0-02 and **G0-03 in full are complete**: the VPS inventory is documented and the owner expressly waived restoring/backing up old-version VPS contents. **No backup was made or tested; no VPS cleanup was performed.** The G0-03 report preserves the earlier inventory and current owner decision. **G0 parent remains [ ] only for remaining G0-04 first-code scope review and any independent requirements, not historical backup preparation.** V5.1 original-source future retention and paper/real-money safety gates remain unaffected.
+**LATEST STATE — 15 Oct 2026: G0 [x] COMPLETE.** G0-01 source inventory, G0-02 selected pure-helper safety audit, G0-03 VPS inventory/owner backup waiver, owner-run old-VPS cleanup **independently VERIFIED** and G0-04 exact first-code scope approval are all finished. Both old NBOT checkout and reset paths are absent from both VPSs, and the obsolete Observation unit is absent, as shown in [completion proof](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G0_CLEANUP_COMPLETION_20261015.md), commit **81dadf68a9949b847fd8f38336c5d532eab861cd**. **No old backup made (waived).** Old GitHub branches remain reference sources. **G1-01 code/tests NOT STARTED; no paper or real trading authorization.**
 
 ### Record of every verified tick
 
@@ -273,7 +273,7 @@ The guardian must be able to independently reject a proposal and enforce the one
 | 2026-10-15 | [x] G0 parent and owner Milestones 0/1 | **81dadf68a9949b847fd8f38336c5d532eab861cd** plus G0-01/G0-02/G0-03/G0-04 source/audit proofs | The fresh-start preparation and first-code plan are complete; next comes coding and testing |
 | *Next review* | [ ] G1-01 new files and passing offline tests | Not started | Build tiny nontrading foundation only after confirmed scope and according to safe development plan |
 
-**Use [ ] and [x] on the individual subtasks throughout development.** The roadmap itself should be updated with a new GitHub commit as work is completed. No stage above is yet checked as completed.
+**Use [ ] and [x] on the individual subtasks throughout development.** Owner milestones 0 and 1 (engineering G0) are now completed; **the first application development milestone (G1) and all trading stages remain open.**
 
 ## 5. What happens if something goes wrong?
 
@@ -331,4 +331,4 @@ At the end of each milestone, request a compact progress report answering:
 **Owner's guiding statement:** NBOT V5.1 should be **small enough to understand, cautious enough to trust, and able to improve from authentic evidence**. An empty trade slot and NO TRADE are perfectly legitimate outcomes.
 
 
-**15 Oct 2026 latest owner direction:** The owner subsequently requested **manual VPS cleanup commands** if the automated deletion still could not be performed, and specifically instructed us to **complete G0-04 scope in parallel**. The three-file G0-04 code plan and T01–T12 tests are finalized/approved in **7c624de187e274fe40172e64d03b8697f6e1f7aa**. The original check still proves old VPS files remained, and no manual cleanup results have been received. Thus **G0-04 [x], old VPS cleanup [ ], G0 parent [ ], G1 code/tests [ ]**. The historic backup waiver remains in effect; paper and real order release gates remain locked.
+**15 Oct 2026 final verification:** The owner executed and supplied both PuTTY SUCCESS outputs. Our subsequent live SSH checks on BOTH machines confirmed checked old NBOT paths and retired unit absent, zero named NBOT units/processes and SSH still accessible — evidence commit **81dadf68a9949b847fd8f38336c5d532eab861cd**. **G0-01 [x], G0-02 [x], G0-03 [x], G0-03-CLEANUP-EXEC [x], G0-04 [x], parent G0 [x], owner Milestones 0 and 1 [x].** **G1-01 application code/12 tests [ ]**; trading releases LOCKED. Legacy backup waiver applies only to old data, not new V5.1 source records.
