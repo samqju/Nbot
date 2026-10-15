@@ -990,7 +990,7 @@ The owner has **not** selected an archive provider, storage budget or deletion a
 | Candle or source ID gap; restart before last RAM tail was synced | New source epoch + documented unknown interval; original trade path cannot be inferred |
 | Structure not confirmed or one of 24 detectors has missing prerequisites | FORMING or UNAVAILABLE; never fabricate a MATCH |
 | Expected after-cost economic advantage is absent or uncertain | NO TRADE, even when several patterns match |
-| Stop-vs-target order cannot be proven from source | UNRESOLVED/HOLD, not SC0RED; no invented net-R label |
+| Stop-vs-target order cannot be proven from source | UNRESOLVED/HOLD, not SCORED; no invented net-R label |
 | Entry/exit quote, fee, slippage or settled funding evidence insufficient | HOLD economic qualification; never default unknown cost to zero |
 | Archive full, replication failure, unsafe disk/RAM pressure | Stop new virtual admission, preserve existing immutable source, signal storage HOLD |
 | Too few independent genuine virtual outcomes, poor regime coverage or weak validation | NO_MODEL/NO TRADE or keep frozen Champion; no scientific promotion |
