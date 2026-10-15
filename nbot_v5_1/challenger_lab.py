@@ -252,29 +252,39 @@ class DualBookCompetition:
             event.costs.funding_from_ms is None or
             event.costs.funding_from_ms>event.at_ms):
             raise PaperHold("G10_UNSHARED_OR_UNVERIFIED_MARKET_EVENT")
-        # Note: a real market-data feed would require a separate ORIGINAL
-        # source attestation; this event SHA is only a LAB fixture identity.
+        # Preflight BOTH routes before touching EITHER book; an invalid
+        # Challenger must not mutate the Champion.
+        for label,recommendation,expected in (
+            (CHAMPION,event.champion,p.champion_sha256),
+            (CHALLENGER,event.challenger,p.challenger_sha256)):
+            if recommendation is None:
+                continue
+            if (type(recommendation) is not SignedLabProposal or
+                recommendation.at_ms!=event.at_ms or
+                recommendation.source_sha256!=event.quote.sha256 or
+                recommendation.book!=label or
+                recommendation.model_sha256!=expected):
+                raise PaperHold("G10_MODEL_SOURCE_OR_DECISION_MISMATCH")
+        # An event hash is only LAB identity, not Binance authentication.
         outcomes={}
-        for label,recommendation in (
-            (CHAMPION,event.champion),(CHALLENGER,event.challenger)):
-            book=self.books[label]
-            if book.state.occupied:
-                mark=book.simulate_mark_or_exit(event.quote,event.costs,now_ms=event.at_ms)
-                outcomes[label]=mark["status"]
-            else:
-                outcomes[label]="NO_TRADE"
-            if recommendation is not None:
-                # No proposal may be time-skewed or based on the other model.
-                if (type(recommendation) is not SignedLabProposal or
-                    recommendation.at_ms!=event.at_ms or
-                    recommendation.source_sha256!=event.quote.sha256 or
-                    recommendation.book!=label or
-                    recommendation.model_sha256!=(
-                       p.champion_sha256 if label==CHAMPION else p.challenger_sha256)):
-                    raise PaperHold("G10_MODEL_SOURCE_OR_DECISION_MISMATCH")
-                admission=book.simulate_entry(recommendation,event.quote,
-                         event.costs,now_ms=event.at_ms)
-                outcomes[label]=admission["status"]
+        try:
+            for label,recommendation in (
+                (CHAMPION,event.champion),(CHALLENGER,event.challenger)):
+                book=self.books[label]
+                if book.state.occupied:
+                    mark=book.simulate_mark_or_exit(
+                        event.quote,event.costs,now_ms=event.at_ms)
+                    outcomes[label]=mark["status"]
+                else:
+                    outcomes[label]="NO_TRADE"
+                if recommendation is not None:
+                    admission=book.simulate_entry(
+                        recommendation,event.quote,event.costs,now_ms=event.at_ms)
+                    outcomes[label]=admission["status"]
+        except (JournalHold,PaperHold,OSError,ValueError,TypeError):
+            # A durable partial event remains in one book. Fail CLOSED.
+            self.restarted=True
+            raise
         # Commit shared event AFTER both independent journal operations.
         # If interrupted between writes, next startup cannot silently
         # resume; independent ledgers remain audit/restart-held.
@@ -306,10 +316,23 @@ class DualBookCompetition:
 
     def review(self):
         p=self.protocol
-        self._verify_reviews(self.journal.replay()[0])
+        shared,head=self.journal.replay()
+        self._verify_reviews(shared)
         total=len(self.events)
-        if total!=len(self.journal.replay()[0]):
+        if (self.restarted or head!=self.head or total!=len(shared)):
             raise PaperHold("G10_REVIEW_RESTART_OR_LOST_EVENT")
+        for label in (CHAMPION,CHALLENGER):
+            book=self.books[label]
+            actual,actual_head=book.journal.replay()
+            projected=book._project(actual,actual_head)
+            if actual_head!=book.head or projected!=book.state:
+                raise PaperHold("G10_UNRECONCILED_INDEPENDENT_BOOK")
+        if shared:
+            last=shared[-1]["payload"]
+            if (last.get("champion_head")!=self._state(CHAMPION).journal_head or
+                last.get("challenger_head")!=self._state(CHALLENGER).journal_head or
+                last.get("event_sha256")!=self.events[-1].event_sha256):
+                raise PaperHold("G10_COMMON_AND_BOOK_SOURCE_HEAD_DIVERGED")
         settled=[self._state(x).settled for x in (CHAMPION,CHALLENGER)]
         censored=[self._state(x).censored for x in (CHAMPION,CHALLENGER)]
         abstained=[sum(getattr(e,("champion_result" if i==0 else
