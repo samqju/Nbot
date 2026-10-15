@@ -20,6 +20,7 @@ from nbot_v5_1.deep_selection import choose_deep
 from nbot_v5_1.exploration import explore_event
 from nbot_v5_1.core import FiveMinuteEvent, INTERVAL_MS
 from nbot_v5_1.learning_contract import lab_row, assemble_lab, verified_learning_count
+from nbot_v5_1.learning_science import quality_report
 from test_v5_1_g2 import manifest, END_OPEN, END_DECISION
 from test_v5_1_g7_learning import fixture
 
@@ -196,6 +197,8 @@ class RecoveryContractCS00(unittest.TestCase):
         d=assemble_lab((row,),cutoff_ms=row.matured_ms+10)
         self.assertEqual(len(d.rows),1)
         self.assertEqual(len(d.economic_lab_rows),0)
+        self.assertEqual(quality_report(d).censored,1)
+        self.assertEqual(quality_report(d).total,1)
         self.assertEqual(verified_learning_count(d),0)
         with self.assertRaises(Exception):
             assemble_lab((fixture(state="UNRECOVERABLE_EXCLUDED",net="5"),),
