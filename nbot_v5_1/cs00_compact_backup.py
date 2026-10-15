@@ -87,12 +87,17 @@ def create_compact_backup(*,source:Path,destination:Path,filenames:tuple[str,...
                 try:
                     target=destination/name
                     tmp=sqlite3.connect(target)
-                    try:src.backup(tmp,pages=32)
+                    try:
+                        src.backup(tmp,pages=32)
+                        tmp.execute("PRAGMA journal_mode=DELETE")
                     finally:tmp.close()
                 finally:src.close()
                 os.chmod(target,0o600)
-                if sqlite3.connect(target).execute("PRAGMA integrity_check").fetchone()[0]!="ok":
-                    raise CompactBackupHold("CS00_BACKUP_SQLITE_INTEGRITY_BAD")
+                check=sqlite3.connect(target)
+                try:
+                    if check.execute("PRAGMA integrity_check").fetchone()[0]!="ok":
+                        raise CompactBackupHold("CS00_BACKUP_SQLITE_INTEGRITY_BAD")
+                finally:check.close()
                 raw=_read(target)
                 with open(target,"rb") as f:os.fsync(f.fileno())
             except (sqlite3.Error,OSError) as exc:
