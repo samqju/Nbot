@@ -169,13 +169,18 @@ class VirtualResearchBook:
                         self.last_review_ms is not None and open_ms<=self.last_review_ms):
                     raise JournalHold("G5_REPLAY_DUPLICATE_BOUNDARY")
                 self.last_review_ms=open_ms
+            elif op=="SOURCE_EPOCH_HOLD":
+                name=data.get("symbol")
+                if type(name) is not str or not name.endswith("USDT"):
+                    raise JournalHold("G5_REPLAY_BAD_SOURCE_HOLD")
+                self.source_held.add(name)
             elif op=="CENSOR":
                 raise JournalHold("G5_UNSUPPORTED_RELEASE_OF_SOURCE_HOLD")
             else:
                 raise JournalHold("G5_REPLAY_UNKNOWN_OP")
         # No restart can assert that unsynced RAM tail/trailing path was intact.
         self.source_heads={}
-        self.source_held={x.intent.symbol for x in self.active.values()}
+        self.source_held.update(x.intent.symbol for x in self.active.values())
         for id,path in tuple(self.active.items()):
             if path.state=="ACTIVE_SYNTHETIC_PATH":
                 self._log("PATH_HOLD",path.intent.declared_at_ms,
@@ -286,6 +291,9 @@ class VirtualResearchBook:
                    decision_rows=tuple(decision_rows))
 
     def _hold_symbol(self,sym,at,reason):
+        if sym not in self.source_held:
+            self._log("SOURCE_EPOCH_HOLD",at,{"symbol":sym,"reason":reason})
+            self.source_held.add(sym)
         for (name,side),id in tuple(self.by_pair.items()):
             if name!=sym:continue
             path=self.active[id]
