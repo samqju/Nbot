@@ -180,6 +180,43 @@ class RecoveryContractCS00(unittest.TestCase):
                 experiment_id=SHA,symbol="BTCUSDT",first_agg_id=100,
                 last_agg_id=99,gap_start_ms=T,gap_end_ms=T+1000,now_ms=T+2000)
 
+    def test_CSREC17_large_frozen_gap_streams_without_tick_retention(self):
+        x=HistoricalAggTradeRecovery(
+            experiment_id=SHA,symbol="BTCUSDT",first_agg_id=100,
+            last_agg_id=100099,gap_start_ms=T,gap_end_ms=T+10000,
+            now_ms=T+20000,side="LONG",stop="99",target="102")
+        self.assertIn("limit=1000",x.next_rest_request())
+        rows=[trade(i,T+1000,"98" if i==115 else "100")
+              for i in range(100,1100)]
+        self.assertEqual(x.ingest_page(body(rows),received_at_ms=T+20000),
+                         "RECOVERY_PENDING")
+        self.assertEqual(len(x.rows),0)
+        self.assertEqual(x.proof().trade_count,1000)
+        self.assertIn("fromId=1100",x.next_rest_request())
+
+    def test_CSREC18_frozen_first_touch_rejects_retroactive_goal_changes(self):
+        x=HistoricalAggTradeRecovery(
+            experiment_id=SHA,symbol="BTCUSDT",first_agg_id=100,
+            last_agg_id=102,gap_start_ms=T,gap_end_ms=T+10000,
+            now_ms=T+20000,side="LONG",stop="99",target="102")
+        x.ingest_page(body([trade(100,T+1000,"100"),
+                            trade(101,T+2000,"103"),
+                            trade(102,T+3000,"98")]),received_at_ms=T+20000)
+        self.assertEqual(x.traded_price_first_touch(
+            side="LONG",stop="99",target="102").barrier,"TARGET")
+        self.assertEqual(x.proof().trade_count,3)
+        self.assertEqual(len(x.rows),0)
+        with self.assertRaisesRegex(SourceRecoveryHold,"FROZEN_PLAN_CHANGED"):
+            x.traded_price_first_touch(side="LONG",stop="99",target="110")
+
+    def test_CSREC19_large_gap_without_frozen_geometry_denied(self):
+        with self.assertRaisesRegex(SourceRecoveryHold,
+                                     "LARGE_GAP_NEEDS_FROZEN_PRICE_PLAN"):
+            HistoricalAggTradeRecovery(
+                experiment_id=SHA,symbol="BTCUSDT",first_agg_id=100,
+                last_agg_id=15000,gap_start_ms=T,gap_end_ms=T+10000,
+                now_ms=T+20000)
+
     def test_CSREC15_label_filter_excludes_unrecoverable_and_pending(self):
         x=eligible_learning_ids(labeled_records=(
             ("1"*64,"UNRECOVERABLE_EXCLUDED","EXCLUDED"),
