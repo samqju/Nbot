@@ -165,7 +165,7 @@ class SourceOnlyPipeline:
                   queue_depth:int,boundary_lag_ms:int)->dict:
         with self.lock:
             return self.supervisor.assess(Heartbeat(
-                at_ms,self.source_frames,self.source_gap_count,
+                at_ms,self.source_frames,self.hard_source_gap_count,
                 queue_depth,rss_kib,free_disk_bytes,boundary_lag_ms))
 
     def emergency_hold(self,*,at_ms:int,reason:str):
