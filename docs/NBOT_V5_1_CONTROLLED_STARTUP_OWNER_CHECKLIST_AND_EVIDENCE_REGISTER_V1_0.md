@@ -1,5 +1,8 @@
 # NBOT V5.1 — Controlled Startup Owner Checklist & Evidence Register V1.0
 
+> **LATEST LIVE STATUS (15 Oct 2026; supersedes older offline-only passages):** G1/G2 genuine 100-market public REST source and G3 200 direction records **passed initial limited live checks**; G3 produced **zero actually evaluated detectors** under capacity=0, so NOT 200 proven trading signals. G4 did receive all 60 TRADE/QUOTE/MARK symbol/feed pairs across 20 markets, but its **continuous original-source gate is [ ] HOLD** after repeated BTCUSDT `bookTicker EVENT_FUTURE_OR_STALE` stopped the final public-only canary (12,572 frames, exit 2). **No persistent NBOT running, no PAPER or REAL approval.** Latest live executable SHA `6b7491d8a903cbc248c85327a20919d68f05292f`. **[READ CURRENT START-HERE HANDOFF](NBOT_V5_1_NEXT_CHAT_START_HERE_LIVE_G1_G3_PASS_G4_BTC_QUOTE_HOLD_20261015.md)**. Historical sections below describe their original earlier state, not today's latest result.
+
+
 **Status: DRAFT / NOT AUTHORIZED FOR STARTUP. No production services started.**  
 **Date:** 15 October 2026 (IST)  
 **Master plan:** [Controlled Startup & Live-Evidence Validation Master Plan V1.0](NBOT_V5_1_CONTROLLED_STARTUP_AND_LIVE_EVIDENCE_MASTER_PLAN_V1_0.md)  
@@ -259,3 +262,26 @@ The backup script is NOT a general filesystem archive and intentionally omits un
 **Verified manual source backup created:** `/home/ubuntu/NBOT_Backups/NBOT_V5.1_records_20261015T152427Z_12d35662.tar.gz`, SHA `af306b0decb2dd8753d8049b943f214085d33950ae65118fbf02b580042a5250`; matching .sha256 present, `sha256sum -c` PASS. **[ ] User WinSCP local 1TB desktop copy still to be performed.** Never claim desktop has this archive until transferred. Original and diagnostic receipts retained intact.
 
 **NEXT ONE BLOCKER:** measure actual BTC bookTicker raw exchange `E` timestamp vs socket receipt and diagnose 20-symbol WSS backlog; ensure small per-symbol quarantine/recovery if truly necessary and keep quote/mark/economic-source certainty. Repeat time-limited public-only canary with no stale-source global failure and at least two genuine five-minute boundaries before approving any permanent start. CS-00 offline engineering acceptance remains; CS-01 sustained startup [ ] HOLD, G4–G10 genuine science/PAPER gates [ ] HOLD, G12 real LOCKED.
+
+
+## 15 OCT 2026 — VERIFIED LIVE STATUS RECONCILIATION (LATEST)
+
+**First read:** [Latest next-chat handoff, exact current status, tested code and safe next work](NBOT_V5_1_NEXT_CHAT_START_HERE_LIVE_G1_G3_PASS_G4_BTC_QUOTE_HOLD_20261015.md), and [CS-01 genuine public-market test report](NBOT_V5_1_FIRST_LIVE_CS01_PUBLIC_ONLY_CANARY_ACTUAL_RESULTS_AND_BTC_QUOTE_HOLD_20261015.md).
+
+| Task / milestone | Evidence or outstanding requirement | Final recorded state |
+| --- | --- | --- |
+| **CS01-LIVE-01 / G1–G2 initial public source** | Verified 100/100 Binance USD-M candidates/BTC, 96 closed five-minute bars each, 103 hash-replayed public REST receipts, no initial missing-data HOLD | **[x] PASS limited real data-path**; NOT continuous uptime |
+| **CS01-LIVE-02 / G3 initial 100×2** | Real-source-derived prospective 200 directional status rows, all 24 state slots carried; **0 actual detector evaluations** because capacity was gated, `NO_TRADE` for all | **[x] PASS initial labeling/causality**; [ ] actual 24-detector edge or trade proof |
+| **CS01-LIVE-03 / G4 public WSS connect** | BTC TRADE, QUOTE, MARK smoke; 20 deep symbols and **60** source-kind/symbol cursors later observed; up to **12,572** actual frames latest canary | **[x] PASS initial connection/receipt collection**; **[ ] sustained source integrity** |
+| **CS01-LIVE-04 / G4 original quote timing** | Repeated `FIRST_SOURCE_HOLD:QUOTE:BTCUSDT:EVENT_FUTURE_OR_STALE` after source quote aged beyond 5s; hard HOLD on 4 consecutive stale messages, isolated stale receipts tagged UNQUALIFIED | **[ ] FAIL/HOLD; immediate engineering priority** |
+| **CS01-LIVE-05 / aggregation semantics** | Legitimate aggregate-trade underlying `f/l` skips now tracked for review, not conflated with missing aggregate `a` IDs; real missing aggregate IDs/overlap/reorder still hard HOLD | **[x] code + regression tested**, [ ] all prior 47 G4 alerts adjudicated |
+| **CS01-LIVE-06 / safety and persistent service** | Bounded public-only canaries stopped, point-in-time host check no running NBOT/nbot* units; no exchange private/order path or PAPER enabled | **[x] bounded public-only safety**, **[ ] permanent Observation service accepted** |
+| **CS01-LIVE-07 / real owner backup** | First **8 genuine source/Observation records** locally backed up as 103,117-byte tar.gz + valid SHA256 on Observation VPS | **[x] VPS local archive verified**; **[ ] user's desktop WinSCP transfer/hash restore** |
+| **CS01-LIVE-08 / latest full test qualification** | Latest executable `6b7491d8a903cbc248c85327a20919d68f05292f`: **569/569 Execution full**; **Observation 569/569 full only at preceding `44f4a264...`, latest targeted tests PASS** | **[x] described evidence**, **[ ] final code SHA full Observation regression** |
+| **CS01-LIVE-09 / G4 operational + G5–G12** | Diagnose raw exchange `E` vs VPS clock, ingress/backlog and 20-symbol stream; prove long-run 20/20 across multiple boundaries before genuine science or sustained Observation GO | **[ ] G4 HOLD; [ ] G5–G10 original/owner PAPER HOLD; G12 LOCKED** |
+
+**Outstanding issue is concrete, not lack of offline development:** instrument BTC `bookTicker` exchange-event timestamp versus receipt time, host clock synchronization and 20-symbol combined WSS head-of-line delay. Isolate BTC vs combined load, repair the cause and recheck short **owner-approved public-only** canaries without loosening scientific as-of-time/quote limits. Only then consider a *separately owner-approved permanent* Observation service. G3's 200 records are directional labels, **not** 200 verified strategies or trades.
+
+**Owner backup preserved on Observation-VPS:** `/home/ubuntu/NBOT_Backups/NBOT_V5.1_records_20261015T152427Z_12d35662.tar.gz`, SHA256 `af306b0decb2dd8753d8049b943f214085d33950ae65118fbf02b580042a5250`, matching `.sha256` locally verified. [ ] Owner has transferred it via WinSCP to desktop. Do NOT delete original/canary evidence or silently count unqualified records as Learning rows.
+
+**Historical-source audit note:** this later canary evidence supersedes earlier statements that CS-01 never ran or that no real records exist. The full CS-00 offline engineering and safety tests remain recorded; the **full operational signoff remains [ ]**. The owner's request to start public Observation was honored through *bounded canaries only*; it did not authorize PAPER/REAL or a permanent autonomous collector. Do not restart automatically. Read the linked current handoff rather than attempting to repeat CS-00 from scratch.
