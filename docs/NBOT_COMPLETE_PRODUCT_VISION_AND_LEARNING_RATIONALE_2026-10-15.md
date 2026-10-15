@@ -1,6 +1,6 @@
 # NBOT — Complete Product Vision, Learning Philosophy, and Reason for Every Major Component
 
-**Vision document, version 1.8 — 15 October 2026**
+**Vision document, version 1.9 — 15 October 2026**
 
 **Purpose:** Explain what NBOT is supposed to become, why it was conceived, what V4 taught us, why V5 includes virtual research trades, Champion/Challenger learning and paper trading, and how all of that serves a **single-position autonomous trading bot** rather than a needlessly complicated research institution.
 
@@ -868,7 +868,7 @@ The product is operationally ready for its *permitted mode* only when testing pr
 ---
 
 
-## 8F. Practical operating design: original 50-only proposal (see newer provisional §8G)
+## 8F. Practical operating design: original 50-only proposal (superseded by preferred §§8G–8H)
 
 **Status:** Earlier planning proposal retained for historical context. The newer §8G now proposes **100 observed → 20 deeply researched → up to 40 active virtual research trades → one actual position or NO TRADE**. The old per-event virtual-start limits in §8F have been superseded by §8G's **vacancy-based five-minute refill**. Neither policy is an operational approval.
 
@@ -1054,14 +1054,14 @@ The 20 are **the high-integrity research source budget**, not 20 recommended liv
 
 **Owner's clarified rule (supersedes the old eight-new-per-event proposal):** Research may maintain **no more than 40 simultaneously ACTIVE virtual trades** across the selected 20 deep-research coins. These are hypothetical scientific experiments, **not 40 orders or 40 actual exchange positions**. The number of **new** virtual trades at a review is governed by **available capacity and genuine research eligibility**, not a fixed artificial quota of eight or any obligation to fill all 40 places.
 
-Each coin and both directions are continually explored. A 20-coin deep cohort offers **40 coin-direction possibilities at a five-minute event**. At most **one active virtual experiment per coin × direction** is the proposed simple initial rule; multiple pattern tags on that same hypothesis do not create separate trades. Opposite-direction virtual experiments may coexist solely for research, but they are correlated—not two independent pieces of evidence.
+Each coin and both directions remain represented in the causal market-event record; expensive Exploration of possible new entries may be deferred when no relevant slot is available, with skipped evaluation **explicitly labeled as capacity-related rather than a negative detector result** (see §8H). A 20-coin deep cohort offers **40 coin-direction possibilities at a five-minute event**. At most **one active virtual experiment per coin × direction** is the proposed simple initial rule; multiple pattern tags on that same hypothesis do not create separate trades. Opposite-direction virtual experiments may coexist solely for research, but they are correlated—not two independent pieces of evidence.
 
 **What happens during the five-minute cycle:**
 
 1. **Between candle closes**, a shared original price/trade-source stream continues monitoring every active virtual experiment according to its **already frozen** entry, stop, target and maximum holding duration. If a stop or target is hit at 10:03, the observed first-touch chronology must be recorded as occurring at 10:03—not assumed to have happened at 10:05 when the next candle closes. The experiment may stop consuming active-path capacity after its terminal first-touch or timeout is **durably and validly established**, while later quote/cost verification proceeds separately.
 2. **At each fully closed five-minute candle**, independently verify/reconcile which of the previously active experiments have actually reached a stop, target, time limit or valid other policy-defined terminal state. A missing source path is **not** a verified profitable closure; quarantine it as PENDING/HOLD until the frozen rules permit a documented unresolved/censored terminal.
 3. **Count the active research-book slots** after durable reconciliation: **vacancies = 40 − number of still-active virtual experiments**. Never free a slot merely because a database row is missing, a process restarted or a candle looked favorable.
-4. **Explore the latest complete event** across the 100 broad observed coins, preserving all valid direction/structure/detector labels. Research evaluates the currently eligible LONG and SHORT alternatives within the **20 deeply monitored source-ready coins**.
+4. **Use the latest complete five-minute market event** from the lightweight 100-coin observation layer, preserving source/coverage states. **When a virtual, paper or separately authorized live entry slot is available**, run the appropriate deeper Exploration/inference for that mode; Research assesses eligible LONG and SHORT alternatives in the **20 deeply monitored source-ready coins**. If no relevant capacity is available, any skipped detector evaluations receive **NOT_EVALUATED_CAPACITY** labels instead of falsely claiming continuous fully evaluated 24-detector records.
 5. **Select replacement virtual experiments** only where Research finds suitable, source-qualified, prospectively frozen candidates and permitted unoccupied coin-side slots. Rank/admit under a versioned, diversity-aware policy that includes controls and does not select solely by the 24-detector match count or presumed profit.
 6. **Admit up to the number of free slots**; if only three suitable new experiments exist for seven vacancies, start **three**, and leave **four** unused. A full 40-active book starts zero. A book with 40 empty slots can admit up to 40 *only if* 40 distinct coin-side hypotheses genuinely satisfy the frozen eligibility, source and capacity policy.
 7. **Commit the resulting decisions and new intents idempotently**, preserving all rejected/unselected possibilities, admission reason codes, source/version hashes and the post-event active count. New virtual experiments must use current decision-time quotes/rules and cannot be assigned fictitious entries at earlier candle times.
@@ -1149,6 +1149,81 @@ The main reduction is likely in **deep high-frequency trade/quote source I/O and
 **Current engineering status:** The presently tested NBOT V5 source was built around 50 monitored coins and 100 directional candidate records. A 100-market lightweight discovery engine, independently selected 20-coin original G4 source cohort and 40-active virtual admission constraints are **design choices awaiting engineering and offline tests**. The 2,000 genuine qualified outcome requirement remains a scientific review checkpoint, not 2,000 mandatory real trades or an automatic training approval.
 
 **One-sentence objective: Observe 100, deeply research 20, learn honestly from up to 40 concurrent virtual hypotheses, choose only one qualified actual position—or NO TRADE.**
+
+---
+
+## 8H. Approved product behavior: slot-aware heavy Exploration and lightweight continuous position management
+
+**Owner's agreed direction, 15 October 2026.** Adopt the dual-clock trade-management design: **strategy-level decisions and slot replacement at completed five-minute candle events**, and **lightweight, event-driven stop/target/trailing-stop and state monitoring between events**. No heavy model recalculation, reapplication of all 24 detectors or Training on every price update.
+
+The owner also proposes that Observation and Exploration only work when a virtual, paper or future actual entry slot is available. **Accept the workload-saving intention, with an essential operational distinction:** we can **park expensive candidate discovery/selection when all relevant slots are occupied**, but **never pause the minimum market/source observation, source-health checks, active-position monitoring or independent Execution safety process** needed to keep current positions trustworthy and safe.
+
+### Two clocks, not two complete pipelines
+
+| Clock / trigger | What runs | What should NOT run |
+| --- | --- | --- |
+| **Lightweight source events as received** | Validate the relevant feed/epoch; update bounded latest bid/ask or trade cursor; stream-first-touch checks, trailing high/low/stop state and required original evidence for **active** virtual/paper positions | No full 100-coin pattern re-scan, Champion re-training or per-frame SQLite inserts |
+| **Every completed five-minute event** | Finalize causal candles, maintain a compact BTC/market/source-health snapshot; reconcile completed active positions and available book slots; record the scheduled event and any skipped-evaluation reason | No obligation to create a candidate or open a position |
+| **Five-minute event with a vacancy** | Run the **deeper** Exploration and eligible-model inference for the relevant vacant research/paper/real book; assess fresh 20-coin trade-ready candidates, costs and evidence; admit only eligible new intents/proposals | No retroactive entry, no forced replacement and no re-ranking from later prices |
+| **Offline bounded cadence** | Research source audits/after-cost economic maturation, Learning, Training and Promoter–Retainer comparisons using immutable snapshots | No CPU-intensive replay or model fitting on the real-time position-management path |
+
+**Practical policy for the 100-coin broad watchlist:** Keep completed five-minute candles, BTC/breadth health and compact source-presence snapshots sufficiently current while positions are occupied. Where measured resources permit, retain cheap causal detector features and the scientific choice-set denominator; a complete broad snapshot need not mean running an expensive full ranking procedure. **Only trigger the heavy 24-detector/exploration-ranking pass and new-candidate selection when there is actual relevant capacity or another prospectively approved research sampling obligation.** In a full book, mark skipped scoring explicitly: **NOT_EVALUATED_CAPACITY**, not NO_MATCH, UNSCORABLE_SOURCE or NO_TRADE_BY_MODEL.
+
+If complete detector-by-detector labels are not computed for full-book events, Research must not claim a complete historical detector denominator for that interval. Preserve exact observation times and the reason for capacity-based missingness, since selective evaluation can bias subsequent Learning. The final scientific protocol may choose low-cost continual detector labeling instead if testing proves that it is inexpensive enough and produces materially better evidence.
+
+### Capacity is separate for each trading mode
+
+**Virtual Research:** One rolling pool with up to **40 simultaneous active virtual experiments** over 20 deep-monitored coins and at most one active virtual experiment per coin/direction under the initial policy. The five-minute event reconciles durably established closures, counts free coin-side/global slots, and fills **only the available and genuinely eligible** slots. All 40 occupied means **no new virtual experiment**, but existing paths and necessary source evidence continue.
+
+**Champion Paper / Challenger Paper:** Separate logical books in one Execution-side engine, each with **at most one simulated position at a time** under the proposed policy. One paper book may have a vacancy while the other is occupied. The Challenger has no live authority. Paper books must track stops and trailing rules between five-minute events; a 10:03 exit is not moved to a fictitious 10:05 close.
+
+**Future Real:** A completely separate owner-authorized mode with **one global actual position maximum** across all coins and models, including unresolved/pending orders. The independent Execution guardian and exchange protective-order/reconciliation responsibilities **never go idle merely because this slot is occupied**. Only new-entry *candidate selection* may pause. Current release state remains locked/no live orders.
+
+**Independent vacancy triggers matter:** If all 40 virtual slots are occupied but Champion Paper is empty, a valid five-minute Champion decision should still be evaluated for paper. If every paper book is occupied but Research has free slots, Research should still investigate suitable alternatives. A full live slot never prevents ongoing virtual science, and an empty live slot does not by itself authorize any real trade.
+
+### Lightweight tracking of existing positions
+
+**Track prices as they arrive using a shared per-symbol source, but keep only bounded rolling state in RAM.** Thousands of quote updates must not become thousands of stored Python objects. On a relevant update, check the at-risk active coin-side states, update the running favorable excursion (high-water mark for LONG; low-water mark for SHORT) and apply the **frozen versioned trailing-stop policy**. A trailing stop must move only in its permitted favorable direction, with a deterministic price basis, minimum step/tick rounding and protective floor/ceiling policy.
+
+**Critical sequence and timing:** Record the actual evidence-supported order of price movements for first stop/target touch, trailing adjustment and subsequent trailing-stop exit. Do not evaluate only the final five-minute candle close and assert the intermediate sequence. First-touch tracking may be incremental and constant-space even though independent scientific after-cost qualification needs original verifiable chronology/quote/cost witnesses. One-second summaries can be secondary diagnostics only when their source contract is verified; they cannot necessarily reveal subsecond order or reproduce bid/ask.
+
+**Persist the minimum trustworthy state, not every tick as a database row:**
+
+- At entry, durably record the frozen rule/model/policy version, direction, source identity, initial stop/target/horizon, planned cost treatment and mode authority.
+- On meaningful trailing-stop adjustments, persist a versioned state-transition journal with timestamp/sequence, old stop, new stop, relevant favorable extreme and source reference, **before** later changes are claimed for scientific or accounting purposes. Batch safe noncritical summaries where permissible; do not batch away a protective state transition that must survive a crash.
+- On confirmed exit, persist first-touch/exit evidence, quote/cost witness status, book-specific settlement or unresolved classification, and a stable idempotency key.
+- Keep original high-frequency trade/quote/funding source evidence for accepted virtual experiments in bounded **compressed hash-linked files**, not one SQLite write per message; a finite archive quota still requires a verified rotation/custody plan.
+
+**Recovery:** If a crash loses a RAM trailing high-water mark or an unsynced state transition, do not silently restore the old lower-protection stop and call the result valid. Rebuild from independently verified durable source chronology and journal where possible. If the missed path or adjustment order cannot be reconstructed, mark the affected virtual scientific result **HOLD/UNRESOLVED**, prevent unverified paper resumption, and reconcile any future authorized real position against exchange-side actual orders/fills and protection. New entries remain locked until freshness, source-epoch and book/position checks pass.
+
+### Explicit labels from the experience of earlier NBOT versions
+
+The broad **label taxonomy is now identified** and should reuse verified V4/V5 source, candidate and economic contracts where compatible. The new 100→20/40-active architecture still needs a tested field-by-field schema and state-machine mapping before engineering signoff.
+
+| Where | Essential durable distinction |
+| --- | --- |
+| **Observation** | Observed final candle, source/epoch proof, BTC/market/coin regime; **OBSERVED / SOURCE_HOLD / UNSCORABLE**, with time and evidence grade |
+| **Exploration** | All 24 versioned detector states and structural qualifiers **MATCH / NO_MATCH / UNAVAILABLE**, plus **EVALUATED / NOT_EVALUATED_CAPACITY / NOT_EVALUATED_SOURCE**; LONG/SHORT hypotheses and exclusions |
+| **Research admission** | Source-qualified eligibility and fixed entry/stop/target/trailing/horizon/cost policy; **NOT_SELECTED_CAPACITY / SELECTED / REJECTED** with denominator and prospective policy identity |
+| **Virtual path** | **INTENT_FROZEN / ACTIVE / TRAILING_STOP_ADJUSTED / PATH_CLOSED / PATH_HOLD**; source timestamps, favorable extreme, stop and evidence references |
+| **Virtual economics** | Separate **PENDING / SCORED / PATH_ONLY / CENSORED / UNRESOLVED / HOLD**, retaining after-cost witness grade and maturity clock; path closure is **not** necessarily a qualified SCORED net-return label |
+| **Paper Champion / Challenger** | Separate per-book **NO_TRADE / PROPOSED / VETOED / OPEN / STOP_ADJUSTED / CLOSED / RECONCILE_HOLD** and model identity, costs and positions |
+| **Future Real** | Separate actual exchange order/partial-fill/position-protection/reconciliation states; **no authority created by a Research or Training label** |
+| **Learning / Promotion** | Frozen decision-time features joined only to qualified later outcomes; dependence/selection masks; Champion/Challenger version, independent evaluation evidence and **RETAIN / REJECT / RECOMMEND_PROMOTE / HOLD** |
+
+**Different reasons must remain different:** no valid opportunity, no vacant slot, missing source, model abstention, guardian veto, unresolved virtual outcome and actual exchange rejection must never be silently mapped to the same NO TRADE/LOSS record. This matters for the integrity of future Learning.
+
+### Compact example
+
+At 10:00, the Research pool contains **40** active virtual experiments, while both paper books are in different states. Between 10:00 and 10:05, one virtual LONG reaches its target at 10:02:13 and another reaches its trailing stop at 10:03:41. These events are source-tracked as they occur; they are **not** deferred or re-timed to the candle close.
+
+At the verified 10:05 review, **38** active virtual experiments remain and **2** slots are available. If Research can qualify only one suitable replacement, it starts **one** and leaves the other slot unused. Its old experiments' net economic labels may still be PENDING while quote/cost audit completes.
+
+A paper Champion with no simulated open position can issue its independent recommendation at 10:05 even if virtual Research remains full. The Execution guardian may veto it. A paper Challenger with an open position keeps monitoring its stop; it need not generate a new entry proposal merely because a virtual slot became free.
+
+**Bottom line:** **Switch expensive discovery/ranking on only when it is useful, but keep compact market custody, source continuity and all open-position safety continuously ready.** The seven-stage loop and one-global-actual-position objective remain unchanged.
+
+**Implementation status:** This accepts a **product-level operating concept**. The event scheduler, capacity-aware source/labelling state machine, 100-coin broad intake, 20-coin deep source tier, precise trailing-stop science and mode-separated recovery tests are **not yet implemented/accepted** in V5. These rules do not authorize starting services, placing paper/live orders or promoting models.
 
 ---
 
