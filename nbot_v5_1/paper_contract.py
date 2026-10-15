@@ -115,6 +115,7 @@ class PaperCosts:
     fee_sha256:str
     slippage_sha256:str
     funding_sha256:str
+    funding_from_ms:int|None=None
     grade:str=LAB_GRADE
     original_verified:bool=False
 
@@ -200,7 +201,10 @@ def assess_lab_proposal(*,proposal:SignedLabProposal|None,quote:PaperQuote|None,
                 not all(sha(x) for x in (costs.fee_sha256,costs.slippage_sha256,
                          costs.funding_sha256)) or
                 type(costs.settled_through_ms) is not int or
-                type(now_ms) is not int or costs.settled_through_ms<now_ms):
+                type(costs.funding_from_ms) is not int or
+                type(now_ms) is not int or
+                costs.funding_from_ms>now_ms or
+                costs.settled_through_ms<now_ms):
             reasons.add("FEE_SLIPPAGE_FUNDING_UNVERIFIED")
         try:
             if (not 0<=dec(costs.fee_rate)<=Decimal(".01") or
