@@ -174,14 +174,16 @@ The guardian must be able to independently reject a proposal and enforce the one
 - [x] **START-01:** New nbot-v5.1 branch created with **only three documents**, no imported old application files — verified from GitHub tree on 15 Oct 2026 (commit **472c3f54415e06715f8b28673eee7d3b545338d4**).
 - [x] **START-02:** Complete Vision V1.9 copied unchanged and both roadmaps created — GitHub verified on 15 Oct 2026 (same commit).
 - [ ] **Milestone 0 — Old NBOT preserved and safely assessed** (engineering G0)
-  - [ ] Identify the important historical branches, files and tests without changing them.
-  - [ ] Confirm which old components may be useful or risky.
-  - [ ] Present the owner with the starting situation and seek permission before copying application code.
+  - [x] Identify the important historical branches, files and tests without changing them — initial read-only GitHub inventory, 15 Oct 2026; reuse register commit **5d5133766b96ad3b21ab8b4c553e08740c3c7adb**; documentation/source inspection, no tests run.
+  - [x] Confirm which old components may be useful or risky — 27 preliminary candidates reviewed, 15 Oct 2026; same register/commit; source and test-file review only.
+  - [ ] Inspect present VPS service/data/backup inventory before any cleanup; preserve all original evidence and demonstrate a rollback plan — NOT part of G0-01; no VPS action this session.
+  - [ ] Present final component-by-component risk review and obtain specific approval before the first V5.1 application-code port; G0-01 approved documentation only.
 - [ ] **Milestone 1 — Detailed list of code to copy/rebuild finished** (engineering G0)
-  - [ ] List old V4 detectors, market-data tools, research evidence checks, paper book and risk protections with exact source links.
-  - [ ] Give each an easy choice: **COPY / REWRITE / DISCARD / REFERENCE** with the reason.
-  - [ ] Identify conflicts between previous NBOT and Vision V1.9.
-  - [ ] Agree on the first safe, approved component to copy into V5.1.
+  - [x] List old V4 detectors, market-data tools, research evidence checks, paper book and risk protections with pinned source links — 15 Oct 2026, register commit **5d5133766b96ad3b21ab8b4c553e08740c3c7adb**.
+  - [x] Give each an easy choice: **COPY / REWRITE / DISCARD / REFERENCE** with the reason — register entries R01–R27; source inspection only.
+  - [x] Identify conflicts between previous NBOT and Vision V1.9 — conflict register C01–C12, including obsolete V3/V3.9/V4/V5 runtime references.
+  - [ ] Verify exact transitive imports, old side effects, source blob digests and adapted tests for the *first chosen* component; preliminary register does not grant transfer approval.
+  - [ ] Agree on the first safe, approved component to copy into V5.1; G1-01 pure contracts are recommended but not yet individually approved.
 - [ ] **Milestone 2 — Our new clean program foundation works** (engineering G1)
   - [ ] Approve a simple new directory/module layout.
   - [ ] Copy/rebuild just the required first helpers, not their old unused dependencies.
@@ -232,13 +234,21 @@ The guardian must be able to independently reject a proposal and enforce the one
   - [ ] Independently verify single-real-position, protective stops, exchange-order reconciliation and emergency controls.
   - [ ] Carry out a separate real-money release review; until then, keep real execution LOCKED.
 
+### G0-01 — Documentation-only legacy register (approved 15 October 2026)
+
+- [x] **G0-01:** Commit the initial Legacy Component Reuse Register with 27 source candidates, pinned historical branch/commit links, preliminary test quality, 12 key conflicts and explicit V5.1 modernization rules — completed **15 Oct 2026**, commit **5d5133766b96ad3b21ab8b4c553e08740c3c7adb**; confirmed by reading the new GitHub file. **Verification:** GitHub file-content/source review, not a code test, model result or VPS acceptance.
+- [ ] **G0-02:** Independently audit the first proposed port's direct/transitive dependencies, old identifiers, I/O/credential reachability and negative tests, then obtain explicit first-code-step review.
+
+**Current state:** The first seed started with three files; the branch now contains one additional G0 register. No V5.1 application code, VPS cleanup or service deployment was performed in G0-01. User granted broader GitHub/VPS maintenance access on 15 Oct 2026, but separate scientific, paper and real-money release gates remain LOCKED.
+
 ### Record of every verified tick
 
 | When (IST) | Small task or milestone | Evidence (GitHub commit and tests) | Meaning in everyday language |
 | --- | --- | --- | --- |
 | 2026-10-15 | [x] START-01 | 472c3f54415e06715f8b28673eee7d3b545338d4 / verified three-file tree | The clean branch exists and does not carry old code |
 | 2026-10-15 | [x] START-02 | Same commit / Vision blob matches original | The approved product vision is safely copied |
-| *Next review* | [ ] Milestone 0/1 component inventory | Pending | Decide what from the old branches deserves copying |
+| 2026-10-15 | [x] G0-01 legacy register and preliminary source/conflict review | **5d5133766b96ad3b21ab8b4c553e08740c3c7adb** / GitHub verified 27 entries and 12 conflicts; no code tests | We now have a written map of what to keep, rebuild, or leave behind; old code still untouched |
+| *Next review* | [ ] G0-02 first-component dependency audit and VPS preservation inventory | Pending | Verify hidden dependencies and safe original data preservation before an application port or cleanup |
 
 **Use [ ] and [x] on the individual subtasks throughout development.** The roadmap itself should be updated with a new GitHub commit as work is completed. No stage above is yet checked as completed.
 
