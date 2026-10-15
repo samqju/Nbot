@@ -270,9 +270,13 @@ Gate: No live trading unless a distinct, explicit decision and technical safety 
   - [x] **G0-04-CLOSE:** Owner explicitly requested G0-04 first-code scope finalized **meanwhile** manual old VPS cleanup proceeds. Scope approval complete, 15 Oct 2026, **7c624de187e274fe40172e64d03b8697f6e1f7aa**. Do not confuse with G1-01 implementation, deployment or cleanup acceptance.
 - [ ] **G1 — New safe application foundation complete**
   - [x] **G1-01 preliminary approved interface/scope:** `nbot_v5_1/__init__.py`, `nbot_v5_1/core.py`, `tests/test_v5_1_core.py` and fixed source/mode authority API — G0-04 **7c624de187e274fe40172e64d03b8697f6e1f7aa**, 15 Oct 2026. This is design acceptance only.
-  - [ ] Create approved clean files; port only reviewed source helpers with exact lineage.
-  - [ ] Add and pass offline smoke, no-order, no-network, data-schema and import-isolation tests.
-  - [ ] Audit accidental old dependencies and document initial measured resource footprint.
+  - [x] **G1-01-A:** Create only three independent new files in `nbot-v5.1`: `nbot_v5_1/__init__.py` (commit `e22b55abcc0631b603b5357a8be9122008bb1ef0`), `nbot_v5_1/core.py` (commit `5d9fc0e22e0cc113353cd20593cce0cb687be2c1`), `tests/test_v5_1_core.py` (commit `f859f7f92a9614267fd4e7bfbc5cb6701bdb5288`). **15 Oct 2026**. Adapted only G0-02 audited pure behaviors, no old namespace/SQLite/50-coin imports.
+  - [x] **G1-01-B:** Execute **T01–T12 offline** with command `PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s tests -p 'test_v5_1_core.py' -v`: **12 run, 12 PASS, 0 failures/errors** on Python **3.13.5**, 15 Oct 2026. Negative cases cover premature/future/noninteger clocks, malformed source, missing BTC, nonfinite values and forbidden trading imports. **Only synthetic fixtures**.
+  - [x] **G1-01-C:** Static AST import review PASS: pure core imports only `__future__`, `dataclasses`, `enum`, `hashlib`, `json`, `re`; no SQLite, file-writer, socket, exchange SDK, old 50 limit or old `nbot` import. Local 12-test process `/usr/bin/time` wall **0.78s**, maximum RSS **99,728 KiB** (tool/Python test overhead included, **not a VPS capacity benchmark**). Python 3.12 syntax parsing of all 3 files PASS; **Python 3.12 runtime suite NOT executed**.
+  - [x] **G1-01-D:** Read back all three GitHub files; their Git blob hashes match the offline-tested local bytes (listed in the G1-01 evidence appendix below). GitHub compare from closed G0 HEAD `466446aa4e720ac85b5dd9c6c5d93c9e1aa81e1e` shows **only these 3 source/test files** changed, no documents/services/legacy files in code commits.
+  - [x] **G1-01 — First safe pure-core implementation and tests COMPLETE**, 15 Oct 2026; proof/limitations in §G1-01 appendix below. No VPS service, market connection, paper/real order, exchange credential or deployment used.
+  - [ ] **G1-02 — Remaining G1 nontrading foundation/interfaces:** define and safely test separate future journal/mode/source guardians and no-order integration contracts per G1 deliverables. **NOT STARTED** by G1-01; requires separately reviewed scope.
+  - [ ] **G1 parent engineering acceptance:** complete later G1 tasks and an independent full offline integration/safety acceptance before marking G1 [x]. **HOLD** until proven.
 - [ ] **G2 — Lightweight 100-coin Observation complete**
   - [ ] Implement verified Binance USD-M eligibility, 50/25/25 overlapping groups, deduplication and BTC inclusion.
   - [ ] Add reliable completed-five-minute data, historical bootstrap, source-health, clock, source-epoch and gaps.
@@ -344,7 +348,11 @@ Gate: No live trading unless a distinct, explicit decision and technical safety 
 | 2026-10-15 | G0-04 proposed code scope | [x] DRAFT ONLY | **697b55f4201e7d4f76daaa0bde0efc113b3c99f7**; [scope document](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G0_04_FIRST_CODE_SCOPE_V1_0.md) | Three future files, 12 test cases specified; no code/tests run | Clear first tiny V5.1 foundation is ready for review after cleanup |
 | 2026-10-15 | G0-CLEANUP-01–05 / G0-03-CLEANUP-EXEC | [x] | **81dadf68a9949b847fd8f38336c5d532eab861cd**; [independent two-host cleanup report](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G0_CLEANUP_COMPLETION_20261015.md) | Both user PuTTY successes; remote read-only verifier exits 0; old checked paths, service unit and name-matched processes absent | All known old NBOT installations cleared; no backups created by explicit owner choice |
 | 2026-10-15 | G0 parent full gate | [x] | **81dadf68a9949b847fd8f38336c5d532eab861cd**, earlier G0-01/G0-02/G0-03 and G0-04 commits | Documentation, first-helper safety review, owner waiver, VPS after-state and first-code API scope all evidenced | We can safely begin the *development stage*, not trading |
-| *Next* | G1-01 CODE/TEST | [ ] | Scope is approved, application files absent | T01–T12 not yet implemented/executed | Begin clean code/test slice only when authorized development work is undertaken |
+| 2026-10-15 | G1-01 first independent V5.1 package and core | [x] | `e22b55abcc0631b603b5357a8be9122008bb1ef0`; `5d9fc0e22e0cc113353cd20593cce0cb687be2c1` | Static imports audited; 5-min immutable event, HOLD source validator, version/domain-safe digest, order authority NONE implemented | First actual V5.1 source code exists without old V3/V4/V5 modules |
+| 2026-10-15 | G1-01 T01–T12 offline tests | [x] | `f859f7f92a9614267fd4e7bfbc5cb6701bdb5288`; tested SHA blobs listed in appendix | **12/12 tests PASS**, Python3.13.5, no network, DB, exchange or trading; Python3.12 syntax PASS but not 3.12 runtime tested | Safe first foundations passed synthetic negative/positive tests |
+| 2026-10-15 | G1-01 hash audit, no-old-dependencies and local resource check | [x] | All three GitHub blobs match offline-tested bytes; scope exactly 3 files | AST/no-order/import checks PASS; local test wall 0.78s, maxRSS 99,728 KiB; no VPS load qualification | Code is traceable, small, and deliberately unable to trade |
+| 2026-10-15 | G1-01 child completion | [x] | Same 3 application/test commits, synthetic offline evidence | All G1-01 criteria PASS; parent G1 **remains [ ]** | First engineering coding step finished, but the full bot is not yet built |
+| *Next* | G1-02 / remaining G1 offline integration and mode/journal safeguards | [ ] | Not started | No application deployment or live market testing | Build further independent safety boundaries before G1 parent may pass |
 | 2026-10-15 | G0-04 owner review of first G1-01 code scope | [x] SCOPE ONLY | **7c624de187e274fe40172e64d03b8697f6e1f7aa**; latest user instruction | Approved exact no-order pure package and test contract; **0 application files** | First code path now decided; actual implementation still requires separate G1 evidence |
 
 **Latest verified status (15 Oct 2026): G0 parent COMPLETE**, after old VPS cleanup was performed by the owner and independently verified, in addition to the earlier G0-01 register, G0-02 first-helper review, G0-03 source inventory/old-backup waiver and G0-04 three-file scope approval. **81dadf68a9949b847fd8f38336c5d532eab861cd**. G0 was documentary and server-preparation work, **not an application test**. **G1-01 code/tests and all subsequent gates remain OPEN; paper and real trading LOCKED.** Legacy GitHub branches unchanged. NEW V5.1 source custody, scientific after-cost provenance and recovery obligations remain mandatory.
@@ -398,3 +406,35 @@ Do **not** create all modules at once. Build the smallest vertical slice with so
 
 
 **G0 final verification, 15 Oct 2026:** The initial blocked remote command is historical. The owner later performed manual cleanup on both VPSs and provided PuTTY success logs. Subsequent read-only SSH checks verified old NBOT directories/markers absent, retired Observation unit absent, matching NBOT unit/process checks empty and SSH still accessible on each server; report commit **81dadf68a9949b847fd8f38336c5d532eab861cd**. Both owner and engineering G0 parent milestones, G0-03-CLEANUP-EXEC and G0-04 scope are now **[x]**. **G1-01 code/tests [ ]**; no deployment, paper, testnet or live trading approval. Historical old-VPS backups were waived and not performed.
+
+
+## G1-01 implementation evidence appendix — 15 October 2026
+
+**Outcome: G1-01 PASS (only this narrow first-code slice); G1 parent stays [ ].** Exactly the approved three new files were committed to the isolated `nbot-v5.1` branch and independently read back; compared with their locally run working copies by Git blob SHA:
+
+| File | GitHub commit introducing it | Verified Git blob SHA-1 | Role |
+| --- | --- | --- | --- |
+| `nbot_v5_1/__init__.py` | `e22b55abcc0631b603b5357a8be9122008bb1ef0` | `0957a162d15a2a4bfdf0297fa006ac19138a6123` | Version `5.1.0` with no import-time startup |
+| `nbot_v5_1/core.py` | `5d9fc0e22e0cc113353cd20593cce0cb687be2c1` | `86d82f5d495606bef7274edd29035a8461b06b1b` | Frozen close-only five-minute event, HOLD reasons, strict canonical SHA-256 IDs, NONE/NO_TRADE enums |
+| `tests/test_v5_1_core.py` | `f859f7f92a9614267fd4e7bfbc5cb6701bdb5288` | `596d15de9f3f8d823a14dcbb359719c4f2d1a02e` | Exactly 12 named offline tests with subtests |
+
+**Test command:** `PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s tests -p 'test_v5_1_core.py' -v` executed from an isolated local verification worktree containing exact matching GitHub blob bytes. **Final run: 12 tests, 12 PASS, 0 errors, 0 failures**, elapsed about 0.007 seconds (unittest reported), runner wall 0.78 seconds (includes Python/test startup), peak process RSS ~99,728 KiB. Interpreter Python 3.13.5 on Linux; Python 3.12 AST syntax compatibility PASS, **not a Python 3.12 runtime run**. These are local synthetic unit tests, **not** GitHub CI, actual source-grade market evidence, Binance accounts or a target VPS load test.
+
+| Test | Final result | Meaning |
+| --- | --- | --- |
+| T01 | [x] PASS | Module reload under blocked network, SQLite, subprocess, OS command, file-write hooks; no order side effects |
+| T02 | [x] PASS | Isolated V5.1 package and schema/version identity; no old package import or startup |
+| T03 | [x] PASS | Closed five-minute boundary and frozen event records |
+| T04 | [x] PASS | Bool/float/negative/misaligned/open event, stale/future timestamp fail-closed |
+| T05 | [x] PASS | Missing BTC/symbol, stale/future candle, unhealthy/unknown route/epoch/digest HOLD |
+| T06 | [x] PASS | Missing or malformed digest cannot imply source custody or after-cost profit |
+| T07 | [x] PASS | Deterministic, domain- and V5.1-version-separated SHA-256 IDs |
+| T08 | [x] PASS | Reject float/NaN/Infinity, non-JSON objects, bad keys, circular references |
+| T09 | [x] PASS | Stable, sorted, deduplicated reason codes and strict prefix validation |
+| T10 | [x] PASS | Only NONE trading authority, OBSERVE_ONLY/HOLD/NO_TRADE dispositions, no order interface |
+| T11 | [x] PASS | AST/core import dependency audit excludes old code, fixed 50, SQLite, old database hooks |
+| T12 | [x] PASS | Repeated synthetic offline deterministic evaluation and no application filesystem effects |
+
+**Quality note:** An initial pre-commit test-harness run surfaced 5 errors caused by reloading the module while retaining the prior test class references; the **test harness** was corrected to rebind fresh types after reload. The *final* 12/12 run then passed and the exact corrected test source was committed. No failing application behavior was concealed or claimed as scientific proof.
+
+**Limits/next gate:** G1-01 does **not** implement a market socket, 100-symbol discovery, 20 deep original-source capture, 40 research slots, 24 V4 detectors, storage/journal, model, executor or any order. A source hash is an identity aid, not independent custody. New V5.1 original source must be preserved/verified in later stages (owner waiver concerned only OLD VPS data). Neither VPS was deployed to; no existing service was started. **Paper, testnet/real-money releases are LOCKED; G1 parent and G2+ [ ].**
