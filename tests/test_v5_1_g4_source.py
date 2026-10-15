@@ -165,6 +165,29 @@ class DeepSegmentTests(unittest.TestCase):
         self.assertIn("BTCUSDT",self.rec.epoch_holds)
         self.assertEqual(len(self.rec.queue),1)
 
+    def test_A10_interleaved_two_coins_independent_trade_cursors(self):
+        for id,sym in ((5,"BTCUSDT"),(50,"ETHUSDT"),
+                       (6,"BTCUSDT"),(51,"ETHUSDT")):
+            r=frame(symbol=sym,id=id)
+            self.assertEqual(self.rec.append(kind="TRADE",raw=r,
+                      received_at_ms=NOW,epoch=1).state,
+                      "RECEIVED_UNQUALIFIED_LOCAL_WSS")
+        self.rec.flush()
+        messages,_,_=self.rec.replay()
+        self.assertEqual(len(messages),4)
+        self.assertEqual({x.symbol for x,_ in messages},set(SYMBOLS))
+
+    def test_A11_interleaved_one_coin_sequence_gap_holds(self):
+        self.rec.append(kind="TRADE",raw=frame(symbol="BTCUSDT",id=5),
+                        received_at_ms=NOW,epoch=1)
+        self.rec.append(kind="TRADE",raw=frame(symbol="ETHUSDT",id=50),
+                        received_at_ms=NOW,epoch=1)
+        with self.assertRaises(DeepSegmentHold):
+            self.rec.append(kind="TRADE",raw=frame(symbol="BTCUSDT",id=7),
+                            received_at_ms=NOW,epoch=1)
+        self.assertIn("BTCUSDT",self.rec.epoch_holds)
+        self.assertNotIn("ETHUSDT",self.rec.epoch_holds)
+
     def test_A09_constructor_no_file_side_effect(self):
         child=self.root/"missing"
         new=DeepSegmentRecorder(child,symbols=SYMBOLS)
