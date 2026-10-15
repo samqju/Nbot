@@ -101,6 +101,7 @@ class G3StoreTests(unittest.TestCase):
         filler=self.root/("g3_"+"9"*16+"_"+"b"*64+".json.gz")
         with filler.open("wb") as handle:
             handle.write(b"X"*(1024*1024))
+        filler.chmod(0o600)  # Test quota, not the earlier private-permissions gate.
         with self.assertRaisesRegex(ExplorationStoreHold,"QUOTA_FULL"):
             bounded.append(self.batch())
         self.assertTrue((self.root/first).exists())
