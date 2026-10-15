@@ -1,7 +1,7 @@
 # NBOT V5.1 — G0-03 VPS Preservation and Backup Assessment
 
 **Date:** 15 October 2026 IST; live server UTC near 04:57 (10:27 IST).  
-**Status:** **G0-03 INVENTORY / ASSESSMENT COMPLETE; RESTORABLE BACKUPS AND CLEANUP AUTHORIZATION: HOLD.**  
+**Current status following owner decision, 15 Oct 2026:** **G0-03 COMPLETE — LEGACY BACKUPS EXPLICITLY WAIVED (NOT MADE); legacy cleanup permitted in principle but NOT EXECUTED in this task.** Sections 1–7 below are the true, original read-only findings and pre-waiver recommendations. The later owner directive in §8 **supersedes only** their requirement to back up old NBOT artifacts before abandoning them.  
 **Method:** Read-only SSH over owner's two already-saved PuTTY sessions, Execution-VPS and Observation-VPS, as ubuntu. No keys/secret contents examined. No VPS writes, service starts/stops, package install, NBOT software tests, private exchange access, order or deletion. GitHub documentation commits only.
 
 ## 1. Plain-language result
@@ -120,3 +120,28 @@ These hashes prove an identity for the inspected bytes **at a moment**. They are
 - [ ] **G0-04:** Review new G1-01 application code scope and isolated destination; not done by G0-03.
 
 **Disposition:** The **G0-03 assessment** is PASS, verified live and read-only. **Safe-to-clean, backup/restoration readiness and overall G0 milestone remain UNCHECKED.** No services or state were modified. Subsequent GitHub roadmap ticks must use this assessment commit and explicitly retain the R1/R2 holds.
+
+
+## 8. Owner-directed legacy backup waiver and closure — 15 October 2026
+
+**Explicit instruction received from the owner after the initial assessment:** "Complete G0-03 without any backup, we are already starting fresh so we don't need anything on VPS which belongs to old version."
+
+**Decision:** The owner deliberately elects to **discard all previous-version NBOT VPS-only data/code/evidence if cleanup is eventually performed**, without preparing or testing legacy backups first. In particular, the 253 old paper receipts, historical V3.9 models, legacy account/state JSON, old observation SQLite database (including WAL/SHM), source/runtime/log contents and past VPS-only provenance may be irrecoverable after deletion or host failure. GitHub legacy branches are a distinct reference source, not a replacement for VPS-only market/database evidence. The owner accepts this risk as a fresh-start choice.
+
+**What was NOT done:** No backup was created or tested; no provider-level copy was verified; no previously found backup was claimed. No file, directory, database, service or remote operating-system setting has been deleted or changed as part of closing G0-03. The old data remains in place at the last verified read-only audit. No credentials, real exchange balances/open orders, or other people's data were examined.
+
+**Effect on G0-03 closure:** Original R1 (mandatory backups before any old-NBOT abandonment) is now **N/A — waived by the owner**, not PASSED by doing a backup. Original R2 (approval to discard older NBOT assets) is **approved in principle by the owner**, not a claim that old assets have been deleted. The old R1/R2 HOLD statements in §§1–7 describe the prior recommendation at the time of the read-only assessment and no longer block the G0-03 milestone. The *execution* of any cleanup, if useful for G1 deployment, must be a separate explicitly logged step with exact target paths, before/after checks and a clear statement that restoration will be impossible without copies.
+
+**Scoped cleanup guardrails, even with waiver:** Limit any eventual cleanup to positively identified **legacy NBOT application-specific** code, units and data on the named two VPSs. Do not delete Ubuntu/system files, shared libraries, authorized users, SSH keys/PuTTY authentication, unrelated data, network configuration, or GitHub old branches. Confirm no old NBOT process or pending system action can interfere, and avoid accidental removal of the current or future V5.1 work. No exchange-order or paper/live operating permission is inferred from this consent.
+
+**Important non-waiver:** This one-time waiver covers *historical installations only*. It does **not** waive V5.1's requirement for authenticated original market/source custody, crash-safe new V5.1 source data, scientific evidence lineage, finite-storage controls, qualified economic outcomes, or separately reviewed future paper/real release safety. V5.1 must start in a new clean namespace and cannot claim qualified results from abandoned old VPS source.
+
+### Owner-override completion check
+
+- [x] **G0-03-W1:** Explicit legacy backup waiver and accepted risk documented with date; no false backup-PASS.
+- [x] **G0-03-W2:** Owner decision to allow abandonment of previous NBOT VPS contents recorded; R1/R2 old HOLD removed as blockers *for G0 only*.
+- [x] **G0-03-W3:** Assessment evidence retained (host resources, app paths, SQLite metadata, old code branch, old service state) and non-legacy safety/authorization boundaries retained.
+- [ ] **G0-03-CLEANUP-EXEC:** Actual old app data/service removal or VPS reset. NOT PERFORMED, and not a prerequisite to declaring the G0-03 assessment/waiver complete.
+- [ ] **G0-04:** First narrow new application-code scope review; separate milestone.
+
+**Final G0-03 disposition:** **COMPLETE**, closed by live inventory plus the owner's explicit decision that **no legacy backup shall be made**. **Backup outcome: NOT DONE / WAIVED**, not verified. **VPS cleanup outcome: NOT DONE**. Remaining G0-04 and new-code gates continue separately.
