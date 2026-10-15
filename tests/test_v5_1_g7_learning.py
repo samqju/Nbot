@@ -244,6 +244,18 @@ class G7Learning(unittest.TestCase):
             with self.assertRaises(LearningHold):
                 verified_learning_count(x)
 
+    def test_L31_manual_dataset_forgery_rejected_by_every_science_gateway(self):
+        d=assemble_lab((fixture(),),cutoff_ms=BASE+400000)
+        forged=replace(d,dataset_sha256="f"*64)
+        with self.assertRaises(LearningHold):
+            verified_learning_count(forged)
+        with self.assertRaises(LearningHold):
+            evaluate_lab(forged,split_at_ms=BASE+180000,embargo_ms=0)
+        # A complete forged row must also be checked at the review boundary.
+        bad=replace(d,rows=(replace(d.rows[0],net_r="99"),))
+        with self.assertRaises(LearningHold):
+            quality_report(bad)
+
     def test_L30_economically_unevaluated_rows_stay_denominator(self):
         rows=(fixture(0),fixture(1,state="CENSORED",net=None),
               fixture(2,state="COST_PENDING",net=None),
