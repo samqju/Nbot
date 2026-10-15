@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import threading
+from contextlib import nullcontext
+from .cs00_state_writer import SourceOnlyStateWriter, state_gate
 from .core import FiveMinuteEvent
 from .observation import ObservationBook,ClosedBar
 from .exploration import explore_event
@@ -31,10 +33,12 @@ class SourceBoundary:
 class SourceOnlyPipeline:
     """Injected finalized bars and raw public-shaped frames; never opens sockets."""
     def __init__(self,observation:ObservationBook,*,recorder_root:Path|None=None,
-                 quota_bytes:int=64*1024*1024):
+                 quota_bytes:int=64*1024*1024,
+                 state_root:Path|None=None):
         if type(observation) is not ObservationBook or len(observation.manifest.symbols)!=100:
             raise CommissioningHold("CS00_PIPELINE_BROAD100_REQUIRED")
         self.observation=observation;self.recorder_root=recorder_root
+        self.state_writer=SourceOnlyStateWriter(state_root) if state_root is not None else None
         self.quota=quota_bytes;self.last_event_ms=None
         self.deep=None;self.recorder=None;self.intake=None
         self.supervisor=SourceOnlySupervisor()
@@ -69,6 +73,11 @@ class SourceOnlyPipeline:
                        symbols=tuple(c.symbols),quota_bytes=self.quota)
             elif c.symbols!=self.deep.symbols:
                 self.source_gap_count+=1
+            # Persist complete G2/G3 first, then publish a final shared
+            # checkpoint receipt. If any component fails, do not advance
+            # the in-memory event cursor, and back up only after review.
+            if self.state_writer is not None:
+                self.state_writer.record_boundary(self.observation,snap,e)
             self.last_event_ms=event.event_open_ms;self.boundaries+=1
             return SourceBoundary(event.event_open_ms,100,200,20,
                                   self.deep.manifest_sha,snap.healthy_count,
@@ -84,8 +93,10 @@ class SourceOnlyPipeline:
                 if status.state!="LOCAL_FRAME_NOT_INDEPENDENTLY_QUALIFIED":
                     self.source_gap_count+=1
                     return status
-                self.recorder.append(kind=kind,raw=raw,
-                                     received_at_ms=received_ms,epoch=epoch)
+                with (state_gate(self.state_writer.root)
+                      if self.state_writer is not None else nullcontext()):
+                    self.recorder.append(kind=kind,raw=raw,
+                                         received_at_ms=received_ms,epoch=epoch)
                 self.source_frames+=1
                 return status
             except (CollectorHold,DeepSegmentHold) as exc:
@@ -98,7 +109,9 @@ class SourceOnlyPipeline:
         with self.lock:
             if self.recorder is None:
                 raise CommissioningHold("CS00_PIPELINE_NO_RECORDER")
-            return self.recorder.flush()
+            with (state_gate(self.state_writer.root)
+                  if self.state_writer is not None else nullcontext()):
+                return self.recorder.flush()
 
     def heartbeat(self,*,at_ms:int,rss_kib:int,free_disk_bytes:int,
                   queue_depth:int,boundary_lag_ms:int)->dict:
@@ -120,6 +133,7 @@ class SourceOnlyPipeline:
                 "source_frames":self.source_frames,
                 "source_gap_count":self.source_gap_count,
                 "source_grade":"LOCAL_UNQUALIFIED_NO_ORIGINAL_RELEASE",
-                "active":self.active,"original_virtual_allowed":False,
+                "active":self.active,"durable_state_root_attached":self.state_writer is not None,
+                "original_virtual_allowed":False,
                 "paper_enabled":False,"testnet_enabled":False,
                 "real_enabled":False,"financial_authority":"NONE"}
