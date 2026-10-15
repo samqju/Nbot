@@ -8,6 +8,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from nbot_v5_1.cs00_state_writer import SourceOnlyStateWriter,StateCheckpointHold,state_gate
+from nbot_v5_1.cs00_commissioning import CommissioningHold
 from nbot_v5_1.cs00_source_pipeline import SourceOnlyPipeline
 from nbot_v5_1.observation import ObservationBook
 from nbot_v5_1.core import FiveMinuteEvent
@@ -79,6 +80,35 @@ class CS00StateAndBackup(unittest.TestCase):
         self.assertEqual(sum(x.startswith("evidence/segment-") for x in files),2)
         self.assertEqual(sum(x.startswith("observations/") for x in files),2)
         self.assertEqual(sum(x.startswith("exploration/") for x in files),1)
+
+    def test_CSSTATE07_torn_source_pair_blocks_manual_backup(self):
+        self.commit()
+        self.pipeline.ingest_offline_frame(
+            kind="TRADE",raw=frame("TRADE"),received_ms=NOW,epoch=1)
+        self.pipeline.seal()
+        next((self.state/"evidence").glob("segment-*.json")).unlink()
+        with self.assertRaisesRegex(BackupHold,"SEGMENT_UNCOMMITTED"):
+            create_backup(state=self.state,destination=self.out)
+
+    def test_CSSTATE08_tampered_source_segment_blocks_manual_backup(self):
+        self.commit()
+        self.pipeline.ingest_offline_frame(
+            kind="TRADE",raw=frame("TRADE"),received_ms=NOW,epoch=1)
+        self.pipeline.seal()
+        p=next((self.state/"evidence").glob("segment-*.gz"))
+        p.write_bytes(p.read_bytes()+b"tampered")
+        with self.assertRaisesRegex(BackupHold,"SEGMENT_CORRUPT"):
+            create_backup(state=self.state,destination=self.out)
+
+    def test_CSSTATE09_after_restart_live_continuity_not_automatically_claimed(self):
+        self.commit()
+        self.pipeline.ingest_offline_frame(
+            kind="TRADE",raw=frame("TRADE"),received_ms=NOW,epoch=1)
+        self.pipeline.seal()
+        second=SourceOnlyPipeline(self.book,recorder_root=self.state/"evidence",
+                                  state_root=self.state)
+        with self.assertRaisesRegex(CommissioningHold,"RESTART_EPOCH_REVIEW"):
+            second.on_boundary(FiveMinuteEvent(END_OPEN,END_DECISION))
 
     def test_CSSTATE06_frozen_cohort_no_second_event(self):
         self.commit()
