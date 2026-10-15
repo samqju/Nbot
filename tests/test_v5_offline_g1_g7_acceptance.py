@@ -24,9 +24,8 @@ from nbot.v5.guarded_paper import (
     BOOKS, GuardedPaper, sign,
 )
 from nbot.v5.observation_contract import PATTERN_IDS
-from tests.test_v5_continuous_research import (
-    ContinuousIntegrationTests, COMMITTED, EVENT,
-)
+from tests import test_v5_continuous_research as source_fixture
+from tests.test_v5_continuous_research import COMMITTED, EVENT
 from tests.test_v5_science import BASE, row, review
 from tests.test_v5_guarded_paper import POLICY, quote, economics
 
@@ -35,7 +34,7 @@ class OfflineFullLifecycleAcceptance(unittest.TestCase):
     """Tests what can genuinely be proven, not scientific market outcomes."""
 
     def test_one_frozen_50_coin_g1_to_g4_original_chain_g5_g6_g7_hold(self):
-        x=ContinuousIntegrationTests(
+        x=source_fixture.ContinuousIntegrationTests(
             "test_complete_population_and_early_paths_never_fake_economics")
         x.setUp()
         try:
@@ -157,7 +156,7 @@ class OfflineFullLifecycleAcceptance(unittest.TestCase):
                 GuardedPaper(path,policy=POLICY,synthetic=False)
 
     def test_no_cost_evidence_no_real_paper_release(self):
-        x=ContinuousIntegrationTests(
+        x=source_fixture.ContinuousIntegrationTests(
             "test_complete_population_and_early_paths_never_fake_economics")
         x.setUp()
         try:
