@@ -147,3 +147,29 @@ Read, in order:
 **What's needed from the owner now:** the **name of the existing archive service** and whether it is object storage/S3/SFTP/another technology, its target region, existing available storage/quota and retention/versioning or immutability features. Do **not** send access keys/passwords/PPK/secret URLs. No purchases, external alerts or nontrivial persistent VPS deployment without fresh permission.
 
 **Future work:** finish B4 + C4/C5 + D3/D4 in offline/tests first; only then seek a separate CS-01 public-only startup authorization. All G4–G10 genuine evidence [ ] and G12 [ ] remain unchanged.
+
+
+## Owner-approved simplification — HISTORICAL RECOVERY FIRST (15 October 2026)
+
+**[x] Owner agrees to design direction only; [ ] automated recovery installed; [ ] independently tested; [ ] LIVE activation authorized.** This is a design/recordkeeping clarification, not an approval to run the collector or relax scientific evidence.
+
+**Simple operating model:** NBOT watches incoming trades, keeps small durable V4-style virtual decisions and completed Research outcomes, and records which prices/quotes/costs support each claim. Following a VPS crash/restart, internet outage or Binance WSS outage, it should **automatically request the missing historical Binance trade series** and validate the ordered first-touch path whenever possible. Do not store every WSS tick forever merely for model training. Keep selective original quote/mark/source receipts that Binance trade history cannot replace, plus independently restorable backups of the important ledgers. A laptop can be investigated as an optional backup destination; no paid cloud archiving is authorized.
+
+**Key limits, to avoid false promises:** public USD-M `aggTrades` REST covers only roughly the latest **48 hours** with pages/rate limits; daily file publication can lag; exchange/REST outages may defeat prompt recovery; price-trade sequence alone is **not** an exact historical bid/ask, mark-price stop, account fill or funding receipt. Recovered trade chronology proves what the market did, **not** what the bot received before an original decision. If essential evidence is absent, retain the honest HOLD, rather than marking profit/loss qualified.
+
+### Newly tracked recovery-first CS-00 subtasks
+
+| ID | Owner-readable task | Current status |
+| --- | --- | --- |
+| CS-00-R1 | Choose compact V4-style decision/outcome ledger + minimum necessary original source evidence (design choice) | [x] OWNER DESIGN PREFERENCE |
+| CS-00-R2 | Engineer automatic Binance USD-M historical `aggTrades` retrieval with retries, page/clock/rate checks | [ ] NOT IMPLEMENTED |
+| CS-00-R3 | Independently verify missing-trade sequences and original Binance daily file/checksum fallback | [ ] NOT VERIFIED |
+| CS-00-R4 | Distinguish recoverable first-touch traded prices from unavailable exact quotes, mark triggers, slippage and funding | [ ] NOT VERIFIED |
+| CS-00-R5 | Re-examine prior 47 missing underlying trade-ID alerts and 19/20 sample under official aggregation semantics | [ ] NOT VERIFIED — REAL ORIGINAL TESTS CS-01/G4 |
+| CS-00-R6 | Demonstrate power loss/restart, WSS/REST outage, 48h expiry, all-20 rate/headroom and idempotent journal replay on offline fixtures | [ ] NOT VERIFIED |
+| CS-00-R7 | Decide *smallest sufficient* recovery-safe supporting receipts/backup, test off-host copy/restore without a paid provider requirement | [ ] NOT VERIFIED |
+| CS-00-R8 | Run all new tests on BOTH VPSs, record frozen SHA/evidence; preserve G4–G10 source/science gates | [ ] NOT VERIFIED |
+
+**Updated explanation of pending C4/C5:** We need evidence-driven backup/restore capacity and the owner's choice of a practical small backup destination **after** measuring data—not an immediate commitment to a large raw-data archive service. Previously noted 30-day retention was a *provisional no-auto-delete planning target*, not a requirement to store all ticks forever. The G4 genuine-original off-host restore gate is STILL [ ] HOLD until actual proof exists.
+
+**What you need to do now:** Nothing technical and no immediate storage purchase. This approves the preferred design; implementing it and approving a public-only startup are separate future decisions. Both VPSs' NBOT services remain OFF.
