@@ -98,18 +98,20 @@ def select_universe(
     if selected_at_ms < source_received_at_ms or selected_at_ms - source_received_at_ms > 60_000:
         raise UniverseHold("G2_UNIVERSE_SOURCE_STALE")
     if (type(exchange_info) is not dict or type(tickers) is not list
-            or type(book_tickers) is not list or type(history_closed) is not dict
+            or (book_tickers is not None and type(book_tickers) is not list)
+            or type(history_closed) is not dict
             or type(source_health) is not dict):
         raise UniverseHold("G2_UNIVERSE_INPUT_TYPE")
     floor, spread_limit = _number(turnover_floor), _number(max_spread_bps)
     if floor <= 0 or spread_limit <= 0:
         raise UniverseHold("G2_UNIVERSE_THRESHOLDS_INVALID")
-    if type(public_receipts) is not tuple or len(public_receipts) not in (0, 3):
+    if type(public_receipts) is not tuple or len(public_receipts) not in (0, 2, 3):
         raise UniverseHold("G2_PUBLIC_RECEIPTS_INVALID")
     if public_receipts:
-        expected = {"EXCHANGE_INFO", "TICKER_24HR", "BOOK_TICKER"}
+        expected = ({"EXCHANGE_INFO", "TICKER_24HR"} if book_tickers is None
+                    else {"EXCHANGE_INFO", "TICKER_24HR", "BOOK_TICKER"})
         if ({r[0] for r in public_receipts if type(r) is tuple and len(r) == 3}
-                != expected or len(public_receipts) != 3):
+                != expected or len(public_receipts) != len(expected)):
             raise UniverseHold("G2_PUBLIC_RECEIPT_KINDS_INVALID")
         for kind, digest, when in public_receipts:
             if (type(kind) is not str or type(digest) is not str
@@ -136,7 +138,7 @@ def select_universe(
             result[sym] = row
         return result
 
-    stats, books = indexed(tickers), indexed(book_tickers)
+    stats, books = indexed(tickers), (indexed(book_tickers) if book_tickers is not None else {})
     candidates: dict[str, SymbolCandidate] = {}
     rejected: list[tuple[str, str]] = []
     seen: set[str] = set()
@@ -157,7 +159,7 @@ def select_universe(
             rejected.append((symbol, "INELIGIBLE_CONTRACT"))
             continue
         ticker, book = stats.get(symbol), books.get(symbol)
-        if ticker is None or book is None:
+        if ticker is None or (book_tickers is not None and book is None):
             rejected.append((symbol, "SOURCE_MISSING"))
             continue
         if type(history_closed.get(symbol)) is not int or history_closed[symbol] < 96:
@@ -169,11 +171,18 @@ def select_universe(
         try:
             turnover = _number(ticker.get("quoteVolume"))
             change = _number(ticker.get("priceChangePercent"))
-            bid, ask = _number(book.get("bidPrice")), _number(book.get("askPrice"))
-            if turnover < floor or bid <= 0 or ask <= 0 or ask < bid:
+            if turnover < floor:
                 raise ValueError("G2_MARKET_UNTRADEABLE")
-            spread = (ask - bid) * 20_000 / (bid + ask)
-            if spread > spread_limit:
+            if book_tickers is None:
+                # Owner-approved trade-price-only profile: NO bid/ask request
+                # and NO unmeasured spread-quality claim.
+                spread = Decimal(-1)
+            else:
+                bid, ask = _number(book.get("bidPrice")), _number(book.get("askPrice"))
+                if bid <= 0 or ask <= 0 or ask < bid:
+                    raise ValueError("G2_MARKET_UNTRADEABLE")
+                spread = (ask - bid) * 20_000 / (bid + ask)
+            if book_tickers is not None and spread > spread_limit:
                 rejected.append((symbol, "SPREAD_EXCESSIVE"))
                 continue
         except (ValueError, TypeError, InvalidOperation):
@@ -222,6 +231,7 @@ def select_universe(
     # Original inputs may contain exchange-specific fields and identifiers; only
     # selected normalized evidence is hashed/persisted here, not secret values.
     normalized = {"schema": UNIVERSE_SCHEMA,
+                  "price_policy": "LAST_TRADE_NO_BID_ASK" if book_tickers is None else "LEGACY_BOOK_FILTER",
                   "received": source_received_at_ms,
                   "exchange": sorted((s, str(v.quote_turnover), str(v.change_percent),
                                       str(v.spread_bps), v.history_closed)
