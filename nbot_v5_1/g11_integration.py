@@ -104,7 +104,11 @@ class OfflineIntegratedPipeline:
 
     def on_five_minute(self, event: FiveMinuteEvent, *,
                        supplier: Callable[[], tuple[FrozenIntent, ...]] | None = None,
+                       plan_factory: Callable[[DeepManifest, ExplorationBatch],
+                                              tuple[FrozenIntent, ...]] | None = None,
                        evaluation_limit: int = 200) -> BoundaryProof:
+        if supplier is not None and plan_factory is not None:
+            raise IntegrationHold("G11_AMBIGUOUS_PLAN_PROVIDER")
         if type(event) is not FiveMinuteEvent or (
             self.last_event is not None
             and event.event_open_ms <= self.last_event.event_open_ms
@@ -127,7 +131,11 @@ class OfflineIntegratedPipeline:
                 or any(x.authority != ObservationAuthority.NONE
                        for x in batch.rows)):
             raise IntegrationHold("G11_PIPELINE_SOURCE_OR_AUTHORITY_BREACH")
-        result = self.research.review(event, deep, supplier)
+        # Build plans only AFTER actual G3/G4 contracts have frozen the
+        # current event, and only when G5 has genuine capacity. This avoids
+        # the caller repeating expensive G3 and protects the two-clock design.
+        provider = (lambda: plan_factory(deep, batch)) if plan_factory else supplier
+        result = self.research.review(event, deep, provider)
         if (result.capacity_after > 40 or result.openings > capacity or
                 result.decision_denominator != 40 or
                 result.no_trading_authority != "NONE"):
