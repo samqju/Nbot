@@ -6,6 +6,8 @@
 
 **Later status update (15 October 2026):** G2 was subsequently completed as a **separate read-only 100-coin Observation engineering gate**. See [G2 final acceptance](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G2_FINAL_ACCEPTANCE_20261015.md) and the current [Owner Roadmap](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_OWNER_ROADMAP_V1_0.md) / [Engineering Roadmap](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_ENGINEERING_ROADMAP_V1_0.md). **G0, G1 and G2 are completed; G3 is next.** This later note does not change what G1 originally tested or authorize trading.
 
+**Later G3 completion note (15 October 2026):** After this report established its own stage PASS, the separately evidenced G3 causal Exploration gate was also completed. **Current G0/G1/G2/G3 all [x]**, **G4 next [ ]**. [G3 final acceptance](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G3_FINAL_ACCEPTANCE_20261015.md), commit **fae1e2edc5f9403ccaf4b23e596176e89a2cfaf1**; source SHA `5d9707fe8521bbe17e96036aef0a5ec44a784a96`, 157/157 tests on both Python3.12.3 VPSs, actual public 100→200 mask and no trades. Old “G2/G3 next” statements below are **historical at original report time**, not current unfinished gates. See [current next-chat handoff](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_CURRENT_STATUS_NEXT_CHAT_HANDOFF_20261015.md). No G1/G2 historical test or release claim changed.
+
 **Date:** 15 October 2026 IST  
 **Branch:** `nbot-v5.1` (not `main`).  
 **Result:** **G1-01 [x], G1-02 [x], G1-03 [x], G1-04 final independent gate [x], parent G1 [x] — PASS for the nontrading offline foundation only.**  
