@@ -115,10 +115,10 @@ class ExplorationTests(unittest.TestCase):
     def test_E09_future_or_stale_candle_can_never_be_reused(self):
         self.bootstrap()
         previous=FiveMinuteEvent(END_OPEN-INTERVAL_MS, END_OPEN)
-        batch=explore_event(self.book,previous,capacity_slots=1)
-        self.assertEqual(batch.evaluated_pairs,0)
-        self.assertEqual(batch.source_skipped_pairs,200)
-        self.assertTrue(all(r.status=="NOT_EVALUATED_SOURCE" for r in batch.rows))
+        # It would be hindsight to apply a cohort selected after this prior
+        # event; reject the whole evaluation rather than retroactively backfill.
+        with self.assertRaisesRegex(ValueError, "G2_FUTURE_UNIVERSE"):
+            explore_event(self.book,previous,capacity_slots=1)
 
     def test_E10_one_breakout_matches_without_creating_order(self):
         self.bootstrap()
