@@ -130,7 +130,7 @@ def quality_report(dataset:LearningDataset)->QualityReport:
         pending=states.get("COST_PENDING",0)+states.get("INCOMPLETE",0),
         held=states.get("SOURCE_HOLD",0)+states.get("RESTART_HOLD",0)+
              states.get("ORIGINAL_CLAIM_UNVERIFIED",0),
-        censored=states.get("CENSORED",0),
+        censored=states.get("CENSORED",0)+states.get("UNRECOVERABLE_EXCLUDED",0),
         synthetic_modeled=len(complete),scientifically_qualified=0,
         effective_independent_blocks=len(blocks),
         symbols=len({r.symbol for r in rows}),
