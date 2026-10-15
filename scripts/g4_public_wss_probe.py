@@ -109,7 +109,12 @@ def _recv(reader):
     if size==126:size=int.from_bytes(reader.take(2),"big")
     if size==127:size=int.from_bytes(reader.take(8),"big")
     if size>MAX_FRAME:raise WssHold("G4_WEBSOCKET_FRAME_OVER_LIMIT")
-    payload=reader.take(size)
+    try:
+        payload=reader.take(size)
+    except (TimeoutError,socket.timeout) as exc:
+        # A socket timeout partway through a WebSocket message must never
+        # restart parsing as if the next bytes begin a fresh frame.
+        raise WssHold("G4_PARTIAL_WEBSOCKET_FRAME_TIMEOUT") from exc
     if opcode not in (1,2,8,9,10):
         raise WssHold("G4_WEBSOCKET_OPCODE_INVALID")
     return opcode,payload
@@ -117,7 +122,7 @@ def _recv(reader):
 
 def _capture(symbols,archive:Path,seconds_per_route=5):
     if not 1<=seconds_per_route<=12:raise WssHold("G4_WSS_PROBE_DURATION_INVALID")
-    recorder=DeepSegmentRecorder(archive,symbols=symbols,budget_bytes=64*1024*1024) if False else DeepSegmentRecorder(archive,symbols=symbols,quota_bytes=64*1024*1024)
+    recorder=DeepSegmentRecorder(archive,symbols=symbols,quota_bytes=64*1024*1024)
     urls=stream_urls(symbols)
     result={}
     all_hold=[]
@@ -147,7 +152,8 @@ def _capture(symbols,archive:Path,seconds_per_route=5):
                     if len(all_hold)<15:all_hold.append(kind+":"+str(exc)[:85])
                     continue
                 valid+=1;seen.add(ev.symbol)
-            socket_status="OK" if valid else "NO_VALID_PUBLIC_FRAMES"
+            socket_status=("SOURCE_HOLD_REJECTED_FRAMES" if invalid else
+                           "OK" if valid else "NO_VALID_PUBLIC_FRAMES")
         except (OSError,ssl.SSLError,WssHold,ValueError) as exc:
             socket_status="SOURCE_HOLD:"+type(exc).__name__+":"+str(exc)[:90]
             if len(all_hold)<15:all_hold.append(kind+":"+socket_status)
@@ -196,6 +202,9 @@ def run(*,enabled:bool,seconds_per_route:int=5)->dict:
         output=probe(enabled=True,max_history_requests=130,
                      archive=rest,on_event=callback)
         output["g4"]="TEMP_READONLY_SOURCE_SAMPLE_NOT_FULL_G4_ACCEPTANCE"
+        output["g4_all_three_sources_have_any_valid_frames"]=all(
+            item["received_valid"]>0 for item in
+            output["g3_explicit_diagnostic"]["wss"]["source_types"].values())
         # Full test directory and every raw frame removed on normal exit.
         return output
 
