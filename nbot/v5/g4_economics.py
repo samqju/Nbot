@@ -116,9 +116,10 @@ def assess_quote_constrained_net(
     slip=_d(economic_witness.get("slippage_rate"))
     funding=_d(economic_witness.get("funding_quote_per_unit"))
     stop=_d(policy.get("stop_price"),positive=True)
+    reference=_d(policy.get("entry_reference_price"),positive=True)
     if (fee is None or not Decimal("0")<=fee<=Decimal("0.01")
             or slip is None or not Decimal("0")<=slip<=Decimal("0.01")
-            or funding is None or stop is None):
+            or funding is None or stop is None or reference is None):
         reasons.append("MODELED_FEE_SLIPPAGE_FUNDING_RISK_INVALID")
     # Funding_quote_per_unit is a signed, ORIGINAL-source-verified cash flow:
     # positive means a modeled charge; negative means credit. Never infer 0.
@@ -140,7 +141,9 @@ def assess_quote_constrained_net(
         else:
             entry=entry_bid*(1-slip)
             final=exit_ask*(1+slip)
-        risk=sign*(entry-stop)
+        # R is frozen at the hypothetical decision. Modeled slippage changes
+        # the numerator, never retrospectively rescales the declared risk unit.
+        risk=sign*(reference-stop)
         if risk<=0:
             return EconomicReplay("HOLD",("MODELED_RISK_GEOMETRY_INVALID",),did)
         fee_quote=fee*(entry+final)
