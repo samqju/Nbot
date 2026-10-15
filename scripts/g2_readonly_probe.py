@@ -25,7 +25,7 @@ from nbot_v5_1.source_archive import PublicSourceArchive, PublicArchiveHold
 
 def probe(*, enabled: bool, max_history_requests: int = 140,
           archive: PublicSourceArchive | None = None,
-          on_event=None) -> dict:
+          on_event=None,trade_only:bool=False) -> dict:
     if type(enabled) is not bool or not enabled:
         raise PublicMarketHold("G2_EXPLICIT_PUBLIC_NETWORK_PERMISSION_REQUIRED")
     if type(max_history_requests) is not int or not 100 <= max_history_requests <= 160:
@@ -33,15 +33,19 @@ def probe(*, enabled: bool, max_history_requests: int = 140,
     client = PublicUsdMClient(allow_public_network=True, weight_budget=450)
     ex = client.exchange_info()
     tick = client.tickers_24hr()
-    book = client.book_tickers()
+    if type(trade_only) is not bool:
+        raise ValueError("G2_PROBE_TRADE_ONLY_MODE_INVALID")
+    book = None if trade_only else client.book_tickers()
     if archive is not None:
-        for receipt in (ex, tick, book):
+        for receipt in ((ex,tick) if trade_only else (ex,tick,book)):
             archive.append(receipt)
     if (type(ex.body) is not dict or type(tick.body) is not list
-            or type(book.body) is not list):
+            or (book is not None and type(book.body) is not list)):
         raise UniverseHold("G2_PROBE_API_SCHEMA_CHANGED")
-    if max(ex.received_at_ms,tick.received_at_ms,book.received_at_ms) - min(
-            ex.received_at_ms,tick.received_at_ms,book.received_at_ms) > 15_000:
+    source_clocks = [ex.received_at_ms,tick.received_at_ms]
+    if book is not None:
+        source_clocks.append(book.received_at_ms)
+    if max(source_clocks) - min(source_clocks) > 15_000:
         raise UniverseHold("G2_PROBE_SOURCE_CLOCK_MISMATCH")
     # This is a DISCOVERY CANDIDATE order, not an accepted manifest: no symbol
     # can be marked qualified until an actual verified >=96 closed-bar response.
@@ -54,9 +58,10 @@ def probe(*, enabled: bool, max_history_requests: int = 140,
             candidates.add(raw.get("symbol"))
     provisional_history = {s: 100 for s in candidates}
     provisional_health = {s: True for s in candidates}
-    provisional = select_universe(ex.body, tick.body, book.body,
+    provisional = select_universe(ex.body, tick.body,
+            None if trade_only else book.body,
             provisional_history, provisional_health,
-            source_received_at_ms=max(ex.received_at_ms,tick.received_at_ms,book.received_at_ms),
+            source_received_at_ms=max(source_clocks),
             selected_at_ms=int(time.time()*1000))
     # Prefer nominated group symbols, then remaining high-turnover eligible.
     ranked = sorted((r for r in tick.body if r.get("symbol") in candidates),
@@ -96,7 +101,7 @@ def probe(*, enabled: bool, max_history_requests: int = 140,
             break
     # Make no positive claim when source ages out during the 100+ live calls.
     now_ms = int(time.time()*1000)
-    source_clock = max(ex.received_at_ms,tick.received_at_ms,book.received_at_ms)
+    source_clock = max(source_clocks)
     freshness_ms = now_ms - source_clock
     if freshness_ms > 60_000:
         raise UniverseHold(f"G2_PROBE_UNIVERSE_SOURCE_STALE_AFTER_HISTORY:{freshness_ms}")
@@ -126,9 +131,10 @@ def probe(*, enabled: bool, max_history_requests: int = 140,
         "public_source_age_ms":freshness_ms,
         "public_exchange_rows":len(ex.body["symbols"]),
         "public_24h_rows":len(tick.body),
-        "public_book_rows":len(book.body),
+        "public_book_rows":0 if book is None else len(book.body),
+        "no_bid_ask_requested":bool(trade_only),
         "api_digests":{"exchange":ex.body_sha256,"ticker":tick.body_sha256,
-                       "book":book.body_sha256,"history_root":root},
+                       "book":None if book is None else book.body_sha256,"history_root":root},
         "selected_symbols":len(selected.symbols),
         "qualified_available":selected.qualified_count,
         "btc_included":"BTCUSDT" in selected.symbols,
@@ -156,6 +162,8 @@ if __name__=="__main__":
     ap.add_argument("--public-network",action="store_true",
                     help="Explicit one-time GET-only public Binance USD-M check")
     ap.add_argument("--max-history-requests",type=int,default=140)
+    ap.add_argument("--legacy-book-filter",action="store_true",
+                    help="Historical only, forbidden for owner-approved CS01 trade-only profile")
     args=ap.parse_args()
     try:
         # All original public bytes are captured, fsynced, then hash-checked
@@ -165,7 +173,7 @@ if __name__=="__main__":
             archive=PublicSourceArchive(Path(d),budget_bytes=64*1024*1024)
             result=probe(enabled=args.public_network,
                          max_history_requests=args.max_history_requests,
-                         archive=archive)
+                         archive=archive,trade_only=not args.legacy_book_filter)
             print(json.dumps(result,sort_keys=True),flush=True)
         print("G2_PUBLIC_ARCHIVE_REPLAYED_AND_TEMP_CLEANED",flush=True)
     except (PublicMarketHold,PublicArchiveHold,UniverseHold,ValueError) as exc:
