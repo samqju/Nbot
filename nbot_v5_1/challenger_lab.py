@@ -168,6 +168,29 @@ class CompetitionReview:
     financial_authority:str="NONE"
 
 
+def classify_lab_recommendation(*,champion_return:str,challenger_return:str,
+                                champion_drawdown:str,challenger_drawdown:str,
+                                max_drawdown:str,improvement_buffer:str)->str:
+    """Pure four-way LAB diagnostic, never an authorized routing decision."""
+    cr=dec(champion_return)
+    tr=dec(challenger_return)
+    cd=dec(champion_drawdown)
+    td=dec(challenger_drawdown)
+    maxdd=dec(max_drawdown,True)
+    buffer=dec(improvement_buffer,True)
+    if (not 0<=cd<=Decimal(1) or not 0<=td<=Decimal(1)
+        or not Decimal(".005")<=buffer<=Decimal(".20")
+        or not 0<maxdd<=Decimal(".10")):
+        raise PaperHold("G10_LAB_REVIEW_METRIC_BOUNDS")
+    if td>maxdd or td>cd+Decimal(".01"):
+        return "LAB_REJECT_RISK"
+    if tr>cr+buffer:
+        return "LAB_WOULD_RECOMMEND_PROMOTE_NOT_ACTIONABLE"
+    if tr<=cr:
+        return "LAB_RETAIN_INCUMBENT"
+    return "LAB_HOLD_INCONCLUSIVE"
+
+
 class DualBookCompetition:
     """Two separately journaled LAB books fed one deterministic event stream.
 
@@ -353,14 +376,13 @@ class DualBookCompetition:
             not any(self._state(x).occupied or self._state(x).held for x in
                     (CHAMPION,CHALLENGER)) and
             sum(censored)==0):
-            if dd[1]>dec(p.max_drawdown_fraction) or dd[1]>dd[0]+Decimal(".01"):
-                diagnostic="LAB_REJECT_RISK"
-            elif returns[1]>returns[0]+dec(p.improvement_buffer_fraction):
-                diagnostic="LAB_WOULD_RECOMMEND_PROMOTE_NOT_ACTIONABLE"
-            elif returns[1]<=returns[0]:
-                diagnostic="LAB_RETAIN_INCUMBENT"
-            else:
-                diagnostic="LAB_HOLD_INCONCLUSIVE"
+            diagnostic=classify_lab_recommendation(
+                champion_return=str(returns[0]),
+                challenger_return=str(returns[1]),
+                champion_drawdown=str(dd[0]),
+                challenger_drawdown=str(dd[1]),
+                max_drawdown=p.max_drawdown_fraction,
+                improvement_buffer=p.improvement_buffer_fraction)
         head=sha256(canonical([{"id":x.event_sha256,"ms":x.at_ms}
                               for x in self.events])).hexdigest()
         return CompetitionReview(VERSION,p.digest(),head,total,regimes,
