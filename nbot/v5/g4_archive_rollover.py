@@ -52,7 +52,7 @@ def resolve_payload(root, stem, meta):
 
 def archive_committed_segments(root, destination, *, keep_recent=2, max_segments=64):
     from nbot.v5.g4_segmented_source import read_segments
-    root=private_directory(Path(root).resolve())
+    root=private_directory(Path(root))
     destination=private_directory(destination)
     if root==destination or root in destination.parents or destination in root.parents:
         raise ValueError("G4_ARCHIVE_NOT_SEPARATE_STORAGE")
@@ -64,7 +64,8 @@ def archive_committed_segments(root, destination, *, keep_recent=2, max_segments
         pass
     metas=sorted(root.glob("segment-????????.json"))
     moved=bytes_released=0
-    for metadata in metas[:-keep_recent][:max_segments]:
+    eligible=[p for p in metas[:-keep_recent] if (root/(p.stem+".gz")).exists()]
+    for metadata in eligible[:max_segments]:
         stem=metadata.stem
         local=root/(stem+".gz")
         if not local.exists():

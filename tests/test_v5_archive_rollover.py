@@ -65,12 +65,12 @@ class ArchiveRolloverTests(unittest.TestCase):
         self.assertEqual(list(read_segments(self.root,SYMS)),before)
 
     def test_quota_rollover_continues_without_fixed_time_stop(self):
-        source=SegmentedForwardSource(self.root,symbols=SYMS,max_pending_frames=16,
-                                      max_pending_bytes=65536,max_disk_bytes=65536,
+        source=SegmentedForwardSource(self.root,symbols=SYMS,max_pending_frames=32,
+                                      max_pending_bytes=65536,max_disk_bytes=131072,
                                       rollover_destination=self.cold)
-        for i in range(200,1000):
+        for i in range(200,2000):
             source.ingest(route="public_bookticker",at_ms=NOW+i,
                           raw=quote(symbol=SYMS[i%50],at=NOW+i))
         source.flush()
         self.assertTrue(list(self.cold.glob("*.gz")))
-        self.assertEqual(source.audit()["counts"]["FRAME"],1000)
+        self.assertEqual(source.audit()["counts"]["FRAME"],2000)
