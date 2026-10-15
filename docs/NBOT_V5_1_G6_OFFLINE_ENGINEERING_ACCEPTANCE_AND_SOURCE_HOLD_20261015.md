@@ -1,0 +1,63 @@
+# NBOT V5.1 — G6 Offline Recovery, Economics & Archive Acceptance with Live-Source HOLD
+
+**Date:** 15 October 2026 IST  
+**Repository/branch:** `samqju/Nbot` / `nbot-v5.1` (NOT `main`)  
+**Exact source tested separately on BOTH VPSs:** `029cda1d75138fc1bf96f3502021ca5a236693c9`  
+**G6 software/offline engineering:** **PASS** as specified below.  
+**Entire G6 parent original-source, independent scientific-economics and off-host operational release:** **[ ] HOLD — NOT FULLY COMPLETE** until independently qualified G4 source, final G5 first-touch and real archive/restore proofs exist.  
+**No services deployed or started; no virtual runtime, paper, testnet, account/API key, real orders or qualified training labels.**
+
+## 1. Acceptance summary in plain language
+
+G6 can now (a) distinguish safely repaired **completed five-minute market context** from unrepairable original intrasecond trade/quote paths, (b) validate bounded, ID-complete public USD-M **aggregate trade** recovery with its explicit freshness/48-hour limits without creating a false order-book history, (c) simulate LONG/SHORT bid/ask, spread, fee, slippage and funding through independent typed synthetic witnesses without default-zero costs and without producing genuine profit claims, and (d) seal finite original-byte G4 test segments in a separately verifiable SHA inventory and quarantine corrupt, partial, permission-unsafe, mismatched or over-quota copies. All code is in the new `nbot_v5_1` namespace, no legacy V5 runtime imported.
+
+**253? NO. The actual verified suite is 254/254 on EACH VPS**, consisting of previous **224** G1–G5 tests and **30** new G6 source/funding/archive fault tests. Exact test command and results listed below.
+
+The user elected to defer remaining genuine continuous-market source and real off-host acceptance to later *explicitly approved* startup, so their checklist items remain visible and unchecked. This is not a waiver, no release authority and not an engineer's assertion that all original economic costs are verified.
+
+## 2. Every G6 microtask and status
+
+- [x] **G6-01-A — Historical selective source lineage:** Reviewed original R08/R09 (finalized candle/source-epoch recovery design) and R13/R14 (source frame/segmented recorder), R15 (one-pass price-first-touch), R17 old V5 `nbot/v5/g4_economics.py` @ commit `91d904b0e3783a93266f4ff646414bbb8fcc3333`, blob `3a7800399cb949d4286f5e540e54dab0b3407894`; R19 `g4_forward_vault.py` at same old commit, blob `555fe71ff2cc4972ff59ce720d599a27cb07fe0c`. Kept the *contract ideas*, NOT old per-raw-frame SQLite vault, unreviewed 50-market replay, authentication, fitted model or paper/real gateway.
+- [x] **G6-01-B — Strict verified-source clock recovery:** `nbot_v5_1/recovery_contract.py` checks EXACT public USD-M finished **5-minute** OHLCV rows, continuous expected [start,end] five-minute opens, symbol, received-after-close and immutable raw SHA. Even complete recovered bars have `CANDLE_CONTEXT_ONLY`, never original event-time stop order, quote or funding; gap/duplicate/extra/incomplete bars HOLD.
+- [x] **G6-01-C — Futures one-second endpoint non-assumption:** Current official USD-M `GET /fapi/v1/klines` documented enumerated intervals start at **1m** and do not establish an accessible `1s` interval; `one_second_usdm_recovery()` **always HOLD**, and there is no unsafe Spot 1s substitution. Reference [Binance USD-M REST market data](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data). Unknown OHLC intrasecond order cannot justify STOP-before-TARGET or TARGET-before-STOP: both-touch and missing-interval tests return scientific HOLD.
+- [x] **G6-02-A — Public aggregate-trade gap query policy:** Exact public-only `/fapi/v1/aggTrades` with explicit `fromId`, ≤1000 records/page, no API key; reject any requested recovery older than exchange's documented **48-hour** public aggregation horizon; official request weight **20** and start/end restrictions verified. No function accesses the network by importing the module.
+- [x] **G6-02-B — Strict independent trade-ID reconstruction:** Exact expected aggregate-ID interval, monotonically complete underlying trade IDs and timestamps, finite prices/quantity and raw response SHA; reject missing, reordered, future, malformed, duplicate JSON or partial page. Even the complete range is only `TRADE_CHRONOLOGY_ONLY`; without independently complete concurrent quotes/mark/costs it is never original executable first-touch or fill evidence.
+- [x] **G6-03-A — Typed prospective quote/cost witnesses:** `nbot_v5_1/economic_audit.py` validates same symbol, known-before entry and terminal quote clocks with ≤5s freshness, SHA-shaped witness IDs, strictly uncrossed bid/ask/spread, locked G5 intent geometry and terminal ID, fee/slippage rate limits, **explicit funded interval coverage** and fully specified signed funding expense/credit; rejects missing, stale, future, crossed, synthetic forged original grade or unknown costs.
+- [x] **G6-03-B — After-cost R scenario with no false qualification:** Decimal-based LONG buys ask/sells bid, SHORT sells bid/buys ask, declared nonzero slippage cost, both taker fees and explicit funded expense or credit normalized to frozen initial R. Returns **`MODELED_SYNTHETIC_ONLY_NOT_QUALIFIED`** or `HOLD`, never an exchange fill, published execution price, future G7 scientific original training row or real after-cost profit. `qualified_learning_label_count(...)` currently returns **0 by design**, even for 2,000 synthetic rows; genuine qualification requires a future independent audited source/economic grade gate.
+- [x] **G6-04-A — Bounded sealed archive and manifest:** `nbot_v5_1/archive_custody.py` independently fully replays original G4 gzip+raw source bytes and their chained SHA before making a separate finite sealed file copy with source head hash, frozen cohort, size/digest of EACH segment and manifest SHA. No silent pruning/overwrite; missing G4 pair, unknown/orphan file, symlink, unsafe permissions, changed bytes, altered cohort or full quota HOLD.
+- [x] **G6-04-B — Independently revalidated local restore:** `verify_archive` validates the sealed inventory and performs full G4 byte/segment/time/ID hash replay in a **new owner-private temporary directory**; tested correct 2-source-frame replay and injected corruption/partial-file/permissions/size limits. Its return explicitly states `VERIFIED_COPY_NOT_PROOF_OF_OFFHOST_OR_AUTHENTICITY`. It does **not** claim that source originated from the exchange, passed over to another physical VPS, survived power loss or retained an intact unsynced RAM tail.
+- [x] **G6-05-A — Complete 254-test regression on BOTH VPSs:** Python3.12.3, Observation **254/254 PASS 15.779 seconds**, Execution **254/254 PASS 16.514 seconds**, both 0 failures/errors and exit 0. 30 G6 tests G601–G630: closed bars, duplicate/future, 1s unsupported, OHLC ambiguity, 48h trades, missing IDs, quote fees/costs/funding, safe simulated economic hold, all-corruption/partial/archive mismatch, no real profits. Same tested code SHA `029cda1d75138fc1bf96f3502021ca5a236693c9`.
+- [x] **G6-05-B — Actual two-VPS synthetic 20×3×24 original-shaped source/archive benchmark:** On BOTH hosts, 20 deep symbols including BTC, 3 public original-shaped stream kinds, 24 60-frame cycles = **1,440 synthetic WSS-shaped source bytes** compressed to 24 source segments and **fully copied/replayed from sealed snapshot**, 24 closed-5m context checks and 24 quote/fee/slippage/funding *model-only* cost calculations. Observation p99 **50.938ms**, max RSS **29,744KiB**, CPU **0.677s**, total source+archive **198,169 bytes**; Execution p99 **61.420ms**, RSS **29,628KiB**, CPU **0.666s**, source+archive **198,169 bytes**. Both PASS test limits **p99 <1500ms, RSS <256000KiB, disk <33554432 bytes**, exit 0. No genuine market stream bandwidth proof, no off-host transfer, no after-cost training examples.
+- [x] **G6-05-C — G5 maximum-40-in-flight restart deficiency RESOLVED on BOTH hosts:** Exact same G6 tested SHA included strengthened `benchmarks/g5_virtual40_benchmark.py`, which now simulates **40 open slots at crash** and independently reloads ResearchJournal with exactly **40/40 restored occupying RESTART_HOLD**, zero scientifically qualified results, 24 prior boundary reviews and 600 synthetic cost-pending paths. Observation p99 **186.430ms**, RSS **41,940KiB**, 1,300,955-byte journal, CPU **1.256s**; Execution p99 **195.132ms**, RSS **41,784KiB**, same journal bytes, CPU **1.216s**. Both exit 0. Thus **G5-06-A may be checked now**; G5-06-B true original first-touch and parent G5 remain HOLD.
+- [ ] **G6-06-A — Full G4→G5→G6 source-qualified original first-touch/economic path:** G4 parent remains unaccepted after real public WSS 20-source probe observed 47 trade gaps and only 19/20 valid trade-frame symbols. No genuine complete time-aligned bid/ask, original trade, independently verified fees, slip or complete settled position funding through trade lifetime is currently available. Do not certify scientifically qualified net-R or 2,000 new outcomes from modeled price paths.
+- [ ] **G6-06-B — Original source archive off-host restore and outage:** Local independent temporary copy/replay is proven. **Transfer actual sealed source to the second host, independently audit hashes against its sealed manifest and rerun source/trade/quote capture during allowed outages** only under controlled owner startup/restore acceptance. Do not represent same-VPS temp copies as proven off-host durability. New evidence backup requirement was never waived by prior permission to delete OLD obsolete VPS data.
+- [ ] **G6-06-C — Multi-hour original peak source/disk endurance, power loss and gap recovery:** Must prove 20 actual source rate tails, reconnect/epoch, RAM-unsynced-tail, disk rollover/headroom, archive destination capacity and real permission/IO handling. G6 simulated 24 source rounds is not a soak test.
+- [ ] **G6-06-D — Entire G6 parent acceptance:** HOLD until 06-A/B/C and reopened G4/G5 source gates independently PASS. No paper or real trading starts merely from synthetic offline engineering.
+
+## 3. Exact files and replay commands
+
+**Created on `nbot-v5.1`:**
+- `nbot_v5_1/recovery_contract.py` — finite 5m context and public aggTrade gap recovery / unsupported 1s defense.
+- `nbot_v5_1/economic_audit.py` — independent witness *contract* and Decimal hypothetical after-cost R, no training permissions.
+- `nbot_v5_1/archive_custody.py` — finite sealed gzip segment clone, SHA manifest and local re-verify; no off-host proof.
+- `tests/test_v5_1_g6_recovery.py` — **30** G6 positive/negative/ambiguous tests.
+- `benchmarks/g6_recovery_archive_benchmark.py` — 1,440 synthetic frames/24 rounds, 20-market source/archive/economic benchmark.
+- Existing improved `benchmarks/g5_virtual40_benchmark.py` also independently verified on both VPSs in this test SHA.
+
+**Offline reproduction in a temporary GitHub clone pinned to SHA `029cda1d...`:**
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s tests -p 'test_v5_1_*.py' -q
+PYTHONDONTWRITEBYTECODE=1 python3 -B benchmarks/g5_virtual40_benchmark.py
+PYTHONDONTWRITEBYTECODE=1 python3 -B benchmarks/g6_recovery_archive_benchmark.py
+```
+
+Each command ran on both named hosts from their temporary shallow checkout and returned 0. All temp source archives/test clones were removed on ordinary exit. No permanent NBOT installation or service used.
+
+## 4. Exact owner startup-priority acceptance items
+
+The owner instructed: continue **developing later offline gates** before activating NBOT and keep actual-source verifications checked only at controlled startup. This report preserves those facts without signing off an impossible complete G6.
+
+**Pending source dependency order:** G4-06-A/B/C/D (20/20 quote/trade/mark continuity, true rate/memory, source provenance and off-host source archive) → G5-06-B (original first-touch virtual paths) → G6-06-A/B/C (independent original entry/exit quote/fee/slippage/settled position-funding and true off-host recovery) → G6-06-D parent PASS only after evidence → qualified G7 Learning. G5-06-A synthetic full40 restart has now PASSED BOTH HOSTS and should no longer be marked blocked.
+
+**Status:** G0 [x], G1 [x], G2 [x], G3 [x]. **G4 [ ] HOLD**, **G5 [ ] HOLD** (G5-06-A now passed), **G6 [ ] HOLD** (30 G6 tests and full G6 synthetic benchmark passed); G7–G12 [ ] not yet accepted. Financial authority NONE, no service startup.
