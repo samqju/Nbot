@@ -75,6 +75,7 @@ class ReviewResult:
     decision_denominator:int
     supplier_called:bool
     no_trading_authority:str="NONE"
+    decision_rows:tuple[tuple[str,str,str,str],...]=()  # symbol,side,state,K/N
 
 
 class VirtualResearchBook:
@@ -150,6 +151,18 @@ class VirtualResearchBook:
                 self.closed[id]=t
                 self._drop(id)
             elif op=="REVIEW":
+                pairs=data.get("pairs")
+                if (type(pairs) is not list or len(pairs)>MAX_ACTIVE
+                        or len(pairs)%2 or len(pairs)<2 or
+                        len({(x[0],x[1]) for x in pairs
+                             if type(x) is list and len(x)==4})!=len(pairs)
+                        or any(type(x) is not list or len(x)!=4
+                               or x[1] not in SIDES
+                               or x[2] not in ("ADMITTED_SYNTHETIC","OCCUPIED",
+                                               "NOT_EVALUATED_CAPACITY",
+                                               "NOT_PROPOSED_OR_UNQUALIFIED")
+                               for x in pairs)):
+                    raise JournalHold("G5_REVIEW_DENOMINATOR_INVALID")
                 open_ms=data.get("event_open_ms")
                 if (type(open_ms) is not int or
                         self.last_review_ms is not None and open_ms<=self.last_review_ms):
@@ -239,6 +252,22 @@ class VirtualResearchBook:
                 self.seen_ids.add(intent.intent_id)
             opened=min(len(ordered),available)
             skipped_capacity=max(0,len(ordered)-available)
+            admitted={p.intent_id for p in ordered[:available]}
+            admitted_pairs={(p.symbol,p.side) for p in ordered[:available]}
+            # Every possible research direction remains represented in a
+            # prospective inclusion/occupancy denominator, not just winners.
+            all_pairs=[(s,side) for s in deep.symbols for side in ("LONG","SHORT")]
+            inclusion=(str(opened)+"/"+str(len(ordered))) if ordered else "0/0"
+            decision_rows=[]
+            for pair in all_pairs:
+                if pair in admitted_pairs:state="ADMITTED_SYNTHETIC"
+                elif pair in self.by_pair:state="OCCUPIED"
+                elif pair in screened:state="NOT_EVALUATED_CAPACITY"
+                else:state="NOT_PROPOSED_OR_UNQUALIFIED"
+                decision_rows.append((pair[0],pair[1],state,
+                          inclusion if pair in screened else "0/0"))
+            if len(decision_rows)!=2*len(deep.symbols):
+                raise ResearchHold("G5_REVIEW_DENOMINATOR_INCOMPLETE")
             self._log("REVIEW",event.decision_at_ms,{
                 "event_open_ms":event.event_open_ms,
                 "capacity_before":before,
@@ -246,10 +275,12 @@ class VirtualResearchBook:
                 "skipped_capacity":skipped_capacity,
                 "skipped_ineligible":bad,
                 "cohort":deep.manifest_sha,
+                "pairs":[list(x) for x in decision_rows],
                 "synthetic_only":True})
             self.last_review_ms=event.event_open_ms
             return ReviewResult(event.event_open_ms,before,opened,self.occupied,
-                   skipped_capacity,bad,2*len(deep.symbols),supplier_called)
+                   skipped_capacity,bad,2*len(deep.symbols),supplier_called,
+                   decision_rows=tuple(decision_rows))
 
     def _hold_symbol(self,sym,at,reason):
         for (name,side),id in tuple(self.by_pair.items()):
