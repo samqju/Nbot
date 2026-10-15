@@ -1,6 +1,6 @@
 # NBOT — Complete Product Vision, Learning Philosophy, and Reason for Every Major Component
 
-**Vision document, version 1.1 — 15 October 2026**
+**Vision document, version 1.2 — 15 October 2026**
 
 **Purpose:** Explain what NBOT is supposed to become, why it was conceived, what V4 taught us, why V5 includes virtual research trades, Champion/Challenger learning and paper trading, and how all of that serves a **single-position autonomous trading bot** rather than a needlessly complicated research institution.
 
@@ -168,33 +168,129 @@ Both LONG and SHORT perspectives help NBOT compare different possible outcomes, 
 
 ---
 
-## 6. What are the 24 V4 patterns doing in NBOT?
+## 6. After observation: MARKET EXPLORATION — what should NBOT do with what it sees?
 
-They are a vocabulary for describing possible setups, such as:
+**Observation tells NBOT what is happening. Exploration asks what those observations might mean and what could be worth testing. Research then determines whether those possibilities actually have a positive economic advantage.**
+
+This is the owner's intended next step, expressed in practical terms:
+
+> Watch the market, select approximately 50 suitable coins, study the market and BTC environment, inspect each coin's price structure through our 24 existing pattern detectors, and explore whether a LONG opportunity, a SHORT opportunity or **NO TRADE** might make sense. Learn how the same setup behaves differently under different conditions.
+
+It is useful to call this **Market Exploration** rather than immediately calling every observation "research." Exploration generates and organizes questions. Rigorous research answers them using later, verified outcomes. Both belong in NBOT's learning process.
+
+### Step 1 — Choose the market universe
+
+Select roughly **50 eligible, reasonably liquid USDT-M perpetual coins**, using information already available at the selection time: contract eligibility, liquidity/volume, freshness, market quality and the existing frozen selection rules. The present G1 implementation includes BTC among the 50.
+
+This is a **market watchlist**, not 50 trade recommendations. Keep the chosen universe and its selection time recorded so NBOT does not quietly replace yesterday's watchlist with today's winners.
+
+### Step 2 — Understand the overall environment
+
+Before examining any coin on its own, ask:
+
+- Is BTC trending up, trending down, ranging or experiencing a sharp move?
+- Is the wider market generally following BTC, diverging from it or moving unevenly?
+- Is volatility calm, increasing, extreme or transitioning?
+- Are many coins participating in the same move, or only a few?
+- Is the information sufficiently complete and current to draw any conclusion?
+
+BTC should be understood as **market context**, not as a permanent command to go LONG or SHORT.
+
+### Step 3 — Understand each coin's individual behavior
+
+For each of the 50 coins, look at:
+
+- **Direction:** trending upward, downward or sideways.
+- **Price structure:** support/resistance, higher highs/lows, lower highs/lows, ranges and confirmed reversals.
+- **Recognizable formations:** double tops/bottoms, cup-and-handle shapes, range breakouts, retests, failed breakouts, pullbacks and consolidation.
+- **Strength compared with BTC and other coins:** following, lagging, leading or diverging.
+- **Volatility and liquidity:** whether the movement is orderly or erratic, and whether trading costs might be excessive.
+- **Timeframes and maturity:** whether a structure is confirmed on information already available or is only beginning to form.
+
+A chart can look like a double bottom before the pattern has actually been confirmed. NBOT must distinguish **forming / confirmed / failed / uncertain** structures without using future prices to rewrite the past.
+
+**Scope note:** Double bottoms, cup-and-handle shapes and other familiar chart structures are useful examples for exploration. They are **not all guaranteed to be implemented by the original 24 V4 detectors**. Additional detectors should be explicitly specified and tested rather than claiming that an existing rule recognizes something it does not.
+
+### Step 4 — Apply the 24 original setup detectors
+
+Use the existing 24 V4 pattern hypotheses as tools for describing the coin's situation, including:
 
 - Momentum and trend continuation.
-- Pullbacks inside established trends.
+- Pullbacks within established trends.
 - Breakouts and breakout retests.
-- Reversal attempts and failed breakouts.
-- Range or mean-reversion behavior.
-- Coin performance relative to peers or BTC.
-- Confirmed market-structure continuation.
+- Reversals and failed breakouts.
+- Range and mean-reversion behavior.
+- Relative strength versus peers and BTC.
+- Confirmed structure continuation.
 
-They should answer **"What does this market look like?"**, not **"Should we trade?"**
+Each detector answers **"Is this type of setup present?"**, not **"Is this trade profitable?"**
 
-For example, a breakout detector can identify a valid breakout. NBOT still needs to ask:
+A coin can match several patterns or no pattern. Multiple matching patterns do not automatically increase expected profit. The pattern names are observations about the **same price movement**, not separate independent victories.
 
-- Was BTC stable or suddenly falling?
-- Is this coin liquid enough?
-- Is the stop distance realistic?
-- How expensive are entry and exit?
-- Has this type of breakout historically produced positive **net** outcomes in comparable conditions?
-- Is the model sufficiently certain?
-- Is another position already open?
+### Step 5 — Explore LONG, SHORT and NO TRADE
 
-Two or five matching patterns are not five independent trade recommendations and not five training outcomes.
+For each coin, explore **both directions** as possibilities, not obligations:
 
-**Preserve all 24 original pattern IDs**, but use them as inputs to economic assessment, not as an automatic trading-vote count.
+| Possibility | What NBOT asks during exploration |
+| --- | --- |
+| **LONG** | Is there a plausible upward setup, given BTC conditions, the coin's structure, volatility, likely entry, stop and costs? |
+| **SHORT** | Is there a plausible downward setup, given the same evidence? |
+| **NO TRADE** | Are conditions unclear, contradictory, too risky, too costly, source-unverified or simply unpromising? |
+
+**At this exploration stage, a "promising LONG" or "promising SHORT" means a hypothesis worth examining—not a proven positive-outcome trade signal.** Whether a directional hypothesis has credible **positive expected net return** is established later, using independently qualified historical/forward outcomes and uncertainty.
+
+Keep NO TRADE available for **each coin** and for the **entire market event**. Both directional hypotheses can be considered in the research ledger even if neither qualifies for a real or paper entry.
+
+### Step 6 — Record the combinations so NBOT can learn
+
+The useful learning question is not merely "Did a breakout work?" It is:
+
+> "When BTC was in condition X, a coin had price structure Y, detector Z appeared on the LONG or SHORT side, and costs/risk looked like W, **what happened afterward?**"
+
+For every eligible decision-time observation, retain the relevant facts **as they were known at that time**, such as:
+
+- The event time, coin and direction being considered.
+- BTC state, broad-market behavior and each coin's relationship to BTC.
+- The coin's trend, range, volatility, structure and degree of confirmation.
+- Applicable pattern detectors, including when none matched.
+- Quality/freshness of market sources, spreads, liquidity and the prospectively defined risk/cost assumptions.
+- The reason a possibility was observed, held, rejected or considered for a virtual research experiment.
+
+This preserves the complete **choice set**, including opportunities the current Champion did not select. It also allows NBOT to explore combinations it might otherwise overlook.
+
+Do **not** silently start 24 virtual positions per coin because 24 detectors exist. The current system records up to **100 distinct coin-direction candidate observations per completed five-minute event** across 50 symbols. Tags can overlap; only separately eligible, frozen and fully evidenced virtual experiments may later become scored outcomes.
+
+### Example: the same pattern can mean different things
+
+Imagine three illustrative situations:
+
+| Market and BTC condition | Coin structure | What exploration should ask |
+| --- | --- | --- |
+| BTC calm or gradually rising | Potential double bottom | Could a LONG become attractive after confirmation, reasonable costs and proper research support? |
+| BTC falling sharply | The same-looking double bottom | Is this a weak or dangerous countertrend bounce that should be avoided? |
+| BTC moving sideways | Range breakout that quickly fails | Might a SHORT or **NO TRADE** be more sensible than chasing the breakout? |
+
+These are **questions**, not conclusions. There is no universal rule that these formations will succeed or fail in these situations. Their economic value must be tested.
+
+### Step 7 — Hand promising and rejected possibilities to the RESEARCH stage
+
+**Exploration output:** a timestamped, source-backed description of the available opportunities, market context, matched structures and possible LONG/SHORT/NO TRADE choices. It generates **hypotheses**, not orders.
+
+**Research output (the next stage):** for eligible hypotheses, freeze an entry, stop, target, horizon and economic assumptions **before** observing future prices. Follow the actual later source path, verify entry/exit quotes and costs, mark missing evidence honestly, and calculate qualified hypothetical **net** results. Study how those outcomes vary by BTC regime, coin structure, detector, direction, liquidity and risk.
+
+**Learning output:** estimate whether any particular type of opportunity has a credible advantage over **NO TRADE** after costs, while accounting for dependence, uncertainty and evidence quality.
+
+**Trading decision output:** only a properly validated and approved Champion, together with an independent risk guardian, can propose/authorize a paper action or, under a separate future live authorization, an actual trade. The owner's operating goal remains **at most one actual open position globally**.
+
+### The simple distinction we should preserve
+
+- **Observation:** "What is happening?"
+- **Exploration:** "What patterns, behaviors and possible opportunities do we see, and what should we investigate?"
+- **Research:** "When we tested those possibilities against properly verified later outcomes, what really happened after costs?"
+- **Learning:** "Which combinations have repeatable, sufficiently credible positive expected net results?"
+- **Selection:** "Of the qualified opportunities available now, is one worth taking—or is NO TRADE better?"
+
+**Bottom line:** NBOT should become a patient **market explorer and learner first**, and a very selective **single-position trading bot second**. Recognizing an opportunity must never be confused with proving that entering it will make money.
 
 ---
 
