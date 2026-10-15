@@ -162,7 +162,12 @@ def append_terminal(db: sqlite3.Connection, label_id: str, payload: Mapping) -> 
             raise ValueError("G4_TERMINAL_PREMATURE")
         if state=="SCORED":
             if (grade!="QUOTE_CONSTRAINED_SIMULATION"
-                    or payload.get("original_sources_independently_verified") is not True
+                    or not (
+                        (payload.get("evidence_grade", "ORIGINAL") == "ORIGINAL"
+                         and payload.get("original_sources_independently_verified") is True)
+                        or (payload.get("evidence_grade") == "SYNTHETIC"
+                            and payload.get("synthetic_sources_independently_verified") is True
+                            and payload.get("original_sources_independently_verified") is False))
                     or not _sha(payload.get("path_sha256"))
                     or not _sha(payload.get("quote_cost_sha256"))
                     or not _sha(payload.get("label_sha256"))

@@ -26,6 +26,8 @@ def economic_row(*, population, intent, path, package, review, reviewer_key,
             or package.get("policy_sha256") != intent["policy_sha256"]):
         raise ValueError("G4_ECONOMIC_SOURCE_BINDING")
     witness = package["economic_witness"]
+    if package["entry_quote"].get("receipt_sha256") != population["admission"]["original_entry_quote_sha256"]:
+        raise ValueError("G4_ECONOMIC_ENTRY_RECEIPT_MISMATCH")
     decision, exit_ms = intent["decision_at_ms"], path["exit_at_ms"]
     # A fee schedule must apply at BOTH clocks. Funding coverage must include
     # the whole holding interval, including explicit evidence for zero funding.

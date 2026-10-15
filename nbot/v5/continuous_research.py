@@ -17,7 +17,7 @@ import time
 from nbot.v5.g4_forward_entry_quote import IndependentSourceAudit
 from nbot.v5.g4_segment_replay import verified_ram_vault
 from nbot.v5.g4_segment_quotes import VerifiedSegmentQuotes
-from nbot.v5.g4_incremental_path import original_segment_price_path
+from nbot.v5.g4_incremental_path import original_segment_price_path, original_segment_price_paths
 from nbot.v5.g4_real_entry_admission import admit_research_entry
 from nbot.v5.g4_source_binding import bind_from_frozen_observation_copy
 from nbot.v5.g4_live_outcomes import follow_original_path
@@ -127,32 +127,17 @@ class ContinuousResearch:
         init_offline_ledger(self.labels)
         self.store.append("research-protocol","PROTOCOL",protocol.declared_ms,
                           {"protocol":asdict(protocol),"start_event_ms":start_event_ms})
-        self.store.append("research-grade", "EVIDENCE_GRADE", protocol.declared_ms,
-                          {"grade": grade, "order_authority": "NONE"})
+        try:
+            self.store.append("research-grade", "EVIDENCE_GRADE", protocol.declared_ms,
+                              {"grade": grade, "order_authority": "NONE"})
+        except BaseException:
+            self.close()
+            raise
 
     def tick(self, now_ms, *, max_events=1):
         """For compressed sources, use only a bounded, independently verified
         RAM-backed replay view. Missing evidence is never promoted to outcomes.
         """
-        vault_path=Path(self.vault)
-        if vault_path.is_dir() and not vault_path.is_symlink():
-            with ExitStack() as stack:
-                view=vault_path
-                try:
-                    with ro(self.source) as db:
-                        cohort=db.execute(
-                            "SELECT symbols_json FROM g1f_universe_snapshots LIMIT 1").fetchone()
-                    if cohort is None:
-                        raise ValueError("G4_G1_FROZEN_COHORT_MISSING")
-                    view,_=stack.enter_context(verified_ram_vault(
-                        vault_path,symbols=json.loads(cohort[0]),
-                        max_frames=100000,max_view_mib=128))
-                except (ValueError,OSError,sqlite3.DatabaseError):
-                    # Only archive mounting failures become source HOLD;
-                    # internal scientific processing bugs must never be swallowed.
-                    view=vault_path
-                return self._tick_from_source(
-                    now_ms,max_events=max_events,vault_path=view)
         return self._tick_from_source(
             now_ms,max_events=max_events,vault_path=self.vault)
 
@@ -230,6 +215,23 @@ class ContinuousResearch:
             self.store.append("event:"+str(event),"EVENT_COMPLETE",now_ms,{"event_ms":event,"candidate_population":100})
         pending=bounded_pending_path_page(self.labels,self.store)
         scan_end=(pending[-1][2],pending[-1][0]) if pending else None
+        batch_paths={}
+        if pending and Path(vault_path).is_dir():
+            requests=[]
+            for label_id,raw,_ in pending:
+                if self.store.db.execute("SELECT 1 FROM research_journal WHERE identity=?",("path:"+label_id,)).fetchone():
+                    continue
+                intent=json.loads(raw)
+                saved=self.store.db.execute("SELECT body FROM research_journal WHERE identity=?",
+                                            ("candidate:"+intent["decision_id"],)).fetchone()
+                if saved:
+                    requests.append((json.loads(saved[0])["candidate"],intent["frozen_policy"]))
+            if requests:
+                try:
+                    batch_paths=original_segment_price_paths(
+                        segment_dir=vault_path,requests=requests,audit_at_ms=now_ms)
+                except (ValueError,OSError,sqlite3.DatabaseError):
+                    batch_paths={}
         if pending and audit is None and not Path(vault_path).is_dir():
             try:
                 audit=IndependentSourceAudit(vault_path)
@@ -241,12 +243,10 @@ class ContinuousResearch:
             stored=self.store.db.execute("SELECT body FROM research_journal WHERE identity=?",("candidate:"+intent["decision_id"],)).fetchone()
             if stored is None:continue
             candidate=json.loads(stored[0])["candidate"]
-            if isinstance(audit,VerifiedSegmentQuotes):
+            if Path(vault_path).is_dir():
                 try:
-                    path=asdict(original_segment_price_path(
-                        segment_dir=vault_path,candidate=candidate,
-                        policy=intent["frozen_policy"],audit_at_ms=now_ms))
-                except (ValueError,OSError,sqlite3.DatabaseError):
+                    path=asdict(batch_paths[candidate["decision_id"]])
+                except (KeyError,ValueError,OSError,sqlite3.DatabaseError):
                     path={"state":"HOLD","reasons":[
                         "G4_INCREMENTAL_SEGMENT_OR_SOURCE_INTEGRITY_HOLD"]}
             elif audit is not None:
@@ -296,13 +296,19 @@ class ContinuousResearch:
         if self.economic_provider is None:
             return 0
         from nbot.v5.g4_economic_handoff import economic_row
-        rows=self.store.db.execute(
-            "SELECT p.identity,p.body FROM research_journal p "
+        cursor=self.store.db.execute(
+            "SELECT body FROM research_journal WHERE kind='ECONOMIC_SCAN_CURSOR' ORDER BY seq DESC LIMIT 1").fetchone()
+        last_seq=json.loads(cursor[0])["last_seq"] if cursor else 0
+        sql=(
+            "SELECT p.identity,p.body,p.seq FROM research_journal p "
             "LEFT JOIN research_journal q ON q.identity='qualified:' || substr(p.identity,6) "
-            "WHERE p.kind='ORIGINAL_PRICE_PATH' AND q.identity IS NULL "
-            "ORDER BY p.seq LIMIT ?", (max_rows,)).fetchall()
+            "WHERE p.kind='ORIGINAL_PRICE_PATH' AND q.identity IS NULL AND p.seq>? "
+            "ORDER BY p.seq LIMIT ?")
+        rows=self.store.db.execute(sql, (last_seq,max_rows)).fetchall()
+        if not rows and last_seq:
+            rows=self.store.db.execute(sql,(0,max_rows)).fetchall()
         accepted=0
-        for identity, raw in rows:
+        for identity, raw, _seq in rows:
             saved=json.loads(raw); label=saved["label_id"]
             intent=json.loads(self.labels.execute(
                 "SELECT intent_json FROM g4_label_intents WHERE label_id=?", (label,)).fetchone()[0])
@@ -329,7 +335,8 @@ class ContinuousResearch:
                       "evidence_grade":self.grade,"settled_at_ms":row["settled_ms"],
                       "exit_at_ms":row["exit_ms"],"exit_reason":saved["path"]["exit_reason"],
                       "early_exit_source_proof_sha256":row["lineage"]["path"],
-                      "original_sources_independently_verified":True,
+                      "original_sources_independently_verified":self.grade=="ORIGINAL",
+                      "synthetic_sources_independently_verified":self.grade=="SYNTHETIC",
                       "path_sha256":row["lineage"]["path"],"quote_cost_sha256":row["lineage"]["cost"],
                       "label_sha256":row["row_sha256"],"net_r":repr(row["net_r"]),
                       "gross_r":repr(row["gross_r"]),"order_authority":"NONE"}
@@ -338,6 +345,10 @@ class ContinuousResearch:
                               {"row":row,"independent_review":review,
                                "economic_evidence":package,"calculation":calculation})
             accepted+=1
+        if rows:
+            seq=self.store.db.execute("SELECT COALESCE(MAX(seq),0)+1 FROM research_journal").fetchone()[0]
+            self.store.append("economic-cursor:"+str(seq),"ECONOMIC_SCAN_CURSOR",now_ms,
+                              {"last_seq":rows[-1][2],"scanned":len(rows)})
         return accepted
 
     def accept_verified_export(self, export, review, reviewer_key, now_ms):
