@@ -98,9 +98,9 @@ The boxes below start uncompleted. **No stage is marked DONE merely because some
 | **12. Verify end-to-end behavior** | Show the entire loop works under mistakes and heavy loads. | Transparent test evidence and a written GO/HOLD review |
 | **13. Consider live trading — only if you explicitly choose it** | Decide whether the system may someday use real funds. | A completely separate consent, risk review, release and rollback plan |
 
-### Milestone 0 — Preserve what exists
+### Milestone 0 — Assess old NBOT and establish a clean start (legacy backups waived)
 
-**Historical initial instruction, updated 15 Oct 2026:** We began without touching old code or data. The owner now explicitly **waives backups of old-version NBOT files on both VPSs and accepts their permanent loss** as part of a fresh start. No backup or cleanup was actually performed in G0-03. Keep historical GitHub branches as reusable source references. Never damage SSH/OS/unrelated files, or infer paper/real trading authority from this waiver.
+**Completed 15 Oct 2026:** We first inventoried the previous version without changing it, then the owner explicitly waived backups of old NBOT VPS-only data and performed targeted manual cleanup. Independent SSH evidence shows the known old NBOT directories/service are absent on both VPSs, with SSH preserved — **81dadf68a9949b847fd8f38336c5d532eab861cd**. Historical GitHub branches remain reusable sources; no old-data backup was made. This cleanup gives no paper/real trading authority.
 
 **Finished when:** The documents are present, their contents are verified, and the new branch's current file list contains no legacy program files.
 
