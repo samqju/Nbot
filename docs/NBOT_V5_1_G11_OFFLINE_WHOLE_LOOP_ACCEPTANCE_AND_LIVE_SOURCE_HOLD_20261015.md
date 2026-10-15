@@ -31,6 +31,7 @@
 - [x] **G11-05-C** 60-boundary true code-seam endurance and synthetic 72-hour *rate projection* labeled clearly NOT a live multi-day feed endurance claim. Any real sustained peak bandwidth/IO/trade gaps must still be verified under G4–G6 original source gates.
 - [x] **G11-06-A** Owner-readable explicit evidence, GitHub roadmap/handoff revision pinned, verified zero active trading authority and unchanged G4–G10 original-science/owner release HOLD.
 - [x] **G11-06-B** G11 owner PAPER-operational review decision **HOLD** for real-world startup, not a synthetic GO; G11 offline engineering gate accepted in full.
+- [x] **G11-06-C — All G11-only temporary test files removed and independently verified.** Observation and Execution VPS each reported `G11_NEW_TEST_TREES_REMOVED`, process exit 0; Windows transfer directory reported `G11_LAPTOP_TRANSFER_STAGE_REMOVED`, exit 0. The unrelated older Observation G8 temporary directory remains separately OPEN.
 - [x] **G11 parent OFFLINE engine** accepted after independent checks, WITHOUT granting original-source, scientific, production or real-money permission.
 
 ## 3. Independently observed results
@@ -91,6 +92,6 @@ G11 source evidence is **SYNTHETIC**. Even a physically real cross-VPS transfer 
 
 Each host read-only confirmed 2 cores, ~952MiB physical RAM, Python 3.12.3, no running NBOT-named systemd units during audit. Short synthetic benchmark p99/RSS measurements had >75% headroom against the set limits, but network burst, 24/72-hour source retention, OOM/long-running log rotation and actual offsite custody are NOT established.
 
-G11 test-only GitHub clones and staged cross-VPS synthetic archive were created under isolated `/tmp` paths, with one local Windows temporary transfer folder. Their removal must be verified separately before any completion claim; the unrelated preexisting Observation G8 directory `/tmp/nbot-g8-c0qNaV` remains an older separately open housekeeping item and is NOT to be represented as G11-cleaned.
+All G11-only test source checkouts and synthetic cross-VPS source staging were safely removed and verified on BOTH VPSs with `G11_NEW_TEST_TREES_REMOVED` (exit 0 on each host). The Windows transfer folder was separately removed and verified as `G11_LAPTOP_TRANSFER_STAGE_REMOVED` (exit 0). The unrelated preexisting Observation G8 directory `/tmp/nbot-g8-c0qNaV` remains separately OPEN and untouched.
 
 **G11 offline acceptance does NOT check or silently satisfy G4–G10 source-dependent parent tasks. The next development/release step is a separately owner-approved controlled validation/startup plan, not automatic G12 real trading.**
