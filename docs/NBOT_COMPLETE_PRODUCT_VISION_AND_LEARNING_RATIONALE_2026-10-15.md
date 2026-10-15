@@ -1,6 +1,6 @@
 # NBOT — Complete Product Vision, Learning Philosophy, and Reason for Every Major Component
 
-**Vision document, version 1.4 — 15 October 2026**
+**Vision document, version 1.5 — 15 October 2026**
 
 **Purpose:** Explain what NBOT is supposed to become, why it was conceived, what V4 taught us, why V5 includes virtual research trades, Champion/Challenger learning and paper trading, and how all of that serves a **single-position autonomous trading bot** rather than a needlessly complicated research institution.
 
@@ -867,6 +867,158 @@ The product is operationally ready for its *permitted mode* only when testing pr
 
 ---
 
+
+## 8F. Practical operating design: which 50 coins, which labels, what to record, and how to recover
+
+**Prospective architecture proposal, 15 October 2026.** The owner has agreed to the seven product stages. This section makes the next design decisions concrete, before final engineering and operational failure rules are implemented. The parameter values below are **proposals to test and approve prospectively, not already validated thresholds or claims of completed code**.
+
+The stages remain **Observation → Exploration → Research → Learning → Training → Promoter/Retainer → Trading Decisions**. Feedback and Continuous Improvement connects them; **it is not an eighth continuously running service**.
+
+### A. Choose the 50-coin universe by tradability, not by recent price gains
+
+**Decision: reserve 1 research slot for BTCUSDT, then select up to 49 suitable altcoin USDT-M perpetual markets.** BTC serves as a coin candidate and mandatory context. Watch fewer markets if fewer meet the criteria; never pad the list with poor-quality coins.
+
+1. **Contract eligibility first:** Binance USDⓈ-M, USDT-quoted, USDT-margined, currently TRADING PERPETUAL contracts. Reject invalid, unsupported, suspended or delisting markets. Preserve the as-of-event contract snapshot.
+2. **Liquidity and capacity second:** Sufficient reported 24-hour USDT quote turnover, reasonable executable bid/ask spread, and book depth relative to the **small future position size**. Order-book depth is not a guarantee of fill.
+3. **Reliable history:** Enough verified finalized candles for the active feature lookback, independent BTC and per-coin source health, and a sufficiently established listing history. Stale, missing or conflicting information is an eligibility HOLD, not silently assumed healthy.
+4. **Ranking:** Among those passing the gates, rank by available **24-hour USDT quote turnover**, breaking ties deterministically by symbol; take up to 49 non-BTC names. **Do not rank by yesterday's gains, by which patterns just won, or by future information.**
+5. **Frozen cohort and version:** Record exact selected members, time, input sources, all rejected reasons, selection policy version and a cryptographic digest. No later market outcome may rewrite past universe membership.
+
+**Initial engineering-test thresholds, to review before actual commissioning:**
+
+| Screen | Proposed initial value | Caveat |
+| --- | --- | --- |
+| 24-hour quote turnover | At least **20 million USDT** | Unvalidated starting screen; benchmark against genuine market availability |
+| Spread | Valid 30-minute median **≤15 basis points**, 95th percentile **≤40 basis points** | Missing snapshots cause HOLD; spread can widen suddenly |
+| Executable-side depth | Test whether available displayed depth is **≥20× the prospective order notional** | Define depth-price band first and verify against actual order-size policy; no execution guarantee |
+| Listing maturity | At least **30 days** where listing age is independently verifiable | Adjust only prospectively; preserve evidence of recently listed markets |
+| Historical/stream data | All currently required feature history complete; valid final candles and trade/quote source health | Current simple 96-bar bootstrap is not proof of every desired longer lookback |
+
+**Cohort lifecycle decision:** Start with a **frozen seven-day research epoch**, check each member's health daily, and quarantine any newly ineligible member without stealth replacement. Re-evaluate and sign a prospective new cohort at a reviewed weekly boundary. Stop admitting new four-hour virtual experiments in time to settle the previous epoch's obligations; never discard active original-path requirements merely to rotate the watchlist. Source and quota effects of this rollover must pass offline engineering tests first.
+
+**Current code versus proposal:** The existing selection in nbot/v5/public_market.py prioritizes eligible USDT perpetual symbols using 24-hour quoteVolume; G1 maintains one frozen cohort per database. The spread/depth/listing screens, explicit reserved BTC slot and safe seven-day cohort rotation described here **still require implementation and tests**. Never silently rewrite the existing frozen G1 cohort.
+
+### B. Classify ALL opportunities, but open only eligible virtual experiments
+
+**Observation outputs:** One timestamped event per completed five-minute boundary, the chosen cohort digest, source integrity and quality, BTC market state, cross-market breadth, each coin's trend/range/volatility/structure and coin-BTC relationship. Relevant statuses are **OBSERVED / SOURCE_HOLD / UNSCORABLE**, with specific missing-data reasons. BTC states may include trend up/down, range, shock up/down, transition or UNKNOWN under a versioned classifier.
+
+**Exploration outputs:** For **each of 50 coins × both directions**, up to **100 coin-side candidate records per five-minute event**, including:
+
+- Explicit LONG and SHORT possibilities, with NO TRADE/rejected reasons and no inferred economic advantage.
+- The states of **all 24 original pattern detectors**, for example MATCH / NO_MATCH / UNAVAILABLE, plus the exact detector version.
+- Coin price structure, optional causally defined **FORMING / CONFIRMED / FAILED / UNCERTAIN** states, BTC/market conditions and time-of-decision features.
+- Eligibility, source and quote witnesses, risk/spread/liquidity descriptors, all known-at clocks, event ID, unique candidate ID and source/hash references.
+- A candidate with five matching pattern tags is **one coin-direction observation**, not five independent winning strategies.
+
+**Research outputs:** Only predeclared, eligible hypotheses become virtual trade experiments. Each has a frozen entry convention, stop, target, horizon, initial R, economic assumptions, BTC/coin/detector labels and source identity **before** future prices arrive. Later results are **PENDING, SCORED, PATH_ONLY, CENSORED, UNRESOLVED or HOLD** under the applicable frozen ledger policy. A source-only stop/target path is not an independently qualified after-cost label. A verified hypothetical quote-constrained net return is not an actual Binance fill.
+
+**Research workload choice:** Avoid automatically starting all 100 possible direction experiments every five minutes or a separate virtual trade for every detector. Start offline design/testing with **at most 10 new virtual intents per five-minute event**, chosen by a predeclared deterministic **stratified policy** from the complete 100-candidate population. Ensure coverage of LONG/SHORT, multiple coins, BTC/coin regimes, different detector families, no-pattern controls and rejected as well as favored opportunities; record inclusion probabilities and unselected candidates. Allow fewer or zero when ineligible. This is a **provisional scientific and resource budget, NOT a daily trade quota**. Test sample bias, regime coverage and throughput before final approval or changing the cap.
+
+With a frozen **four-hour maximum horizon**, 10 starts per five-minute boundary yields up to approximately **480 overlapping active virtual intentions**, allowing for early exits. These are hypothetical studies, **not 480 simultaneous real or paper positions and not 480 independent research samples**.
+
+**Learning labels:** Qualified virtual results must join their *original decision-time* BTC conditions, broad-market regime, coin structure, direction and detector states to the **later** source-verified net outcome. Separate experiment grade, source quality and temporal/dependence groups. Never use future features to make yesterday's decision or double-count overlapping pattern tags. The roadmap's 2,000-outcome checkpoint remains a minimum evaluation gate, not automatic proof of advantage.
+
+**Paper and future live labels:** Keep **different evidence-grade ledgers** for model proposals, NO TRADE, risk rejects, paper simulated open/close and unresolved states, and separately authorized future exchange-confirmed requested/acknowledged/partial/filled/closed/reconcile states. Every simulated book may hold at most one simulated position under the proposed competition rule, while actual authorized execution would enforce **one real open position globally**. Do not treat parallel paper books as parallel real positions.
+
+### C. Store data in three layers, without per-frame SQLite writes
+
+**Decision: maintain compact RAM state, durable event/decision ledgers and independently auditable compressed original source segments.**
+
+| Data | Where it belongs | Reason |
+| --- | --- | --- |
+| Most recent valid quote, last trade cursor, feed health, recent candle ring | **Bounded RAM** | Low latency; thousands of updates replace one latest-state slot |
+| Finalized five-minute candles and independent source confirmations | **Durable immutable candle/event database** | Replayable market and pattern context |
+| Every complete event's 100 candidate/detector states | **One compact transactional research batch** | Preserve the full choice set without per-frame writes |
+| Frozen virtual plans, progression/terminal status, scientific approvals | **Separate small durable research ledger** | Idempotent restart and transparent outcomes |
+| Original trade sequence needed to prove first stop/target across a virtual horizon | **Lossless compressed/hash-verified source files or an independently verified equivalent** | Five-minute candle OHLC cannot prove which barrier was hit first |
+| Entry/exit bid/ask and mark/funding/cost witnesses | **Timestamped durable receipts linked to original source and cost policy** | Needed for independently qualified after-cost outcomes |
+| Finalized Champion/Challenger paper actions, fills and accounts | **Two independent small event-sourced paper ledgers** | Fair comparison and restart reconciliation |
+| Unclosed candle updates, redundant display state, ephemeral health counters | **RAM unless required by a declared evidence contract**; persist epoch/gap incidents | Avoid useless permanent writes |
+
+**Important qualification:** Current V5 G4 **does persist every received raw frame on its subscribed aggTrade, bookTicker and mark/funding routes**—but into **batched, gzip-compressed, hash-chained files**, **not one row per frame in SQLite**. It does **not** eliminate disk use; a finite cap still exists. Changing raw quote/price-source retention needs an independently reviewed proof of which evidence is sufficient. We must not sample or discard necessary first-touch trade events while pretending the path remains complete.
+
+**Microbatch design:** Reuse the existing segmented source recorder's approximate **five-second flush interval, 2 MiB pending-byte ceiling and 2,048 pending-frame budget** as initial engineering settings, with bounded memory, file syncing, immutable manifests and verified segment hashes. The tail awaiting flush is explicitly **not crash-durable**. A separate RAM ring holds the latest 96 completed five-minute candles per coin; validated finished candles also go to the immutable ledger. Active virtual hypotheses should be advanced by **one shared per-symbol trade-stream pass**, with indexed replay or checkpointing for auditors—not a giant SQLite table and not one full-archive rescan per hypothesis.
+
+**Storage must be honestly budgeted.** If complete 50-market aggTrade and quote evidence exceeds a small VPS's disk, we must either add approved, independently verified off-host custody, limit/scientifically declare which hypotheses receive high-grade source collection, or hold admission when resources are exhausted. We may not discard original evidence merely to make a green result. Report actual frames/second, bytes/second, compression ratio, per-day growth, CPU, RAM and recovery throughput in offline synthetic stress tests and later owner-authorized prospective measurements. No fixed GB/day estimate is supported yet.
+
+### D. What happens after a disconnection, crash or restart?
+
+**Do not treat RAM as a backup.** If a process dies before the next verified disk checkpoint, the tail can be lost. Neither a saved latest price nor a candle replay automatically reconstructs the missing trade sequence or bid/ask history.
+
+**Recovery protocol:**
+
+1. **Begin locked/HOLD**, with no new scientific labels or unauthorized paper/live entries.
+2. Verify the original SQLite ledger, source-chain hashes, immutable manifests, finished segments and last committed event/intent IDs. Reject damaged or temporary segments; do not "repair" evidence by inventing records.
+3. Explicitly record a **new source epoch and ABRUPT_RESTART_HOLD / SOURCE_GAP** from the last durably known-good receipt to newly verified source continuity. The true interruption start may be unknown.
+4. Recover **closed five-minute candles only** from appropriate public REST sources using strict as-of windows and independent overlap checks. Never claim REST candles repair missing quote updates or original aggregated-trade chronology. If separately recovered aggregate-trade history is available, require full ID/time/source verification and record its **distinct recovery grade**; do not assume guaranteed availability.
+5. Restore bounded RAM features from verified candles and fresh live quotes/trades. Wait until BTC and each relevant coin have healthy feed/source epochs before accepting new original-grade virtual observations.
+6. Resume previous **durable virtual intents** idempotently only where the *entire* intervening source chronology has been independently proven. If missing data could have hidden a stop, target or quote change, classify affected outcomes **UNRESOLVED/CENSORED/HOLD** rather than a winning or losing qualified sample.
+7. Reconcile paper book balances and simulated open positions from the separate append-only ledgers, and independently verify approval before enabling any new paper action.
+8. For **future** separately approved real trading, reconcile exchange-side pending orders/partial fills and the actual open position before treating the single real-position slot as free. The guardian preserves the defined emergency management path for an already open authorized real position even if new-entry research is locked.
+
+**A five-second gap might matter more than four hours of correct candles if stop and target could both be crossed during the missing interval.** NBOT must prefer an unresolved result over a fabricated one.
+
+### E. Continuous storage: sealed segments and independently verified archival
+
+The existing compressed source cap is bounded (up to **8 GiB** in the current G4 collector); it is **not** a proven indefinite 50-coin retention solution.
+
+**Proposed custody lifecycle:**
+
+1. Bounded writer seals compressed, independently hash-checkable segments; maintain immutable source epochs, min/max times, per-symbol indexing and checkpoint receipts.
+2. Keep every segment necessary for an **unmatured** virtual experiment accessible, plus the required independent review/retention interval.
+3. Export **sealed** source segments to a separately approved durable off-host archive; independently verify content hashes and chain manifests; periodically test replay/restore from the replica.
+4. Only after confirmed independent custody, policy-compliant retention and absence of active research dependencies may local source be relocated/pruned by an explicitly authorized process. **Never delete the only verifiable original or break its chain of custody.**
+5. If disk headroom, archive replication or write latency fails, **stop admitting new high-grade virtual experiments and label affected source HOLD**. Do not silently reduce original-market evidence grade or substitute candle-only net results.
+
+The owner has **not** selected an archive provider, storage budget or deletion approval policy. Those require separate review. Until then, finite G4 capacity is an engineering HOLD, not permission to run indefinitely.
+
+### F. Allocate jobs to two VPSs without seven heavy services
+
+**Observation VPS:** one validated market intake for 50 coins; one bounded candle/candidate ledger; one compressed original research-source writer; a shared per-symbol virtual-experiment updater and durable maturity queue; periodic bounded economic review, Learning and Training on *off-critical-path* immutable snapshots; lightweight inference of frozen approved Champion/Challenger models on each valid five-minute event; compact signed recommendations and feedback processing.
+
+**Execution VPS:** one independent proposal/risk/position guardian and one paper engine holding **two logical, isolated books** only when separately approved for competition. Paper books use the same verified market timeline but have independent cash, risk, positions, accounting and model identity. Do not train models, re-run G4 virtual research, or create a second 50-market archive on Execution merely for comparison. Any future real order capability remains separately locked and governed.
+
+**Stage 6 comparison:** receive **small immutable settled paper/equity/rejection summaries** on Observation, compare frozen models using shared-clock/risk/after-cost evidence, and recommend retention/replacement. Heavy training and replay must never run in the collector/position-safety deadline. If offline training is too expensive for the approximately **1 GiB RAM** VPS, constrain/schedule it or move **only that offline job** to separately authorized isolated compute—without adding a continuously running trading VPS.
+
+**Resource admission control:** give source intake and any authorized existing-position management priority; bound source queues, active virtual intents, write frequency, dataset size, training memory and time-to-recommendation; use backpressure or scientific HOLD if limits cannot be met. Quantify resource sufficiency with offline load/crash tests instead of guessing.
+
+### G. Failure responses to formalize before service commissioning
+
+| Failure/condition | Required minimum response |
+| --- | --- |
+| BTC/coin quote or trade source stale, disconnected or corrupted | NO TRADE / SOURCE_HOLD; quarantine affected events/intents |
+| Candle or source ID gap; restart before last RAM tail was synced | New source epoch + documented unknown interval; original trade path cannot be inferred |
+| Structure not confirmed or one of 24 detectors has missing prerequisites | FORMING or UNAVAILABLE; never fabricate a MATCH |
+| Expected after-cost economic advantage is absent or uncertain | NO TRADE, even when several patterns match |
+| Stop-vs-target order cannot be proven from source | UNRESOLVED/HOLD, not SC0RED; no invented net-R label |
+| Entry/exit quote, fee, slippage or settled funding evidence insufficient | HOLD economic qualification; never default unknown cost to zero |
+| Archive full, replication failure, unsafe disk/RAM pressure | Stop new virtual admission, preserve existing immutable source, signal storage HOLD |
+| Too few independent genuine virtual outcomes, poor regime coverage or weak validation | NO_MODEL/NO TRADE or keep frozen Champion; no scientific promotion |
+| Challenger loses, both paper books lose, or competition is inconclusive | RETAIN / REJECT / HOLD; never promote the "less bad" strategy automatically |
+| Wrong model, stale signed recommendation, duplicate proposal or lost paper approval | Reject and record; no execution |
+| Paper account/position mismatch after restart | Reconcile before allowing new paper entries |
+| Any unknown real order/open position or proposed second actual entry | Independent Execution VETO; at most one real position globally |
+| Observation unavailable while an approved real position is open | No new entries; independently defined conservative real-position safety/reconciliation |
+| Training or archive job threatens feed latency | Slow/stop noncritical jobs, never starve source intake/position guardian |
+
+These are **minimum design principles**, not claims that every failure path has been fully implemented, passed endurance tests or received an owner-issued release.
+
+### H. Tests required before these proposals become operational rules
+
+1. A frozen 49-plus-BTC selection fixture proves all screens, no padding, explicit rejected reasons, event-time membership and safe weekly epoch closure/rotation.
+2. An exact **100 coin-side observation denominator** on a complete 50-coin event proves all 24 detector states with causal known-at clocks, including UNSCORABLE records.
+3. A reproducible, diversity-aware virtual-intent sample with a bounded active set proves fair selection among all eligible opportunities and correct inclusion probabilities.
+4. A single synthetic-only **full observation → exploration → original-format virtual price path → independently verified after-cost research → Learning → Training → paper decision and model comparison** runs without manual insertion of prequalified data. Synthetic grade never becomes genuine scientific authority.
+5. Crash immediately before and after source flush; missing quotes/ID continuity; segment corruption; disk-full and restart all fail closed, preserving the last authentic segment/event and correct UNKNOWN/HOLD states.
+6. Stress a representative continuous 50-coin source load with many overlapping virtual hypotheses; report **peak RAM, CPU, disk writes, source growth, processing backlog, restart time and independent source audit**.
+7. Archive sealed segments off-host with independently verified restore and no active virtual-path source loss, or report storage capacity as HOLD.
+8. Verify first-Champion-only paper release and later dual-paper contest under independently approved rules, separate paper cash/positions, abstentions and one position per book; **no real money authority or service startup** during offline engineering.
+
+**Implementation boundary:** The source already includes simple 24-hour-volume initial selection, frozen cohorts, a complete two-sided candidate journal, bounded latest-state RAM rings, verified final-candle persistence, compressed G4 source segments and fail-closed restart markers. The **full new 50-market quality screens, weekly cohort rotation, predeclared sampling process, off-host rotation and automatic qualified after-cost G4→Learning handoff remain proposed/unimplemented or unaccepted** under the latest engineering evidence. Do not report this vision section as engineering completion.
+
+**Guiding rule: observe broadly, label all possibilities honestly, research an explicitly selected subset with adequate original evidence, learn only from genuine qualified outcomes, compare models on fair forward results, and permit no more than one separately authorized real position.**
+
+---
 
 ## 9. Why after-cost return matters more than signal accuracy
 
