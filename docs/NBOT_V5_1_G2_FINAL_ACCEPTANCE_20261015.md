@@ -1,5 +1,7 @@
 # NBOT V5.1 — Entire G2: Read-only 100-Coin Observation Engineering Acceptance
 
+**Later G3 completion note (15 October 2026):** After this report established its own stage PASS, the separately evidenced G3 causal Exploration gate was also completed. **Current G0/G1/G2/G3 all [x]**, **G4 next [ ]**. [G3 final acceptance](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G3_FINAL_ACCEPTANCE_20261015.md), commit **fae1e2edc5f9403ccaf4b23e596176e89a2cfaf1**; source SHA `5d9707fe8521bbe17e96036aef0a5ec44a784a96`, 157/157 tests on both Python3.12.3 VPSs, actual public 100→200 mask and no trades. Old “G2/G3 next” statements below are **historical at original report time**, not current unfinished gates. See [current next-chat handoff](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_CURRENT_STATUS_NEXT_CHAT_HANDOFF_20261015.md). No G1/G2 historical test or release claim changed.
+
 **Date:** 15 October 2026 IST  
 **Branch:** `nbot-v5.1` only; historical GitHub branches and default branch untouched.  
 **Evidence-backed result:** **G2-01 through G2-06 / parent engineering G2 PASS** for **read-only lightweight closed-five-minute Observation**. **Not** a production streaming-service release, an independently authenticated trade/quote custody grade, a profitable model, or an order/trading permission.  
