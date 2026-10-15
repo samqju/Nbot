@@ -526,3 +526,9 @@ After G1 closure, the owner directed completion of every G2 subphase and exhaust
 - [ ] **G3-01 NEXT:** Audit original 24 V4 detectors and implement causal Exploration for both directions (200 possible symbol-side records), with no source-grade or cost label upgrade without separate independent evidence.
 
 **No claim of independent original high-frequency source custody or continuous production monitoring at G2**: the live public sample archive was replayed then temporary files removed; code can persist bounded source receipts when a future separately approved operational runner is deployed. G4 deep-20 original-trade/quote/funding retention and G6 economics still require independent source authority, recoverability and off-host custody. G3–G12 and all paper/real money permissions remain locked.
+
+
+### Permanent continuation pointer — 15 October 2026
+
+- [x] **Current source-of-truth status and new-chat handoff published:** [Current Status / Next-Chat Handoff](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_CURRENT_STATUS_NEXT_CHAT_HANDOFF_20261015.md). It pins the completed **G0 [x], full G1 [x] (all G1-01/02/03/04), full G2 [x]**, exact tested revision `4ba07385bb06ad8cde2460d83953448386f1a751`, 120 passing tests on both VPSs, real public source and synthetic 100-market benchmarks, limits, and next gate **G3 [ ]**.
+- [x] **G1 final acceptance report clarified:** It now says **ENTIRE G1 PASSED** prominently and distinguishes historical G2-next wording from current G3-next status. No original G1 results were rewritten or reclassified as production/trading authorization.
