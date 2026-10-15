@@ -77,3 +77,24 @@ Last point-in-time host audit (15 October 2026) found **no NBOT Python process a
 > Continue NBOT V5.1, repo `samqju/Nbot`, branch `nbot-v5.1`. Read `docs/NBOT_V5_1_NEXT_CHAT_START_HERE_LIVE_G1_G3_PASS_G4_BTC_QUOTE_HOLD_20261015.md` in full, then the first genuine CS-01 live test report, most recent owner/engineer roadmaps, startup checklist, and Vision V1.9. G1/G2/G3 initial Binance public-source path and record writing passed limited live tests; G3 produced 200 recorded directions but no capacity-fenced real detector evaluations; G4 20×3 raw messages received but source-grade HOLD due repeated stale BTCUSDT bookTicker `EVENT_FUTURE_OR_STALE`. Latest live executable SHA `6b7491d8a903cbc248c85327a20919d68f05292f`; newest full Executive VPS 569/569 tests, Observation full 569/569 on preceding SHA plus targeted latest. All canaries stopped, no permanent service, PAPER/REAL forbidden. First genuine 8-file 103117-byte backup + SHA saved on Observation VPS, WinSCP desktop copy unchecked. **Investigate raw event-time vs VPS clock vs WSS processing/backlog objectively and safely; no threshold stretching, false G4 PASS or unlabeled trade exclusion.** Maintain checkbox/evidence continuity on both roadmaps, use only separately owner-authorized public-only bounded tests; seek explicit permission before a permanent service or trading. Do not redo CS-00 from scratch.
 
 **This document is the latest status bridge. Historical prior G2/G3/G4/CS-00 reports remain archived as snapshots at their original GitHub commits.**
+
+
+## G4 QUOTE BACKLOG FORENSICS — MEASURED 15 OCT 2026
+
+**LATEST CORRECTED DIAGNOSIS (supersedes the earlier BTC-only description):** The BTCUSDT quote freshness HOLD is part of a **multi-symbol high-frequency QUOTE lag ramp**, not a demonstrated BTC market malfunction. An entirely **read-only** analysis of genuine saved CS01 `segment-*.gz` frames from five previous canaries compared Binance raw `E` event time with V5.1 `received_at_ms` (timestamp stamped AFTER WebSocket `read_message` return).
+
+| Archived genuine canary | Accepted QUOTE frames | ALL-symbol start → end median event-to-receipt lag |
+|---|---:|---:|
+| diagnostic-2 | 3,060 | 429ms → 653ms |
+| diagnostic-3 | 7,096 | 562ms → **4,474ms** |
+| diagnostic-4 | 17,459 | 444ms → **4,402ms** |
+| diagnostic-5 | 10,009 | 448ms → **4,466ms** |
+| diagnostic-6 | 10,242 | 940ms → **4,545ms** |
+
+Last accepted-run window held 10,242 QUOTE frames across 7.254s, **about 1,412 QUOTE frames/sec**, with BTC end-run median 4,633ms; OTHER symbols shared similar delays. In diagnostic-6, BTC TRADE median ~641ms and MARK median ~180ms. This is **strong evidence of a quote-stream throughput/backpressure bottleneck**, not definite proof the Binance upstream or one particular Python line is responsible. Frames rejected at age>5000ms are absent from accepted G4 segment archives; source anomaly ledger records their exclusion, not their full raw exchange `E`. Do NOT count saved max<5000ms as source health proof.
+
+**V4 has a useful tested *design reference***: old `main` `nbot/observation/wss_transport.py` has an async fast receiver and bounded queue (4096); old `live_two_tier.py` supports separate feed shards/per-symbol market-data gap invalidation. Do not copy V4 wholesale or its weaker receipt-time-only quote freshness semantics. V5.1 currently processes all 20-symbol QUOTE payloads synchronously on ONE socket worker, unlike separate TRADE/MARK workers. The engineering priority is instrument E→wire-read→queue→process timing and test isolated BTC vs sharded 5/20 symbol loads, then implement bounded backpressure-aware receiving **without relaxing V5.1's strict 5-second source-age requirement**, hard aggTrade continuity or scientific HOLD.
+
+**Evidence register:** [Full per-run source-forensic + V4 architecture comparison](NBOT_V5_1_G4_REAL_QUOTE_LATENCY_FORENSICS_V4_CODE_COMPARISON_20261015.md); [Read-only inspection script](../scripts/cs01_readonly_latency_forensics.py). Neither action started NBOT or altered its executable public-only service. **[x] observed source-age ramp quantified, [x] V4 code reviewed, [ ] source-vs-socket-vs-consumer delay decomposition, [ ] V4-inspired tested clean transport change, [ ] sustained healthy 20/20 G4 source canary, [ ] original first touch/economics, [ ] owner WinSCP transfer.** Current G1–G3 initial live PASS limited, G4 sustained HOLD, NO PAPER/REAL, no permanent process start.
+
+**Next assistant:** Read this newest section along with [current definitive next-chat handoff](NBOT_V5_1_NEXT_CHAT_START_HERE_LIVE_G1_G3_PASS_G4_BTC_QUOTE_HOLD_20261015.md). Older comments merely calling it a 'BTC issue' are historical partial descriptions; most QUOTE symbols see the common age ramp.
