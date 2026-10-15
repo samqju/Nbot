@@ -51,6 +51,16 @@ class G4CohortExportTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(self.original.read_bytes()).hexdigest(),before)
         self.assertEqual(self.out.stat().st_mode & 0o077,0)
 
+    def test_service_cohort_filename_is_original_readonly_and_immutable(self):
+        target=self.out.with_name("cohort.json")
+        before=self.original.read_bytes()
+        result=export_frozen_cohort(db_path=self.original,output=target)
+        self.assertEqual(result["status"],"FROZEN_COHORT_COPIED_ONLY")
+        self.assertEqual(len(source_cohort_file(target.read_bytes())),50)
+        self.assertEqual(self.original.read_bytes(),before)
+        with self.assertRaisesRegex(ValueError,"G4_COHORT_OUTPUT_NAME_OR_EXISTENCE_INVALID"):
+            export_frozen_cohort(db_path=self.original,output=target)
+
     def test_second_export_refuses_rewrite(self):
         export_frozen_cohort(db_path=self.original,output=self.out)
         with self.assertRaisesRegex(ValueError,"G4_COHORT_OUTPUT_NAME_OR_EXISTENCE_INVALID"):

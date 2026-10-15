@@ -66,6 +66,86 @@ class ContinuousIntegrationTests(unittest.TestCase):
         self.assertEqual(r["qualified_independently_reviewed_outcomes"],0)
         self.assertEqual(r["g7_paper_state"],"LOCKED")
 
+    def test_telemetry_streams_historical_candidates_without_model_row_list(self):
+        from unittest.mock import patch
+        original=self.engine.tick(COMMITTED+300)
+        self.assertEqual(original["candidate_population"],100)
+        # Telemetry is a read-only observer and must not materialize the
+        # entire qualified outcome list in RAM on each minute heartbeat.
+        with patch.object(self.engine,"verified_rows",
+                          side_effect=AssertionError("FULL_ROW_LIST_FORBIDDEN")):
+            report=self.engine.telemetry(COMMITTED+301)
+        self.assertEqual(report["candidate_population"],100)
+        self.assertEqual(report["qualified_independently_reviewed_outcomes"],0)
+        self.assertEqual(report["admission_states"],original["admission_states"])
+        self.assertEqual(report["hold_reasons"],original["hold_reasons"])
+        self.assertEqual(report["g7_paper_state"],"LOCKED")
+
+    def test_v4_bounded_catchup_does_not_replay_completed_event(self):
+        from nbot.v5.continuous_research import bounded_research_catchup
+        first=bounded_research_catchup(self.engine,COMMITTED+300)
+        self.assertEqual(first["candidate_population"],100)
+        self.assertEqual(first["catchup_processed_events"],1)
+        self.assertEqual(first["catchup_status"],"CAUGHT_UP")
+        self.assertEqual(first["qualified_independently_reviewed_outcomes"],0)
+        again=bounded_research_catchup(self.engine,COMMITTED+400)
+        self.assertEqual(again["catchup_processed_events"],0)
+        self.assertEqual(again["candidate_population"],100)
+        self.assertEqual(self.engine.store.db.execute(
+            "SELECT COUNT(*) FROM research_journal WHERE kind='EVENT_COMPLETE'"
+        ).fetchone()[0],1)
+
+    def test_v4_crash_halfway_through_event_recovers_original_100(self):
+        from nbot.v5.continuous_research import bounded_research_catchup
+        from unittest.mock import patch
+        original=self.engine.store.append
+        seen=[0]
+        def interrupt(identity,kind,at_ms,body):
+            if kind=="CANDIDATE":
+                seen[0]+=1
+                if seen[0]==23:
+                    raise OSError("SYNTHETIC_PROCESS_CRASH")
+            return original(identity,kind,at_ms,body)
+        source_bytes=self.source.read_bytes()
+        with patch.object(self.engine.store,"append",side_effect=interrupt):
+            with self.assertRaisesRegex(OSError,"SYNTHETIC_PROCESS_CRASH"):
+                bounded_research_catchup(self.engine,COMMITTED+300)
+        self.assertEqual(self.engine.store.db.execute(
+            "SELECT COUNT(*) FROM research_journal WHERE kind='EVENT_COMPLETE'"
+        ).fetchone()[0],0)
+        self.engine.close()
+        self.engine=ContinuousResearch(**self.kwargs)
+        result=bounded_research_catchup(self.engine,COMMITTED+400)
+        self.assertEqual(result["candidate_population"],100)
+        self.assertEqual(result["catchup_processed_events"],1)
+        self.assertEqual(result["catchup_status"],"CAUGHT_UP")
+        self.assertEqual(self.engine.store.db.execute(
+            "SELECT COUNT(*) FROM research_journal WHERE kind='CANDIDATE'"
+        ).fetchone()[0],100)
+        self.assertEqual(self.source.read_bytes(),source_bytes)
+        self.assertEqual(result["g7_paper_state"],"LOCKED")
+
+    def test_path_queue_cycles_550_origins_with_only_250_rows_in_ram(self):
+        from nbot.v5.continuous_research import bounded_pending_path_page
+        # 550 synthetic *unmatured* label ids. This is an isolated research DB.
+        with self.engine.labels as db:
+            for j in range(550):
+                label=f"extra-{j:05d}"
+                db.execute("INSERT INTO g4_label_intents VALUES (?,?,?,?,?,?,?,?)",
+                           (label,label,"f"*64,EVENT,COMMITTED+1000+j,
+                            COMMITTED+14401000+j,"0"*64,"{}"))
+        page=bounded_pending_path_page(self.engine.labels,self.engine.store)
+        self.assertEqual(len(page),250)
+        self.assertEqual(len({p[0] for p in page}),250)
+        for i,expected in enumerate((250,50,250)):
+            tail=page[-1]
+            self.engine.store.append("cursor-test:"+str(i),"PATH_SCAN_CURSOR",COMMITTED,
+                                     {"decision_at_ms":tail[2],"label_id":tail[0]})
+            page=bounded_pending_path_page(self.engine.labels,self.engine.store)
+            self.assertEqual(len(page),expected)
+        # The seek cursor wraps safely after the final 50 unprocessed rows.
+        self.assertLessEqual(len(page),250)
+
     def test_restart_replays_without_duplicate_and_source_unchanged(self):
         before=self.source.read_bytes()
         a=self.engine.tick(COMMITTED+300)
@@ -198,6 +278,35 @@ class ContinuousIntegrationTests(unittest.TestCase):
         self.assertEqual(report["qualified_independently_reviewed_outcomes"],0)
         self.assertEqual(report["g7_paper_state"],"LOCKED")
         self.assertFalse(list(segment_root.glob("*.sqlite*")))
+
+    def test_streaming_quote_and_trade_path_when_ram_view_exceeds_cap(self):
+        from unittest.mock import patch
+        from nbot.v5.g4_segmented_source import SegmentedForwardSource
+        segment_root=self.base/"segments"
+        segment_root.mkdir(mode=0o700)
+        with closing(sqlite3.connect(self.source)) as src:
+            syms=json.loads(src.execute(
+                "SELECT symbols_json FROM g1f_universe_snapshots").fetchone()[0])
+        recorder=SegmentedForwardSource(segment_root,symbols=syms)
+        with closing(sqlite3.connect(self.vault)) as old:
+            for route,kind,at,raw in old.execute(
+                "SELECT route,kind,at_ms,raw_frame FROM g4_forward_receipts ORDER BY seq"):
+                if kind=="OPEN":recorder.connect(route=route,at_ms=at)
+                elif kind=="FRAME":recorder.ingest(route=route,at_ms=at,raw=raw)
+                elif kind=="CLOSED":recorder.disconnect(route=route,at_ms=at)
+        recorder.flush()
+        self.engine.vault=segment_root
+        # The production bridge has a finite 100k-frame/128MiB RAM view.
+        # Fail that view deliberately: the original source must remain usable
+        # via streaming, without data-loss reclassification or SQL tick writes.
+        with patch("nbot.v5.continuous_research.verified_ram_vault",
+                   side_effect=ValueError("G4_BRIDGE_FRAME_OR_BYTES_CAP_HOLD")):
+            report=self.engine.tick(COMMITTED+300)
+        self.assertEqual(report["candidate_population"],100)
+        self.assertEqual(report["g4_maturity"]["total_frozen_intents"],100)
+        self.assertEqual(report["qualified_independently_reviewed_outcomes"],0)
+        self.assertEqual(report["g7_paper_state"],"LOCKED")
+        self.assertFalse(list(segment_root.rglob("*.sqlite*")))
 
     def test_corrupted_compressed_g4_vault_holds_all_candidates(self):
         from nbot.v5.g4_segmented_source import SegmentedForwardSource

@@ -43,10 +43,21 @@ class IntegratedStoppedServicesTests(unittest.TestCase):
         self.assertIn("runtime/observation/g1g2g3.sqlite",spec)
         self.assertIn("runtime/source/g4-forward-cohort/segments",spec)
         self.assertIn("runtime/research/protocol.json",spec)
-        self.assertIn("${NBOT_V5_START_EVENT_MS}",spec)
+        self.assertNotIn("NBOT_V5_START_EVENT_MS",spec)
+        self.assertIn("g4_research_template.json",spec)
         self.assertIn("RestrictAddressFamilies=AF_UNIX",spec)
         self.assertNotIn("--enable-network",spec)
         self.assertNotIn("--sustained-source",spec)
+
+    def test_research_unit_requires_G1_and_G4_and_frozen_registered_policy(self):
+        spec=G4.read_text()
+        self.assertIn("Requisite=nbot-v5-g1g2g3-observation.service nbot-v5-g4-source-capture.service",spec)
+        self.assertIn("runtime/source/g4-forward-cohort/g4_research_template.json",spec)
+        self.assertNotIn("approved.env",spec)
+        self.assertNotIn("NBOT_V5_START_EVENT_MS",spec)
+        self.assertNotIn("--start-event-ms",spec)
+        self.assertIn("Restart=no",spec)
+        self.assertNotIn("\n[Install]",spec)
 
     def test_g7_is_local_locked_health_not_order_worker(self):
         spec=G7.read_text()

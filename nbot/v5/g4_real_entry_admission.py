@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 import sqlite3
 
+from nbot.v5.g4_segment_quotes import VerifiedSegmentQuotes
 from nbot.v5.g4_source_binding import bind_from_frozen_observation_copy
 from nbot.v5.g4_forward_entry_quote import (
     independent_asof_entry_quote,policy_quote_mapping,
@@ -122,10 +123,16 @@ def admit_research_entry(*,g1_snapshot: str|Path,raw_source_vault: str|Path,
         }
     except (OSError,ValueError,sqlite3.Error,KeyError,TypeError,IndexError):
         return hold("ORIGINAL_SOURCE_ADMISSION_EXTRACTION_INVALID")
-    quote=independent_asof_entry_quote(
-        vault_db=raw_source_vault,symbol=symbol,
-        decision_at_ms=decision,
-        max_age_ms=frozen.spec["max_quote_age_ms"],audit_cache=audit_cache)
+    if isinstance(audit_cache,VerifiedSegmentQuotes):
+        # Direct 50-coin original source chain witness. Unlike the old
+        # temporary SQLite view, this does not cap real capture at 100k ticks.
+        quote=audit_cache.asof(
+            symbol,decision,frozen.spec["max_quote_age_ms"])
+    else:
+        quote=independent_asof_entry_quote(
+            vault_db=raw_source_vault,symbol=symbol,
+            decision_at_ms=decision,
+            max_age_ms=frozen.spec["max_quote_age_ms"],audit_cache=audit_cache)
     if quote.state!="LOCAL_SOURCE_QUOTE":
         return hold("INDEPENDENT_REAL_ENTRY_QUOTE_HELD",*quote.reasons)
     # This is a side-correct counterfactual reference; all costs, future

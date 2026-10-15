@@ -25,7 +25,7 @@ def export_frozen_cohort(*, db_path: str|Path, output: str|Path) -> dict:
             or not parent.name.startswith("g4-forward-")
             or parent.stat().st_mode & 0o077 or out.is_symlink()):
         raise ValueError("G4_COHORT_ISOLATED_OUTPUT_DIR_INVALID")
-    if out.name != "frozen_cohort.json" or out.exists():
+    if out.name not in ("frozen_cohort.json","cohort.json") or out.exists():
         raise ValueError("G4_COHORT_OUTPUT_NAME_OR_EXISTENCE_INVALID")
     with sqlite3.connect(dbpath.resolve().as_uri()+"?mode=ro",uri=True) as db:
         rows=db.execute("SELECT cohort_digest,symbols_json,selection_version "
