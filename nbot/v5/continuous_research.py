@@ -312,12 +312,28 @@ class ContinuousResearch:
         return [json.loads(r[0])["row"] for r in self.store.db.execute("SELECT body FROM research_journal WHERE kind='QUALIFIED_OUTCOME'")]
 
     def telemetry(self,now_ms):
-        candidates=[json.loads(r[0]) for r in self.store.db.execute("SELECT body FROM research_journal WHERE kind='CANDIDATE'")]
-        states=Counter(p["admission"]["state"] for p in candidates)
-        reasons=Counter(r for p in candidates for r in p["admission"]["reasons"])
-        return {"candidate_population":len(candidates),"admission_states":dict(states),"hold_reasons":dict(reasons),
+        """Stream original candidate counts without loading the full journal.
+
+        V4 memory-bound processing: historical evidence remains immutable,
+        while operational telemetry consumes O(unique states and hold codes)
+        memory even after millions of 50-coin candidate observations.
+        """
+        total=0
+        states=Counter()
+        reasons=Counter()
+        for (raw,) in self.store.db.execute(
+                "SELECT body FROM research_journal WHERE kind='CANDIDATE'"):
+            payload=json.loads(raw)
+            total+=1
+            admission=payload["admission"]
+            states[admission["state"]]+=1
+            reasons.update(admission["reasons"])
+        qualified=self.store.db.execute(
+            "SELECT COUNT(*) FROM research_journal "
+            "WHERE kind='QUALIFIED_OUTCOME'").fetchone()[0]
+        return {"candidate_population":total,"admission_states":dict(states),"hold_reasons":dict(reasons),
                 "g4_maturity":maturity_calendar(self.labels,asof_ms=now_ms),
-                "qualified_independently_reviewed_outcomes":len(self.verified_rows()),
+                "qualified_independently_reviewed_outcomes":qualified,
                 "original_price_paths":self.store.db.execute("SELECT count(*) FROM research_journal WHERE kind='ORIGINAL_PRICE_PATH'").fetchone()[0],
                 "economic_state":"REQUIRES_ORIGINAL_VERIFIED_COST_EXPORT_NOT_ZERO_DEFAULTS",
                 "research_chain":self.store.audit(),"g6_training_state":"LOCKED_PENDING_G5_INDEPENDENT_RELEASE",
