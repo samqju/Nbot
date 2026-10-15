@@ -23,7 +23,7 @@ from nbot.v5.g4_source_binding import bind_from_frozen_observation_copy, ReadOnl
 from nbot.v5.g4_live_outcomes import follow_original_path
 from nbot.v5.g4_research_ledger import init_offline_ledger, freeze_label_intent, maturity_calendar,append_terminal
 from nbot.v5.research_store import ResearchStore
-from nbot.v5.science import Protocol, dataset, evaluate, digest, canonical, causal_features, verify_review
+from nbot.v5.science import MAX_ROWS, Protocol, dataset, evaluate, digest, canonical, causal_features, verify_review
 
 
 def ro(path):
@@ -405,7 +405,12 @@ class ContinuousResearch:
             self.store.append("qualified:"+row["label_id"],"QUALIFIED_OUTCOME",now_ms,{"row":row,"independent_review":review})
 
     def verified_rows(self):
-        return [json.loads(r[0])["row"] for r in self.store.db.execute("SELECT body FROM research_journal WHERE kind='QUALIFIED_OUTCOME'")]
+        rows=[json.loads(r[0])["row"] for r in self.store.db.execute(
+            "SELECT body FROM research_journal WHERE kind='QUALIFIED_OUTCOME' ORDER BY seq LIMIT ?",
+            (MAX_ROWS+1,))]
+        if len(rows)>MAX_ROWS:
+            raise ValueError("G5_RESEARCH_COHORT_CAPACITY_HOLD")
+        return rows
 
     def telemetry(self,now_ms):
         """Stream original candidate counts without loading the full journal.
