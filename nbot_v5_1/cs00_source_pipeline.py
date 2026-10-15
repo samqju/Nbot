@@ -109,7 +109,7 @@ class SourceOnlyPipeline:
                 self.source_gap_count+=1
                 if kind in ("TRADE","QUOTE","MARK") and type(received_ms) is int and received_ms>0:
                     self.intake.mark_disconnect(kind=kind,at_ms=received_ms)
-                raise CommissioningHold("CS00_PIPELINE_SOURCE_QUARANTINE") from exc
+                raise CommissioningHold("CS00_PIPELINE_SOURCE_QUARANTINE:"+str(exc)[:140]) from exc
 
     def seal(self):
         with self.lock:
