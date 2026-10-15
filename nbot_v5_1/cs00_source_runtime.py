@@ -102,7 +102,7 @@ class SourceOnlyIntake:
             frame=verify_frame(kind=kind,raw=raw,received_at_ms=received_ms,
                 source_epoch=epoch,selected_symbols=self.symbols,
                 prior_agg_id=prior.aggregate_id if prior and kind=="TRADE" else None)
-            if (frame.state!="FRAME_VALID" and frame.state!="VALID"):
+            if frame.state!="RECEIVED_UNQUALIFIED_LOCAL_WSS":
                 self.quarantine.add((kind,symbol))
             if prior is not None and (epoch!=prior.epoch or received_ms<prior.received_ms):
                 self.quarantine.add((kind,symbol))
