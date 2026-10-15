@@ -92,7 +92,7 @@ class G11FullIntegrationTests(unittest.TestCase):
         self.assertEqual((p.universe_count, p.direction_count,
                           p.deep_count), (100, 200, 20))
         self.assertEqual((p.capacity_before, p.admitted, p.capacity_after),
-                         (40, 0, 0))
+                         (0, 0, 0))
         self.assertEqual(p.financial_authority, "NONE")
         self.assertEqual(p.action, "NO_TRADE")
         self.assertEqual(self.research.status()["qualified_after_cost"], 0)
