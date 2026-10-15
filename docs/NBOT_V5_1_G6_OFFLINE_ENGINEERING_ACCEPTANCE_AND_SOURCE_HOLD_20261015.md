@@ -11,7 +11,7 @@
 
 G6 can now (a) distinguish safely repaired **completed five-minute market context** from unrepairable original intrasecond trade/quote paths, (b) validate bounded, ID-complete public USD-M **aggregate trade** recovery with its explicit freshness/48-hour limits without creating a false order-book history, (c) simulate LONG/SHORT bid/ask, spread, fee, slippage and funding through independent typed synthetic witnesses without default-zero costs and without producing genuine profit claims, and (d) seal finite original-byte G4 test segments in a separately verifiable SHA inventory and quarantine corrupt, partial, permission-unsafe, mismatched or over-quota copies. All code is in the new `nbot_v5_1` namespace, no legacy V5 runtime imported.
 
-**253? NO. The actual verified suite is 254/254 on EACH VPS**, consisting of previous **224** G1–G5 tests and **30** new G6 source/funding/archive fault tests. Exact test command and results listed below.
+**The actual verified suite is 254/254 on EACH VPS**, consisting of previous **224** G1–G5 tests and **30** new G6 source/funding/archive fault tests. Exact test command and results listed below.
 
 The user elected to defer remaining genuine continuous-market source and real off-host acceptance to later *explicitly approved* startup, so their checklist items remain visible and unchecked. This is not a waiver, no release authority and not an engineer's assertion that all original economic costs are verified.
 
