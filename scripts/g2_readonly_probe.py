@@ -24,7 +24,8 @@ from nbot_v5_1.source_archive import PublicSourceArchive, PublicArchiveHold
 
 
 def probe(*, enabled: bool, max_history_requests: int = 140,
-          archive: PublicSourceArchive | None = None) -> dict:
+          archive: PublicSourceArchive | None = None,
+          on_event=None) -> dict:
     if type(enabled) is not bool or not enabled:
         raise PublicMarketHold("G2_EXPLICIT_PUBLIC_NETWORK_PERMISSION_REQUIRED")
     if type(max_history_requests) is not int or not 100 <= max_history_requests <= 160:
@@ -109,7 +110,11 @@ def probe(*, enabled: bool, max_history_requests: int = 140,
     # Current last completed five-minute event; never retroactively use a
     # later candle or availability at a decision that occurred in the past.
     open_ms = (now_ms//INTERVAL_MS-1)*INTERVAL_MS
-    event = book_state.snapshot(FiveMinuteEvent(open_ms,now_ms))
+    event_clock = FiveMinuteEvent(open_ms,now_ms)
+    event = book_state.snapshot(event_clock)
+    # Optional explicit read-only callback for subsequent stage acceptance;
+    # legacy G2 callers without callback retain unchanged result semantics.
+    subsequent = on_event(book_state,event_clock) if on_event is not None else None
     root = hashlib.sha256(json.dumps(sorted(history_receipts),
                          separators=(",",":")).encode()).hexdigest()
     archived = archive.replay() if archive is not None else ()
@@ -141,6 +146,7 @@ def probe(*, enabled: bool, max_history_requests: int = 140,
              (r.response.kind,r.response.received_at_ms,r.response.body_sha256)
              for r in archived),separators=(",",":")).encode()).hexdigest() if archived else None,
         "archive_is_unauthenticated_public_rest":True,
+        "g3_explicit_diagnostic":subsequent,
         "no_orders":True,
     }
 
