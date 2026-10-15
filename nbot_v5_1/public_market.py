@@ -125,3 +125,45 @@ class PublicUsdMClient:
         weight = 1 if limit < 100 else 2
         return self._request("KLINES", "/fapi/v1/klines", {
             "symbol": symbol, "interval": "5m", "limit": limit}, weight)
+
+
+def select_from_public_responses(
+    exchange: PublicResponse, ticker: PublicResponse, book: PublicResponse,
+    history_closed: dict[str, int], source_health: dict[str, bool],
+    *, selected_at_ms: int,
+):
+    """Select only from a coherently timestamped, hashed public GET bundle.
+
+    Three independently received timestamps and SHA-256 identities are bound
+    to the cohort manifest; mismatches/older snapshots fail closed. Exact
+    raw HTTP bytes remain public-source metadata, not exchange fill evidence.
+    """
+    from .universe import select_universe
+    sources = (exchange, ticker, book)
+    expected = (
+        ("EXCHANGE_INFO", "/fapi/v1/exchangeInfo", dict),
+        ("TICKER_24HR", "/fapi/v1/ticker/24hr", list),
+        ("BOOK_TICKER", "/fapi/v1/ticker/bookTicker", list),
+    )
+    for value, (kind, path, shape) in zip(sources, expected):
+        if type(value) is not PublicResponse or value.kind != kind or value.path != path:
+            raise PublicMarketHold("G2_PUBLIC_SOURCE_KIND_MISMATCH")
+        if type(value.body) is not shape:
+            raise PublicMarketHold("G2_PUBLIC_SOURCE_SCHEMA_MISMATCH")
+        if (type(value.raw_bytes) is not bytes or not value.raw_bytes or
+                hashlib.sha256(value.raw_bytes).hexdigest() != value.body_sha256):
+            raise PublicMarketHold("G2_PUBLIC_SOURCE_DIGEST_MISMATCH")
+    if type(selected_at_ms) is not int:
+        raise PublicMarketHold("G2_PUBLIC_ASOF_INVALID")
+    received = tuple(s.received_at_ms for s in sources)
+    if (any(type(n) is not int or n > selected_at_ms or n < 0 for n in received)
+            or selected_at_ms - min(received) > 60_000
+            or max(received) - min(received) > 15_000):
+        raise PublicMarketHold("G2_PUBLIC_SOURCE_CLOCK_HOLD")
+    receipts = tuple(sorted((s.kind, s.body_sha256, s.received_at_ms)
+                            for s in sources))
+    return select_universe(exchange.body, ticker.body, book.body,
+                           history_closed, source_health,
+                           source_received_at_ms=min(received),
+                           selected_at_ms=selected_at_ms,
+                           public_receipts=receipts)
