@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .paper_contract import (
     PaperPolicy,SignedLabProposal,PaperQuote,PaperCosts,PaperHold,
-    assess_lab_proposal,dec,LAB_GRADE,sha)
+    assess_lab_proposal,dec,LAB_GRADE,sha,LAB_BOOKS)
 from .research_journal import ResearchJournal,JournalHold
 
 VERSION="NBOT_V5_1_G9_CHAMPION_LAB_BOOK_V1"
@@ -42,15 +42,17 @@ class LabPaperState:
 
 class ChampionLabPaperBook:
     def __init__(self,journal:ResearchJournal,*,policy:PaperPolicy,
-                 model_sha256:str,lab_key:bytes):
+                 model_sha256:str,lab_key:bytes,
+                 book_label:str="CHAMPION_LAB_ONLY"):
         if (type(journal) is not ResearchJournal or type(policy) is not PaperPolicy
                 or not sha(model_sha256) or type(lab_key) is not bytes
-                or len(lab_key)<32):
+                or len(lab_key)<32 or book_label not in LAB_BOOKS):
             raise PaperHold("G9_BOOK_CONFIG_INVALID")
         self.journal=journal
         self.policy=policy.validate()
         self.model_sha256=model_sha256
         self.lab_key=lab_key
+        self.book_label=book_label
         rows,head=self.journal.replay()
         self.head=head
         self._rows=rows
@@ -73,7 +75,7 @@ class ChampionLabPaperBook:
                 body.get("policy_sha256")!=self.policy.digest() or
                 body.get("grade")!=LAB_GRADE or
                 body.get("authority")!="NONE" or
-                body.get("book")!=LAB_ONLY or
+                body.get("book")!=self.book_label or
                 item["at_ms"]<last_ms):
                 raise PaperHold("G9_LEDGER_SCHEMA_OR_CLOCK_OR_AUTHORITY")
             last_ms=item["at_ms"]
@@ -154,7 +156,7 @@ class ChampionLabPaperBook:
     def _append(self,action,at_ms,body):
         # Validate next state first only when the journal append has succeeded;
         # a disk error MUST never silently update RAM balances/capacity.
-        payload={"schema":VERSION,"book":LAB_ONLY,
+        payload={"schema":VERSION,"book":self.book_label,
                  "model_sha256":self.model_sha256,
                  "policy_sha256":self.policy.digest(),
                  "grade":LAB_GRADE,"authority":"NONE",**body}
@@ -178,6 +180,7 @@ class ChampionLabPaperBook:
         veto=assess_lab_proposal(proposal=proposal,quote=quote,costs=costs,
              policy=self.policy,known_model_sha256=self.model_sha256,
              lab_key=self.lab_key,now_ms=now_ms,
+             expected_book=self.book_label,
              occupied=self.state.occupied,
              halted=dec(self.state.drawdown_fraction)>=dec(
                      self.policy.max_drawdown_fraction))
