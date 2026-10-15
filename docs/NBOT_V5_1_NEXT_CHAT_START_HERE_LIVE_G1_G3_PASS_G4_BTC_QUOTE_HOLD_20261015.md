@@ -98,3 +98,17 @@ Last accepted-run window held 10,242 QUOTE frames across 7.254s, **about 1,412 Q
 **Evidence register:** [Full per-run source-forensic + V4 architecture comparison](NBOT_V5_1_G4_REAL_QUOTE_LATENCY_FORENSICS_V4_CODE_COMPARISON_20261015.md); [Read-only inspection script](../scripts/cs01_readonly_latency_forensics.py). Neither action started NBOT or altered its executable public-only service. **[x] observed source-age ramp quantified, [x] V4 code reviewed, [ ] source-vs-socket-vs-consumer delay decomposition, [ ] V4-inspired tested clean transport change, [ ] sustained healthy 20/20 G4 source canary, [ ] original first touch/economics, [ ] owner WinSCP transfer.** Current G1–G3 initial live PASS limited, G4 sustained HOLD, NO PAPER/REAL, no permanent process start.
 
 **Next assistant:** Read this newest section along with [current definitive next-chat handoff](NBOT_V5_1_NEXT_CHAT_START_HERE_LIVE_G1_G3_PASS_G4_BTC_QUOTE_HOLD_20261015.md). Older comments merely calling it a 'BTC issue' are historical partial descriptions; most QUOTE symbols see the common age ramp.
+
+## G4 hypothesis checked: Is 100-to-20 reduction failing? (15 Oct 2026)
+
+**Result: [x] Config/route reduction VERIFIED, [ ] G4 quote throughput still HOLD.** Owner asked if NBOT accidentally keeps subscribing to **all 100 markets at full tick speed** after G3 instead of restricting G4 to 20. The code check did not find that error:
+
+- **G2 = 100 broad-market closed-five-minute REST candle histories**, not a permanent 100-coin bookTicker millisecond feed. Do not equate 100 markets with a measured 500 updates/sec; that figure was an illustrative hypothetical only.
+- `nbot_v5_1/cs00_source_pipeline.py` checks exactly **100 G2 snapshot rows, 200 G3 directional rows, and 20 selected deep symbols including BTC**. It refuses a mismatched cohort.
+- `nbot_v5_1/cs00_source_runtime.py::public_routes` refuses anything other than **20 unique symbols with BTC**; `nbot_v5_1/deep_source.py::stream_urls` constructs **three combined connections** using only those 20 symbols: one each for TRADE, QUOTE, MARK. It does **not** create 100 high-frequency subscribers or 60 different sockets.
+- The latest actual live canary recorded exactly **20 selected deep symbols** and **60 source-pair cursors (= 20 symbols × 3 data types)**. This confirms the restricted 20-market feed operated during the trial, though the canary still exited 2 due aged BTC bookTicker quotes.
+- The saved forensic run shows around **1,412 accepted quote updates per second** even with only 20 symbols; high traffic alone can create backlog if one worker receives, parses, validates, hashes and queues every raw quote sequentially. This rate is a measured sample, NOT an invented exchange request rate.
+
+**Conclusion:** Do NOT change the G2→G3→G4 sequence or shrink the 100 broad universe to mask a source bottleneck. Current leading problem is **throughput/backpressure of the actual 20-market QUOTE stream** (other coins also lag, not just BTC). It is still necessary to instrument event `E` vs wire-read receipt vs processing before attributing fault exclusively to NBOT. No live service started, no security threshold loosened, no PAPER/real orders.
+
+[Detailed archived original-feed forensics and V4 comparison](NBOT_V5_1_G4_REAL_QUOTE_LATENCY_FORENSICS_V4_CODE_COMPARISON_20261015.md).
