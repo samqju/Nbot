@@ -20,7 +20,7 @@ At **every arrow**, unresolved evidence means **HOLD**. There is no shortcut fro
 
 | ID | Milestone owner can understand | Status | Required proof / dependency |
 | --- | --- | --- | --- |
-| CS-00-A | Confirm actual G11 code and both VPSs still healthy | [ ] | Pinned code SHA, two-host regression, resources, process/service audit |
+| CS-00-A | Confirm actual G11 code and both VPSs still healthy | [x] OFFLINE VERIFIED | New CS-00 SHA `30c34c079601cb6a1496172d40ca8ce983f1963a`; 464/464 regression PASS on BOTH VPSs and clean source/service audit; [full CS-00 progress](NBOT_V5_1_CS00_OFFLINE_ENGINEERING_PROGRESS_AND_OWNER_ARCHIVE_HOLD_20261015.md). No deploy. |
 | CS-00-B | Engineer and test a *separate safe source-only* runner | [ ] | OFF by default, public-only network, no keys, bounded storage and restart HOLD |
 | CS-00-C | Choose actual off-host archive, storage budget and retention policy | [ ] | Owner-approved destination and independent restore proof |
 | CS-00-D | Agree start/stop, monitoring, hard safety limits and change/rollback steps | [ ] | Documented reviewed thresholds and named escalation/stop operator |
@@ -114,3 +114,36 @@ Read, in order:
 5. Original Complete Product Vision V1.9, G4–G11 detailed evidence reports and the exact latest GitHub code SHA.
 
 **Next *proposed* task:** design and verify CS-00 source-only runtime/service and storage/restore/monitor readiness, OFFLINE. **No commissioning or source collector startup has been authorized.**
+
+
+## 7. Latest verified CS-00 engineering progress — 15 October 2026 (read this over older draft counts)
+
+**CS-00 PARENT [ ] HOLD — NOT YET READY FOR AN AUTHORIZED SOURCE START.** Owner has authorized offline engineering only. First G11 430/430 preserved plus **34 new CS-00 tests = 464/464 PASS independently BOTH VPSs** at source SHA `30c34c079601cb6a1496172d40ca8ce983f1963a`. Source-only static/frozen 100 broad → 200 directional statuses → 20 deep (BTC included), 720 synthetic source-shaped frames/12 sealed segments and same-host private SHA replay passed; 30-day no-delete policy and local (NOT sent) resource alerts passed. No NBOT processes/services running; all new CS-00 temporary checkouts cleaned independently. [Full source/test proof and exact resource measures](NBOT_V5_1_CS00_OFFLINE_ENGINEERING_PROGRESS_AND_OWNER_ARCHIVE_HOLD_20261015.md).
+
+**Individual milestone record (offline microtasks checked but not broad unproven gates):**
+
+| Task | Status | Owner-facing evidence and what is NOT proven |
+| --- | --- | --- |
+| CS-00-A1 — Current two-VPS host/service/read-only inventory | [x] | Both 2 CPU / 952 MiB RAM; no NBOT unit or process; older G8 temp preserved |
+| CS-00-A2 — Full regression baseline including new safety tests | [x] | Source `30c34c07`, 464/464 on each VPS, exit 0 |
+| CS-00-B1 — Strict OFFLINE 100/200/20 Observation coordination | [x] | Injected closed candles, zero virtual/financial authority |
+| CS-00-B2 — Deny live/start/order CLI; disabled uninstalled service example | [x] | All network, service, paper, testnet, real switches rejected |
+| CS-00-B3 — Bounded source-shaped synthetic custody and same-host replay | [x] | 720 frames, 12 segments; not authentic or remotely archived |
+| CS-00-B4 — Permanently deployable public-only 100/20 WSS source runner and safe supervisor | [ ] HOLD | Current entry is **OFFLINE-ONLY**; live public transport, restart-aware unattended service and queue alerts remain unbuilt/unaudited |
+| CS-00-C1 — Existing provider preference registered | [x] | Provider actual details are **UNKNOWN**; no provider contacted |
+| CS-00-C2 — 30-day target with no automatic deletion | [x] | Only a target, not a tested real volume or approved deletion scheme |
+| CS-00-C3 — Private local synthetic archive and replay | [x] | Same-host only here; G11 physically copied synthetic bytes, still NOT true original evidence |
+| CS-00-C4 — Owner's nonsecret provider/interface/region/quota/cost/immutability and budgets | [ ] HOLD | Please supply nonsecret details; never passwords, tokens, keys |
+| CS-00-C5 — Synthetic-only off-host provider restore and independent integrity | [ ] HOLD | Requires owner-approved provider-specific setup; no remote connection made |
+| CS-00-D1 — Read-only RAM/CPU/disk and local alert report proof | [x] | On both VPSs; no external messaging service activated |
+| CS-00-D2 — Document local reports/emergency procedure preference | [x] | Master plan documents STOP/HOLD logic; named on-call/alert review still open |
+| CS-00-D3 — Real watchdog, durable source-heartbeat monitoring, manual stop responsibilities | [ ] HOLD | No live service/continuous monitor enabled |
+| CS-00-D4 — Reviewed frozen deployment, rollback and emergency process | [ ] HOLD | No install or owner approval for persistent VPS changes |
+| CS-00-E1 — Final two-host source regression and bounded synthetic rehearsal | [x] | 464/464 on both, 720 frames + source fsync and fault-HOLD PASS |
+| CS-00-E2 — Full independent production-deployment readiness review | [ ] HOLD | Depends on B4/C4/C5/D3/D4 and provider decisions |
+| CS-00-E3 — Separate future owner's public-only CS-01 activation consent | [ ] NOT REQUESTED | Approval to engineer CS-00 is not approval to collect live market data |
+| **CS-00 parent technical completion** | **[ ] HOLD** | Do **not** claim startup readiness from offline source-shaped tests |
+
+**What's needed from the owner now:** the **name of the existing archive service** and whether it is object storage/S3/SFTP/another technology, its target region, existing available storage/quota and retention/versioning or immutability features. Do **not** send access keys/passwords/PPK/secret URLs. No purchases, external alerts or nontrivial persistent VPS deployment without fresh permission.
+
+**Future work:** finish B4 + C4/C5 + D3/D4 in offline/tests first; only then seek a separate CS-01 public-only startup authorization. All G4–G10 genuine evidence [ ] and G12 [ ] remain unchanged.
