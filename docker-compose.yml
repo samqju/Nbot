@@ -1,12 +1,28 @@
+# Every service is opt-in. There is no unattended live-trading service.
 services:
   freqtrade:
+    profiles: ["single"]
     image: freqtradeorg/freqtrade:stable_freqai
-    container_name: nbot-v6-prototype
+    container_name: nbot-v6-single-dryrun
     restart: "no"
     volumes:
       - ./user_data:/freqtrade/user_data
     command: >
       trade
       --config /freqtrade/user_data/config.json
+      --strategy NbotV6
+      --freqaimodel LightGBMRegressor
+
+  paper-research:
+    profiles: ["research"]
+    image: freqtradeorg/freqtrade:stable_freqai
+    container_name: nbot-v6-paper-research
+    restart: "no"
+    volumes:
+      - ./user_data:/freqtrade/user_data
+    command: >
+      trade
+      --config /freqtrade/user_data/config.json
+      --config /freqtrade/user_data/config.paper-research.json
       --strategy NbotV6
       --freqaimodel LightGBMRegressor
