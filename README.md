@@ -1,6 +1,6 @@
 # NBOT V6 — Clean Freqtrade + FreqAI Bot
 
-**Status:** Small research prototype; **not deployed**, **not backtested in production framework**, **not proven profitable**, **no real orders authorized**.
+**Status:** Small research prototype; **not deployed**; a reduced **one-coin 3-day native FreqAI model fit + one-day backtest** has succeeded, with **zero trades**. The normal 30-day/25-market setup is **NOT validated**, **not proven profitable**, and **no real orders are authorized**.
 
 NBOT V6 is an isolated Freqtrade strategy powered by FreqAI's LightGBM regression model. We use Freqtrade for exchange data, trade execution, risk/accounting, historical backtesting and dry-run. We use FreqAI for features, retraining and prediction. NBOT's custom code only describes market features and trading decisions.
 
@@ -108,13 +108,16 @@ Live execution is *not enabled* by any committed config. We added a non-autostar
 
 There is no real Binance account secret, owner ID, Telegram token or approval file checked into Git, and no live process has started. FreqAI's approved-model release process and real exchange safety checks remain **M6/M7 tasks**, so this source hook must not be treated as operational approval. See [LIVE_SAFETY.md](LIVE_SAFETY.md) and [ROADMAP.md](ROADMAP.md).
 
-## M1 status — 2026-10-16 (PARTIAL: market data verified, real FreqAI backtest blocked)
+## M1 status — 2026-10-16 (PARTIAL FREQAI INTEGRATION VERIFIED; FULL 30-DAY M1 NOT ACCEPTED)
 
-A **live public Binance USDT-M contract and candle preflight passed for all 25 configured coins**, using the PuTTY-connected Observation VPS: real exchangeInfo metadata, sampled current 5m/1h candles and 60-day historic existence probes. Data report: [evidence/m1/2026-10-16-binance-public-preflight.json](evidence/m1/2026-10-16-binance-public-preflight.json). This is a **sample check**, not a complete 60-day dataset audit.
+- **Real Binance USD-M candidate preflight:** 25/25 configured futures symbols passed public contract metadata and sampled 5m/1h/history-availability probes. [Per-pair evidence](evidence/m1/2026-10-16-binance-public-preflight.json).
+- **Real public historical download:** Native Freqtrade 2026.9 running in an isolated Python virtualenv on Observation VPS successfully downloaded BTC 5m **17,476 candles**, BTC 1h **1,456 candles**, 1h mark-price **1,456 entries** and funding-rate **183 entries**; no account credentials or orders.
+- **Real LightGBM model + historical backtest:** Under a user-scoped **440-MB memory cap** on the 954-MiB VPS, the deliberately reduced BTC **3-day, 5m-only** diagnostic trained LightGBM on **681 examples / 5 features** and completed a native **one-day** October 1–2, 2026 backtest. **Zero trades and zero PnL**, so no proof of trade quality or profitability. Configuration: [user_data/config.m1-lowmem.json](user_data/config.m1-lowmem.json).
+- **Full 30-day target failed the memory cap:** Both the actual V6 BTC 30-day/5m+1h setup and a [leaner 30-day BTC trial](user_data/config.m1-30day-lean.json) exited with code **137 (killed)** at model training inside the same 440-MB limit. Both VPSs remain too constrained for unbounded multi-market model training.
+- **Other infrastructure:** GitHub's US runner can load the official Docker FreqAI image but Binance replies **HTTP 451** to its market-data requests; native Freqtrade on Observation can access Binance. All testing remains isolated from V5, with no running bot.
+- **Next acceptance:** Full 30-day training, full 5m/1h features, a **seven-day** independent backtest, measured predictions/abstentions, model resource profile and trade/fee evidence on appropriately sized hardware. Test a **2–4 GB** isolated machine first; 8 GB is a comfortable recommendation for larger research, *not* a universal minimum.
 
-The official Freqtrade 2026.9 Docker image ran in GitHub CI, but the **Binance exchange API returned HTTP 451** to its US-hosted runner. Both saved Ubuntu VPS have only **954 MiB RAM and no Docker**, too small to host FreqAI training safely. A two-pair official LightGBM training/backtest has therefore **NOT** been completed, and M1 remains **IN PROGRESS / INFRASTRUCTURE BLOCKED**. No trading keys, persistent process, old V5 modifications or real orders were involved.
-
-See [M1_EVIDENCE.md](M1_EVIDENCE.md) for the exact image SHA256 digest, error logs, verified results and requirements for a suitable, permitted-region Linux Docker research host (minimum candidate 4 GiB RAM, preferably 8 GiB). Do not advance to M2 until a real FreqAI model fit, valid predictions and historical backtest logs have been accepted.
+Detailed evidence: [One-GB FreqAI trial report](evidence/m1/2026-10-16-observation-vps-1gb-freqai-trial.md), [overall M1 evidence](M1_EVIDENCE.md) and [ROADMAP.md](ROADMAP.md). **M1 is still in progress; this is not permission to proceed to real-money trading or M2.**
 
 ## Reproduce basic checks
 
@@ -138,7 +141,7 @@ docker compose run --rm freqtrade backtesting \
   --timerange YYYYMMDD-YYYYMMDD
 ~~~
 
-Do not assume this historical run will pass without adapting to an exact pinned Freqtrade version. These commands have **not** been executed on either existing VPS.
+Do not assume this historical run will pass without adapting to an exact pinned Freqtrade version. These **Docker** commands have **not** been executed on either existing VPS. Actual **native Freqtrade** market download and reduced one-pair FreqAI backtesting were successfully executed in Observation's isolated V6 research folder as documented above.
 
 Offline unit tests need Python, pandas and numpy:
 
