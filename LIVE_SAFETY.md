@@ -1,6 +1,6 @@
 # NBOT V6 — Owner-gated live mode (code staged, trading LOCKED)
 
-**This is a future release mechanism, NOT permission to send real orders.** No Binance API keys, owner Telegram IDs, approval records, model-release certificates or real-money configuration files are committed to Git. The prototype has not yet passed M1 historical training/backtest or M2–M6 acceptance, and M7 live authorization remains LOCKED. The code only permits a future properly reviewed owner-armed configuration.
+**This is a future release mechanism, NOT permission to send real orders.** M1 has now passed its **technical 25-pair historical training/backtest test**, but that backtest **lost 135.64 simulated USDT**, and M2–M6 quality, safety and forward reliability are not accepted. No Binance API keys, owner Telegram IDs, approval records, model-release certificates or real-money configuration files are committed to Git. **M7 live authorization remains LOCKED**; the code only permits a future separately reviewed owner-armed configuration.
 
 ## Install guide and dependencies
 
