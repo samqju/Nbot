@@ -108,6 +108,14 @@ Live execution is *not enabled* by any committed config. We added a non-autostar
 
 There is no real Binance account secret, owner ID, Telegram token or approval file checked into Git, and no live process has started. FreqAI's approved-model release process and real exchange safety checks remain **M6/M7 tasks**, so this source hook must not be treated as operational approval. See [LIVE_SAFETY.md](LIVE_SAFETY.md) and [ROADMAP.md](ROADMAP.md).
 
+## M1 status — 2026-10-16 (PARTIAL: market data verified, real FreqAI backtest blocked)
+
+A **live public Binance USDT-M contract and candle preflight passed for all 25 configured coins**, using the PuTTY-connected Observation VPS: real exchangeInfo metadata, sampled current 5m/1h candles and 60-day historic existence probes. Data report: [evidence/m1/2026-10-16-binance-public-preflight.json](evidence/m1/2026-10-16-binance-public-preflight.json). This is a **sample check**, not a complete 60-day dataset audit.
+
+The official Freqtrade 2026.9 Docker image ran in GitHub CI, but the **Binance exchange API returned HTTP 451** to its US-hosted runner. Both saved Ubuntu VPS have only **954 MiB RAM and no Docker**, too small to host FreqAI training safely. A two-pair official LightGBM training/backtest has therefore **NOT** been completed, and M1 remains **IN PROGRESS / INFRASTRUCTURE BLOCKED**. No trading keys, persistent process, old V5 modifications or real orders were involved.
+
+See [M1_EVIDENCE.md](M1_EVIDENCE.md) for the exact image SHA256 digest, error logs, verified results and requirements for a suitable, permitted-region Linux Docker research host (minimum candidate 4 GiB RAM, preferably 8 GiB). Do not advance to M2 until a real FreqAI model fit, valid predictions and historical backtest logs have been accepted.
+
 ## Reproduce basic checks
 
 On an isolated Docker development host, from repository root:
