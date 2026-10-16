@@ -1,0 +1,7 @@
+{
+  "dry_run": true,
+  "bot_name": "nbot-v6-m1-historical-25-pair-backtest",
+  "freqai": {
+    "identifier": "nbot-v6-m1-all25-20261016"
+  }
+}
