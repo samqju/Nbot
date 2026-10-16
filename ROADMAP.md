@@ -60,6 +60,16 @@ Work:
 
 **Gate M1:** Real backtest exits successfully, predictions are produced with no time/data-integrity errors, and failure/restart produces no hidden real trading behavior. Do NOT commission VPS yet.
 
+### M1 execution record — 2026-10-16 (real evidence, gate NOT ACCEPTED)
+
+- Both user-authorized Ubuntu PuTTY VPS sessions were reachable. Each provides 2 vCPU and 954 MiB RAM, with no Docker; Observation has no swap or pip. Neither is a safe FreqAI training host. They were **not modified**, except for a new isolated, read-only market-preflight workspace in the ubuntu home directory on Observation.
+- Observation VPS can reach the real public Binance USD-M API (HTTP 200). Ran the actual `scripts/m1_market_preflight.py --execute` across the 25 candidate USDT-M perpetual markets. **25/25 passed** supported-active-contract, recent 5m/1h sampled OHLCV and 60-day-old candle presence probes. Detailed per-pair evidence: [evidence/m1/2026-10-16-binance-public-preflight.json](evidence/m1/2026-10-16-binance-public-preflight.json). **Not a full 60-day gap audit or LightGBM training.**
+- GitHub runner successfully loaded Freqtrade **2026.9**, image digest `freqtradeorg/freqtrade@sha256:e0ca51420b80357edcbec3970fd8a33ebebeacd53b914aed2735a9c14fe94535`. First M1 pipeline attempt [38927033699](https://github.com/samqju/Nbot/actions/runs/38927033699) exposed a Docker user-ID permission issue, subsequently fixed.
+- Second genuine M1 pipeline [38927259804](https://github.com/samqju/Nbot/actions/runs/38927259804) reached official Freqtrade Binance `download-data`, which failed with Binance's **HTTP 451 geographic access block** for the GitHub US runner; thus *no download / completed LightGBM fit / FreqAI historical backtest exists*. No other trading method was attempted.
+- Offline/strategy checks still pass (40 local unit tests + official strategy discovery in [38928749522](https://github.com/samqju/Nbot/actions/runs/38928749522)). This is **not** evidence for model integration.
+- **M1 status: IN PROGRESS — INFRASTRUCTURE BLOCKED.** Do not claim it is complete, move to M2 or deploy any trading process. A compliant-region isolated Docker Linux host with **at least 4 GB and preferably 8 GB RAM** is needed for the full 30-day training and seven-day historical backtest; ensure adequate CPU/disk and no Binance API 451. Keep no-key historical testing. Details, image digest, commands and all remaining acceptance conditions: [M1_EVIDENCE.md](M1_EVIDENCE.md).
+- The source has a gated two-pair M1 job in the existing V6 CI, intentionally **not running automatically** until an eligible host exists. The 25-pair market preflight is code-implemented and evidenced; full history continuity, real LightGBM fit, actual FreqAI predictions and trades remain **UNVERIFIED**.
+
 ## M2 — Honest non-ML baseline and after-cost evaluation
 
 **Goal:** Establish what basic trading signals achieve without assuming ML is helpful.
@@ -283,7 +293,7 @@ V6 may become the default/main development line when **M0+M1** pass and an owner
 | Milestone | State | Required next proof |
 |---|---|---|
 | M0 clean tree | COMPLETE — source isolation only | Clean-tree commit 3e642508; V6 CI run 38906351380 passed both jobs (offline + official strategy discovery) |
-| M1 real FreqAI backtest | NOT STARTED | Historical download, training and replay |
+| M1 real FreqAI backtest | IN PROGRESS — BLOCKED; 25/25 market preflight verified, no fit/backtest | Region-compliant >=4GB Docker training host; full candles, LightGBM fit and seven-day replay |
 | M2 honest baseline | NOT STARTED | Baseline and after-cost report |
 | M3 FreqAI edge | NOT STARTED | Multi-period walk-forward results |
 | M4 forward dry-run VPS | NOT STARTED; research mode source implemented | Capacity, two-profile official checks, independent forward-paper report |
@@ -293,4 +303,4 @@ V6 may become the default/main development line when **M0+M1** pass and an owner
 | Owner-only live release hook | CODE STAGED; NOT EXECUTED | Native framework smoke + private-file/Telegram/risk tests; M7 acceptance still required |
 | M7 any live money | LOCKED | Separate user-approved risk plan |
 
-**Current priority: M1 — prove actual FreqAI historical training and backtesting on isolated hardware. The optional research lane does not bypass this gate. No VPS deployment, default-branch changes, real trading permissions or legacy data migrations are yet authorized.**
+**Current priority: M1 — blocked until an isolated, Binance-accessible >=4 GB training host is available; then prove actual FreqAI historical training and backtesting. The optional research lane does not bypass this gate. No VPS deployment, default-branch changes, real trading permissions or legacy data migrations are yet authorized.**
