@@ -1,13 +1,18 @@
-name: V6 prototype smoke
+name: NBOT V6 CI
 
 on:
-  pull_request:
-    paths:
-      - 'v6/**'
-      - '.github/workflows/v6-prototype.yml'
   push:
     branches:
-      - 'prototype/v6-freqtrade-freqai-*'
+      - prototype/v6-*
+  pull_request:
+    paths:
+      - 'user_data/**'
+      - 'tests/**'
+      - 'docker-compose.yml'
+      - 'README.md'
+      - 'ROADMAP.md'
+      - '.github/workflows/ci.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -21,19 +26,19 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install numpy pandas
-      - run: python -m unittest discover -s v6/tests -v
-      - run: python -m py_compile v6/user_data/strategies/NbotV6.py
-      - run: python -m json.tool v6/user_data/config.json > /dev/null
+      - run: python -m unittest discover -s tests -v
+      - run: python -m py_compile user_data/strategies/NbotV6.py
+      - run: python -m json.tool user_data/config.json > /dev/null
 
-  real-freqtrade-strategy-discovery:
+  actual-freqtrade-strategy-discovery:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Import strategy with official FreqAI Docker image (no Binance/API calls)
+      - name: Official FreqAI Docker strategy discovery, no exchange orders
         run: |
           set -o pipefail
           docker run --rm \
-            -v "$PWD/v6/user_data:/freqtrade/user_data" \
+            -v "$PWD/user_data:/freqtrade/user_data" \
             freqtradeorg/freqtrade:stable_freqai \
             list-strategies --config /freqtrade/user_data/config.json \
             | tee /tmp/nbot-v6-strategies.txt

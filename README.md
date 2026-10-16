@@ -1,131 +1,68 @@
-# NBOT V3
+# NBOT V6 — Clean Freqtrade + FreqAI Bot
 
-**Current detailed-outcome learning:** [Automatic paper learning from accepted and rejected opportunities](docs/DETAILED_OUTCOME_LEARNING.md) documents the V3 tick-outcome bridge, future evaluation, automatic paper-model replacement, rollback and resource limits. V2 remains the fallback.
+**Status:** Small research prototype; **not deployed**, **not backtested in production framework**, **not proven profitable**, **no real orders authorized**.
 
-**2026-10-05 three-mode command audit:** use [the all-mode operator command reference](docs/ALL_MODES_COMMANDS.md) for validated `testnet-trade`, `live-paper`, and `live-trade` syntax. Current guides distinguish these active commands from historical phase examples.
+NBOT V6 is an isolated Freqtrade strategy powered by FreqAI's LightGBM regression model. We use Freqtrade for exchange data, trade execution, risk/accounting, historical backtesting and dry-run. We use FreqAI for features, retraining and prediction. NBOT's custom code only describes market features and trading decisions.
 
-**2026-10-05 paper-feedback V4 research branch:** supported paper-feedback means are conservatively shrunk toward neutral before changing ranking, and the paper report now audits frozen pre-feedback choices versus adaptive choices without inventing counterfactual PnL.
+## Minimal source tree
 
-**Shadow experiment update:** [One main position plus up to 10 shadow simulations](docs/SHADOW_TRADING.md) in learned mainnet-paper and mainnet-trading. Shadow results stay separately labelled; valid paper shadows can now adjust paper ranking at reduced weight.
+~~~text
+README.md
+ROADMAP.md
+docker-compose.yml
+user_data/
+    config.json
+    strategies/NbotV6.py
+tests/test_nbot_v6.py
+.github/workflows/ci.yml
+~~~
 
-**2026-10-03 candidate expansion:** [24-candidate paper learner and larger-VPS setup](docs/CANDIDATE_LIBRARY.md). Learned paper selection now tests 24 versioned rules with separate completed-trade attribution. Use the standard profile for 4 CPU / 8-12 GB RAM.
+No V5/G1–G7 modules, execution services, source-data vaults, independent research databases or legacy CI are used. Legacy V5 main and history remain preserved and are not part of this checked-out V6 tree.
 
-Paper feedback update: [30-day auto-learning experiment](docs/PAPER_AUTO_LEARNING.md). Learned mainnet-paper now adapts setup rankings from its own settled paper trades. Testnet and real-money selection remain separate; economic proof is still unestablished.
+## Initial behavior
 
+- Binance USDT-M isolated futures, 8 markets initially, 5-minute candles with BTC-related 5m and 1h FreqAI features.
+- EMA20/EMA50 direction plus previous 20-candle breakout and simple EMA pullback ideas; one LightGBM raw future-price-change model.
+- Reject missing/outlier model predictions; only qualified directional signals can trade. NO TRADE is normal.
+- At most one open trade globally, 1x leverage, illustrative 3% stop and 5% ROI. Dry-run startup safety and disabled API/Telegram.
+- The fixed 0.2% cost allowance is only a provisional estimate, NOT measured actual after-cost trade economics.
 
-Current learner/operator documentation reviewed 2026-10-09 against the current NBOT V3 three-mode CLI and WSS-first research branch.
-Use the [documentation index and current behavior summary](docs/DOCUMENTATION_INDEX.md)
-to distinguish setup instructions, frozen contracts, and historical evidence.
-Three-mode execution and its setup guide were updated 2026-10-02.
-A GitHub update is not proof that either VPS is running that release.
+## Reproduce basic checks
 
-NBOT V3 is a clean two-VPS rebuild of NBOT.
+On an isolated Docker development host, from repository root:
 
-The architecture has two independent roles:
+~~~bash
+docker compose config
+docker compose pull
+docker compose run --rm freqtrade list-strategies --config /freqtrade/user_data/config.json
+docker compose run --rm freqtrade download-data \
+  --config /freqtrade/user_data/config.json --trading-mode futures \
+  --timeframes 5m 1h --days 90
+~~~
 
-- **EXECUTION** — capital guardian: risk, entry, stops, position management, reconciliation, emergency handling, durable execution outcomes.
-- **OBSERVATION** — market truth and intelligence: broad market collection, research evidence, features, outcomes, model evaluation, training, recommendation snapshots.
+Then choose a fully downloaded backtest interval with at least 30 days of prior model training history and warm-up:
 
-V3 starts from clean runtime state and clean databases. V1/V2 remain engineering references in Git history and immutable tags; they are not active V3 runtime dependencies.
+~~~bash
+docker compose run --rm freqtrade backtesting \
+  --config /freqtrade/user_data/config.json \
+  --strategy NbotV6 --freqaimodel LightGBMRegressor \
+  --timerange YYYYMMDD-YYYYMMDD
+~~~
 
-## Start here: two VPSs, step by step
+Do not assume this historical run will pass without adapting to an exact pinned Freqtrade version. These commands have **not** been executed on either existing VPS.
 
-New to servers? Follow the [beginner two-VPS installation guide](docs/TWO_VPS_BEGINNER_GUIDE.md).
-For private settings and placeholders, see the [environment-file guide](docs/ENVIRONMENT_SETUP.md).
+Offline unit tests need Python, pandas and numpy:
 
-It covers creating both servers, connecting them securely, starting learned
-Testnet trading, daily checks, restarts, backups, and updates. After the initial
-Testnet path is understood, use the [three-mode guide](docs/TRADING_MODES.md) and
-[all-mode command reference](docs/ALL_MODES_COMMANDS.md) for LIVE paper or the
-separately authorized bounded LIVE-trading trial.
+~~~bash
+python -m unittest discover -s tests -v
+python -m py_compile user_data/strategies/NbotV6.py
+python -m json.tool user_data/config.json
+~~~
 
-## Small VPS learning upgrade
+CI additionally tests strategy discovery in the official FreqAI Docker image. **Strategy discovery does not establish actual model training, a passing backtest, forward paper performance, or profitability.**
 
-For a 1 CPU / 1 GB learning VPS, use the [small-VPS learner guide](docs/SMALL_VPS_LEARNER.md).
-Selective ML V1 keeps training to one CPU thread by default, caps its recent
-history, and stores immutable model artifacts in compact research memory. The
-older Ridge learner remains the fallback and benchmark. This is an experimental
-research-ranking system, not a proven profitable trader.
+**Do not start a persistent VPS bot or place any live orders before its roadmap gates are reviewed.**
 
-## Current phase
+See [ROADMAP.md](ROADMAP.md) for the step-by-step milestones, evidence requirements, V5 preservation and deliberate default-branch migration policy.
 
-### Learned Testnet testing
-
-Testnet control now defaults to a LIVE-trained model instead of hash-generated
-mechanical proposals. It waits for mature training data, scores fresh market
-features, and abstains when the best prediction is non-positive. Testnet trades
-remain experimental and never become LIVE training evidence. Execution retains
-all risk, arm, session-limit and one-position controls. The explicit mechanical
-canary remains available with `--testnet-selection mechanical`.
-
-See [setup and operating instructions](docs/LEARNED_TESTNET_SETUP.md) and the
-[versioned contract](docs/LEARNED_TESTNET_CONTRACT.md). This addition does not
-enable real-money trading or claim economic validation.
-
-**Current V3 research state — continuous challenger learning plus WSS-first broad counterfactual research**
-
-Current status is deliberately split:
-
-- **Implementation:** the continuous research/governance stack and the WSS-first broad counterfactual research foundation are implemented and regression-tested.
-- **Economic proof:** **NOT PASSED**. Do not infer a Research or Paper Champion from code completion; read runtime governance status. The experimental Testnet route does not require or create either champion.
-- Historical V3.9/V3.10 milestone names remain only in frozen audit/contract documents. They are not the current runtime version.
-
-Challenger cadence is epoch-driven. `nbot-research-epoch.timer` checks for maturity every 15 minutes, but a challenger opportunity is created only after a genuinely new 96-event epoch is durably committed. `WAIT_FOR_MATURE_EPOCH`, unhealthy/failing epochs, and replay of an already-consumed epoch do not create additional challengers. A committed epoch whose challenger transition fails retains a durable retryable transition.
-An opportunity may evaluate the existing frozen model and return `EVALUATE_WAIT`;
-it does not promise a new model every eight hours.
-
-The Observation/Execution authority boundary remains unchanged: Observation owns research and recommendations but has no Binance order authority; Execution owns capital safety and independently validates any future approved recommendation.
-
-### Preserved operational history
-
-The earlier `V3.1 EXECUTION CORE` and subsequent V3.2–V3.8 operational milestones remain preserved as history. V3.7 is historically **OPERATIONALLY PROVEN**. Normal LONG, Normal SHORT, and the C–V fault campaign passed without weakening the canonical gate. V3.8 LIVE_PAPER operational canary work is also preserved as operational evidence. Those historical proofs do not imply current economic validation.
-
-An explicit, bounded mainnet trial is now available after your own testing and confirmation. It is independent of the still-unpassed automatic Champion gates. Follow [the three-mode setup guide](docs/TRADING_MODES.md); publication does not activate trading.
-
-## Local role identity
-
-Each VPS has an ignored `.nbot-role` file at repository root:
-
-```text
-EXECUTION
-```
-
-or:
-
-```text
-OBSERVATION
-```
-
-## Operating profiles
-
-- `testnet-trade`
-- `live-paper`
-- `live-trade`
-
-Execution read-only checks for every mode:
-
-```bash
-./nbotctl status
-./nbotctl doctor testnet-trade
-./nbotctl doctor live-paper
-./nbotctl doctor live-trade
-./run_execution.py --profile testnet-trade --self-check
-./run_execution.py --profile live-paper --self-check
-./run_execution.py --profile live-trade --self-check
-python3 -m unittest discover -s tests -p 'test_*.py'
-```
-
-For start/enable/pause/stop/recovery commands for all three profiles, use
-[docs/ALL_MODES_COMMANDS.md](docs/ALL_MODES_COMMANDS.md).
-
-Do **not** arm `testnet-trade` merely to make `doctor` pass. Follow the current
-learned-Testnet setup and explicitly enable entries only when ready to test.
-The V3.2 mechanical canary is a separate historical/test procedure.
-
-The canonical implementation contract is `docs/NBOT_V3_ROADMAP.md`.
-
-### Telegram menu
-
-Use /help, /status, /position, /recent, /pnl, /learning, /enable and /disable.
-For channel notifications and private commands, configure a separate command
-chat as explained in [docs/OPERATIONS.md](docs/OPERATIONS.md#telegram-commands).
+Official references: https://www.freqtrade.io/en/stable/freqai/ and https://www.freqtrade.io/en/stable/strategy-customization/.
