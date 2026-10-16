@@ -162,7 +162,7 @@ V6 may become the default/main development line when **M0+M1** pass and an owner
 
 | Milestone | State | Required next proof |
 |---|---|---|
-| M0 clean tree | IN PROGRESS | Commit clean V6 tree, new V6 CI pass |
+| M0 clean tree | COMPLETE — source isolation only | Clean-tree commit 3e642508; V6 CI run 38906351380 passed both jobs (offline + official strategy discovery) |
 | M1 real FreqAI backtest | NOT STARTED | Historical download, training and replay |
 | M2 honest baseline | NOT STARTED | Baseline and after-cost report |
 | M3 FreqAI edge | NOT STARTED | Multi-period walk-forward results |
@@ -171,4 +171,4 @@ V6 may become the default/main development line when **M0+M1** pass and an owner
 | M6 lightweight model governance | DEFERRED | Demonstrated need |
 | M7 any live money | LOCKED | Separate user-approved risk plan |
 
-**Current priority: M0. No VPS commands, default-branch changes, real trading permissions or legacy data migrations.**
+**Current priority: M1 — prove actual FreqAI historical training and backtesting on isolated hardware. No VPS deployment, default-branch changes, real trading permissions or legacy data migrations are yet authorized.**
