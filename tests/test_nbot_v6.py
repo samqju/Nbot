@@ -66,7 +66,7 @@ class NbotV6OfflineTests(unittest.TestCase):
     def test_prototype_locked_to_dry_run_and_one_position(self):
         self.bot.bot_start()
         self.bot.config["dry_run"] = False
-        with self.assertRaisesRegex(RuntimeError, "LIVE_ORDERS_FORBIDDEN"):
+        with self.assertRaisesRegex(RuntimeError, "LIVE_OWNER_APPROVAL_REQUIRED"):
             self.bot.bot_start()
         self.bot.config["dry_run"] = True
         self.bot.config["max_open_trades"] = 2
@@ -95,7 +95,7 @@ class NbotV6OfflineTests(unittest.TestCase):
         overlay = json.loads((ROOT / "user_data" / "config.paper-research.json").read_text())
         self.bot.config = {**base, **overlay, "freqai": {**base["freqai"], **overlay["freqai"]}}
         self.bot.config["dry_run"] = False
-        with self.assertRaisesRegex(RuntimeError, "LIVE_ORDERS_FORBIDDEN"):
+        with self.assertRaisesRegex(RuntimeError, "LIVE_OWNER_APPROVAL_REQUIRED"):
             self.bot.bot_start()
         self.bot.config["dry_run"] = True
         self.bot.config["exchange"]["key"] = "should-be-rejected"
