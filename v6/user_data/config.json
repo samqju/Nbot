@@ -1,0 +1,58 @@
+{
+  "$schema": "https://schema.freqtrade.io/schema.json",
+  "bot_name": "nbot-v6-prototype",
+  "strategy": "NbotV6",
+  "trading_mode": "futures",
+  "margin_mode": "isolated",
+  "max_open_trades": 1,
+  "stake_currency": "USDT",
+  "stake_amount": 25,
+  "tradable_balance_ratio": 0.10,
+  "fiat_display_currency": "USD",
+  "dry_run": true,
+  "dry_run_wallet": 1000,
+  "timeframe": "5m",
+  "cancel_open_orders_on_exit": true,
+  "unfilledtimeout": {"entry": 10, "exit": 10, "exit_timeout_count": 0, "unit": "minutes"},
+  "exchange": {
+    "name": "binance",
+    "key": "",
+    "secret": "",
+    "ccxt_config": {},
+    "ccxt_async_config": {},
+    "pair_whitelist": [
+      "BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT", "BNB/USDT:USDT",
+      "XRP/USDT:USDT", "ADA/USDT:USDT", "LINK/USDT:USDT", "DOGE/USDT:USDT"
+    ],
+    "pair_blacklist": []
+  },
+  "entry_pricing": {"price_side": "other", "use_order_book": true, "order_book_top": 1},
+  "exit_pricing": {"price_side": "other", "use_order_book": true, "order_book_top": 1},
+  "pairlists": [{"method": "StaticPairList"}],
+  "freqai": {
+    "enabled": true,
+    "identifier": "nbot-v6-prototype-001",
+    "purge_old_models": 2,
+    "train_period_days": 30,
+    "backtest_period_days": 7,
+    "live_retrain_hours": 24,
+    "expiration_hours": 36,
+    "save_backtest_models": false,
+    "feature_parameters": {
+      "include_timeframes": ["5m", "1h"],
+      "include_corr_pairlist": ["BTC/USDT:USDT"],
+      "label_period_candles": 12,
+      "include_shifted_candles": 1,
+      "indicator_periods_candles": [14, 28],
+      "DI_threshold": 0.9,
+      "principal_component_analysis": false,
+      "plot_feature_importances": 0
+    },
+    "data_split_parameters": {"test_size": 0.20, "shuffle": false},
+    "model_training_parameters": {"n_estimators": 150, "learning_rate": 0.05, "num_leaves": 15, "n_jobs": 1}
+  },
+  "api_server": {"enabled": false},
+  "telegram": {"enabled": false},
+  "initial_state": "running",
+  "force_entry_enable": false
+}
