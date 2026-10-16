@@ -147,7 +147,16 @@ class NbotV6(IStrategy):
         """Recheck arm before every live entry, without interrupting exits."""
         if self.config.get("dry_run") is True:
             return True
-        return owner_live_authorized(self.config)
+        if not owner_live_authorized(self.config):
+            return False
+        if self.order_types.get("stoploss_on_exchange") is not True:
+            return False
+        if self.order_types.get("stoploss") != "market":
+            return False
+        # Freqtrade supplies amount in base units and rate in quote currency.
+        # Small 1% allowance for quote/rounding effects; never scale with a
+        # larger balance or silently allow 20 research slots in live mode.
+        return 0 < amount * rate <= LIVE_MAX_STAKE_USDT * 1.01
 
     def leverage(self, pair: str, current_time, current_rate: float,
                  proposed_leverage: float, max_leverage: float,
