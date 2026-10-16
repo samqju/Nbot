@@ -12,23 +12,9 @@ Choose **Ubuntu 24.04 LTS**, **64-bit x86_64**, **2+ vCPU**, SSD, **30+ GB free 
 
 **Do not install this into either old V5 VPS.** Do not expose Freqtrade's API port (8080) to the internet. Allow inbound SSH (22) only; restrict it to your own IP if available.
 
-**Windows/PuTTY:** Open PuTTY, select your **new** VPS's saved session, and click **Open**. If setting up a new session, enter the VPS's IP, set **Connection → SSH → Auth → Credentials → Private key file** to your own `.ppk` file, and log in with username `ubuntu`. **Never upload the .ppk file or its passphrase to GitHub or ChatGPT.** You will see a terminal like `ubuntu@server:~# NBOT V6 — Easy VPS setup and operation
+**Windows/PuTTY:** Open PuTTY and select your new VPS's saved session. If creating one, enter the VPS IP and select your own `.ppk` file at **Connection → SSH → Auth → Credentials → Private key file**. Log in with the username your VPS provider supplied: usually `ubuntu`, or sometimes `root`. Never upload the `.ppk` file or its passphrase to GitHub or ChatGPT. You should see a prompt such as `ubuntu@server:~$` or `root@server:~#`.
 
-**For a beginner.** Follow the numbered steps *in order*, copying **one command at a time** into the **Ubuntu terminal** on a **new, dedicated VPS**. You do not need Python programming knowledge. This is our documented deployment procedure **for when V6 passes its release gates**; not an instruction to turn on trading today.
-
-**Current status (2026-10-16):** **M1 historical integration PASSED technically** on an isolated 8-GB VPS, including the full 25-pair 30-day LightGBM fit and seven-day backtest. **Results were negative (-135.64 simulated USDT).** M2/M3 economic quality and multiple-period evidence are still required; **M4 continuous paper trading and M7 real-money trading are NOT authorized**. Historical backtests are allowed; **do not start a persistent trading process until separately accepted**.
-
-**Start here:** [Dependencies / specifications](DEPENDENCIES.md) · [Project roadmap](ROADMAP.md) · [M1 evidence](M1_EVIDENCE.md) · [Future live security](LIVE_SAFETY.md)
-
-## A. Before starting — VPS purchase and access
-
-Choose **Ubuntu 24.04 LTS**, **64-bit x86_64**, **2+ vCPU**, SSD, **30+ GB free disk** and SSH access. An **8-GB RAM / 2-vCPU VPS successfully ran full 25-pair M1 historical training and seven-day backtesting**, with a 6-GiB Docker memory limit. **Eight GB is not proven to be the minimum**; cheaper hosts may work but would require their own test. Capacity for unattended 20-position paper trading remains **unmeasured**. Always retain a comfortable memory margin. Prefer an ordinary `ubuntu` account with `sudo`; some providers supply `root` instead. Do not store SSH passwords or private keys in Git.
-
-**Do not install this into either old V5 VPS.** Do not expose Freqtrade's API port (8080) to the internet. Allow inbound SSH (22) only; restrict it to your own IP if available.
-
-**Windows/PuTTY:** Open PuTTY, select your **new** VPS's saved session, and click **Open**. If setting up a new session, enter the VPS's IP, set **Connection → SSH → Auth → Credentials → Private key file** to your own `.ppk` file, and log in with username `ubuntu`. **Never upload the .ppk file or its passphrase to GitHub or ChatGPT.**  (or `root@server:~#` if your provider issued a root login).
-
-All commands below are for this **Ubuntu terminal**, not Windows PowerShell. If logged in as `root` and `sudo` is unavailable, omit the word `sudo` at the beginning of those commands; do not alter the rest. A non-root account is preferable for routine administration.
+All commands below belong in the **Ubuntu VPS terminal**, not Windows PowerShell. If you are logged in as `root` and `sudo` is unavailable, omit the word `sudo` at the beginning of those commands. Prefer a non-root account for routine administration.
 
 ## B. Install the small prerequisites
 
