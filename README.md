@@ -77,7 +77,7 @@ The research process is *opt-in*: no automatic service startup or persistent res
 
 ## How 25-coin AI evaluation works
 
-**Two distinct choices:** (1) which coins are eligible for model training, and (2) whether to open a trade on a particular coin. The V6 starter now includes a **fixed, versioned set of 25 Binance USDT-M candidate pairs**: BTC, ETH, SOL, BNB, XRP, ADA, LINK, DOGE, AVAX, DOT, LTC, BCH, NEAR, UNI, APT, ARB, OP, SUI, TRX, ETC, ATOM, FIL, INJ, XLM, HBAR. These are candidate markets only; verify actual contract support, minimum order sizes, historical coverage, liquidity and resource usage before M1 acceptance.
+**Two distinct choices:** (1) which coins are eligible for model training, and (2) whether to open a trade on a particular coin. The V6 starter now includes a **fixed, versioned set of 25 Binance USDT-M candidate pairs**: BTC, ETH, SOL, BNB, XRP, ADA, LINK, DOGE, AVAX, DOT, LTC, BCH, NEAR, UNI, APT, ARB, OP, SUI, TRX, ETC, ATOM, FIL, INJ, XLM, HBAR. All 25 have passed real Binance contract and M1 historical-candle checks; **minimum order sizes, liquidity, spreads, execution capacity and trade economics** require additional M2/M3/M4 validation before continuous paper or real-money deployment.
 
 FreqAI evaluates each configured pair's own momentum, volatility, relative volume, BTC context, recent trend and projected return. **A configured pair is NOT automatically traded.** Signals require an actual strategy setup, a valid model prediction and a forward-return estimate exceeding the placeholder +/-0.6% threshold; otherwise V6 abstains.
 
