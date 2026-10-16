@@ -8,7 +8,7 @@
 
 ## A. Before starting — VPS purchase and access
 
-Choose **Ubuntu 24.04 LTS**, **64-bit x86_64**, **2+ vCPU**, SSD, **30+ GB free disk** and SSH access as `ubuntu`. For initial full **30-day M1 training** test **2–4 GB RAM**, increasing if measured memory demands it. For **25-coin paper research** start capacity planning around **8 GB RAM / 4 vCPU / 50 GB SSD**, *subject to actual benchmarking*. One-coin, 3-day FreqAI training was proven on a 1-GB VPS, but the original 30-day model **failed a 440-MB process limit**. No RAM figure guarantees the complete deployment.
+Choose **Ubuntu 24.04 LTS**, **64-bit x86_64**, **2 vCPU**, SSD, **30+ GB free disk** and SSH access as `ubuntu`. For the next full **30-day M1 training test**, start with a dedicated **2-GB RAM VPS**; test **4 GB** only if real memory measurements justify it. **Do not buy 8 GB just to get started.** We have **not measured** memory requirements for 25-coin paper research: test more pairs progressively, keep model training sequential where supported, and increase capacity only when measured RAM/CPU demands it. One-coin 3-day FreqAI training already succeeded on 1 GB, while full 30-day BTC training failed a *protective 440-MB process limit* (not a full 1-GB-capacity test). No RAM figure guarantees the complete deployment.
 
 **Do not install this into either old V5 VPS.** Do not expose Freqtrade's API port (8080) to the internet. Allow inbound SSH (22) only; restrict it to your own IP if available.
 
