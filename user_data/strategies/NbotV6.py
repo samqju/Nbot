@@ -38,7 +38,16 @@ class NbotV6(IStrategy):
         if mode not in {"backtest", "hyperopt", "edge"}:
             if self.config.get("dry_run") is not True:
                 raise RuntimeError("NBOT_V6_LIVE_ORDERS_FORBIDDEN: dry_run must be true")
-            if self.config.get("max_open_trades") != 1:
+            limit = self.config.get("max_open_trades")
+            if self.config.get("nbot_paper_research_mode") is True:
+                # Only the independent DRY-RUN researcher can open more than
+                # one simulated position. Never share exchange credentials.
+                if type(limit) is not int or not 1 <= limit <= 20:
+                    raise RuntimeError("NBOT_V6_PAPER_CAP_MUST_BE_1_TO_20")
+                exchange = self.config.get("exchange", {})
+                if exchange.get("key") or exchange.get("secret"):
+                    raise RuntimeError("NBOT_V6_PAPER_MUST_NOT_HAVE_EXCHANGE_KEYS")
+            elif limit != 1:
                 raise RuntimeError("NBOT_V6_REQUIRES_ONE_GLOBAL_POSITION")
             if not self.config.get("freqai", {}).get("enabled", False):
                 raise RuntimeError("NBOT_V6_REQUIRES_FREQAI")
