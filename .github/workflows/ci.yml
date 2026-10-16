@@ -11,6 +11,10 @@ on:
       - 'docker-compose.yml'
       - 'README.md'
       - 'ROADMAP.md'
+      - 'VPS_SETUP.md'
+      - 'DEPENDENCIES.md'
+      - 'LIVE_SAFETY.md'
+      - 'scripts/**'
       - '.github/workflows/ci.yml'
   workflow_dispatch:
 
@@ -27,6 +31,8 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install numpy pandas
       - run: python -m unittest discover -s tests -v
+      - name: Validate beginner installer and preflight shell syntax
+        run: bash -n scripts/install_docker_ubuntu.sh scripts/check_vps.sh
       - run: python -m py_compile user_data/strategies/NbotV6.py
       - run: python -m json.tool user_data/config.json > /dev/null
 
@@ -43,7 +49,7 @@ jobs:
             list-strategies --config /freqtrade/user_data/config.json \
             | tee /tmp/nbot-v6-strategies.txt
           grep -E 'NbotV6.*OK' /tmp/nbot-v6-strategies.txt
-      - name: Validate independent 10-slot paper configuration with real Freqtrade schema
+      - name: Validate independent 20-slot paper configuration with real Freqtrade schema
         run: |
           set -o pipefail
           docker run --rm \
@@ -54,7 +60,7 @@ jobs:
             | tee /tmp/nbot-v6-research-strategies.txt
           grep -E 'NbotV6.*OK' /tmp/nbot-v6-research-strategies.txt
 
-  # Isolated, opt-in historical M1. A [m1] commit triggers this one job.
+  # Isolated, opt-in historical M1; disabled on US-hosted runner unless deliberately reviewed.
   real-freqai-m1:
     # Requires deliberate PR title marker on a region-eligible >=2 GB runner.
     # GH-hosted US runner is Binance geo-restricted (451): do not hammer it.
