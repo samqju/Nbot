@@ -95,6 +95,18 @@ class NbotV6(IStrategy):
     exit_profit_only = False
     trailing_stop = False
 
+    # Exchange-side stop-market protection on Binance futures once accepted.
+    # Does not guarantee fill price or eliminate liquidation/slippage risk.
+    order_types = {
+        "entry": "limit",
+        "exit": "limit",
+        "emergency_exit": "market",
+        "stoploss": "market",
+        "stoploss_on_exchange": True,
+        "stoploss_on_exchange_interval": 60,
+    }
+
+
     # This is a decision-time proxy, not a measured transaction cost.
     # Freqtrade backtests/dry-run model fills separately. Funding and severe
     # slippage can make realized economics worse than this threshold suggests.
@@ -109,6 +121,8 @@ class NbotV6(IStrategy):
         if mode in {"backtest", "hyperopt", "edge"}:
             return
         if self.config.get("dry_run") is False:
+            if self.order_types.get("stoploss_on_exchange") is not True or self.order_types.get("stoploss") != "market":
+                raise RuntimeError("NBOT_V6_REQUIRES_EXCHANGE_SIDE_STOP_MARKET")
             if not owner_live_authorized(self.config):
                 raise RuntimeError("NBOT_V6_LIVE_OWNER_APPROVAL_REQUIRED")
             return
