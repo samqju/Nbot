@@ -99,6 +99,20 @@ Work:
 
 **Gate M4:** Dated forward-paper report, controlled resource use, restart reliability and zero real exchange orders. Profitability still requires independent evidence, not just a healthy daemon.
 
+### M4 research lane — Continuous independent paper feedback (added 2026-10-16)
+
+This is a **sub-feature of M4**, not a new research architecture or permission to skip M1–M3. It is already implemented at source/config level but **not deployed, backtested or forward-paper accepted**.
+
+- Run an additional, explicitly selected **Freqtrade dry-run process against Binance mainnet public market data**, using the SAME NbotV6 strategy/LightGBM family, but a distinct model identifier, SQLite file and config overlay.
+- Permit up to **10 concurrent simulated paper positions by default**, with an absolute optional ceiling of 20 via configuration and a strict dry-run startup guard. These are capacity limits, never trade quotas. Current 8-pair watchlist limits distinct simultaneous paper trades to 8 in normal Freqtrade behavior.
+- Keep single-position execution separate. Research should continue collecting candles and FreqAI retraining regardless of whether that separately configured bot has an open position. With two independently retraining FreqAI instances, measure cumulative CPU/RAM and schedule staggered updates if needed; do not assume a small VPS can run both.
+- Paper trades from Freqtrade's dry-run database provide **forward operational and economic feedback** (with simulated fills/limits). FreqAI continues learning from candle features and future-price targets. **Paper PnL is NOT fed back into the LightGBM model automatically** and must never be presented as such.
+- Review the first **10–20 completed simulated trades** for debugging assumptions, order lifecycle and measured costs; do not label 20 examples statistically sufficient for model promotion or live approval. Require a longer, multi-regime forward window and held-out, after-cost comparison in M2/M3/M4.
+- No custom virtual-trade factory, separate exchange connector, new optimizer, duplicated historical database or automatic live model promotion. Prefer standard Freqtrade trade history and reports.
+- **Fail-closed release controls:** dry_run=true required, exchange keys must be blank on researcher, 1x leverage, max 20 simulated slots, disabled remote API, separate DB/identifier and explicit process start. This V6 source has no real-order mode. M7 remains separately locked.
+
+**M4 research-lane acceptance:** both config variants pass official Freqtrade import/schema checks, research startup accepts 10 (and no more than 20) simulated slots, unexpected live/order credentials are rejected, model/DB isolation is verified, and an isolated forward dry-run proves independent operation and no real orders. Source tests do not satisfy the forward gate.
+
 ## M5 — Controlled market and feature expansion
 
 **Goal:** Expand only when justified.
@@ -166,9 +180,9 @@ V6 may become the default/main development line when **M0+M1** pass and an owner
 | M1 real FreqAI backtest | NOT STARTED | Historical download, training and replay |
 | M2 honest baseline | NOT STARTED | Baseline and after-cost report |
 | M3 FreqAI edge | NOT STARTED | Multi-period walk-forward results |
-| M4 forward dry-run VPS | NOT STARTED | Capacity, operations, paper report |
+| M4 forward dry-run VPS | NOT STARTED; research mode source implemented | Capacity, two-profile official checks, independent forward-paper report |
 | M5 expand and port selected features | DEFERRED | M3/M4 evidence |
 | M6 lightweight model governance | DEFERRED | Demonstrated need |
 | M7 any live money | LOCKED | Separate user-approved risk plan |
 
-**Current priority: M1 — prove actual FreqAI historical training and backtesting on isolated hardware. No VPS deployment, default-branch changes, real trading permissions or legacy data migrations are yet authorized.**
+**Current priority: M1 — prove actual FreqAI historical training and backtesting on isolated hardware. The optional research lane does not bypass this gate. No VPS deployment, default-branch changes, real trading permissions or legacy data migrations are yet authorized.**
