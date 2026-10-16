@@ -1,0 +1,13 @@
+{
+  "bot_name": "nbot-v6-paper-research",
+  "dry_run": true,
+  "nbot_paper_research_mode": true,
+  "max_open_trades": 10,
+  "stake_amount": 25,
+  "tradable_balance_ratio": 0.80,
+  "dry_run_wallet": 1000,
+  "db_url": "sqlite:////freqtrade/user_data/tradesv3.research.sqlite",
+  "freqai": {
+    "identifier": "nbot-v6-paper-research-001"
+  }
+}
