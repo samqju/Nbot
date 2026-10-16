@@ -2,6 +2,12 @@
 
 **This is a future release mechanism, NOT permission to send real orders.** No Binance API keys, owner Telegram IDs, approval records, model-release certificates or real-money configuration files are committed to Git. The prototype has not yet passed M1 historical training/backtest or M2–M6 acceptance, and M7 live authorization remains LOCKED. The code only permits a future properly reviewed owner-armed configuration.
 
+## Install guide and dependencies
+
+For a **future, independent Ubuntu VPS**, start with [VPS_SETUP.md](VPS_SETUP.md) and [DEPENDENCIES.md](DEPENDENCIES.md). Those docs contain short step-by-step installation commands for **historical backtests and, after acceptance, paper-only trading**. They do **not** install Telegram or unlock live money.
+
+The separate `live-locked` profile is deliberately excluded from the beginner's copy/paste starting commands. Before an M7-authorized live release, the owner and reviewer must independently provision a tested live configuration, verify Binance API restrictions, Telegram owner identity, read-only private approvals inside the container, exchange-side stop-market behavior, approved immutable model artifacts, and recovery from lost connectivity. Even then the owner must explicitly authorize the release. **Do not turn on real trading merely because Docker and the setup guide work.**
+
 ## Who controls what?
 
 - **Freqtrade + owner-only Telegram (future):** report positions, profits and risk; /status, /count, /profit, /balance, /pause, /start. Restrict Telegram to the owner's *private positive user/chat ID* and exactly one authorized user. Telegram groups are forbidden in live mode.
