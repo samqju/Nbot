@@ -27,6 +27,14 @@ Current **configured candidate scope: 25 fixed futures markets** (subject to M1 
 
 No G1–G7 runtime dependencies. No V4/V5 SQLite data automatically imported. No microservices, message bus, additional databases or new ML frameworks absent measured necessity.
 
+## B2. VPS deployment prerequisites and copy/paste setup (documented, NOT yet commissioned)
+
+The source now includes **[DEPENDENCIES.md](DEPENDENCIES.md)** (hardware, Docker/FreqAI/Python dependency specifications, internet and security requirements), **[VPS_SETUP.md](VPS_SETUP.md)** (beginner's step-by-step Ubuntu/PuTTY commands, M1 history/backtest, future paper operation, logs, safe updates and troubleshooting), **[scripts/install_docker_ubuntu.sh](scripts/install_docker_ubuntu.sh)** (guarded official-Docker installer **only for fresh Ubuntu VPSs**) and **[scripts/check_vps.sh](scripts/check_vps.sh)** (read-only RAM/disk/dependency/Binance API preflight). The guides distinguish Docker image dependencies (bundled) from the historical low-memory native/Python experiment.
+
+**Measured hardware evidence:** 1-GB/2-vCPU Observation VPS successfully downloaded 60-day BTC public futures history and trained a reduced 3-day/5m-only LightGBM model, finishing a one-day backtest with **zero trades**. The 30-day full 5m/1h BTC model and a 30-day lean model both exited **137** inside a **440-MB** process memory cap. **2–4 GB** is a *next experiment* for full M1, **8 GB** a *starting capacity estimate* for many-pair paper research, not a proven requirement or guarantee. All future deployments require measured peak RAM/CPU and no existing V5 service disruption.
+
+**Release rule:** Publishing the full setup guide does **not** authorize starting a persistent bot, upgrading V5, automatically running the eight-hour selector, enabling Telegram real-money control, or placing Binance real orders. M1–M4 and later M5A/M6/M7 gates remain as written. Until a tested immutable Docker image digest is approved, the Compose image's `stable_freqai` tag is **mutable** and must not be treated as a production pin.
+
 ## C. Evidence vocabulary
 
 - IMPLEMENTED = code exists and focused unit tests run.
