@@ -139,6 +139,47 @@ Work:
 - **Schedule:** UTC 00:00, 08:00 and 16:00 are sensible scanner review times. This is a proposed future VPS cron cadence, **not an automation or deployed service now**. Runtime/staging must be bounded, optional and auditable; do not add another always-on daemon, database, message bus or custom trading gateway.
 - **Paper-first gates:** Test on recorded Binance market snapshots, evaluate stability across multiple days, enforce exactly 25/unique/USDT PERPETUAL, max10 change, BTC pin, active-position protection, no-change valid, deterministic score/reason logging, stale-input HOLD, historic data warmup, model readiness and clean rollback. Replay actual out-of-sample periods to check whether turnover increases after-cost candidate quality versus a fixed-25 watchlist.
 
+#### M5A detailed readiness contract — selector quality is a first-class gate (October 16, 2026)
+
+**Two separate acceptance decisions must never be confused.**
+
+- **Candidate discovery** requires **no prior FreqAI model and no prior paper/actual trades**. It uses only public, as-of-time market metadata, book quotes, candle statistics and supported contract information. An untrained candidate may be **proposed**, but MUST NOT enter a trade.
+- **Active FreqAI eligibility** requires **complete historical OHLCV candles and BTC context; mature target history; acceptable quote/liquidity/funding evidence; successful per-pair LightGBM training; compatible model feature schema; valid/available/non-expired predictions**. A candidate can be screened without these, but not promoted to an active tradeable slot.
+- The current V6 target is raw forward return **12 x 5-minute bars** (one hour), NOT realized paper profit. The current FreqAI rolling window is **30 days**, requiring additional 5m/1h indicator warmup (the strategy startup_candle_count is 200); 30d alone is not automatically sufficient history for a robust model. Future-price targets must be mature; never label from incomplete future intervals.
+- Freqtrade candle history belongs in the framework's managed market data files, and FreqAI models/metadata in `user_data/models/<identifier>/`. Paper trades and hypothetical fills remain in Freqtrade's separate dry-run SQLite trade DB; never claim those fills were used to train LightGBM by default. Do not invent a custom trading-history DB to solve candidate onboarding.
+
+**Promotion state machine** (one small scheduled Python program plus native Freqtrade, not additional services):
+
+| State | Required evidence | Allowed behavior |
+|---|---|---|
+| DISCOVERED | Current exchange metadata/symbol market exists | Public screening only |
+| SCREENED | Perpetual USDT contract, fresh book quote, volume, funding and bounded turnover/range checks | Candidate proposal only |
+| HISTORY_READY | Exact 5m/1h closed-candle windows, BTC data, warmup coverage, gaps/missingness/age checks | May train model off the running bot |
+| MODEL_READY | Compatible trained per-pair LightGBM, meaningful chronological validation, fresh prediction compatibility | Eligible for paper-list activation proposal |
+| APPROVED | Slot, max-10 rotation budget, safety/position checks, independent quality tests | Versioned configuration change at safe boundary only |
+| ACTIVE | Restart/preloaded data verified and model `do_predict` validity | Paper research trades may be considered by standard strategy gating |
+| PROTECTED/RETIRED | Still-open trade -> protected; when flat and safe -> retired | Continue trade management or stop opening new trades |
+
+**Ranking and protection contract:**
+
+1. Screen ALL supported USD-M perpetual contracts cheaply, but do **not** train LightGBM on every listed futures contract every 8h. Fetch a bounded shortlist for expensive candles/model readiness. Respect Binance weights and API failures; no live keys.
+2. Eligibility always precedes ranking. Reject stale prices, crossed/wide spreads, abnormal book depth, too-small minimum order limits, poor 1,000-USDT fill capacity, missing funding info, unsupported or recently listed contracts lacking 30d+warmup, insufficient BTC/candle continuity, nonpositive volume and unreliable timestamps. No silently fabricated candles or scores.
+3. Rank **future research/tradability**, not yesterday's biggest gainers. Use *as-of* liquidity, executable quoted spread, funding burden, volatility with penalties for chaotic spikes, multi-hour structure/momentum and portfolio/correlation diversity. Weight choices and required score improvement must be **fixed before forward evaluation**, not tuned from future outcomes.
+4. Incorporate hysteresis and minimum tenure for incumbents; evidence for a *material* new advantage must exceed estimated transition/training cost. A zero-change result is fully valid. New listings should normally be excluded until sufficient historical coverage. Do not continually reshuffle candidates for cosmetic activity.
+5. BTC context is permanently pinned. All pairs with open paper/live trades, unfilled orders, or required protective exits are pinned too. Atomic versioned list must stay **exactly 25 unique supported pairs**, with **0–10 replacements per 8h proposal** and at least 15 incumbents retained. If this cannot be satisfied safely, reject the change and keep the old 25.
+6. **Do not hot-swap a running FreqAI whitelist.** Stage/verify historical files and models first; never restart or alter the only process managing open positions just to activate a different list. It is acceptable to review every 8 hours but deploy fewer than three times per day—or never—when training, open positions or safety conditions prevent a safe transition.
+7. Make the selector's shortlist, incumbent scores, source timestamps, exclusion reasons, proposed pairs, old/new list, preflight evidence and final applied/not-applied decision reproducible from a compact local timestamped JSON audit record. No event bus, external database or extra dedicated server.
+
+**Scientific test program and explicit go/no-go gates:**
+
+- **Contract tests:** using frozen mock exchange snapshots: 25 unique maintained, pinned BTC, 0–10 changes, no forced churn, correct handling of 20 simultaneous paper positions, insufficient slots, suspended/delisted contract, duplicated symbol, invalid settlement asset, stale quote, liquidity collapse, incomplete candle history, and missing model; in every failure case **HOLD**.
+- **Historical as-of replay:** at UTC 00:00/08:00/16:00 snapshots, compute proposals from data available **at that moment only**; no hindsight or selecting from a present-day symbol list when simulating delisted/historical markets. Account for 30d warmup/training delay, FreqAI model age and funding/slippage, and a realistic 8h rotation budget.
+- **Benchmarks:** identical starting dates and risk: (A) fixed 25 pairs, (B) basic liquidity-only rotating 25, (C) candidate-selector rotated 25. Hold strategy, FreqAI settings, costs and position limits fixed; evaluate qualified signal rate, real vs hypothetical fill conditions, after-cost expectancy, drawdown, missed opportunities, pair diversity, churn, training/runtime resource use and failure-to-train rate. Compare by independent weeks/regimes and report negative results too.
+- **Forward paper acceptance:** after M1–M4, run shadow selection for multiple review cycles where recommendations are logged but NOT activated, then a bounded 8-hour scheduled paper trial. Verify no real orders, healthy memory/CPU/disk, restarts, data/model availability, protected exits and rollback. Compare forward quality to frozen fixed-25 baseline; refuse promotion of the selector without credible after-cost benefit and reliable operations.
+- **Rollback:** if Binance metadata/quotes fail, current snapshot is incomplete, models are stale, historic coverage fails, any position remains unprotected or baseline degradation appears, continue unchanged with the last known-good 25 and log why. The selector **never** overrides the per-trade FreqAI `do_predict` or V6 dry-run/live safety gates.
+
+**Status:** DESIGN SPECIFICATION only. Nothing above implies the selector, staged model preparation, live 8-hour scheduler, shadow evaluation or safe-restart mechanism has been implemented. M1 actual FreqAI backtesting remains the immediately next required milestone.
+
 **Order of work:** This is a scoped M5 enhancement, *not* permission to skip M1 historic training/backtest, M2 cost baseline, M3 walk-forward ML and M4 isolated VPS paper operation. Prototype the scanner off-line if useful, but do not activate scheduled rotations before the gates above are established.
 
 ## M6 — Lightweight model lifecycle
