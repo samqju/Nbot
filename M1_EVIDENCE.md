@@ -31,12 +31,12 @@ Official command: **Freqtrade download-data**, Binance **USDT-M futures**, all 2
 - **FreqAI training:** two genuine LightGBM fits, 30-day historical window **2026-09-01 to 2026-10-01**; BTC trained with **36 features**, ETH with **72 features**, approximately **6,902 model training points** each. Historical predictions were generated and used by the backtester.
 - **Backtest:** **2026-10-01 through 2026-10-08** (seven complete days), configured **100,000 USDT simulated wallet**, **1,000-USDT stake**, **one maximum global open position**, 1x leverage.
 - **Outcome:** **4 closed trades**, **1 win / 3 losses**, **25% win rate**, **-1.720 USDT** simulated P&L, **10.637 USDT** reported maximum drawdown.
-- Official process **exit status 0**, no errors. The first two-pair test used the base identifier in an independent research folder; it never started \`trade\` mode.
+- Official process **exit status 0**, no errors. The first two-pair test used the base identifier in an independent research folder; it never started `trade` mode.
 
 ## B. All-25-pair normal-configuration backtest (main M1 acceptance evidence)
 
 - Historical training **2026-09-01 to 2026-10-01**, target **30 rolling days**, with native V6 **5m/1h features, shifted candles, BTC correlation, FreqAI LightGBMRegressor and the 150-tree default model training parameters**.
-- Actual logs recorded **25 individual model-training completions**, no \`ERROR\` log entries, and Freqtrade backtesting **exit status 0**.
+- Actual logs recorded **25 individual model-training completions**, no `ERROR` log entries, and Freqtrade backtesting **exit status 0**.
 - Historical evaluation: **2026-10-01 00:00 UTC through 2026-10-08 00:00 UTC**, all **25 candidate futures pairs**, one global simultaneous simulated position. Independent model identifier **nbot-v6-m1-all25-20261016**.
 
 | Freqtrade reported metric | Actual value |
@@ -56,7 +56,7 @@ Official command: **Freqtrade download-data**, Binance **USDT-M futures**, all 2
 
 - Freqtrade logged a **0.0500% exchange fee** assumption (worst rate from its exchange tier lookup) for the initial two-pair run. Do not infer that these results fully include realistic, independently validated spread, market impact, slippage and funding costs. That is the purpose of M2.
 - Model/DataSieve prediction filtering was observed (some out-of-distribution predictions rejected), both **LONG and SHORT** trades occurred, and the configured **one-global-position** constraint was in force.
-- LightGBM emitted an **upstream deprecation warning** about \`eval_set\`, but there were **no runtime ERROR lines**, and no process failure.
+- LightGBM emitted an **upstream deprecation warning** about `eval_set`, but there were **no runtime ERROR lines**, and no process failure.
 - When checks finished, **docker ps returned no running containers**. Neither paper trading nor live trading was started. No auth secrets were supplied.
 
 ## M1 acceptance checklist
@@ -81,14 +81,14 @@ Official command: **Freqtrade download-data**, Binance **USDT-M futures**, all 2
 
 Commands run against the isolated checkout from the repo root (replace host paths as required):
 
-\`\`\`bash
+```bash
 docker pull freqtradeorg/freqtrade:stable_freqai
 docker run --rm --memory=6g --cpus=2 -v "$PWD/user_data:/freqtrade/user_data" freqtradeorg/freqtrade:stable_freqai download-data --config /freqtrade/user_data/config.json --trading-mode futures --timeframes 5m 1h --days 60
 docker run --rm --memory=6g --cpus=2 -v "$PWD/user_data:/freqtrade/user_data" freqtradeorg/freqtrade:stable_freqai backtesting --config /freqtrade/user_data/config.json --config /freqtrade/user_data/config.m1-all25.json --strategy NbotV6 --freqaimodel LightGBMRegressor --timerange 20261001-20261008 --export trades
 docker run --rm --memory=6g --cpus=2 --entrypoint python -v "$PWD:/freqtrade/work" freqtradeorg/freqtrade:stable_freqai /freqtrade/work/scripts/m1_audit_history.py
-\`\`\`
+```
 
-**Note:** The commands use the mutable \`stable_freqai\` tag for portability; for a strictly reproducible rerun pin the tested digest above, protect model/data artifacts and use the exact historical dates. Docker's ftuser needs write permission to the mounted \`user_data\`. See [VPS_SETUP.md](VPS_SETUP.md).
+**Note:** The commands use the mutable `stable_freqai` tag for portability; for a strictly reproducible rerun pin the tested digest above, protect model/data artifacts and use the exact historical dates. Docker's ftuser needs write permission to the mounted `user_data`. See [VPS_SETUP.md](VPS_SETUP.md).
 
 ## Earlier obstacles and retained historical research
 
