@@ -29,7 +29,7 @@ After the initial GH Actions Binance 451 and hardware preflight, the owner asked
 
 Detailed dated methods and results: [evidence/m1/2026-10-16-observation-vps-1gb-freqai-trial.md](evidence/m1/2026-10-16-observation-vps-1gb-freqai-trial.md).
 
-**Revised infrastructure conclusion:** **8 GiB RAM is a comfortable multi-market research recommendation, not a hard minimum for all FreqAI tests.** We proved an actual small historical training/backtest on 1 GiB. Under a protective 440-MB process limit we could not complete a 30-day model, so test **2–4 GiB** on isolated hardware next, with resource measurement, before sizing a 25-coin operation. M1 remains NOT ACCEPTED pending full-history feature compatibility, 30-day training, 7-day historical backtest, valid predictions, at least some strategy outcome assessment and reproducibility.
+**Revised infrastructure conclusion:** **8 GiB is NOT a starting requirement**; memory for the future 25-pair setup is not yet measured. We proved actual small historical training/backtesting on 1 GiB; a deliberately protective 440-MB cap killed both full-window experiments. Try a dedicated **2-GiB** host for the 30-day model first, only then **4 GiB** if needed, with logged peak memory before sizing 25 coins. M1 remains NOT ACCEPTED pending full-history feature compatibility, 30-day training, 7-day historical backtest, valid predictions, at least some strategy outcome assessment and reproducibility.
 
 ## What M1 has and has NOT established
 
@@ -47,7 +47,7 @@ Detailed dated methods and results: [evidence/m1/2026-10-16-observation-vps-1gb-
 
 ## What is required to finish M1 safely
 
-Use **one isolated 64-bit Linux development host**, preferably **8 GB RAM** (minimum candidate 4 GB RAM), at least 2 vCPU, Docker Engine and Compose, comfortable free disk, and normal permitted access to public Binance spot and USDT-M API URLs (both can be queried by Freqtrade/CCXT). Provision it in a location where exchange access is allowed. No Binance account API keys or Telegram credentials are required for historical backtesting.
+Use **one isolated 64-bit Linux development host**, initially **2 GB RAM** (upgrade to **4 GB** only if an actual 30-day test shows a need), at least 2 vCPU, Docker Engine and Compose if the host can support it, comfortable free disk, and normal permitted access to public Binance spot and USDT-M API URLs (both can be queried by Freqtrade/CCXT). Provision it in a location where exchange access is allowed. No Binance account API keys or Telegram credentials are required for historical backtesting.
 
 A reproducible official M1 job remains inside `.github/workflows/ci.yml` gated by a deliberate `[RUN-M1]` marker in PR #50's title, to prevent further Binance 451 failures. It performs two-pair BTC+ETH market downloads with funding and mark data, history inspection, FreqAI LightGBM training and seven-day historical backtesting, retaining logs and result artifacts. On the suitably located development host, run those **same official Freqtrade commands** against the pinned image, and adjust only proven compatibility issues with logged results. Validate the full 25-pair universe and extend beyond the smoke set after the genuine two-pair integration passes.
 
