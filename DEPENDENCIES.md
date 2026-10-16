@@ -7,11 +7,13 @@
 | Intended use | CPU | RAM | Free disk | Evidence / decision |
 |---|---:|---:|---:|---|
 | One-coin, 3-day FreqAI *diagnostic* | 2 vCPU | **1 GB worked** under a **440 MB process cap** | ~3 GB observed usage on our test VPS | Real BTC LightGBM fit and one-day backtest succeeded; **zero trades** |
-| Full M1: 30-day 5m/1h training, 7-day backtest | 2+ vCPU | **Start by testing 2–4 GB** | **30 GB recommended** | **Not yet measured to completion**. Both 30-day single-coin trials were killed at the 440 MB process cap |
-| Expanded 25-coin FreqAI research + paper trades | 4+ vCPU preferred | **8 GB recommended starting point** | **50 GB recommended** | Planning estimate, NOT a proven minimum or sufficient guarantee |
-| Paper research and a separate approved execution process simultaneously | Benchmark both | Capacity **not established** | Budget for independent models, data and trade DBs | Not commissioned; do not assume 8 GB is automatically sufficient |
+| Full M1: 30-day 5m/1h training, 7-day backtest | 2+ vCPU | **Test 2 GB first; try 4 GB only if needed** | **30 GB recommended** | **Not yet measured to completion**. Two 30-day BTC trials were killed at a deliberately strict 440 MB process cap; no proof 2 GB is insufficient |
+| Expanded 25-coin FreqAI research + paper trades | **2+ vCPU to benchmark** | **Unknown: start with measured 2 GB/4 GB trials; scale only if needed** | **30 GB+; measure actual usage** | **Not benchmarked for 25 pairs**. 8 GB is only a possible higher capacity tier, neither required nor proven sufficient |
+| Paper research and a separate approved execution process simultaneously | Benchmark both | **Not established; test concurrency and peak RAM first** | Budget for independent models, data and trade DBs | Not commissioned. Avoid running two model trainers on a tiny VPS |
 
 Use **64-bit Ubuntu 24.04 LTS** (22.04 supported by install script), **x86_64/amd64** preferred, an SSD, outbound internet, and an ordinary `ubuntu` user with SSH and `sudo` access. ARM requires separately validated Python/image support. No GPU is required for our LightGBM model.
+
+**Cost-first rule:** Do **not** purchase an 8-GB VPS for V6 based on an estimate. First try full BTC 30-day training on a dedicated **2-GB** host, then evaluate **4 GB** only if measurements show it is needed. For eventual 25-pair research, process pairs sequentially where supported and measure peak memory before deciding whether any larger tier is warranted.
 
 **Important:** A 1-GB VPS is not automatically unsuitable for *all* FreqAI tasks. We proved a *small* real experiment, not the original 30-day configuration. Do not run unbounded training on a 1-GB VPS with active unrelated services. See [the dated test evidence](evidence/m1/2026-10-16-observation-vps-1gb-freqai-trial.md).
 
