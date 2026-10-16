@@ -125,7 +125,30 @@ Work:
 
 **Gate M5:** No integrity, resource, robustness or risk-adjusted net degradation relative to accepted M3/M4 baseline. Expansion can stop below 50.
 
-### M5A — Eight-hour intelligent candidate rotation (planned, NOT implemented)
+### M5A — Eight-hour intelligent candidate rotation (selector NOT implemented; optional bootstrap helper coded)
+
+#### New coin bootstrap: implemented in source, NOT an activated rotation system
+
+**Agreement:** There is NO requirement to monitor a newly discovered coin for 30 days before FreqAI can train it. Standard Freqtrade can download already-existing Binance USDT-M market history. The current FreqAI setting **train_period_days=30** means **each training run consumes a sliding 30-day history**, not that the bot must run for 30 days. Configured **live_retrain_hours=24** is the minimum retrain spacing, not a waiting period for a new coin.
+
+**Why fetch more than 30 days?** V6 has 5m and 1h features and startup_candle_count=200. Its 1h startup may require about 8.3 additional days before the 30-day training window; 12 future 5m target candles require matured outcomes. Request **60 days by default**, minimum 45 days under these 5m/1h parameters. Requested coverage is NOT proof that all candles exist. Existing archives with too little old data may require official Freqtrade historical prepend.
+
+**Source code added:** scripts/bootstrap_history.py with tests/test_bootstrap_history.py. It:
+- accepts 1–10 unique candidate symbols, validates USDT-M-style pair names, includes BTC correlated-pair history, and rejects operation under a non-dry-run, non-Binance or non-futures project configuration;
+- uses the **official Freqtrade download-data** CLI for 5m and 1h candles, with normal Freqtrade futures mark/funding download; not a home-made exchange downloader or trading database;
+- prints command plans by default; runs actual download-data and list-data --show-timerange only with an explicit --execute flag, with a fixed argv and no shell interpolation;
+- writes a small ignored local record **DOWNLOADED_UNVERIFIED**, never MODEL_READY or ACTIVE. It changes **no** strategy watchlist, model state, risk setting, protected open position or real order authority.
+
+**Example from clean V6 repository root:**
+
+    python scripts/bootstrap_history.py --pair SOL --pair NEAR --days 60
+    python scripts/bootstrap_history.py --pair SOL --pair NEAR --days 60 --execute
+
+**Still required before promoting a coin:** independent Binance contract/liquidity validation, actual candle timerange and gap checks on 5m/1h/BTC, mature labels, funding/spread evidence, successful per-pair FreqAI LightGBM training, out-of-sample performance and valid predictions, then a safe active-position-aware whitelist update. The helper implements NONE of those post-download gates yet. A downloaded 5-day-old market is NOT automatically accepted as 60-day-ready.
+
+**Implementation status:** The bounded history *preparation/request* helper is coded. The market-wide eight-hour selector, independent ranking quality proof, automatic history/model readiness, retraining, safe activation/restart, ongoing scheduled rotation and approved shared research/real-trading models are **NOT implemented**. There are no VPS scheduler, actual historical data downloads or model-training results from this change. M1 historical FreqAI backtesting comes first.
+
+
 
 **User requirement:** Scan the entire eligible Binance USDT-M PERPETUAL market **every 8 hours**. Maintain **exactly 25 active research/trading candidate pairs**, replace **at most 10 incumbent pairs in one review**, and allow **zero changes** when alternatives are not convincingly better. Do not confuse changing *candidate eligibility* with immediately taking an actual trade. **BTC remains permanently available for market context** and is not casually removed from the candidate universe.
 
@@ -252,6 +275,7 @@ V6 may become the default/main development line when **M0+M1** pass and an owner
 | M3 FreqAI edge | NOT STARTED | Multi-period walk-forward results |
 | M4 forward dry-run VPS | NOT STARTED; research mode source implemented | Capacity, two-profile official checks, independent forward-paper report |
 | M5 expand and port selected features | DEFERRED | M3/M4 evidence |
+| M5A universe selection/rotation | SELECTOR NOT BUILT; offline history bootstrap coded | Market screening, scientific selector validation, model readiness and safe activation still missing |
 | M6 lightweight model governance | DEFERRED | Demonstrated need |
 | M7 any live money | LOCKED | Separate user-approved risk plan |
 
