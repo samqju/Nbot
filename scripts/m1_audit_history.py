@@ -10,6 +10,8 @@ Does not place orders, download data, train models or alter source.
 """
 from __future__ import annotations
 
+import argparse
+from datetime import datetime
 import json
 from pathlib import Path
 import sys
@@ -18,13 +20,11 @@ import pandas as pd
 
 REPO = Path(__file__).resolve().parents[1]
 DATA = REPO / "user_data" / "data" / "binance" / "futures"
-TRAIN_START = pd.Timestamp("2026-09-01", tz="UTC")
-EVALUATE_END = pd.Timestamp("2026-10-08", tz="UTC")
-WARMUP_1H_START = pd.Timestamp("2026-08-23", tz="UTC")
 TIMES = {"5m": pd.Timedelta(minutes=5), "1h": pd.Timedelta(hours=1)}
 
 
-def summarize(path: Path, interval: str | None, requires_ohlcv: bool) -> dict:
+def summarize(path: Path, interval: str | None, requires_ohlcv: bool,
+              warmup_start: pd.Timestamp, evaluation_end: pd.Timestamp) -> dict:
     if not path.is_file():
         return {"ok": False, "error": "MISSING_FILE"}
     try:
@@ -56,7 +56,7 @@ def summarize(path: Path, interval: str | None, requires_ohlcv: bool) -> dict:
                 | (numbers["volume"] < 0)
             )
             ok = ok and not bool(invalid.any())
-        ok = ok and dates.iloc[0] <= WARMUP_1H_START and dates.iloc[-1] >= EVALUATE_END
+        ok = ok and dates.iloc[0] <= warmup_start and dates.iloc[-1] >= evaluation_end
         return {
             "ok": bool(ok),
             "records": int(len(data)),
@@ -72,19 +72,34 @@ def summarize(path: Path, interval: str | None, requires_ohlcv: bool) -> dict:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--backtest-start", default="20261001", help="UTC YYYYMMDD")
+    parser.add_argument("--backtest-end", default="20261008", help="UTC YYYYMMDD")
+    args = parser.parse_args()
+    try:
+        start = pd.Timestamp(datetime.strptime(args.backtest_start, "%Y%m%d"), tz="UTC")
+        end = pd.Timestamp(datetime.strptime(args.backtest_end, "%Y%m%d"), tz="UTC")
+    except ValueError as exc:
+        parser.error(f"Dates must be YYYYMMDD: {exc}")
+    if not start < end:
+        parser.error("Backtest end must be later than start")
     config = json.loads((REPO / "user_data" / "config.json").read_text())
+    train_days = int(config["freqai"]["train_period_days"])
+    # 200 1h startup candles need 8.34 days before the rolling training window.
+    warmup = start - pd.Timedelta(days=train_days + 9)
     pairs = config["exchange"]["pair_whitelist"]
-    result = {"test_window_utc": [TRAIN_START.isoformat(), EVALUATE_END.isoformat()],
+    result = {"test_window_utc": [start.isoformat(), end.isoformat()],
+              "required_warmup_start_utc": warmup.isoformat(),
               "data_directory": str(DATA), "pair_count": len(pairs), "pairs": {}}
     pass_pairs = 0
     for pair in pairs:
         stem = pair.replace("/", "_").replace(":", "_")
         reports = {
-            "5m_futures": summarize(DATA / f"{stem}-5m-futures.feather", "5m", True),
-            "1h_futures": summarize(DATA / f"{stem}-1h-futures.feather", "1h", True),
-            "1h_mark": summarize(DATA / f"{stem}-1h-mark.feather", "1h", True),
+            "5m_futures": summarize(DATA / f"{stem}-5m-futures.feather", "5m", True, warmup, end),
+            "1h_futures": summarize(DATA / f"{stem}-1h-futures.feather", "1h", True, warmup, end),
+            "1h_mark": summarize(DATA / f"{stem}-1h-mark.feather", "1h", True, warmup, end),
             # Binance funding events are sparse, generally ~8h, not hourly.
-            "funding": summarize(DATA / f"{stem}-1h-funding_rate.feather", None, False),
+            "funding": summarize(DATA / f"{stem}-1h-funding_rate.feather", None, False, warmup, end),
         }
         result["pairs"][pair] = reports
         passed = all(v["ok"] for v in reports.values())
