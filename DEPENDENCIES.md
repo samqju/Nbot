@@ -7,13 +7,13 @@
 | Intended use | CPU | RAM | Free disk | Evidence / decision |
 |---|---:|---:|---:|---|
 | One-coin, 3-day FreqAI *diagnostic* | 2 vCPU | **1 GB worked** under a **440 MB process cap** | ~3 GB observed usage on our test VPS | Real BTC LightGBM fit and one-day backtest succeeded; **zero trades** |
-| Full M1: 30-day 5m/1h training, 7-day backtest | 2+ vCPU | **Test 2 GB first; try 4 GB only if needed** | **30 GB recommended** | **Not yet measured to completion**. Two 30-day BTC trials were killed at a deliberately strict 440 MB process cap; no proof 2 GB is insufficient |
-| Expanded 25-coin FreqAI research + paper trades | **2+ vCPU to benchmark** | **Unknown: start with measured 2 GB/4 GB trials; scale only if needed** | **30 GB+; measure actual usage** | **Not benchmarked for 25 pairs**. 8 GB is only a possible higher capacity tier, neither required nor proven sufficient |
+| Full M1: 30-day 5m/1h training, 7-day backtest | **2 vCPU tested** | **8 GB VPS PASSED**, Docker capped at 6 GiB; **minimum unknown** | 30 GB+ recommended | **25/25 models and seven-day history completed**; a 2–4 GB host was not tested for the full workload |
+| Expanded 25-coin FreqAI research + paper trades | **2+ vCPU to benchmark** | **8 GB proven for a short historical test; continuous usage unknown** | 30 GB+; measure actual usage | **25-pair training/backtesting PASSED on 8 GB**, but simultaneous continuous 20-slot forward-paper workloads are **NOT benchmarked**; do not call 8 GB a universal minimum |
 | Paper research and a separate approved execution process simultaneously | Benchmark both | **Not established; test concurrency and peak RAM first** | Budget for independent models, data and trade DBs | Not commissioned. Avoid running two model trainers on a tiny VPS |
 
 Use **64-bit Ubuntu 24.04 LTS** (22.04 supported by install script), **x86_64/amd64** preferred, an SSD, outbound internet, and an ordinary `ubuntu` user with SSH and `sudo` access. ARM requires separately validated Python/image support. No GPU is required for our LightGBM model.
 
-**Cost-first rule:** Do **not** purchase an 8-GB VPS for V6 based on an estimate. First try full BTC 30-day training on a dedicated **2-GB** host, then evaluate **4 GB** only if measurements show it is needed. For eventual 25-pair research, process pairs sequentially where supported and measure peak memory before deciding whether any larger tier is warranted.
+**Evidence-led sizing:** The user-provided **8-GB** VPS succeeded for 25-pair 30-day training and a seven-day historical backtest under a Docker **6-GiB limit**. This is a successful *test specification*, **not** the measured minimum. A cheaper 2–4 GB VPS may still work; if resource cost becomes material, test it separately. For continuous 20-slot paper research, measure peak memory/CPU and sequential model retraining before committing to a permanent plan.
 
 **Important:** A 1-GB VPS is not automatically unsuitable for *all* FreqAI tasks. We proved a *small* real experiment, not the original 30-day configuration. Do not run unbounded training on a 1-GB VPS with active unrelated services. See [the dated test evidence](evidence/m1/2026-10-16-observation-vps-1gb-freqai-trial.md).
 
@@ -63,7 +63,7 @@ Use **64-bit Ubuntu 24.04 LTS** (22.04 supported by install script), **x86_64/am
 
 **Not ready today.** Passing `bash scripts/check_vps.sh`, Docker installation or strategy discovery only verifies prerequisites.
 
-1. **M1:** 30-day rolling FreqAI fit + full 5m/1h features + at least one independently held-out 7-day historical backtest accepted. Current status: **PARTIAL** (3-day/1-day technical proof only).
+1. **M1:** **TECHNICALLY PASSED** on 2026-10-16: 25/25 real LightGBM 30-day fits, 7-day official futures backtest and local 25/25 dataset quality checks on the 8-GB VPS. Result: **34 trades, -135.64 simulated USDT**. Not profitable/forward-release ready.
 2. **M2–M3:** cost-adjusted no-ML baseline and credible held-out FreqAI evaluation.
 3. **M4:** isolated VPS resource assessment, paper-only operation, recovery tests and monitored forward paper evidence.
 4. **M5A / M6:** safe eight-hour pair-selector activation and approved shared model governance if enabled; **currently not built**.
