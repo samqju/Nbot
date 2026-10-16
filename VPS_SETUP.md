@@ -2,19 +2,33 @@
 
 **For a beginner.** Follow the numbered steps *in order*, copying **one command at a time** into the **Ubuntu terminal** on a **new, dedicated VPS**. You do not need Python programming knowledge. This is our documented deployment procedure **for when V6 passes its release gates**; not an instruction to turn on trading today.
 
-**Current status (2026-10-16):** **M1 partly verified**, not accepted for the intended 30-day/25-coin system; **M4 paper VPS and M7 real-money release are not authorized**. Today it is safe to prepare a research server and run short **historical backtests**. **Do not start a persistent trading process until the appropriate milestone is accepted.**
+**Current status (2026-10-16):** **M1 historical integration PASSED technically** on an isolated 8-GB VPS, including the full 25-pair 30-day LightGBM fit and seven-day backtest. **Results were negative (-135.64 simulated USDT).** M2/M3 economic quality and multiple-period evidence are still required; **M4 continuous paper trading and M7 real-money trading are NOT authorized**. Historical backtests are allowed; **do not start a persistent trading process until separately accepted**.
 
 **Start here:** [Dependencies / specifications](DEPENDENCIES.md) · [Project roadmap](ROADMAP.md) · [M1 evidence](M1_EVIDENCE.md) · [Future live security](LIVE_SAFETY.md)
 
 ## A. Before starting — VPS purchase and access
 
-Choose **Ubuntu 24.04 LTS**, **64-bit x86_64**, **2 vCPU**, SSD, **30+ GB free disk** and SSH access as `ubuntu`. For the next full **30-day M1 training test**, start with a dedicated **2-GB RAM VPS**; test **4 GB** only if real memory measurements justify it. **Do not buy 8 GB just to get started.** We have **not measured** memory requirements for 25-coin paper research: test more pairs progressively, keep model training sequential where supported, and increase capacity only when measured RAM/CPU demands it. One-coin 3-day FreqAI training already succeeded on 1 GB, while full 30-day BTC training failed a *protective 440-MB process limit* (not a full 1-GB-capacity test). No RAM figure guarantees the complete deployment.
+Choose **Ubuntu 24.04 LTS**, **64-bit x86_64**, **2+ vCPU**, SSD, **30+ GB free disk** and SSH access. An **8-GB RAM / 2-vCPU VPS successfully ran full 25-pair M1 historical training and seven-day backtesting**, with a 6-GiB Docker memory limit. **Eight GB is not proven to be the minimum**; cheaper hosts may work but would require their own test. Capacity for unattended 20-position paper trading remains **unmeasured**. Always retain a comfortable memory margin. Prefer an ordinary `ubuntu` account with `sudo`; some providers supply `root` instead. Do not store SSH passwords or private keys in Git.
 
 **Do not install this into either old V5 VPS.** Do not expose Freqtrade's API port (8080) to the internet. Allow inbound SSH (22) only; restrict it to your own IP if available.
 
-**Windows/PuTTY:** Open PuTTY, select your **new** VPS's saved session, and click **Open**. If setting up a new session, enter the VPS's IP, set **Connection → SSH → Auth → Credentials → Private key file** to your own `.ppk` file, and log in with username `ubuntu`. **Never upload the .ppk file or its passphrase to GitHub or ChatGPT.** You will see a terminal like `ubuntu@server:~$`.
+**Windows/PuTTY:** Open PuTTY, select your **new** VPS's saved session, and click **Open**. If setting up a new session, enter the VPS's IP, set **Connection → SSH → Auth → Credentials → Private key file** to your own `.ppk` file, and log in with username `ubuntu`. **Never upload the .ppk file or its passphrase to GitHub or ChatGPT.** You will see a terminal like `ubuntu@server:~# NBOT V6 — Easy VPS setup and operation
 
-All commands below are for this **Ubuntu terminal**, not Windows PowerShell.
+**For a beginner.** Follow the numbered steps *in order*, copying **one command at a time** into the **Ubuntu terminal** on a **new, dedicated VPS**. You do not need Python programming knowledge. This is our documented deployment procedure **for when V6 passes its release gates**; not an instruction to turn on trading today.
+
+**Current status (2026-10-16):** **M1 historical integration PASSED technically** on an isolated 8-GB VPS, including the full 25-pair 30-day LightGBM fit and seven-day backtest. **Results were negative (-135.64 simulated USDT).** M2/M3 economic quality and multiple-period evidence are still required; **M4 continuous paper trading and M7 real-money trading are NOT authorized**. Historical backtests are allowed; **do not start a persistent trading process until separately accepted**.
+
+**Start here:** [Dependencies / specifications](DEPENDENCIES.md) · [Project roadmap](ROADMAP.md) · [M1 evidence](M1_EVIDENCE.md) · [Future live security](LIVE_SAFETY.md)
+
+## A. Before starting — VPS purchase and access
+
+Choose **Ubuntu 24.04 LTS**, **64-bit x86_64**, **2+ vCPU**, SSD, **30+ GB free disk** and SSH access. An **8-GB RAM / 2-vCPU VPS successfully ran full 25-pair M1 historical training and seven-day backtesting**, with a 6-GiB Docker memory limit. **Eight GB is not proven to be the minimum**; cheaper hosts may work but would require their own test. Capacity for unattended 20-position paper trading remains **unmeasured**. Always retain a comfortable memory margin. Prefer an ordinary `ubuntu` account with `sudo`; some providers supply `root` instead. Do not store SSH passwords or private keys in Git.
+
+**Do not install this into either old V5 VPS.** Do not expose Freqtrade's API port (8080) to the internet. Allow inbound SSH (22) only; restrict it to your own IP if available.
+
+**Windows/PuTTY:** Open PuTTY, select your **new** VPS's saved session, and click **Open**. If setting up a new session, enter the VPS's IP, set **Connection → SSH → Auth → Credentials → Private key file** to your own `.ppk` file, and log in with username `ubuntu`. **Never upload the .ppk file or its passphrase to GitHub or ChatGPT.**  (or `root@server:~#` if your provider issued a root login).
+
+All commands below are for this **Ubuntu terminal**, not Windows PowerShell. If logged in as `root` and `sudo` is unavailable, omit the word `sudo` at the beginning of those commands; do not alter the rest. A non-root account is preferable for routine administration.
 
 ## B. Install the small prerequisites
 
@@ -146,7 +160,21 @@ END=$(date -u -d '3 days ago' +%Y%m%d)
 sudo docker compose --profile single run --rm freqtrade backtesting --config /freqtrade/user_data/config.json --strategy NbotV6 --freqaimodel LightGBMRegressor --pairs BTC/USDT:USDT ETH/USDT:USDT --timerange "$START-$END" --export trades
 ```
 
-**This is a test procedure, not a guarantee of passing:** inspect the full training logs, invalid/stale predictions, return metrics and simulated trades. Backtesting needs completed historical data *before* the selected dates. Report **zero trades or negative returns honestly**. Do not mark M1 accepted until evidence and resource requirements in [ROADMAP.md](ROADMAP.md) are met. Start with 2 pairs, not 25, then expand only if training and data quality pass.
+**This is a repeatable historical test, not a profitability guarantee:** inspect training logs, invalid/stale predictions, returns and trades. Our actual 2026-10-16 25-pair run technically passed and **lost 135.64 simulated USDT** in the selected seven days. For a fresh installation, validate **BTC+ETH first**, then run all 25 only when data/memory checks pass. M2/M3 are mandatory before any continuous paper/live deployment.
+
+**Repeat our full-25 M1 experiment (historical only) after downloading data:**
+
+```bash
+sudo docker compose --profile single run --rm freqtrade backtesting --config /freqtrade/user_data/config.json --config /freqtrade/user_data/config.m1-all25.json --strategy NbotV6 --freqaimodel LightGBMRegressor --timerange "$START-$END" --export trades
+```
+
+**Audit all 25 downloaded datasets for duplicates, missing 5m/1h intervals and OHLCV validity:**
+
+```bash
+sudo docker run --rm --entrypoint python -v "$PWD:/freqtrade/work" freqtradeorg/freqtrade:stable_freqai /freqtrade/work/scripts/m1_audit_history.py
+```
+
+The audit uses our **October 1–8, 2026** historical training/backtest coverage thresholds and outputs `user_data/backtest_results/m1-candle-audit.json`. For future dates, its as-of window must be updated and independently verified before treating it as a current dataset-integrity gate. See [the dated full audit report](evidence/m1/2026-10-16-8gb-vps-full25-candle-audit.json).
 
 **Optional:** Check 25 active futures contracts and recent candle samples using public Binance data (does not start FreqAI):
 
@@ -252,4 +280,4 @@ Do **not** automatically `docker pull` a new mutable tag or switch strategy/mode
 | `Error loading model` | Missing history/model or stale features | Check historical ranges; retrain with a separate FreqAI identifier after review |
 | VPS restarted, no process running | `restart: no` is deliberate | Restart **only an approved dry-run service** after reviewing any open paper positions |
 
-**No VPS can be considered ready merely because the commands run.** M1–M6 still require independent testing, and any future real-money operation always needs separate owner authorization.
+**No VPS can be considered paper/live deployment-ready merely because installation and M1 historical tests run.** M1 has passed technically but lost money; M2/M3 economic/robustness checks, M4 paper safety, and any eventual owner-controlled M7 live approval remain separate.
