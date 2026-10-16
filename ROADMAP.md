@@ -9,7 +9,7 @@
 
 NBOT should observe approximately 50 liquid coins eventually, including Bitcoin context; recognize directional setups; learn whether opportunities might deliver positive after-cost performance; select LONG, SHORT or NO TRADE; and—if future live trading is separately approved—hold no more than ONE actual position in total. Improve trade selection, not trading frequency.
 
-Initial scope: 8 fixed futures markets including BTC, completed 5m candles, correlated BTC 5m/1h information, one FreqAI LightGBM model, a few causal EMA/breakout/pullback rules, and one simulated portfolio. Expansion to 50 pairs is conditional, not a day-one requirement.
+Current **configured candidate scope: 25 fixed futures markets** (subject to M1 exchange and data checks) including BTC, completed 5m candles, correlated BTC 5m/1h information, one FreqAI LightGBM model, a few causal EMA/breakout/pullback rules, and one simulated portfolio. Expansion to 50 pairs is conditional, not a day-one requirement.
 
 **Nothing in the roadmap guarantees profitability.** Evidence must establish whether there is any tradeable advantage.
 
@@ -54,7 +54,7 @@ Work:
 Work:
 - Record Docker version, machine memory/CPU/disk, then pin the tested FreqAI Docker image by immutable digest.
 - Validate exchange/pairs, official Freqtrade config, strategy loading and a completed LightGBM fit.
-- Download sufficient 5m and 1h futures candles for 8 markets: at least the 30d training window, indicator warmup and the historical backtest period. Identify gaps; do not invent candles or forward-fill missing futures data without a scientific justification.
+- Validate all 25 candidate perpetual markets and their Binance data quality. Then download sufficient 5m and 1h futures candles (M1 may smoke-test fewer markets first): at least the 30d training window, indicator warmup and the historical backtest period. Identify gaps; do not invent candles or forward-fill missing futures data without a scientific justification.
 - Run documented official Freqtrade backtest with FreqAI and record exact Git SHA, timerange, image digest, logs, model and result artifacts.
 - Explicitly test prediction abstention, one-position cap and long/short behavior.
 
@@ -104,21 +104,21 @@ Work:
 This is a **sub-feature of M4**, not a new research architecture or permission to skip M1–M3. It is already implemented at source/config level but **not deployed, backtested or forward-paper accepted**.
 
 - Run an additional, explicitly selected **Freqtrade dry-run process against Binance mainnet public market data**, using the SAME NbotV6 strategy/LightGBM family, but a distinct model identifier, SQLite file and config overlay.
-- Permit up to **10 concurrent simulated paper positions by default**, with an absolute optional ceiling of 20 via configuration and a strict dry-run startup guard. These are capacity limits, never trade quotas. Current 8-pair watchlist limits distinct simultaneous paper trades to 8 in normal Freqtrade behavior.
+- Permit up to **20 concurrent simulated paper positions by default** (also the absolute ceiling) via configuration and a strict dry-run startup guard. These are capacity limits, never trade quotas. With 25 configured candidates, at most 20 can be simultaneously paper-traded under normal Freqtrade one-trade-per-pair behavior.
 - Keep single-position execution separate. Research should continue collecting candles and FreqAI retraining regardless of whether that separately configured bot has an open position. With two independently retraining FreqAI instances, measure cumulative CPU/RAM and schedule staggered updates if needed; do not assume a small VPS can run both.
 - Paper trades from Freqtrade's dry-run database provide **forward operational and economic feedback** (with simulated fills/limits). FreqAI continues learning from candle features and future-price targets. **Paper PnL is NOT fed back into the LightGBM model automatically** and must never be presented as such.
 - Review the first **10–20 completed simulated trades** for debugging assumptions, order lifecycle and measured costs; do not label 20 examples statistically sufficient for model promotion or live approval. Require a longer, multi-regime forward window and held-out, after-cost comparison in M2/M3/M4.
 - No custom virtual-trade factory, separate exchange connector, new optimizer, duplicated historical database or automatic live model promotion. Prefer standard Freqtrade trade history and reports.
 - **Fail-closed release controls:** dry_run=true required, exchange keys must be blank on researcher, 1x leverage, max 20 simulated slots, disabled remote API, separate DB/identifier and explicit process start. This V6 source has no real-order mode. M7 remains separately locked.
 
-**M4 research-lane acceptance:** both config variants pass official Freqtrade import/schema checks, research startup accepts 10 (and no more than 20) simulated slots, unexpected live/order credentials are rejected, model/DB isolation is verified, and an isolated forward dry-run proves independent operation and no real orders. Source tests do not satisfy the forward gate.
+**M4 research-lane acceptance:** both config variants pass official Freqtrade import/schema checks, research startup accepts 20 (and no more than 20) simulated slots, unexpected live/order credentials are rejected, model/DB isolation is verified, and an isolated forward dry-run proves independent operation and no real orders. Source tests do not satisfy the forward gate.
 
 ## M5 — Controlled market and feature expansion
 
 **Goal:** Expand only when justified.
 
 Work:
-- Scale 8 -> 15 -> 25 -> up to roughly 50 coins; verify quote/candle quality, running memory, training time and trade-selection outcomes each time.
+- Validate the candidate 25; if training/market quality fails, reduce to 8–15 and expand in measured stages; later consider 25 -> up to roughly 50 coins; verify quote/candle quality, running memory, training time and trade-selection outcomes each time.
 - Evaluate historical V4 24-pattern detectors as optional *indicators*, one at a time, only when causal tests and incremental out-of-sample improvements warrant a port.
 - Continue to allow NO TRADE. Do not turn 24 pattern descriptions into 24 trading microservices.
 - Use standard Freqtrade dashboard/Telegram features later if necessary; avoid inventing another control plane.
@@ -140,6 +140,19 @@ Work:
 ## M7 — Optional real trading (LOCKED)
 
 Only after M1–M6, compelling after-cost evidence, proven stability and a distinct owner approval may a separate live risk/security design be considered. Review private API permissions, protective stop behavior, liquidation/funding/slippage, maximum loss and emergency shutdown, reconnection and simultaneous-pair one-position enforcement. Nothing in this roadmap or the starter permits real orders now.
+
+## C2. Revised paper amounts, evaluation and knowledge-sharing contract (October 16, 2026)
+
+Requested initial **simulated** configuration, pending risk/market validation:
+- Paper wallet **100,000 USDT**, fixed position **1,000 USDT**, **1x** leverage, **2% initial stoploss**, **5% initial ROI goal**, decisions on closed **5m candles**, FreqAI setting **live_retrain_hours=24**. Rough 1,000 USDT notional price risk at 2% is **20 USDT before fees/funding/slippage**; gap/slippage may exceed this.
+- Configured **25-symbol static universe**, not 25 open trades. The single mode permits only **1** open simulated trade; independent paper research permits up to **20 simultaneous simulated trades** (a ceiling, not a target), meaning at most **20,000 USDT nominal concurrent 1x exposure** and a nominal combined initial price stop risk around **400 USDT** before fees/funding/slippage; correlated coins can gap together.
+- All 25 must be checked against Binance USDT-M supported perpetual contracts, data depth, liquidity/spread, FreqAI training duration and VPS capacity before operation. No assumption a listed symbol is tradable or sufficiently liquid.
+- FreqAI evaluates each fixed universe pair independently with historical candle/volume/volatility features, BTC context, strategy structure, prediction validity and a provisional +/-0.6% model threshold. This is **AI-guided entry filtering**, not AI choosing/replacing membership in the top 25. FreqAI expressly disallows dynamic pairlists that add/remove pairs midrun without preloaded data.
+- The global best-ranked among 25 simultaneous signals is **not currently guaranteed**: Freqtrade may take the first qualifying pair. If needed, implement/test a deterministic global ranking after M1–M3, never claim it exists in the baseline.
+- **Learning is not yet shared** between the two processes: independent identifiers and per-pair LightGBM retraining, separate paper ledgers. This is deliberate until model reuse and promotion safety are verified.
+- **M6 planned low-complexity sharing:** train market models with one paper-research owner, record/version models and features, validate candidates on unseen historical + forward paper data, then let a separate one-position inference/decision process consume only *approved model snapshots*. Keep separate databases and position limits. Test native FreqAI/Freqtrade sharing interfaces on the pinned image; avoid custom model-server/microservices. FreqAI retraining on new candles does not itself learn from simulated or real trade PnL; this feedback affects scientific evaluation until separate leakage-safe labels are built.
+- Automatic sharing of **unapproved** newly trained models with live order execution is forbidden. Any real-money enablement remains M7 and separately authorized.
+- **M1–M4 resource gate:** 25 pairs plus multiple training instances may exceed existing VPS memory/CPU; benchmark on isolated hardware and degrade to fewer pairs rather than pressure a protected production VPS.
 
 ## D. What gets tested at each change
 
