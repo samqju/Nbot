@@ -9,7 +9,7 @@
 
 NBOT should observe approximately 50 liquid coins eventually, including Bitcoin context; recognize directional setups; learn whether opportunities might deliver positive after-cost performance; select LONG, SHORT or NO TRADE; and—if future live trading is separately approved—hold no more than ONE actual position in total. Improve trade selection, not trading frequency.
 
-Current **configured candidate scope: 25 fixed futures markets** (subject to M1 exchange and data checks) including BTC, completed 5m candles, correlated BTC 5m/1h information, one FreqAI LightGBM model, a few causal EMA/breakout/pullback rules, and one simulated portfolio. Expansion to 50 pairs is conditional, not a day-one requirement.
+Current **configured candidate scope: 25 fixed futures markets** (all 25 passed M1 contract/candle validation; M2/M3 liquidity/market-impact/economic acceptance remains outstanding) including BTC, completed 5m candles, correlated BTC 5m/1h information, one FreqAI LightGBM model, a few causal EMA/breakout/pullback rules, and one simulated portfolio. Expansion to 50 pairs is conditional, not a day-one requirement.
 
 **Nothing in the roadmap guarantees profitability.** Evidence must establish whether there is any tradeable advantage.
 
@@ -165,7 +165,7 @@ Work:
 
 **Still required before promoting a coin:** independent Binance contract/liquidity validation, actual candle timerange and gap checks on 5m/1h/BTC, mature labels, funding/spread evidence, successful per-pair FreqAI LightGBM training, out-of-sample performance and valid predictions, then a safe active-position-aware whitelist update. The helper implements NONE of those post-download gates yet. A downloaded 5-day-old market is NOT automatically accepted as 60-day-ready.
 
-**Implementation status:** The bounded history *preparation/request* helper is coded. The market-wide eight-hour selector, independent ranking quality proof, automatic history/model readiness, retraining, safe activation/restart, ongoing scheduled rotation and approved shared research/real-trading models are **NOT implemented**. There are no VPS scheduler, actual historical data downloads or model-training results from this change. M1 historical FreqAI backtesting comes first.
+**Implementation status:** The bounded history *preparation/request* helper is coded. The market-wide eight-hour selector, independent ranking quality proof, automatic history/model readiness, retraining, safe activation/restart, ongoing scheduled rotation and approved shared research/real-trading models are **NOT implemented**. There is still no eight-hour VPS scheduler or automatic new-pair training/activation from M5A. Separately, baseline M1 has now downloaded all 25 candidate histories and trained 25 LightGBM models. M2/M3 economic proof precedes any M5A deployment.
 
 
 
