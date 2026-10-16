@@ -36,6 +36,5 @@ jobs:
             -v "$PWD/v6/user_data:/freqtrade/user_data" \
             freqtradeorg/freqtrade:stable_freqai \
             list-strategies --config /freqtrade/user_data/config.json \
-            --strategy-path /freqtrade/user_data/strategies \
             | tee /tmp/nbot-v6-strategies.txt
           grep -E 'NbotV6.*OK' /tmp/nbot-v6-strategies.txt
