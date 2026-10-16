@@ -162,19 +162,27 @@ sudo docker compose --profile single run --rm freqtrade backtesting --config /fr
 
 **This is a repeatable historical test, not a profitability guarantee:** inspect training logs, invalid/stale predictions, returns and trades. Our actual 2026-10-16 25-pair run technically passed and **lost 135.64 simulated USDT** in the selected seven days. For a fresh installation, validate **BTC+ETH first**, then run all 25 only when data/memory checks pass. M2/M3 are mandatory before any continuous paper/live deployment.
 
-**Repeat our full-25 M1 experiment (historical only) after downloading data:**
+**Repeat our full-25 M1 experiment (historical only), once your first BTC+ETH test succeeds:**
+
+Download all configured 25 futures markets (data only):
+
+```bash
+sudo docker compose --profile single run --rm freqtrade download-data --config /freqtrade/user_data/config.json --trading-mode futures --timeframes 5m 1h --days 75
+```
+
+Backtest all 25 using the independent M1 model identifier:
 
 ```bash
 sudo docker compose --profile single run --rm freqtrade backtesting --config /freqtrade/user_data/config.json --config /freqtrade/user_data/config.m1-all25.json --strategy NbotV6 --freqaimodel LightGBMRegressor --timerange "$START-$END" --export trades
 ```
 
-**Audit all 25 downloaded datasets for duplicates, missing 5m/1h intervals and OHLCV validity:**
+Audit all 25 downloaded histories for missing intervals, duplicate dates and invalid OHLCV:
 
 ```bash
-sudo docker run --rm --entrypoint python -v "$PWD:/freqtrade/work" freqtradeorg/freqtrade:stable_freqai /freqtrade/work/scripts/m1_audit_history.py
+sudo docker run --rm --entrypoint python -v "$PWD:/freqtrade/work" freqtradeorg/freqtrade:stable_freqai /freqtrade/work/scripts/m1_audit_history.py --backtest-start "$START" --backtest-end "$END"
 ```
 
-The audit uses our **October 1–8, 2026** historical training/backtest coverage thresholds and outputs `user_data/backtest_results/m1-candle-audit.json`. For future dates, its as-of window must be updated and independently verified before treating it as a current dataset-integrity gate. See [the dated full audit report](evidence/m1/2026-10-16-8gb-vps-full25-candle-audit.json).
+The audit records a dated JSON report at `user_data/backtest_results/m1-candle-audit.json`. It checks full 5m/1h/mark candle continuity, and the event-style funding series for date validity; it **does not** prove every spread/funding cost is economically accurate. The historical Oct 1–8, 2026 full-25 evidence is [here](evidence/m1/2026-10-16-8gb-vps-full25-candle-audit.json). For a later study, set `START`/`END` to a fully downloaded period and retain the resulting files.
 
 **Optional:** Check 25 active futures contracts and recent candle samples using public Binance data (does not start FreqAI):
 
