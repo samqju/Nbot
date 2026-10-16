@@ -43,3 +43,13 @@ jobs:
             list-strategies --config /freqtrade/user_data/config.json \
             | tee /tmp/nbot-v6-strategies.txt
           grep -E 'NbotV6.*OK' /tmp/nbot-v6-strategies.txt
+      - name: Validate independent 10-slot paper configuration with real Freqtrade schema
+        run: |
+          set -o pipefail
+          docker run --rm \
+            -v "$PWD/user_data:/freqtrade/user_data" \
+            freqtradeorg/freqtrade:stable_freqai \
+            list-strategies --config /freqtrade/user_data/config.json \
+            --config /freqtrade/user_data/config.paper-research.json \
+            | tee /tmp/nbot-v6-research-strategies.txt
+          grep -E 'NbotV6.*OK' /tmp/nbot-v6-research-strategies.txt
