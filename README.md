@@ -11,6 +11,8 @@ README.md
 ROADMAP.md
 docker-compose.yml
 scripts/bootstrap_history.py
+scripts/owner_live_approval.py
+LIVE_SAFETY.md
 user_data/
     config.json
     config.paper-research.json
@@ -99,6 +101,12 @@ Official Freqtrade handles public Binance history, downloaded candle files and s
 **This does not prove model readiness.** At activation time we must check the *actual* history ranges, missing candles, BTC coverage, trading age, liquidity/spread and funding, train the new per-coin LightGBM model, evaluate it and obtain valid predictions. It makes **no automatic updates** to the running 25-coin watchlist and **never** places real orders or starts paper trading. The full proposed eight-hour Universe Selector (M5A) is still a roadmap design requiring its own tests and safety gate.
 
 See [M5A in ROADMAP.md](ROADMAP.md) for the current precise development status and remaining work.
+
+## Future owner-only live execution (CODE STAGED, REAL TRADING LOCKED)
+
+Live execution is *not enabled* by any committed config. We added a non-autostart, private-config-only Compose profile and a strategy owner gate that checks the owner's **single private Telegram ID**, an independent **owner-created VPS approval file** (valid up to 24 hours), one-position/1x/1,000-USDT risk caps and exchange-side stop-market settings before live entry. Telegram can report, pause and resume an already approved Freqtrade process, **but can never arm real-money access on its own**. A missing/expired/revoked approval rejects new entries without intentionally disabling the handling of existing exits.
+
+There is no real Binance account secret, owner ID, Telegram token or approval file checked into Git, and no live process has started. FreqAI's approved-model release process and real exchange safety checks remain **M6/M7 tasks**, so this source hook must not be treated as operational approval. See [LIVE_SAFETY.md](LIVE_SAFETY.md) and [ROADMAP.md](ROADMAP.md).
 
 ## Reproduce basic checks
 
