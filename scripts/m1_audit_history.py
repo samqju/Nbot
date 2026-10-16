@@ -2,13 +2,9 @@
 """Audit downloaded Binance futures training/backtest candles WITHOUT fetching data.
 
 Run with the official FreqAI Docker image, which bundles pandas/pyarrow:
-  docker run --rm -v "$PWD/user_data:/freqtrade/user_data" \
+  docker run --rm --entrypoint python -v "$PWD:/freqtrade/work" \
     freqtradeorg/freqtrade:stable_freqai \
-    python /freqtrade/user_data/../user_data/../scripts/m1_audit_history.py
-Instead, mount the repository under /freqtrade/work and run:
-  docker run --rm -v "$PWD:/freqtrade/work" \
-    freqtradeorg/freqtrade:stable_freqai \
-    python /freqtrade/work/scripts/m1_audit_history.py
+    /freqtrade/work/scripts/m1_audit_history.py
 
 Does not place orders, download data, train models or alter source.
 """
