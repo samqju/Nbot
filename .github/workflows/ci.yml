@@ -56,7 +56,9 @@ jobs:
 
   # Isolated, opt-in historical M1. A [m1] commit triggers this one job.
   real-freqai-m1:
-    if: github.event_name == 'pull_request' && github.event.pull_request.number == 50
+    # Requires deliberate PR title marker on a region-eligible >=2 GB runner.
+    # GH-hosted US runner is Binance geo-restricted (451): do not hammer it.
+    if: github.event_name == 'pull_request' && github.event.pull_request.number == 50 && contains(github.event.pull_request.title, '[RUN-M1]')
     runs-on: ubuntu-latest
     timeout-minutes: 55
     steps:
