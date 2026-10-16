@@ -1,0 +1,12 @@
+services:
+  freqtrade:
+    image: freqtradeorg/freqtrade:stable_freqai
+    container_name: nbot-v6-prototype
+    restart: "no"
+    volumes:
+      - ./user_data:/freqtrade/user_data
+    command: >
+      trade
+      --config /freqtrade/user_data/config.json
+      --strategy NbotV6
+      --freqaimodel LightGBMRegressor
