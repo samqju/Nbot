@@ -65,6 +65,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p m1-output user_data/backtest_results
+          # Official image uses its own ftuser with an executable in its HOME.
+          # Make the temporary, ephemeral CI userdata mount writable to it.
+          chmod -R a+rwX user_data
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -103,7 +106,6 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm --cpus=2 --memory=5g \
-            --user="$(id -u):$(id -g)" -e HOME=/tmp \
             -v "$PWD/user_data:/freqtrade/user_data" \
             freqtradeorg/freqtrade:stable_freqai \
             download-data \
@@ -117,7 +119,6 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm --cpus=2 --memory=5g \
-            --user="$(id -u):$(id -g)" -e HOME=/tmp \
             -v "$PWD/user_data:/freqtrade/user_data" \
             freqtradeorg/freqtrade:stable_freqai \
             list-data \
@@ -131,7 +132,6 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm --cpus=2 --memory=5g \
-            --user="$(id -u):$(id -g)" -e HOME=/tmp \
             -v "$PWD/user_data:/freqtrade/user_data" \
             freqtradeorg/freqtrade:stable_freqai \
             backtesting \
