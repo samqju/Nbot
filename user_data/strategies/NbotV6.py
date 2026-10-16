@@ -18,7 +18,7 @@ class NbotV6(IStrategy):
     startup_candle_count = 200
 
     # Baseline safety envelopes, NOT optimized/validated parameters.
-    stoploss = -0.03
+    stoploss = -0.02
     minimal_roi = {"0": 0.05}
     use_exit_signal = True
     exit_profit_only = False
