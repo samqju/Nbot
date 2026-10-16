@@ -81,7 +81,7 @@ class NbotV6OfflineTests(unittest.TestCase):
             **json.loads(CONFIG.read_text())["freqai"], **overlay["freqai"]
         }
         self.bot.bot_start()
-        self.assertEqual(self.bot.config["max_open_trades"], 10)
+        self.assertEqual(self.bot.config["max_open_trades"], 20)
         self.bot.config["max_open_trades"] = 20
         self.bot.bot_start()
         for cap in (0, -1, 21, 10.5, True):
@@ -115,7 +115,35 @@ class NbotV6OfflineTests(unittest.TestCase):
         self.assertTrue(paper["db_url"].endswith("/tradesv3.research.sqlite"))
         self.assertFalse(base["exchange"]["key"])
         self.assertFalse(base["exchange"]["secret"])
-        self.assertEqual(len(base["exchange"]["pair_whitelist"]), 8)
+        self.assertEqual(len(base["exchange"]["pair_whitelist"]), 25)
+
+    def test_requested_wallet_position_stop_and_target(self):
+        base = self.bot.config
+        paper = json.loads((ROOT / "user_data" / "config.paper-research.json").read_text())
+        self.assertEqual(base["dry_run_wallet"], 100000)
+        self.assertEqual(paper["dry_run_wallet"], 100000)
+        self.assertEqual(base["stake_amount"], 1000)
+        self.assertEqual(paper["stake_amount"], 1000)
+        self.assertEqual(base["max_open_trades"], 1)
+        self.assertEqual(paper["max_open_trades"], 20)
+        self.assertEqual(self.bot.stoploss, -0.02)
+        self.assertEqual(self.bot.minimal_roi, {"0": 0.05})
+        self.assertEqual(base["freqai"]["live_retrain_hours"], 24)
+        self.assertEqual(self.bot.timeframe, "5m")
+
+    def test_ai_evaluates_fixed_25_pair_universe_without_dynamic_pairlist(self):
+        cfg = self.bot.config
+        pairs = cfg["exchange"]["pair_whitelist"]
+        self.assertEqual(len(pairs), 25)
+        self.assertEqual(len(set(pairs)), 25)
+        self.assertTrue(all(p.endswith("/USDT:USDT") for p in pairs))
+        self.assertEqual(cfg["pairlists"], [{"method": "StaticPairList"}])
+        self.assertTrue(cfg["freqai"]["enabled"])
+        self.assertIn("BTC/USDT:USDT", pairs)
+        self.assertNotEqual(
+            cfg["freqai"]["identifier"],
+            json.loads((ROOT / "user_data" / "config.paper-research.json").read_text())["freqai"]["identifier"],
+        )
 
     def test_training_disabled_cannot_enter(self):
         self.bot.config["freqai"]["enabled"] = False
@@ -210,7 +238,7 @@ class NbotV6OfflineTests(unittest.TestCase):
         self.assertEqual(cfg["max_open_trades"], 1)
         self.assertEqual(cfg["trading_mode"], "futures")
         self.assertEqual(cfg["margin_mode"], "isolated")
-        self.assertEqual(len(cfg["exchange"]["pair_whitelist"]), 8)
+        self.assertEqual(len(cfg["exchange"]["pair_whitelist"]), 25)
         self.assertIn("BTC/USDT:USDT", cfg["freqai"]["feature_parameters"]["include_corr_pairlist"])
         self.assertFalse(cfg["force_entry_enable"])
         self.assertFalse(cfg["api_server"]["enabled"])
