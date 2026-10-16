@@ -26,3 +26,20 @@ services:
       --config /freqtrade/user_data/config.paper-research.json
       --strategy NbotV6
       --freqaimodel LightGBMRegressor
+
+  # Staged, NOT auto-started: cannot run without a private config, owner arm
+  # file, and separate Binance API credentials. Still requires M7 acceptance.
+  live-owner-gated:
+    profiles: ["live-locked"]
+    image: freqtradeorg/freqtrade:stable_freqai
+    container_name: nbot-v6-live-locked
+    restart: "no"
+    volumes:
+      - ./user_data:/freqtrade/user_data
+      - ./live_private:/freqtrade/live_private:ro
+    command: >
+      trade
+      --config /freqtrade/user_data/config.json
+      --config /freqtrade/live_private/config.json
+      --strategy NbotV6
+      --freqaimodel LightGBMRegressor
