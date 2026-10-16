@@ -217,6 +217,19 @@ Work:
 
 **Gate M6:** Versioned and reversible releases, clear no-trade fallback, no automatic real-money authority.
 
+### M6L — Owner-gated live release code (IMPLEMENTED source, NOT authorized)
+
+The V6 strategy includes **optional, fail-closed owner live authorization**. There is no live private config, Telegram credential, Binance exchange key, approval token or live order in this repository. The live-locked Docker profile does not auto-start.
+
+- Server-side approval from scripts/owner_live_approval.py, 1–24 hours, owner-only terminal challenge and a chmod 0600 file outside Git. No Telegram /enable_live command.
+- Requires private single-user Telegram chat_id/authorized_users match, separate untracked private Binance config, isolated futures, max one actual position, 1x, stake <=1,000 USDT, FreqAI validity/expiry, API off, forced manual entry off and market stoploss_on_exchange.
+- Both startup and **every real entry callback** verify authorization; expiration/revocation blocks new real orders but does not intentionally block the management/exits of an existing trade. A separate explicit operator/owner review of abort, external account reconciliation and partial-failure handling remains mandatory.
+- Code staged under LIVE_SAFETY.md; actual live model release governance is **not implemented**. FreqAI may use the latest retrained model, so an operator token is NOT sufficient to certify the strategy or approve model changes. M6 must establish versioned research->execution model release and rollbacks before M7.
+- Native Freqtrade Telegram is for owner-only monitoring, pause, status, results and operational resumes. Telegram group chats are forbidden for live authority; it is **not** the sole security factor. Use /pause to block new entries while preserving active exit management; /stop requires awareness of open exposure and off-bot emergency procedures.
+- Tests must independently cover missing/expired/revoked approval, wrong owner, chat-group rejection, mixed authorized users, excess stake/position count, secret leak, on-exchange stop disabled, strategy import, VPS container/file UID mapping, Telegram authorization, restart behavior and stop order reconciliation.
+
+**Status: LIVE CAPABILITY CODE-STAGED ONLY. No server deployment or permission to place real Binance orders.** The first development milestone is still M1 genuine historical data retrieval and FreqAI model training/backtesting; after M1, pursue M2-M6 before M7.
+
 ## M7 — Optional real trading (LOCKED)
 
 Only after M1–M6, compelling after-cost evidence, proven stability and a distinct owner approval may a separate live risk/security design be considered. Review private API permissions, protective stop behavior, liquidation/funding/slippage, maximum loss and emergency shutdown, reconnection and simultaneous-pair one-position enforcement. Nothing in this roadmap or the starter permits real orders now.
@@ -277,6 +290,7 @@ V6 may become the default/main development line when **M0+M1** pass and an owner
 | M5 expand and port selected features | DEFERRED | M3/M4 evidence |
 | M5A universe selection/rotation | SELECTOR NOT BUILT; offline history bootstrap coded | Market screening, scientific selector validation, model readiness and safe activation still missing |
 | M6 lightweight model governance | DEFERRED | Demonstrated need |
+| Owner-only live release hook | CODE STAGED; NOT EXECUTED | Native framework smoke + private-file/Telegram/risk tests; M7 acceptance still required |
 | M7 any live money | LOCKED | Separate user-approved risk plan |
 
 **Current priority: M1 — prove actual FreqAI historical training and backtesting on isolated hardware. The optional research lane does not bypass this gate. No VPS deployment, default-branch changes, real trading permissions or legacy data migrations are yet authorized.**
