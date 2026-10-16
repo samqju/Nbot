@@ -10,6 +10,7 @@ NBOT V6 is an isolated Freqtrade strategy powered by FreqAI's LightGBM regressio
 README.md
 ROADMAP.md
 docker-compose.yml
+scripts/bootstrap_history.py
 user_data/
     config.json
     config.paper-research.json
@@ -74,6 +75,30 @@ FreqAI evaluates each configured pair's own momentum, volatility, relative volum
 A future approved design may use one research **training leader** and a separate execution **model consumer**, loading the exact same *approved* model versions, features, BTC context and symbol universe, while retaining independent trade ledgers and risk limits. This avoids splitting knowledge and duplicated model training, but must first pass official-image compatibility, data/feature parity, model-version pinning, no-unsafe-auto-promotion, and model-stale fallback tests. FreqAI defaults to using its latest trained models, so paper retraining must NOT silently switch a future real-money bot to an unapproved model. We will implement shared-model consumption only after historical/forward validation, under roadmap M6/M7.
 
 **No real Binance trades or automatic real-money promotion are authorized by this change.**
+
+## Onboarding a new coin: history bootstrap (implemented helper)
+
+**No 30-day waiting period.** FreqAI trains from **already-existing Binance market candles**, using a rolling 30-day training window (train_period_days=30). Retraining can be requested again after its configured 24-hour interval. A coin does **not** need 30 days of NBOT monitoring or any previous Freqtrade trade.
+
+V6 now includes a small, opt-in preparation tool: [scripts/bootstrap_history.py](scripts/bootstrap_history.py). It asks Freqtrade to fetch **60 days of 5m and 1h historical data**, plus BTC context, for at most **10 candidates per review**; with no extra local database or custom download engine.
+
+Start by printing the proposed commands (NO Docker run, NO market changes):
+
+~~~bash
+python scripts/bootstrap_history.py --pair NEAR --pair INJ
+~~~
+
+Only on an isolated, properly provisioned development host, explicitly request download and a report of the actual stored history ranges:
+
+~~~bash
+python scripts/bootstrap_history.py --pair NEAR --pair INJ --execute
+~~~
+
+Official Freqtrade handles public Binance history, downloaded candle files and standard futures mark/funding candles. The helper then invokes Freqtrade list-data with a timerange display and logs a local **DOWNLOADED_UNVERIFIED** record under ignored user_data/bootstrap_records/.
+
+**This does not prove model readiness.** At activation time we must check the *actual* history ranges, missing candles, BTC coverage, trading age, liquidity/spread and funding, train the new per-coin LightGBM model, evaluate it and obtain valid predictions. It makes **no automatic updates** to the running 25-coin watchlist and **never** places real orders or starts paper trading. The full proposed eight-hour Universe Selector (M5A) is still a roadmap design requiring its own tests and safety gate.
+
+See [M5A in ROADMAP.md](ROADMAP.md) for the current precise development status and remaining work.
 
 ## Reproduce basic checks
 
