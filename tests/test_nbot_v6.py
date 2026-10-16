@@ -73,6 +73,50 @@ class NbotV6OfflineTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "ONE_GLOBAL_POSITION"):
             self.bot.bot_start()
 
+    def test_paper_research_is_opt_in_and_bounded(self):
+        overlay = json.loads((ROOT / "user_data" / "config.paper-research.json").read_text())
+        self.bot.config.update(overlay)
+        # Freqtrade merges nested settings when the overlay is read last.
+        self.bot.config["freqai"] = {
+            **json.loads(CONFIG.read_text())["freqai"], **overlay["freqai"]
+        }
+        self.bot.bot_start()
+        self.assertEqual(self.bot.config["max_open_trades"], 10)
+        self.bot.config["max_open_trades"] = 20
+        self.bot.bot_start()
+        for cap in (0, -1, 21, 10.5, True):
+            with self.subTest(cap=cap):
+                self.bot.config["max_open_trades"] = cap
+                with self.assertRaisesRegex(RuntimeError, "PAPER_CAP"):
+                    self.bot.bot_start()
+
+    def test_paper_research_still_forbids_real_orders_and_keys(self):
+        base = json.loads(CONFIG.read_text())
+        overlay = json.loads((ROOT / "user_data" / "config.paper-research.json").read_text())
+        self.bot.config = {**base, **overlay, "freqai": {**base["freqai"], **overlay["freqai"]}}
+        self.bot.config["dry_run"] = False
+        with self.assertRaisesRegex(RuntimeError, "LIVE_ORDERS_FORBIDDEN"):
+            self.bot.bot_start()
+        self.bot.config["dry_run"] = True
+        self.bot.config["exchange"]["key"] = "should-be-rejected"
+        with self.assertRaisesRegex(RuntimeError, "PAPER_MUST_NOT_HAVE_EXCHANGE_KEYS"):
+            self.bot.bot_start()
+        self.bot.config["exchange"]["key"] = ""
+        self.bot.config["nbot_paper_research_mode"] = False
+        with self.assertRaisesRegex(RuntimeError, "ONE_GLOBAL_POSITION"):
+            self.bot.bot_start()
+
+    def test_paper_research_is_isolated_by_model_and_database(self):
+        base = json.loads(CONFIG.read_text())
+        paper = json.loads((ROOT / "user_data" / "config.paper-research.json").read_text())
+        self.assertIs(paper["dry_run"], True)
+        self.assertIs(paper["nbot_paper_research_mode"], True)
+        self.assertNotEqual(base["freqai"]["identifier"], paper["freqai"]["identifier"])
+        self.assertTrue(paper["db_url"].endswith("/tradesv3.research.sqlite"))
+        self.assertFalse(base["exchange"]["key"])
+        self.assertFalse(base["exchange"]["secret"])
+        self.assertEqual(len(base["exchange"]["pair_whitelist"]), 8)
+
     def test_training_disabled_cannot_enter(self):
         self.bot.config["freqai"]["enabled"] = False
         with self.assertRaisesRegex(RuntimeError, "REQUIRES_FREQAI"):
