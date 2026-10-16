@@ -33,7 +33,7 @@ jobs:
         run: |
           set -o pipefail
           docker run --rm \
-            -v "$PWD/v6/user_data:/freqtrade/user_data:ro" \
+            -v "$PWD/v6/user_data:/freqtrade/user_data" \
             freqtradeorg/freqtrade:stable_freqai \
             list-strategies --config /freqtrade/user_data/config.json \
             --strategy-path /freqtrade/user_data/strategies \
