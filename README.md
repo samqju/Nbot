@@ -4,12 +4,27 @@
 
 NBOT V6 is an isolated Freqtrade strategy powered by FreqAI's LightGBM regression model. We use Freqtrade for exchange data, trade execution, risk/accounting, historical backtesting and dry-run. We use FreqAI for features, retraining and prediction. NBOT's custom code only describes market features and trading decisions.
 
+## VPS installation and operating guide
+
+**New to Linux or Freqtrade? Start with [VPS_SETUP.md](VPS_SETUP.md).** It has the complete step-by-step Ubuntu/PuTTY setup, short copy/paste commands, historical M1 training test, optional future paper research, logs, backup and troubleshooting instructions.
+
+- **[DEPENDENCIES.md](DEPENDENCIES.md)** — exact hardware tiers, RAM/CPU/disk and networking requirements, Docker/FreqAI/Python dependencies, and tested vs estimated capacity.
+- **[scripts/install_docker_ubuntu.sh](scripts/install_docker_ubuntu.sh)** — guarded official-Docker installer for a fresh Ubuntu VPS only. **Not** for the existing V5 servers.
+- **[scripts/check_vps.sh](scripts/check_vps.sh)** — read-only RAM, disk, Docker/Compose and Binance API preflight.
+- **[LIVE_SAFETY.md](LIVE_SAFETY.md)** — future owner/Telegram/Binance protections; real trading **still locked**.
+
+**Status:** Documentation and setup commands are prepared **for future commissioning**. The full 30-day FreqAI M1 backtest, sustained paper trading and real-money acceptance have **not** yet passed. The short 3-day BTC model demo succeeded on the 1-GB Observation VPS but **did not produce any trades**. Do not deploy a persistent trading service until its milestones are accepted.
+
 ## Minimal source tree
 
 ~~~text
 README.md
 ROADMAP.md
 docker-compose.yml
+DEPENDENCIES.md
+VPS_SETUP.md
+scripts/check_vps.sh
+scripts/install_docker_ubuntu.sh
 scripts/bootstrap_history.py
 scripts/owner_live_approval.py
 LIVE_SAFETY.md
