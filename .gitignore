@@ -7,3 +7,4 @@ user_data/*.sqlite*
 user_data/config-private.json
 __pycache__/
 .pytest_cache/
+user_data/bootstrap_records/
