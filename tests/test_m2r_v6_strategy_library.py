@@ -197,5 +197,47 @@ class TestResearchExecutionSafety(unittest.TestCase):
             self.assertFalse(d["api_server"]["enabled"])
 
 
+class TestNativeScorecardProvenance(unittest.TestCase):
+    def test_actual_native_archive_trade_economics_not_future_hypothetical_labels(self):
+        import tempfile
+        from zipfile import ZipFile
+        from m2r_v6_library_scorecards import native_archive
+        with tempfile.TemporaryDirectory() as folder:
+            archive=Path(folder)/"native.zip"
+            strategy="NbotV6EmaCrossResearch"
+            trade={"pair":"BTC/USDT:USDT","profit_abs":-2.0,
+                   "fee_open":.0005,"fee_close":.0005,
+                   "leverage":1,"stake_amount":1000,
+                   "open_date":"2026-07-01 00:05:00",
+                   "close_date":"2026-07-01 00:10:00"}
+            stats={
+                "trading_mode":"futures","timeframe":"5m","max_open_trades":1,
+                "stake_amount":1000,"starting_balance":100000,
+                "pairlist":["BTC/USDT:USDT"]+[f"C{i}/USDT:USDT" for i in range(24)],
+                "total_trades":1,"profit_total_abs":-2.0,
+                "trades":[trade],"backtest_start":"2026-07-01 00:00:00",
+                "backtest_end":"2026-08-01 00:00:00",
+            }
+            with ZipFile(archive,"w") as z:
+                z.writestr("result.json",json.dumps({"strategy":{strategy:stats}}))
+            observed=native_archive(archive,strategy)
+            self.assertEqual(observed["profit_total_abs"],-2.0)
+            stats["trades"][0]["fee_open"]=0.001
+            with ZipFile(archive,"w") as z:
+                z.writestr("result.json",json.dumps({"strategy":{strategy:stats}}))
+            with self.assertRaises(ValueError):
+                native_archive(archive,strategy)
+
+    def test_regime_labels_use_only_prior_and_current_candles(self):
+        from m2r_v6_library_scorecards import asof_regime_on_candles
+        df=TestLibraryIndicators.df()
+        full=asof_regime_on_candles(df)
+        for limit in (180,280,380):
+            pd.testing.assert_series_equal(
+                full.iloc[:limit],asof_regime_on_candles(df.iloc[:limit].copy()))
+        self.assertTrue(set(full.unique()).issubset({
+            "trend_up","trend_down","range","high_volatility"}))
+
+
 if __name__=="__main__":
     unittest.main()
