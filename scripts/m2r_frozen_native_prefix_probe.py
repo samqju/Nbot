@@ -58,6 +58,7 @@ def main():
     cfg["freqai"]["save_backtest_models"] = False
     cfg["freqai"]["data_kitchen_thread_count"] = 2
     cfg["timerange"] = "20261008-20261009"
+    cfg["config_files"] = [str(args.config)]
     cfg["user_data_dir"] = args.output.parent / "temporary_native_model_user_data"
     cfg["user_data_dir"].mkdir(parents=True, exist_ok=True)
 
