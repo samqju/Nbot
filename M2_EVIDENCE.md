@@ -53,13 +53,25 @@ These are applied **in addition to** the official engine's 0.05% per-side fee *o
 
 The non-ML baseline's **fixed-fill** hypothetical break-even additional cost is approximately **55.137 bps per round trip**; this is **not an observed market spread** or a reliable live break-even threshold.
 
-Freqtrade exports already include fees and a `funding_fees` field: the reconstructed sums of the recorded funding field in the *original* archives were **-0.722 USDT for AI** and **+0.368 USDT for non-ML**. These values are *part of the engine backtest records*, not separately reconciled against actual Binance settlement per position. The cost script does **not** double-charge them. Before acceptance, independently verify the funding convention and the exact event timestamps for futures markets.
+Freqtrade exports include fees and a `funding_fees` field, and the cost-stress script **does not double-charge them**. **Independent funding-event reconciliation is now PASSED for these trade windows:** Using Binance's unauthenticated USD-M `/fapi/v1/fundingRate` response, per-trade position size, settlement mark, timestamp and long/short sign, the AI trades had **11 funding events**, expected **-0.721885 USDT** versus Freqtrade **-0.721893 USDT**; the non-ML trades had **21 events**, expected **+0.367678 USDT** versus Freqtrade **+0.367662 USDT**. **0/65 trades** differed by more than **0.05 USDT**, and the total absolute per-trade difference was **0.000008 AI / 0.000018 non-ML USDT**. See the [per-trade Binance evidence](evidence/m2/2026-10-17-public-binance-funding-reconciliation.json) and [reproducible tool](scripts/m2_funding_reconcile.py). This validates **the specific historical funding events and engine sign/amount**, not order-book fill quality, future fee tiers or all future market regimes.
 
 ### Lookahead/bias checking
 
 **Official Freqtrade `lookahead-analysis` on frozen non-ML:** completed exit **0**, **30 tested signals**, `has_bias=No`, `biased_entry_signals=0`, `biased_exit_signals=0`. The lookahead tool deliberately overrides stake, maximum open trades and order types to test the signal path; **those tool-internal values are NOT the comparison backtest's risk settings**. Official documentation warns that no bias found in sampled signals is **not a proof of all-signal causality**.
 
-**AI V6 lookahead tool:** not accepted yet. Freqtrade's analysis forcibly sets unlimited open positions, and our core V6 guard correctly refused it with `NBOT_V6_REQUIRES_ONE_GLOBAL_POSITION`. We chose **not** to loosen the primary AI strategy's paper/owner safety protections just to run this diagnostic. Separately audit FreqAI label isolation and devise an isolated safe, test-only method before declaring the AI path free of leakage. `set_freqai_targets` intentionally uses future close only for `&-forward_return` labels, while `feature_engineering_*` columns are past-only; this is a *source review observation*, not an accepted full independent audit.
+**AI V6 lookahead tool: executed via a dedicated NO-LIVE audit subclass, but flagged differences — NOT CLEAN.** A separate `NbotV6M2Audit` inherits the core strategy's exact indicators/signals; it allows Freqtrade's forcibly unlimited-slot lookahead simulation only with dry-run enabled, empty credentials, disabled API/Telegram, an explicit audit overlay and the literal `lookahead-analysis` CLI. **Production `NbotV6` is untouched.** Official 25-pair, 8-signal audit finished (exit code 0) with `has_bias=Yes`: `biased_entry_signals=0`, `biased_exit_signals=0`, but changed indicator values for `&-forward_return`, its mean/std, `do_predict`, `DI_values`, `enter_tag`, `enter_long`, `exit_long` and `exit_short`. Freqtrade documents expected FreqAI `&-` target false positives; **that does not automatically clear changing prediction/entry/exit fields**. Model retraining and pairlist slicing might contribute, but this is a hypothesis, not accepted evidence. [Full diagnostic record](evidence/m2/2026-10-17-ai-lookahead-and-signals.md). Dedicated offline tests confirm 14/28 EMA/volatility/momentum/volume feature columns are unchanged by appended future candles, while `&-` is a separate forward label, not a feature. **The AI leakage gate remains UNRESOLVED.**
+
+### Independent trade/signal/rejection accounting
+
+Re-ran the official 25-pair `backtesting --export signals --cache none` for both variants (base 0.05% fee per side). The historical P&L reproduced exactly. [Raw signal-summary evidence and interpretation](evidence/m2/2026-10-17-ai-lookahead-and-signals.md).
+
+| Export | AI V6 | Frozen non-ML |
+|---|---:|---:|
+| Entered signal rows / closed trades | 34 / 34 | 31 / 31 |
+| Rejected-entry signal rows | **68** | **6,531** |
+| Exited signal rows | 34 | 31 |
+
+These represent engine signal/rejection *records*, not 6,531 independently available trades; the one-global-position cap rejects repeat entries while the slot is occupied. AI `do_predict` abstentions and all potential raw EMA setups are **not** fully captured by this export, so total eligibility/abstention/exposure accounting is not yet complete. The separate **20-slot future paper mode remains configured but intentionally inactive**.
 
 ## M2 acceptance checklist and remaining tasks
 
@@ -70,13 +82,14 @@ Freqtrade exports already include fees and a `funding_fees` field: the reconstru
 - [x] Publish trade-level per-coin/long-short summaries and *hypothetical* additional execution cost stresses, with all assumptions labeled.
 - [x] Run official lookahead-analysis on the 30 tested non-ML signals (no bias detected).
 - [ ] Obtain **observed**, timestamped bid/ask, depth and plausible maker/taker/slippage bands at the historical decision time, not merely present-day quotes.
-- [ ] Independently reconcile funding fees against exchange historical settlement events and audit the treatment of fee tiers / order types.
-- [ ] Complete FreqAI prediction-label isolation and no-leakage verification without disabling live/paper safety rules.
-- [ ] Validate eligible signal counts/abstentions and exposure metrics across both models for the same period, and inspect the full trade distributions.
+- [x] Independently reconcile **actual Binance historical funding events** to both exported strategies, including sign, mark price and settlement time: **65/65 trades within five cents**; fee-tier/order-type fills remain [ ] separately unverified.
+- [ ] Resolve the **actual flagged AI lookahead differences** after running the historical-only audit subclass. Offline prefix feature-causality and label separation pass, but model `do_predict` / entry/exit columns changed. NO M2 clearance.
+- [x] Reproduce exact official exported **entry / rejected / exit record counts** and trade-level pair/side/time summaries across both strategies (AI: 34/68/34, no-ML: 31/6531/31).
+- [ ] Complete raw eligible setup / FreqAI `do_predict` abstention / slot occupancy / exposure reconciliation (exported signal records alone are insufficient).
 - [ ] Establish a defensible, repeatable base-cost and high-cost methodology beyond simple additive fixed-fill stresses. **M2 gate remains OPEN**.
 - [ ] Extend comparisons through independent periods and regimes in **M3**; avoid optimizing solely on the first week.
 
-**Decision:** Keep M2 **IN PROGRESS**; the non-ML comparator is a useful control but **not approved for deployment**. Next review cost-model fidelity and FreqAI/no-ML attribution; then M3 multiple chronological held-out windows. In parallel only offline M5A selector design/research is allowed; its eight-hour live scanner/rotation is **NOT built**, and the separate **up-to-20-position dry-run paper configuration remains intact but NOT commissioned**.
+**Decision:** Keep M2 **IN PROGRESS**; true historical Binance funding has now been checked, but unverified historical bid/ask/slippage and the **positive AI lookahead indicator-difference flag** explicitly BLOCK the acceptance gate. The non-ML comparator is a useful control but **not approved for deployment**. Next review cost-model fidelity and FreqAI/no-ML attribution; then M3 multiple chronological held-out windows. In parallel only offline M5A selector design/research is allowed; its eight-hour live scanner/rotation is **NOT built**, and the separate **up-to-20-position dry-run paper configuration remains intact but NOT commissioned**.
 
 ## Reproduction on the owner-authorized V6 research VPS
 
