@@ -137,6 +137,8 @@ def main() -> int:
             strat, corr_dataframes=corr, base_dataframes=base,
             pair=pair, do_corr_pairs=True,
         )
+        # Match native start_backtesting lines 361-362 before find_features/train.
+        full = dk.remove_special_chars_from_feature_names(full)
         full["date"] = pd.to_datetime(full.date, utc=True)
         if pair == "BTC/USDT:USDT":
             expected_features = 36
@@ -193,7 +195,8 @@ def main() -> int:
                 base_dataframes=reduced, pair=pair, do_corr_pairs=True
             )
             assert prefix.date.iloc[-1] == target
-            asof_one = prefix.iloc[[-1]].reset_index(drop=True)
+            asof_one = asof_dk.remove_special_chars_from_feature_names(
+                prefix.iloc[[-1]].reset_index(drop=True))
             assert set(feature_cols).issubset(asof_one), (pair, set(feature_cols) - set(asof_one))
             v1 = full_one[feature_cols].to_numpy(dtype=float)
             v2 = asof_one[feature_cols].to_numpy(dtype=float)
