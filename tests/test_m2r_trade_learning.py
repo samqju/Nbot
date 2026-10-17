@@ -185,6 +185,26 @@ class M2ResearchLearningTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"INVALID_REGIME"):
             choose_candidate(both,market_regime="next_week_bullish")
 
+    def test_model_training_target_is_past_independent_for_family(self):
+        from nbot_trade_outcome import training_labels_for_family
+        old=candles(130)
+        extended=candles(175)
+        extended.loc[130:,"close"]=np.linspace(100000,200000,45)
+        extended.loc[130:,"open"]=extended.loc[130:,"close"]
+        extended.loc[130:,"high"]=extended.loc[130:,"close"]*1.001
+        extended.loc[130:,"low"]=extended.loc[130:,"close"]*.999
+        for family in ("breakout","pullback"):
+            a=training_labels_for_family(old,family)
+            b=training_labels_for_family(extended,family)
+            # A training outcome needs the NEXT 12 bars. Labels that can be
+            # resolved entirely in the old prefix cannot depend on appends.
+            pd.testing.assert_series_equal(
+                a["&-trade_net_return"].iloc[:118],
+                b["&-trade_net_return"].iloc[:118],
+                check_names=True
+            )
+            self.assertTrue(a["&-trade_net_return"].iloc[-12:].isna().all())
+
     def test_family_labels_do_not_include_other_setup_type(self):
         from nbot_trade_outcome import training_labels_for_family, setups
         from NbotV6FamilyResearch import NbotV6BreakoutResearch, NbotV6PullbackResearch
