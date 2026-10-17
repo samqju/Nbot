@@ -235,6 +235,46 @@ class M2ResearchLearningTests(unittest.TestCase):
             self.assertTrue((out["enter_long"] == flags[kind+"_long"].astype(int)).all())
             self.assertTrue((out["enter_short"] == flags[kind+"_short"].astype(int)).all())
 
+    def test_matched_non_ml_variants_only_use_frozen_setups(self):
+        from NbotV6MatchedNoMLResearch import (
+            NbotV6MatchedNoMLResearch,NbotV6MatchedBreakoutNoMLResearch,
+            NbotV6MatchedPullbackNoMLResearch
+        )
+        frame=candles(180)
+        flags=setups(frame)
+        for cls,family in (
+            (NbotV6MatchedNoMLResearch,"combined"),
+            (NbotV6MatchedBreakoutNoMLResearch,"breakout"),
+            (NbotV6MatchedPullbackNoMLResearch,"pullback"),
+        ):
+            out=cls().populate_entry_trend(frame.copy(),{})
+            if family=="combined":
+                long=flags["breakout_long"]|flags["pullback_long"]
+                short=flags["breakout_short"]|flags["pullback_short"]
+            else:
+                long=flags[family+"_long"]
+                short=flags[family+"_short"]
+            self.assertTrue((out["enter_long"]==long.astype(int)).all())
+            self.assertTrue((out["enter_short"]==short.astype(int)).all())
+
+    def test_matched_non_ml_has_same_timeout_and_no_paper_mode(self):
+        from NbotV6MatchedNoMLResearch import NbotV6MatchedNoMLResearch
+        from datetime import datetime,timedelta,timezone
+        bot=NbotV6MatchedNoMLResearch()
+        base=json.loads((ROOT/"user_data"/"config.json").read_text())
+        overlay=json.loads((ROOT/"user_data"/"config.m2r-matched-no-ml.json").read_text())
+        bot.config={**base,**overlay,"exchange":{**base["exchange"],**overlay["exchange"]}}
+        bot.config["runmode"]="backtest"
+        bot.bot_start()
+        trade=type("TestTrade",(),{"open_date_utc":datetime(2026,10,8,tzinfo=timezone.utc)})()
+        self.assertIsNone(bot.custom_exit(None,trade,trade.open_date_utc+timedelta(minutes=55),0,0))
+        self.assertEqual(bot.custom_exit(None,trade,trade.open_date_utc+timedelta(minutes=60),0,0),
+                         "m2r_matched_60minute_exit")
+        bot.config["runmode"]="dry_run"
+        with self.assertRaisesRegex(RuntimeError,"HISTORICAL_ONLY"):
+            bot.bot_start()
+        self.assertFalse(bot.confirm_trade_entry("BTC/USDT:USDT","limit",1,100,"gtc",None,None,"long"))
+
     def test_research_strategy_rejects_all_paper_and_live_modes(self):
         config=json.loads((ROOT/"user_data"/"config.json").read_text())
         overlay=json.loads((ROOT/"user_data"/"config.m2r-trade-outcome.json").read_text())
