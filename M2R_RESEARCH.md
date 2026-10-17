@@ -110,6 +110,14 @@ A clean separate **25-pair original AI official lookahead rerun** finished norma
 
 The next guarded offline step is all-25 **fixed-model, time-prefix forecast and label-boundary validation** with independent 12-bar internal embargo and realistic exchange execution/funding sensitivity; only after that, run the already-frozen May–August 30/60/90/eligible 180-day comparison with original AI, matched no-AI and **NO TRADE**. **M2 release NO-GO; M3/M4/M5A/M7 inactive.**
 
+## October 17 verified native four-feature model invariance, experimental embargo and funding costs (NEWEST)
+
+The V6-only 8GB VPS executed native FreqAI 2026.9 `LightGBMRegressor.train()/predict()` on **25 real fixed markets** using their combined after-cost **four decision features** and a 30-day training prefix ending Oct 8. Reusing **identical model bytes and native FreqAI fitted pipelines** across each pair's **four Oct 8 as-of prediction instants**, the full-history versus truncated-prefix predictions matched **100/100** with **zero causal feature, `do_predict`, DI, forecast or LightGBM SHA mismatches**. An opt-in **experimental 12-bar embargo of native 80/20 internal validation** removed **45 potential overlapping train rows** and also passed **100/100**; zero remaining boundary violations. The historical original model with 72 cross-pair/1h/5m features and separate family models are NOT yet certified. Original official `has_bias=Yes` stays open.
+
+A separate **already examined September–October** 25-market funding/mark/candle audit (no May–August outcome inspection) measured **3,375 funding events, 208 larger than 1bp**, max **18.5769bp**, compared with constant **1bp funding** in the V6 hypothetical target. Funding can be earned or paid only when a trade crosses its exchange event; 1bp is not realized funding. Hourly mark/future prices are not executable bid/ask spreads; no real slippage or stop fill paths available. **M2 cost/fill gate remains not met**, and earlier +25bp stress erases the brief Oct after-cost wins. [Complete reproducible results, SHA256 of VPS detailed files and limitations](evidence/m2r/2026-10-17-frozen-model-embargo-funding-audit.md); [native same-model probe](scripts/m2r_frozen_native_prefix_probe.py); [funding data auditor](scripts/m2r_execution_funding_quality_audit.py).
+
+**No Jan-onward 30/60/90/180-day model comparison, May–August PnL, strategy selection or release decision in this test. M2 stays NO-GO, M3/M4/M5A not activated, M7 locked.**
+
 ## Still required before real evaluation or activation
 
 1. **M2 integrity issues:** The official FreqAI lookahead diagnostic still reported \`has_bias=Yes\` on some prediction/decision columns; precise old historical bid/ask and stop fills remain missing, and two small September funding boundary differences are unresolved. New code does not erase these.
