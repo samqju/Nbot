@@ -71,8 +71,14 @@ class NbotV6PurgedLightGBMRegressor(LightGBMRegressor):
     def train(self, unfiltered_df, pair: str, dk: FreqaiDataKitchen, **kwargs):
         c = self.config
         e = c.get("exchange", {})
+        runmode = c.get("runmode")
+        runmode = str(getattr(runmode, "value", runmode)).lower()
         if not (
             c.get("nbot_m2r_purge_internal") is True
+            and c.get("nbot_m2r_research_only") is True
+            and c.get("nbot_paper_research_mode") is not True
+            and c.get("nbot_live_mode") is not True
+            and runmode == "backtest"
             and c.get("dry_run") is True
             and not e.get("key")
             and not e.get("secret")
