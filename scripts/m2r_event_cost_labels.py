@@ -33,9 +33,9 @@ class FundingSchedule:
             raise ValueError("BAD_FUNDING_RATE")
         if not (np.isfinite(md.close.to_numpy(dtype=float)).all() and (md.close>0).all()):
             raise ValueError("BAD_MARK")
-        event_ns=fd.date.astype("int64").to_numpy()
+        event_ns=np.asarray([timestamp.value for timestamp in fd.date], dtype=np.int64)
         # Last FINISHED 1h mark candle at the funding settlement instant.
-        completed_ns=(md.date+pd.Timedelta(hours=1)).astype("int64").to_numpy()
+        completed_ns=np.asarray([timestamp.value for timestamp in md.date+pd.Timedelta(hours=1)], dtype=np.int64)
         indices=np.searchsorted(completed_ns,event_ns,side="right")-1
         if (indices<0).any():
             raise ValueError("INSUFFICIENT_PAST_COMPLETED_MARK_DATA")
