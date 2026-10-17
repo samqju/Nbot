@@ -32,5 +32,5 @@ def test_recovery_requires_native_archive_audit_before_new_systemd():
     assert "m2r_jansep_native_rolling_audit.py" in script
     assert "systemd-run" in script
     assert script.index("m2r_jansep_native_rolling_audit.py") < script.index("systemd-run")
-    assert "DOCKER_RUNNING" not in script  # no restart without checking docker ps
+    assert "ANOTHER_DOCKER_RUNNING_DO_NOT_START" in script
     assert "docker ps -q" in script
