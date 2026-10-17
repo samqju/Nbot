@@ -1,0 +1,50 @@
+{
+  "bot_name": "nbot-v6-library-rl-research-only",
+  "dry_run": true,
+  "nbot_v6_rl_research_only": true,
+  "nbot_live_mode": false,
+  "nbot_paper_research_mode": false,
+  "max_open_trades": 1,
+  "stake_amount": 1000,
+  "force_entry_enable": false,
+  "exchange": {
+    "key": "",
+    "secret": ""
+  },
+  "telegram": {
+    "enabled": false
+  },
+  "api_server": {
+    "enabled": false
+  },
+  "freqai": {
+    "enabled": true,
+    "identifier": "nbot-v6-rl-research-offline-20261017",
+    "train_period_days": 30,
+    "backtest_period_days": 7,
+    "continual_learning": false,
+    "save_backtest_models": true,
+    "rl_config": {
+      "train_cycles": 3,
+      "add_state_info": false,
+      "max_trade_duration_candles": 12,
+      "max_training_drawdown_pct": 0.02,
+      "cpu_count": 1,
+      "model_type": "PPO",
+      "policy_type": "MlpPolicy",
+      "model_reward_parameters": {
+        "rr": 1,
+        "profit_aim": 0.005
+      }
+    },
+    "model_training_parameters": {
+      "n_steps": 64,
+      "batch_size": 64,
+      "learning_rate": 0.0003
+    },
+    "data_split_parameters": {
+      "test_size": 0.2,
+      "shuffle": false
+    }
+  }
+}

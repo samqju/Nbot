@@ -1,0 +1,75 @@
+{
+  "window": [
+    "2026-09-01",
+    "2026-10-01"
+  ],
+  "source": "Official Freqtrade backtest-result ZIP archives",
+  "simulation_only": true,
+  "max_simultaneous_positions": 1,
+  "assumed_entry_and_exit_fee_side": 0.0005,
+  "NO_TRADE": {
+    "trades": 0,
+    "net_usdt": 0
+  },
+  "strategies": {
+    "original_price_AI": {
+      "trades": 137,
+      "wins": 43,
+      "losses_or_breakevens": 94,
+      "win_pct": 31.39,
+      "net_usdt": -444.98,
+      "fee_rate_entry": null,
+      "fee_rate_exit": null,
+      "max_drawdown_usdt": 446.755,
+      "profit_factor": 0.6230556170062286,
+      "longs": 93,
+      "shorts": 44,
+      "zero_duration_trades": 1,
+      "time_in_position_hours": 292.583,
+      "percent_time_in_position": 40.637,
+      "overlapping_global_positions": 0
+    },
+    "simple_non_AI": {
+      "trades": 163,
+      "wins": 42,
+      "losses_or_breakevens": 121,
+      "win_pct": 25.77,
+      "net_usdt": -242.894,
+      "fee_rate_entry": null,
+      "fee_rate_exit": null,
+      "max_drawdown_usdt": 306.942,
+      "profit_factor": 0.761662052591421,
+      "longs": 89,
+      "shorts": 74,
+      "zero_duration_trades": 8,
+      "time_in_position_hours": 717.417,
+      "percent_time_in_position": 99.641,
+      "overlapping_global_positions": 0
+    },
+    "after_cost_combined_AI": {
+      "trades": 332,
+      "wins": 132,
+      "losses_or_breakevens": 200,
+      "win_pct": 39.76,
+      "net_usdt": -442.471,
+      "fee_rate_entry": null,
+      "fee_rate_exit": null,
+      "max_drawdown_usdt": 449.411,
+      "profit_factor": 0.7494745242831946,
+      "longs": 223,
+      "shorts": 109,
+      "zero_duration_trades": 1,
+      "time_in_position_hours": 308.5,
+      "percent_time_in_position": 42.847,
+      "overlapping_global_positions": 0
+    }
+  },
+  "limitations": [
+    "Different exit rules and model candidate universes mean profit differences are not purely attributable to AI.",
+    "Original NbotV6 and non-ML use a different exit strategy than the new 60-minute after-cost models.",
+    "Use trade-level periods, not directly summing overlapping training opportunities as PnL.",
+    "Exchange actual bid/ask, slippage and stop fills are unverified and outcomes are simulated.",
+    "One out-of-sample window is not proof of durable profitability.",
+    "FreqAI lookahead indicator warnings and full training-boundary purge are NOT certified."
+  ]
+}

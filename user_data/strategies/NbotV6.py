@@ -5,9 +5,80 @@ No custom order execution, networking, portfolio accounting, or ML model framewo
 """
 from __future__ import annotations
 
+import json
+import re
+import stat
+from datetime import datetime, timezone
+from pathlib import Path
+
 import numpy as np
 from pandas import DataFrame
 from freqtrade.strategy import IStrategy
+
+
+# Mounted read-only from a private VPS directory ONLY in the live profile.
+# This file never exists in the checked-in dry-run repository.
+LIVE_ARM_PATH = Path("/freqtrade/live_private/approval.json")
+LIVE_MAX_STAKE_USDT = 1000
+LIVE_MAX_APPROVAL_SECONDS = 24 * 60 * 60
+
+
+def owner_live_authorized(config: dict, now: datetime | None = None) -> bool:
+    """Owner-only, expiring second authorization for real-money entries."""
+    try:
+        if config.get("dry_run") is not False or config.get("nbot_live_mode") is not True:
+            return False
+        if config.get("nbot_paper_research_mode") is True:
+            return False
+        if config.get("trading_mode") != "futures" or config.get("margin_mode") != "isolated":
+            return False
+        if type(config.get("max_open_trades")) is not int or config["max_open_trades"] != 1:
+            return False
+        stake = config.get("stake_amount")
+        if type(stake) not in (int, float) or not 0 < stake <= LIVE_MAX_STAKE_USDT:
+            return False
+        if config.get("force_entry_enable") is not False:
+            return False
+        if config.get("api_server", {}).get("enabled") is not False:
+            return False
+        freqai = config.get("freqai", {})
+        if freqai.get("enabled") is not True or freqai.get("expiration_hours", 0) <= 0:
+            return False
+        exchange = config.get("exchange", {})
+        if exchange.get("name") != "binance" or not exchange.get("key") or not exchange.get("secret"):
+            return False
+        telegram = config.get("telegram", {})
+        owner = str(config.get("nbot_owner_telegram_id", ""))
+        if not re.fullmatch(r"[1-9]\d{4,19}", owner):
+            return False
+        if telegram.get("enabled") is not True or not telegram.get("token"):
+            return False
+        # Never permit group-chat authorization for real-money commands.
+        if str(telegram.get("chat_id", "")) != owner:
+            return False
+        if telegram.get("authorized_users") != [owner]:
+            return False
+        if LIVE_ARM_PATH.is_symlink():
+            return False
+        info = LIVE_ARM_PATH.stat()
+        if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_size > 2048:
+            return False
+        approval = json.loads(LIVE_ARM_PATH.read_text(encoding="utf-8"))
+        current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).timestamp()
+        issued = approval.get("issued_at")
+        expires = approval.get("expires_at")
+        if type(issued) not in (int, float) or type(expires) not in (int, float):
+            return False
+        if not (issued <= current < expires and 0 < expires - issued <= LIVE_MAX_APPROVAL_SECONDS):
+            return False
+        if approval.get("owner_telegram_id") != owner:
+            return False
+        if approval.get("model_identifier") != freqai.get("identifier"):
+            return False
+        return approval.get("approval") == "NBOT_V6_OWNER_ARMED"
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return False
+
 
 
 class NbotV6(IStrategy):
@@ -18,11 +89,23 @@ class NbotV6(IStrategy):
     startup_candle_count = 200
 
     # Baseline safety envelopes, NOT optimized/validated parameters.
-    stoploss = -0.03
+    stoploss = -0.02
     minimal_roi = {"0": 0.05}
     use_exit_signal = True
     exit_profit_only = False
     trailing_stop = False
+
+    # Exchange-side stop-market protection on Binance futures once accepted.
+    # Does not guarantee fill price or eliminate liquidation/slippage risk.
+    order_types = {
+        "entry": "limit",
+        "exit": "limit",
+        "emergency_exit": "market",
+        "stoploss": "market",
+        "stoploss_on_exchange": True,
+        "stoploss_on_exchange_interval": 60,
+    }
+
 
     # This is a decision-time proxy, not a measured transaction cost.
     # Freqtrade backtests/dry-run model fills separately. Funding and severe
@@ -32,16 +115,48 @@ class NbotV6(IStrategy):
     prediction_exit_threshold = 0.003
 
     def bot_start(self, **kwargs) -> None:
-        """Fail closed if someone tries to turn the V6 prototype into a live bot."""
+        """A real-money bot cannot start without owner approval."""
         mode = self.config.get("runmode")
         mode = str(getattr(mode, "value", mode)).lower()
-        if mode not in {"backtest", "hyperopt", "edge"}:
-            if self.config.get("dry_run") is not True:
-                raise RuntimeError("NBOT_V6_LIVE_ORDERS_FORBIDDEN: dry_run must be true")
-            if self.config.get("max_open_trades") != 1:
-                raise RuntimeError("NBOT_V6_REQUIRES_ONE_GLOBAL_POSITION")
-            if not self.config.get("freqai", {}).get("enabled", False):
-                raise RuntimeError("NBOT_V6_REQUIRES_FREQAI")
+        if mode in {"backtest", "hyperopt", "edge"}:
+            return
+        if self.config.get("dry_run") is False:
+            if self.order_types.get("stoploss_on_exchange") is not True or self.order_types.get("stoploss") != "market":
+                raise RuntimeError("NBOT_V6_REQUIRES_EXCHANGE_SIDE_STOP_MARKET")
+            if not owner_live_authorized(self.config):
+                raise RuntimeError("NBOT_V6_LIVE_OWNER_APPROVAL_REQUIRED")
+            return
+        if self.config.get("dry_run") is not True:
+            raise RuntimeError("NBOT_V6_LIVE_ORDERS_FORBIDDEN")
+        limit = self.config.get("max_open_trades")
+        if self.config.get("nbot_paper_research_mode") is True:
+            # Research can never have private exchange order credentials.
+            if type(limit) is not int or not 1 <= limit <= 20:
+                raise RuntimeError("NBOT_V6_PAPER_CAP_MUST_BE_1_TO_20")
+            exchange = self.config.get("exchange", {})
+            if exchange.get("key") or exchange.get("secret"):
+                raise RuntimeError("NBOT_V6_PAPER_MUST_NOT_HAVE_EXCHANGE_KEYS")
+        elif limit != 1:
+            raise RuntimeError("NBOT_V6_REQUIRES_ONE_GLOBAL_POSITION")
+        if not self.config.get("freqai", {}).get("enabled", False):
+            raise RuntimeError("NBOT_V6_REQUIRES_FREQAI")
+
+    def confirm_trade_entry(self, pair: str, order_type: str, amount: float,
+                            rate: float, time_in_force: str, current_time,
+                            entry_tag: str | None, side: str, **kwargs) -> bool:
+        """Recheck arm before every live entry, without interrupting exits."""
+        if self.config.get("dry_run") is True:
+            return True
+        if not owner_live_authorized(self.config):
+            return False
+        if self.order_types.get("stoploss_on_exchange") is not True:
+            return False
+        if self.order_types.get("stoploss") != "market":
+            return False
+        # Freqtrade supplies amount in base units and rate in quote currency.
+        # Small 1% allowance for quote/rounding effects; never scale with a
+        # larger balance or silently allow 20 research slots in live mode.
+        return 0 < amount * rate <= LIVE_MAX_STAKE_USDT * 1.01
 
     def leverage(self, pair: str, current_time, current_rate: float,
                  proposed_leverage: float, max_leverage: float,

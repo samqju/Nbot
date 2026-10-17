@@ -1,0 +1,20 @@
+{
+  "bot_name": "nbot-v6-m2r-original-price-AI-holdout",
+  "dry_run": true,
+  "max_open_trades": 1,
+  "exchange": {
+    "key": "",
+    "secret": ""
+  },
+  "api_server": {
+    "enabled": false
+  },
+  "telegram": {
+    "enabled": false
+  },
+  "freqai": {
+    "identifier": "nbot-v6-m2r-original-price-oct08-16-20261017",
+    "train_period_days": 30,
+    "backtest_period_days": 7
+  }
+}

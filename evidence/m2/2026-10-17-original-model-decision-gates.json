@@ -1,0 +1,505 @@
+{
+  "source": "Original frozen FreqAI 25-pair backtesting_predictions/*.feather + Binance 5m futures candles",
+  "window": "2026-10-01 00:00 UTC to 2026-10-08 00:00 UTC",
+  "prediction_threshold_abs_fraction": 0.006,
+  "pair_count": 25,
+  "method": "Rebuild original EMA20/50, previous-20-high/low and pullback on causal 5m candles; join original predictions by exact UTC date",
+  "limitations": [
+    "Eligible candidate signals are per-symbol per-candle possibilities, NOT fills or independent orders.",
+    "Only one actual global position may be held, so many valid signals cannot be executed.",
+    "Freqtrade native export confirms actual AI 34/68/34 and non-ML 31/6531/31 entry/rejection/exit rows.",
+    "This does not independently establish out-of-sample model validity or eliminate lookahead diagnostic anomalies."
+  ],
+  "summary": {
+    "five_minute_decisions": 50400,
+    "valid_price_volume": 50400,
+    "technical_setups": 6837,
+    "technical_long": 3437,
+    "technical_short": 3400,
+    "do_predict_values": {
+      "0.0": 163,
+      "1.0": 50237
+    },
+    "model_ready": 50237,
+    "technical_setup_but_model_not_ready": 28,
+    "technical_setup_model_ready": 6809,
+    "technical_setup_model_ready_but_prediction_wrong_size": 6661,
+    "eligible_AI_candidate_signal_rows": 148,
+    "eligible_long": 128,
+    "eligible_short": 20,
+    "eligible_baseline_candidate_signal_rows": 6837
+  },
+  "pairs": {
+    "BTC/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 272,
+      "technical_long": 154,
+      "technical_short": 118,
+      "do_predict_values": {
+        "1.0": 2016
+      },
+      "model_ready": 2016,
+      "technical_setup_but_model_not_ready": 0,
+      "technical_setup_model_ready": 272,
+      "technical_setup_model_ready_but_prediction_wrong_size": 268,
+      "eligible_AI_candidate_signal_rows": 4,
+      "eligible_long": 4,
+      "eligible_short": 0,
+      "eligible_baseline_candidate_signal_rows": 272
+    },
+    "ETH/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 279,
+      "technical_long": 168,
+      "technical_short": 111,
+      "do_predict_values": {
+        "1.0": 2015,
+        "0.0": 1
+      },
+      "model_ready": 2015,
+      "technical_setup_but_model_not_ready": 1,
+      "technical_setup_model_ready": 278,
+      "technical_setup_model_ready_but_prediction_wrong_size": 274,
+      "eligible_AI_candidate_signal_rows": 4,
+      "eligible_long": 4,
+      "eligible_short": 0,
+      "eligible_baseline_candidate_signal_rows": 279
+    },
+    "SOL/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 257,
+      "technical_long": 141,
+      "technical_short": 116,
+      "do_predict_values": {
+        "1.0": 2016
+      },
+      "model_ready": 2016,
+      "technical_setup_but_model_not_ready": 0,
+      "technical_setup_model_ready": 257,
+      "technical_setup_model_ready_but_prediction_wrong_size": 256,
+      "eligible_AI_candidate_signal_rows": 1,
+      "eligible_long": 1,
+      "eligible_short": 0,
+      "eligible_baseline_candidate_signal_rows": 257
+    },
+    "BNB/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 271,
+      "technical_long": 154,
+      "technical_short": 117,
+      "do_predict_values": {
+        "1.0": 2015,
+        "0.0": 1
+      },
+      "model_ready": 2015,
+      "technical_setup_but_model_not_ready": 1,
+      "technical_setup_model_ready": 270,
+      "technical_setup_model_ready_but_prediction_wrong_size": 270,
+      "eligible_AI_candidate_signal_rows": 0,
+      "eligible_long": 0,
+      "eligible_short": 0,
+      "eligible_baseline_candidate_signal_rows": 271
+    },
+    "XRP/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 251,
+      "technical_long": 128,
+      "technical_short": 123,
+      "do_predict_values": {
+        "1.0": 2015,
+        "0.0": 1
+      },
+      "model_ready": 2015,
+      "technical_setup_but_model_not_ready": 1,
+      "technical_setup_model_ready": 250,
+      "technical_setup_model_ready_but_prediction_wrong_size": 246,
+      "eligible_AI_candidate_signal_rows": 4,
+      "eligible_long": 4,
+      "eligible_short": 0,
+      "eligible_baseline_candidate_signal_rows": 251
+    },
+    "ADA/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 255,
+      "technical_long": 140,
+      "technical_short": 115,
+      "do_predict_values": {
+        "1.0": 2002,
+        "0.0": 14
+      },
+      "model_ready": 2002,
+      "technical_setup_but_model_not_ready": 2,
+      "technical_setup_model_ready": 253,
+      "technical_setup_model_ready_but_prediction_wrong_size": 244,
+      "eligible_AI_candidate_signal_rows": 9,
+      "eligible_long": 1,
+      "eligible_short": 8,
+      "eligible_baseline_candidate_signal_rows": 255
+    },
+    "LINK/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 275,
+      "technical_long": 134,
+      "technical_short": 141,
+      "do_predict_values": {
+        "1.0": 2002,
+        "0.0": 14
+      },
+      "model_ready": 2002,
+      "technical_setup_but_model_not_ready": 1,
+      "technical_setup_model_ready": 274,
+      "technical_setup_model_ready_but_prediction_wrong_size": 270,
+      "eligible_AI_candidate_signal_rows": 4,
+      "eligible_long": 3,
+      "eligible_short": 1,
+      "eligible_baseline_candidate_signal_rows": 275
+    },
+    "DOGE/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 245,
+      "technical_long": 118,
+      "technical_short": 127,
+      "do_predict_values": {
+        "1.0": 2013,
+        "0.0": 3
+      },
+      "model_ready": 2013,
+      "technical_setup_but_model_not_ready": 1,
+      "technical_setup_model_ready": 244,
+      "technical_setup_model_ready_but_prediction_wrong_size": 239,
+      "eligible_AI_candidate_signal_rows": 5,
+      "eligible_long": 5,
+      "eligible_short": 0,
+      "eligible_baseline_candidate_signal_rows": 245
+    },
+    "AVAX/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 277,
+      "technical_long": 159,
+      "technical_short": 118,
+      "do_predict_values": {
+        "1.0": 2015,
+        "0.0": 1
+      },
+      "model_ready": 2015,
+      "technical_setup_but_model_not_ready": 0,
+      "technical_setup_model_ready": 277,
+      "technical_setup_model_ready_but_prediction_wrong_size": 273,
+      "eligible_AI_candidate_signal_rows": 4,
+      "eligible_long": 4,
+      "eligible_short": 0,
+      "eligible_baseline_candidate_signal_rows": 277
+    },
+    "DOT/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 293,
+      "technical_long": 138,
+      "technical_short": 155,
+      "do_predict_values": {
+        "1.0": 2015,
+        "0.0": 1
+      },
+      "model_ready": 2015,
+      "technical_setup_but_model_not_ready": 1,
+      "technical_setup_model_ready": 292,
+      "technical_setup_model_ready_but_prediction_wrong_size": 290,
+      "eligible_AI_candidate_signal_rows": 2,
+      "eligible_long": 2,
+      "eligible_short": 0,
+      "eligible_baseline_candidate_signal_rows": 293
+    },
+    "LTC/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 303,
+      "technical_long": 142,
+      "technical_short": 161,
+      "do_predict_values": {
+        "1.0": 2014,
+        "0.0": 2
+      },
+      "model_ready": 2014,
+      "technical_setup_but_model_not_ready": 1,
+      "technical_setup_model_ready": 302,
+      "technical_setup_model_ready_but_prediction_wrong_size": 302,
+      "eligible_AI_candidate_signal_rows": 0,
+      "eligible_long": 0,
+      "eligible_short": 0,
+      "eligible_baseline_candidate_signal_rows": 303
+    },
+    "BCH/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 261,
+      "technical_long": 136,
+      "technical_short": 125,
+      "do_predict_values": {
+        "1.0": 2015,
+        "0.0": 1
+      },
+      "model_ready": 2015,
+      "technical_setup_but_model_not_ready": 1,
+      "technical_setup_model_ready": 260,
+      "technical_setup_model_ready_but_prediction_wrong_size": 258,
+      "eligible_AI_candidate_signal_rows": 2,
+      "eligible_long": 2,
+      "eligible_short": 0,
+      "eligible_baseline_candidate_signal_rows": 261
+    },
+    "NEAR/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 262,
+      "technical_long": 117,
+      "technical_short": 145,
+      "do_predict_values": {
+        "1.0": 1998,
+        "0.0": 18
+      },
+      "model_ready": 1998,
+      "technical_setup_but_model_not_ready": 4,
+      "technical_setup_model_ready": 258,
+      "technical_setup_model_ready_but_prediction_wrong_size": 243,
+      "eligible_AI_candidate_signal_rows": 15,
+      "eligible_long": 15,
+      "eligible_short": 0,
+      "eligible_baseline_candidate_signal_rows": 262
+    },
+    "UNI/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 287,
+      "technical_long": 124,
+      "technical_short": 163,
+      "do_predict_values": {
+        "1.0": 2015,
+        "0.0": 1
+      },
+      "model_ready": 2015,
+      "technical_setup_but_model_not_ready": 1,
+      "technical_setup_model_ready": 286,
+      "technical_setup_model_ready_but_prediction_wrong_size": 273,
+      "eligible_AI_candidate_signal_rows": 13,
+      "eligible_long": 9,
+      "eligible_short": 4,
+      "eligible_baseline_candidate_signal_rows": 287
+    },
+    "APT/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 297,
+      "technical_long": 155,
+      "technical_short": 142,
+      "do_predict_values": {
+        "1.0": 2016
+      },
+      "model_ready": 2016,
+      "technical_setup_but_model_not_ready": 0,
+      "technical_setup_model_ready": 297,
+      "technical_setup_model_ready_but_prediction_wrong_size": 297,
+      "eligible_AI_candidate_signal_rows": 0,
+      "eligible_long": 0,
+      "eligible_short": 0,
+      "eligible_baseline_candidate_signal_rows": 297
+    },
+    "ARB/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 236,
+      "technical_long": 118,
+      "technical_short": 118,
+      "do_predict_values": {
+        "1.0": 2015,
+        "0.0": 1
+      },
+      "model_ready": 2015,
+      "technical_setup_but_model_not_ready": 1,
+      "technical_setup_model_ready": 235,
+      "technical_setup_model_ready_but_prediction_wrong_size": 208,
+      "eligible_AI_candidate_signal_rows": 27,
+      "eligible_long": 25,
+      "eligible_short": 2,
+      "eligible_baseline_candidate_signal_rows": 236
+    },
+    "OP/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 277,
+      "technical_long": 137,
+      "technical_short": 140,
+      "do_predict_values": {
+        "1.0": 2013,
+        "0.0": 3
+      },
+      "model_ready": 2013,
+      "technical_setup_but_model_not_ready": 1,
+      "technical_setup_model_ready": 276,
+      "technical_setup_model_ready_but_prediction_wrong_size": 261,
+      "eligible_AI_candidate_signal_rows": 15,
+      "eligible_long": 15,
+      "eligible_short": 0,
+      "eligible_baseline_candidate_signal_rows": 277
+    },
+    "SUI/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 281,
+      "technical_long": 130,
+      "technical_short": 151,
+      "do_predict_values": {
+        "1.0": 1991,
+        "0.0": 25
+      },
+      "model_ready": 1991,
+      "technical_setup_but_model_not_ready": 1,
+      "technical_setup_model_ready": 280,
+      "technical_setup_model_ready_but_prediction_wrong_size": 272,
+      "eligible_AI_candidate_signal_rows": 8,
+      "eligible_long": 8,
+      "eligible_short": 0,
+      "eligible_baseline_candidate_signal_rows": 281
+    },
+    "TRX/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 283,
+      "technical_long": 138,
+      "technical_short": 145,
+      "do_predict_values": {
+        "1.0": 1999,
+        "0.0": 17
+      },
+      "model_ready": 1999,
+      "technical_setup_but_model_not_ready": 4,
+      "technical_setup_model_ready": 279,
+      "technical_setup_model_ready_but_prediction_wrong_size": 279,
+      "eligible_AI_candidate_signal_rows": 0,
+      "eligible_long": 0,
+      "eligible_short": 0,
+      "eligible_baseline_candidate_signal_rows": 283
+    },
+    "ETC/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 275,
+      "technical_long": 144,
+      "technical_short": 131,
+      "do_predict_values": {
+        "1.0": 2013,
+        "0.0": 3
+      },
+      "model_ready": 2013,
+      "technical_setup_but_model_not_ready": 1,
+      "technical_setup_model_ready": 274,
+      "technical_setup_model_ready_but_prediction_wrong_size": 274,
+      "eligible_AI_candidate_signal_rows": 0,
+      "eligible_long": 0,
+      "eligible_short": 0,
+      "eligible_baseline_candidate_signal_rows": 275
+    },
+    "ATOM/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 263,
+      "technical_long": 132,
+      "technical_short": 131,
+      "do_predict_values": {
+        "1.0": 1990,
+        "0.0": 26
+      },
+      "model_ready": 1990,
+      "technical_setup_but_model_not_ready": 1,
+      "technical_setup_model_ready": 262,
+      "technical_setup_model_ready_but_prediction_wrong_size": 261,
+      "eligible_AI_candidate_signal_rows": 1,
+      "eligible_long": 0,
+      "eligible_short": 1,
+      "eligible_baseline_candidate_signal_rows": 263
+    },
+    "FIL/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 275,
+      "technical_long": 156,
+      "technical_short": 119,
+      "do_predict_values": {
+        "1.0": 2016
+      },
+      "model_ready": 2016,
+      "technical_setup_but_model_not_ready": 0,
+      "technical_setup_model_ready": 275,
+      "technical_setup_model_ready_but_prediction_wrong_size": 253,
+      "eligible_AI_candidate_signal_rows": 22,
+      "eligible_long": 19,
+      "eligible_short": 3,
+      "eligible_baseline_candidate_signal_rows": 275
+    },
+    "INJ/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 301,
+      "technical_long": 144,
+      "technical_short": 157,
+      "do_predict_values": {
+        "1.0": 2015,
+        "0.0": 1
+      },
+      "model_ready": 2015,
+      "technical_setup_but_model_not_ready": 1,
+      "technical_setup_model_ready": 300,
+      "technical_setup_model_ready_but_prediction_wrong_size": 293,
+      "eligible_AI_candidate_signal_rows": 7,
+      "eligible_long": 6,
+      "eligible_short": 1,
+      "eligible_baseline_candidate_signal_rows": 301
+    },
+    "XLM/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 277,
+      "technical_long": 109,
+      "technical_short": 168,
+      "do_predict_values": {
+        "1.0": 2002,
+        "0.0": 14
+      },
+      "model_ready": 2002,
+      "technical_setup_but_model_not_ready": 2,
+      "technical_setup_model_ready": 275,
+      "technical_setup_model_ready_but_prediction_wrong_size": 274,
+      "eligible_AI_candidate_signal_rows": 1,
+      "eligible_long": 1,
+      "eligible_short": 0,
+      "eligible_baseline_candidate_signal_rows": 277
+    },
+    "HBAR/USDT:USDT": {
+      "five_minute_decisions": 2016,
+      "valid_price_volume": 2016,
+      "technical_setups": 284,
+      "technical_long": 121,
+      "technical_short": 163,
+      "do_predict_values": {
+        "1.0": 2001,
+        "0.0": 15
+      },
+      "model_ready": 2001,
+      "technical_setup_but_model_not_ready": 1,
+      "technical_setup_model_ready": 283,
+      "technical_setup_model_ready_but_prediction_wrong_size": 283,
+      "eligible_AI_candidate_signal_rows": 0,
+      "eligible_long": 0,
+      "eligible_short": 0,
+      "eligible_baseline_candidate_signal_rows": 284
+    }
+  }
+}

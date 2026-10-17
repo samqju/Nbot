@@ -1,0 +1,216 @@
+"""Research-only Freqtrade 2026.9 lookahead diagnosis with immutable saved models.
+
+This is NOT a replacement for stock official lookahead-analysis. Freqtrade's
+native FreqAI lookahead implementation deletes its identifier model folder
+before every shortened replay, so native comparisons can refit *different*
+models. In this explicit V6 offline diagnostic, suppress only that deletion
+of an isolated copied identifier; no calls to native model training are
+permitted. Do NOT put this in a production entrypoint.
+
+Run in network-disabled one-shot Docker with a scratch copy of already saved
+25 model bundles. Never mount the source model directory here.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import sys
+from pathlib import Path
+from datetime import timedelta
+
+
+def sha256(p: Path) -> str:
+    return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--scratch-userdir", required=True, type=Path)
+    parser.add_argument("--expected-identifier", required=True)
+    parser.add_argument("--report", required=True, type=Path)
+    parser.add_argument("--expected-models", default=25, type=int)
+    parser.add_argument("--terminal-padding-candles", default=0, choices=(0, 1), type=int,
+                        help="RESEARCH ONLY: one future candle in shortened replay to diagnose terminal missing FreqAI prediction, NOT a causal proof")
+    parser.add_argument("freqtrade_args", nargs=argparse.REMAINDER)
+    a = parser.parse_args()
+    if not a.expected_identifier.startswith("nbot-v6-m2r-native-purged-models-frozen-"):
+        raise RuntimeError("V6_RESEARCH_ONLY_MODEL_IDENTIFIER_REQUIRED")
+    scratch = a.scratch_userdir.resolve()
+    model_root = (scratch / "models" / a.expected_identifier).resolve()
+    if scratch not in model_root.parents or not model_root.is_dir():
+        raise RuntimeError("ISOLATED_MODEL_COPY_REQUIRED")
+    if model_root.is_symlink():
+        raise RuntimeError("ISOLATED_MODEL_COPY_CANNOT_BE_SYMLINK")
+    binary_paths = sorted(model_root.glob("sub-train-*/*_model.joblib"))
+    if len(binary_paths) != a.expected_models:
+        raise RuntimeError(f"REQUIRE_ALL_SAVED_MODELS found={len(binary_paths)}")
+    before = {str(p.relative_to(model_root)): sha256(p) for p in binary_paths}
+
+    if not a.freqtrade_args or a.freqtrade_args[0] != "--":
+        raise RuntimeError("ONLY_EXPLICIT_OFFLINE_FREQTRADE_LOOKAHEAD_ALLOWED")
+    ftargs = a.freqtrade_args[1:]
+    if not ftargs or ftargs[0] != "lookahead-analysis":
+        raise RuntimeError("ONLY_STOCK_LOOKAHEAD_ANALYSIS_COMMAND_ALLOWED")
+    # Forbid interacting with exchange. Runtime config also has empty keys and
+    # tested Docker must have --network none.
+    if "--userdir" not in ftargs or Path(
+        ftargs[ftargs.index("--userdir") + 1]
+    ).resolve() != scratch:
+        raise RuntimeError("REQUIRE_SCRATCH_USERDIR")
+
+    from freqtrade.optimize.analysis import lookahead as native_lookahead
+    from freqtrade.freqai.prediction_models.LightGBMRegressor import LightGBMRegressor
+
+    deleted = []
+    training = []
+    diagnostics = []
+    native_shutil = native_lookahead.shutil
+
+    class ProtectedShutil:
+        @staticmethod
+        def rmtree(target, *args, **kwargs):
+            target_path = Path(target).resolve()
+            if target_path != model_root:
+                raise RuntimeError(f"UNEXPECTED_MODEL_DELETE_BLOCKED {target_path}")
+            deleted.append(str(target_path))
+            print(f"FROZEN_REPLAY_PREVENTED_MODEL_FOLDER_DELETION #{len(deleted)}", flush=True)
+
+        def __getattr__(self, name):
+            return getattr(native_shutil, name)
+
+    native_lookahead.shutil = ProtectedShutil()
+
+    # Sample exactly the rows and columns the native official checker compares.
+    # This captures where a frozen cached prediction becomes a zero-filled
+    # missing prediction during a shortened replay (instead of guessing why).
+    real_analyze = native_lookahead.LookaheadAnalysis.analyze_indicators
+
+    def traced_analyze(self, full_vars, cut_vars, current_pair):
+        import pandas as pd
+        f = full_vars.indicators[current_pair]
+        c = cut_vars.indicators[current_pair]
+        matched = f.loc[c.index]
+        columns = ["date", "&-forward_return", "&-forward_return_mean",
+                   "&-forward_return_std", "do_predict", "DI_values",
+                   "enter_long", "enter_short", "exit_long", "exit_short"]
+        available = [col for col in columns if col in c.columns and col in f.columns]
+        comparisons = []
+        for col in available:
+            try:
+                comparison = matched[col].compare(c[col])
+            except (TypeError, ValueError):
+                continue
+            differing = len(comparison)
+            if not differing:
+                continue
+            excerpt = []
+            for idx in comparison.index[:3]:
+                excerpt.append({
+                    "index": int(idx) if hasattr(idx, "__int__") else str(idx),
+                    "row_date": str(c.loc[idx, "date"]),
+                    "baseline": str(matched.loc[idx, col]),
+                    "replay": str(c.loc[idx, col]),
+                })
+            comparisons.append({"column": col, "differing_rows": differing,
+                                "first_three": excerpt})
+        all_diffs_terminal_only = all(
+            sample["row_date"] == str(c["date"].iloc[-1])
+            for item in comparisons for sample in item["first_three"]
+        ) and all(item["differing_rows"] <= 3 for item in comparisons)
+        compared_time = str(cut_vars.compared_dt)
+        before_or_at = pd.to_datetime(c["date"], utc=True) <= pd.Timestamp(
+            cut_vars.compared_dt
+        )
+        full_asof = matched.loc[before_or_at]
+        cut_asof = c.loc[before_or_at]
+        asof_comparison = full_asof.compare(cut_asof)
+        changed_asof_columns = [
+            str(col[0]) for col in asof_comparison.columns
+            if isinstance(col, tuple) and col[1] == "self"
+        ]
+        changed_at_compared_time = [
+            item["column"] for item in comparisons
+            if any(sample["row_date"] == compared_time
+                   for sample in item["first_three"])
+        ]
+        diagnostics.append({
+            "pair": current_pair,
+            "decision_time": compared_time,
+            "native_full_data_columns_changed_at_or_before_decision": sorted(set(changed_asof_columns)),
+            "native_full_data_rows_differing_at_or_before_decision": len(asof_comparison),
+            "all_sampled_differences_last_candle_only": all_diffs_terminal_only,
+            "changed_columns_at_decision_time": changed_at_compared_time,
+            "replay_start": str(c["date"].iloc[0]),
+            "replay_last_candle": str(c["date"].iloc[-1]),
+            "row_count": len(c),
+            "differences": comparisons,
+        })
+        return real_analyze(self, full_vars, cut_vars, current_pair)
+
+    native_lookahead.LookaheadAnalysis.analyze_indicators = traced_analyze
+    real_prepare = native_lookahead.LookaheadAnalysis.prepare_data
+    extra_context_replays = []
+
+    def diagnostic_prepare(self, varholder, pairs_to_load):
+        if a.terminal_padding_candles and varholder is not self.full_varHolder:
+            extra_context_replays.append(str(varholder.to_dt))
+            varholder.to_dt += timedelta(minutes=5 * a.terminal_padding_candles)
+        return real_prepare(self, varholder, pairs_to_load)
+
+    native_lookahead.LookaheadAnalysis.prepare_data = diagnostic_prepare
+
+    def forbid_retrain(self, *args, **kwargs):
+        training.append(str(args[1] if len(args)>1 else "unknown"))
+        raise RuntimeError("FROZEN_REPLAY_TRAINING_FORBIDDEN")
+
+    LightGBMRegressor.train = forbid_retrain
+    try:
+        from freqtrade.main import main as freqtrade_main
+        # Preserve the upstream diagnostic's command sentinel for the existing
+        # NbotV6M2Audit safety guard. Without this, its lookahead-only startup
+        # intentionally refuses Freqtrade's unlimited simulated slots.
+        sys.argv = ["freqtrade", *ftargs]
+        try:
+            freqtrade_main(ftargs)
+            cli_exit = 0
+        except SystemExit as exc:
+            cli_exit = int(exc.code or 0) if isinstance(exc.code, int) or not exc.code else 1
+    finally:
+        native_lookahead.shutil = native_shutil
+        native_lookahead.LookaheadAnalysis.analyze_indicators = real_analyze
+        native_lookahead.LookaheadAnalysis.prepare_data = real_prepare
+
+    after_files = sorted(model_root.glob("sub-train-*/*_model.joblib"))
+    after = {str(p.relative_to(model_root)): sha256(p) for p in after_files}
+    report = {
+        "experiment": "Stock Freqtrade 2026.9 lookahead-analysis with ONLY deletion suppressed in isolated saved-model copy; native LightGBM model training forbidden",
+        "model_identifier": a.expected_identifier,
+        "model_file_count_before": len(before),
+        "model_file_count_after": len(after),
+        "model_hash_differences": [k for k in before if after.get(k) != before[k]],
+        "model_delete_attempts_prevented": len(deleted),
+        "retraining_attempts": training,
+        "native_cli_exit_code": cli_exit,
+        "diagnostic_extra_5m_context_per_shortened_replay": a.terminal_padding_candles,
+        "extra_context_replays": len(extra_context_replays),
+        "sampled_official_indicator_comparisons": diagnostics,
+        "all_sampled_trades_identical_through_decision_candle": bool(diagnostics) and all(
+            x["native_full_data_rows_differing_at_or_before_decision"] == 0
+            for x in diagnostics
+        ),
+        "all_observed_replay_differences_exclusively_on_post_decision_terminal_row": bool(diagnostics) and all(
+            x["all_sampled_differences_last_candle_only"] and
+            x["replay_last_candle"] != x["decision_time"]
+            for x in diagnostics
+        ),
+        "strict_fixed_model_integrity_pass": cli_exit == 0 and not training and before == after and len(deleted)>0,
+        "caveat": "Any has_bias=Yes recorded in the native official table must still be examined by column and signal; suppressing FreqAI folder cleanup does not guarantee a no-bias verdict or correct strategy."
+    }
+    a.report.write_text(json.dumps(report, indent=2) + "\n")
+    print("FROZEN_LOOKAHEAD_GUARDED_DIAGNOSTIC", json.dumps(report), flush=True)
+    return 0 if report["strict_fixed_model_integrity_pass"] else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

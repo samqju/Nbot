@@ -1,0 +1,66 @@
+{
+  "purpose": "Same history + model features; compare models fitted in 25-pair vs one-pair FreqAI context",
+  "limitations": [
+    "Differences do not prove information leakage.",
+    "Equal predictions would not establish overall no-leakage.",
+    "Training must be separately audited for chronological label isolation."
+  ],
+  "results": {
+    "btc": {
+      "candles": 2016,
+      "&-forward_return": {
+        "changed_values_over_tolerance_1e-9": 0,
+        "max_absolute_diff": 0,
+        "finite_pairs": 2016
+      },
+      "&-forward_return_mean": {
+        "changed_values_over_tolerance_1e-9": 0,
+        "max_absolute_diff": 0,
+        "finite_pairs": 2016
+      },
+      "&-forward_return_std": {
+        "changed_values_over_tolerance_1e-9": 0,
+        "max_absolute_diff": 0,
+        "finite_pairs": 2016
+      },
+      "do_predict": {
+        "changed_values_over_tolerance_1e-9": 0,
+        "max_absolute_diff": 0,
+        "finite_pairs": 2016
+      },
+      "DI_values": {
+        "changed_values_over_tolerance_1e-9": 0,
+        "max_absolute_diff": 0,
+        "finite_pairs": 2016
+      }
+    },
+    "eth": {
+      "candles": 2016,
+      "&-forward_return": {
+        "changed_values_over_tolerance_1e-9": 0,
+        "max_absolute_diff": 0,
+        "finite_pairs": 2016
+      },
+      "&-forward_return_mean": {
+        "changed_values_over_tolerance_1e-9": 0,
+        "max_absolute_diff": 0,
+        "finite_pairs": 2016
+      },
+      "&-forward_return_std": {
+        "changed_values_over_tolerance_1e-9": 0,
+        "max_absolute_diff": 0,
+        "finite_pairs": 2016
+      },
+      "do_predict": {
+        "changed_values_over_tolerance_1e-9": 0,
+        "max_absolute_diff": 0,
+        "finite_pairs": 2016
+      },
+      "DI_values": {
+        "changed_values_over_tolerance_1e-9": 0,
+        "max_absolute_diff": 0,
+        "finite_pairs": 2016
+      }
+    }
+  }
+}

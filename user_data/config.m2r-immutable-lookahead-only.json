@@ -1,0 +1,18 @@
+{
+  "bot_name": "nbot-v6-m2r-saved-native-lookahead-audit-only",
+  "dry_run": true,
+  "nbot_m2_audit_only": true,
+  "nbot_live_mode": false,
+  "nbot_paper_research_mode": false,
+  "force_entry_enable": false,
+  "exchange": {
+    "key": "",
+    "secret": ""
+  },
+  "telegram": {
+    "enabled": false
+  },
+  "api_server": {
+    "enabled": false
+  }
+}

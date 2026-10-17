@@ -1,0 +1,1063 @@
+{
+  "test_window_utc": [
+    "2026-09-01T00:00:00+00:00",
+    "2026-10-01T00:00:00+00:00"
+  ],
+  "required_warmup_start_utc": "2026-07-24T00:00:00+00:00",
+  "data_directory": "/freqtrade/work/user_data/data/binance/futures",
+  "pair_count": 25,
+  "pairs": {
+    "BTC/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "ETH/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "SOL/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "BNB/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "XRP/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "ADA/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "LINK/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "DOGE/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "AVAX/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "DOT/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "LTC/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "BCH/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "NEAR/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "UNI/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "APT/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "ARB/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "OP/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "SUI/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "TRX/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "ETC/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "ATOM/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "FIL/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "INJ/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "XLM/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    },
+    "HBAR/USDT:USDT": {
+      "5m_futures": {
+        "ok": true,
+        "records": 26997,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T17:40:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_futures": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "1h_mark": {
+        "ok": true,
+        "records": 2248,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-16T15:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": 0,
+        "gap_intervals": 0
+      },
+      "funding": {
+        "ok": true,
+        "records": 283,
+        "first_utc": "2026-07-15T00:00:00+00:00",
+        "last_utc": "2026-10-17T00:00:00+00:00",
+        "duplicate_timestamps": 0,
+        "out_of_order": 0,
+        "missing_intervals": null,
+        "gap_intervals": null
+      }
+    }
+  },
+  "passed_pairs": 25,
+  "failed_pairs": 0
+}
