@@ -105,7 +105,20 @@ class TestEventAwareFunding(unittest.TestCase):
         self.assertRaises(ValueError,FundingSchedule.from_candles,bad,self.mark)
 
 
-@unittest.skipUnless(importlib.util.find_spec("freqtrade"),"requires installed Freqtrade runtime")
+def _has_real_freqtrade_runtime():
+    # Other existing offline unit tests inject a stub module with
+    # __spec__=None; find_spec then raises ValueError on GitHub CI.
+    # A stub must NEVER run our native 2026.9 model tests.
+    module=sys.modules.get("freqtrade")
+    if module is not None and getattr(module,"__spec__",None) is None:
+        return False
+    try:
+        return importlib.util.find_spec("freqtrade") is not None
+    except (ImportError,ValueError):
+        return False
+
+
+@unittest.skipUnless(_has_real_freqtrade_runtime(),"requires installed Freqtrade runtime")
 class TestNativePurgedModelContract(unittest.TestCase):
     def test_sparse_split_already_has_safe_gap_without_removal(self):
         sys.path.insert(0,str(ROOT/"user_data"/"freqaimodels"))
