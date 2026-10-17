@@ -1,0 +1,12 @@
+{
+  "bot_name": "nbot-v6-m2-baseline-no-ml-backtest",
+  "dry_run": true,
+  "max_open_trades": 1,
+  "exchange": {
+    "key": "",
+    "secret": ""
+  },
+  "freqai": {
+    "enabled": false
+  }
+}
