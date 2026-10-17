@@ -6,6 +6,12 @@ NBOT V6 is an isolated Freqtrade strategy powered by FreqAI's LightGBM regressio
 
 ## New M2R research source — after-cost learning, no trading approval (October 17, 2026)
 
+**Now tested on all 25 coins, not just BTC:** The owner-requested new LightGBM learns from historical *completed hypothetical trades after costs*, and frozen breakout-only/pullback-only models have also been trained. In **September 2026** the combined after-cost AI **lost 442.471 USDT** (332 simulated trades), versus original AI **−444.980** and no-AI **−242.894**. In the **predeclared October 8–15** test the new combined AI made **+113.046**, breakout AI **+62.552**, pullback AI **+146.237**, but the **original price-only AI made +205.976 USDT** and was better that week. An identical 60-minute-exit no-AI comparison lost money, showing the new AI filters selected opportunities better during those eight days. The saved AI predictions also raised the hypothetical positive-outcome fraction from **33.148% of 7,732 combined setups** to **45.364% of 302 chosen setups**. These are overlapping labels, NOT 302 orders.
+
+**Important:** The combined new model's +113.046-USDT result shrinks to only **+15.112 USDT** with an additional hypothetical 10bps per roundtrip and turns negative by extra 15bps. September losses, the original official AI lookahead warning, actual historical fill-cost uncertainty and lack of independent multi-regime proof all keep **M2 NO-GO, no model promotion, and no paper/live trading**. [Complete learning and eight-strategy comparison](evidence/m2r/2026-10-17-aftercost-model-learning-results.md).
+
+
+
 The owner approved **research-code development** for three capabilities: learn from *hypothetical completed trades*, estimate success **after fees/estimated slippage/funding**, and eventually route among *frozen* breakout/pullback strategies or **NO TRADE**. The complete staged and checked plan is in [ROADMAP.md](ROADMAP.md), with implementation details and limitations in [M2R_RESEARCH.md](M2R_RESEARCH.md).
 
 - **Implemented, test only:** Four causal breakout/pullback LONG/SHORT candidate labels with next-open entry, conservative stop-first outcomes and a 0.21% **assumed** roundtrip cost reserve, including setups the old one-slot bot skipped. In September's 25-coin historical sample there were **29,033 overlapping hypothetical training opportunities**; only **32.332%** were positive *under these assumptions*. These are **not executed trades** or wallet profit.
