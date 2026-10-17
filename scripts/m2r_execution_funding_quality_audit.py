@@ -42,7 +42,7 @@ def main():
             assert df["date"].is_unique and df["date"].is_monotonic_increasing, (pair,kind)
             f[kind] = df.loc[(df["date"] >= start) & (df["date"] < end)].copy()
         rates = f["funding"]
-        rate_col = "open"
+        rate_col = "funding_rate"
         if rate_col not in rates.columns:
             raise RuntimeError(f"NO_FUNDING_RATE_OPEN_COLUMN: {pair}: {list(rates)}")
         r = rates[rate_col].to_numpy(dtype=float)
