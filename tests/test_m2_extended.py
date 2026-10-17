@@ -52,6 +52,19 @@ class M2ExtendedTests(unittest.TestCase):
         self.assertEqual(parsed[0.2]["amounts"], [9000,11000])
         self.assertEqual(parsed[-0.2]["looks_frozen"], False)
 
+    def test_zero_minute_trade_occupies_zero_time(self):
+        from m2_exposure_audit import exposure
+        from m2_funding_reconcile import timestamp_ms
+        tick = "2026-09-10T00:30:00+00:00"
+        row = {"open_date": tick, "close_date": tick,
+               "pair": "BTC/USDT:USDT", "is_short": False}
+        got = exposure([row],
+            timestamp_ms("2026-09-01T00:00:00+00:00"),
+            timestamp_ms("2026-10-01T00:00:00+00:00"))
+        self.assertEqual(got["position_hours"], 0.0)
+        self.assertEqual(got["trades"], 1)
+        self.assertEqual(got["overlapping_global_positions"], 0)
+
     def test_untrusted_archive_url_inputs_rejected(self):
         with self.assertRaises(ValueError):
             depth.archive_url("BTCUSDT/../../", "2026-10-01")
