@@ -1,7 +1,7 @@
 # NBOT V6 — M2 first after-fee baseline and stress evaluation
 
 **Date:** October 17, 2026 (UTC)
-**Status:** **M2 PARTIALLY COMPLETE — NOT ACCEPTED; DO NOT DEPLOY**.
+**Status:** **M2 INVESTIGATION COMPLETED WITH A NO-GO DECISION. M2 RELEASE/ACCEPTANCE GATE FAILED. DO NOT DEPLOY OR ADVANCE TO M3.**
 **Market:** fixed 25 Binance USDT-M futures, 5m candles, historical **2026-10-01 through 2026-10-08**.
 **Risk parity:** both backtest variants used **max_open_trades=1**, 1×, roughly **1,000 USDT fixed stake**, the same fixed 25-pair whitelist, **100,000 USDT simulated wallet**, initial stop **2%** and ROI target **5%**. Futures funding handling remains native Freqtrade; no exchange credentials or real orders were used.
 
@@ -73,7 +73,7 @@ Re-ran the official 25-pair `backtesting --export signals --cache none` for both
 
 These represent engine signal/rejection *records*, not 6,531 independently available trades; the one-global-position cap rejects repeat entries while the slot is occupied. AI `do_predict` abstentions and all potential raw EMA setups are **not** fully captured by this export, so total eligibility/abstention/exposure accounting is not yet complete. The separate **20-slot future paper mode remains configured but intentionally inactive**.
 
-## M2 acceptance checklist and remaining tasks
+## M2 acceptance checklist — final October 17 review (technical work vs approval)
 
 - [x] Freeze non-ML EMA20/EMA50 + prior 20-candle breakout/pullback benchmark without fitting an ML model.
 - [x] Run the non-ML and **NO TRADE** comparators for the exact same 25 candidates, seven days, 1× and one-position risk.
@@ -81,15 +81,81 @@ These represent engine signal/rejection *records*, not 6,531 independently avail
 - [x] Rerun both strategies in Freqtrade with an explicitly doubled fee per side.
 - [x] Publish trade-level per-coin/long-short summaries and *hypothetical* additional execution cost stresses, with all assumptions labeled.
 - [x] Run official lookahead-analysis on the 30 tested non-ML signals (no bias detected).
-- [ ] Obtain **observed**, timestamped bid/ask, depth and plausible maker/taker/slippage bands at the historical decision time, not merely present-day quotes.
+- [x] Retrieve and timestamp-match **historical Binance Vision book-depth bands**, detecting missing/stale snapshots instead of inventing good fills. **57 of 59 archive files available; 113/130 entry/exit events have fresh depth; 17 missing/stale; 113/113 fresh events show >=40.22 times the $1k order notional inside the 0.2% band.**
+- [ ] Exact 2026 historical best bid/ask spreads and order-level fill/queue/stop-slippage: **UNAVAILABLE/NOT PROVEN**. Binance's matching public 2026 bookTicker archive returned **HTTP 404**; depth-band snapshots cannot replace a full historical order book. Conservative stress analysis is reported, **not observed fill data**.
 - [x] Independently reconcile **actual Binance historical funding events** to both exported strategies, including sign, mark price and settlement time: **65/65 trades within five cents**; fee-tier/order-type fills remain [ ] separately unverified.
-- [ ] Resolve the **actual flagged AI lookahead differences** after running the historical-only audit subclass. Offline prefix feature-causality and label separation pass, but model `do_predict` / entry/exit columns changed. NO M2 clearance.
+- [x] Independent as-of / pair-context reproducibility: **BTC and ETH forecasts, their model statistics, do_predict and DI_values matched exactly** for **2,016 candles each** when trained against 25-coin versus single-pair contexts, and for a strict earlier **576-candle as-of prefix** against the complete 7-day future. This is strong evidence against simple future-data drift for these two coins.
+- [ ] Resolve why official **FreqAI lookahead-analysis still flags `has_bias=Yes`** on eight sampled signals and changes to some prediction/decision columns. The BTC/ETH controlled tests do **not** automatically clear all 25 coins or the diagnostic warning; NO M2 AI leakage clearance.
 - [x] Reproduce exact official exported **entry / rejected / exit record counts** and trade-level pair/side/time summaries across both strategies (AI: 34/68/34, no-ML: 31/6531/31).
-- [ ] Complete raw eligible setup / FreqAI `do_predict` abstention / slot occupancy / exposure reconciliation (exported signal records alone are insufficient).
-- [ ] Establish a defensible, repeatable base-cost and high-cost methodology beyond simple additive fixed-fill stresses. **M2 gate remains OPEN**.
+- [x] Audit original 25 market prediction artifacts, reconstruct raw causal setups, `do_predict` abstentions and final AI eligibility for all **50,400** 5m market-candle decisions. Original **6,837** technical setups → **28** blocked by unavailable/outlier AI predictions → **6,661** rejected by model predicted-direction/return requirement → **148** eligible AI candidate signal rows. Official AI engine filled **34** and explicitly rejected **68**; **46** remaining candidates were not separately exported as rejected rows. Do not mislabel all raw candidates as available executable orders.
+- [x] Verify actual closed-position exposure and one-slot constraint: **AI in market 78.583h/168h (46.776%); non-ML 167.667h/168h (99.802%)**, zero overlapping positions in both. This materially changes the economic interpretation of the first-week comparison.
+- [x] Reproduce **historical depth-conditioned scenario stresses** using each trade's entry/exit timestamp, order notional and 30-second liquidity check, charging **additional** penalties for missing/stale events. Results, actual archival limitations and code are published. **This quantifies risk but is NOT an observed executed spread or stop-fill simulation.**
+- [ ] Establish **true historical fill/queue/impact/stop execution certainty**, account-specific fee tier and independently observed bid/ask spread for every entry and exit. This is **not possible from the available 2026 public archives** alone. Therefore the M2 acceptance gate FAILS, rather than being marked passed.
 - [ ] Extend comparisons through independent periods and regimes in **M3**; avoid optimizing solely on the first week.
 
 **Decision:** Keep M2 **IN PROGRESS**; true historical Binance funding has now been checked, but unverified historical bid/ask/slippage and the **positive AI lookahead indicator-difference flag** explicitly BLOCK the acceptance gate. The non-ML comparator is a useful control but **not approved for deployment**. Next review cost-model fidelity and FreqAI/no-ML attribution; then M3 multiple chronological held-out windows. In parallel only offline M5A selector design/research is allowed; its eight-hour live scanner/rotation is **NOT built**, and the separate **up-to-20-position dry-run paper configuration remains intact but NOT commissioned**.
+
+## Final M2 review — measured evidence, limitations and no-go decision
+
+### Historical execution liquidity: measured as-of data, not guessed
+
+Downloaded Binance Vision **30-second historical USD-M futures order-depth snapshots** at the specific entry/exit dates from the original **65** one-week trades; this is a reproducible archive with public URLs and ZIP SHA-256 hashes. Actual older USD-M `bookTicker` direct snapshot archive for the tested date returned **HTTP 404**. Binance has publicly documented suspension of that best-bid/best-ask archive. **Book-depth bands cannot reveal the exact spread, maker fill probability or intrasecond stop-market loss.**
+
+- **59** pair/day archives requested, **57** available. The two missing were **OPUSDT and TRXUSDT for October 8**; the data collector reported their HTTP errors.
+- **130** trade-side events audited: **113** matched a prior, non-suspect timestamped snapshot within **45 seconds**; **17** had stale or otherwise unverified snapshots (some gaps were many hours). These events must **not** be treated as free or frictionless.
+- In those **113 matched events**, historical cumulative buy/sell side liquidity within **0.2%** of the mid/reference was at least **40.22× the position's notional** (median **380.61×**). This supports basic size feasibility when the snapshot is reliable, **not** promised cost, quote spread or guaranteed market impact.
+- Detailed [per-event depth/quality evidence](evidence/m2/2026-10-17-historical-depth-trade-time-audit.json) and [historical depth audit script](scripts/m2_bookdepth_audit.py).
+
+**Cost scenario with different penalties for verified versus stale snapshots**, charged in addition to the base historical 0.05% exchange fee *per side* and existing funding. These are **assumptions**, not actual historical fills:
+
+| Extra assumed cost on each entry/exit | AI V6 adjusted P&L | Non-ML adjusted P&L |
+|---|---:|---:|
+| No additional cost | -135.640 USDT | +169.849 USDT |
+| Matched 5 bps / stale 25 bps | -185.520 USDT | +121.191 USDT |
+| Matched 10 bps / stale 50 bps | -235.400 USDT | +72.533 USDT |
+| Matched 20 bps / stale 100 bps | -335.160 USDT | **-24.784 USDT** |
+| Matched 40 bps / stale 200 bps | -534.681 USDT | -219.417 USDT |
+
+[Per-event quality-adjusted scenario output](evidence/m2/2026-10-17-snapshot-quality-cost-stress.json) and [generator](scripts/m2_depth_cost_stress.py). This remains a **fixed-trade replay**: additional costs did NOT change actual entry selection, order fill conditions or holding times, so do not call these results realized returns.
+
+### What the AI actually filtered — 50,400 original 5m decisions
+
+Rebuilt the original exact causal EMA20/EMA50, prior-20-bar breakout and pullback setups from downloaded 5m candles for each of the 25 coins. Joined by **exact UTC candle timestamp** to the original full-universe **2016-per-coin** FreqAI prediction artifacts and applied the original **+/-0.006 predicted return** requirement.
+
+| Decision stage | Count |
+|---|---:|
+| 25 coins × 2,016 completed 5m candles | **50,400** |
+| Raw long/short technical setups | **6,837** (3,437 long; 3,400 short) |
+| Technical setups blocked by `do_predict != 1` or invalid prediction | **28** |
+| Technically valid/model-ready setups rejected by return threshold or direction | **6,661** |
+| Original AI long/short candidate rows eligible before portfolio trade-slot constraints | **148** (128 long, 20 short) |
+| Original Freqtrade AI entries / explicit rejected rows / exits | **34 / 68 / 34** |
+| Raw eligible signal rows not reflected in those two engine categories | **46** |
+
+The engine's no-entry/rejection handling does not enumerate these remaining 46 in the exported rejected rows; they may be suppressed by active same-pair positions or backtest engine timing. No claim that they were profitable missed trades. [Reconstructed per-pair decision-gate evidence](evidence/m2/2026-10-17-original-model-decision-gates.json) with [audit script](scripts/m2_decision_audit.py).
+
+### The unusually high non-ML exposure explains why profits are not directly comparable
+
+Official trade timestamps, independently audited, reveal **zero simultaneous overlapping trades** in either historical variant but wildly different exposure: AI occupied its single global trade slot for **78.583 hours of 168 (46.776%)**; the non-ML comparator occupied it for **167.667 hours (99.802%)**, with only **0.333 hours flat**. Non-ML was almost always at market risk! [Timestamped exposure evidence](evidence/m2/2026-10-17-original-risk-exposure.json) and [reproducible script](scripts/m2_exposure_audit.py). This is a strong reason **not to treat one winning week as a dependable profitable strategy**.
+
+### Controlled checks of future-data invariance — helpful but not enough to override the official warning
+
+We separately trained the unchanged FreqAI configuration for **BTC and ETH alone** and compared each 7-day forecast series to the respective coin's original 25-pair 7-day run: all **2,016 timestamps per coin** matched exactly for the predicted return, training-label mean/std, model filter (`do_predict`) and distance-index columns (`DI_values`). [Context evidence](evidence/m2/2026-10-17-prediction-invariance-btc-eth.json).
+
+We also trained with only **October 1–3** available for the evaluation period, and compared those first **576 five-minute predictions per coin** against the original October 1–8 forecast. **All 576 BTC and 576 ETH rows matched exactly across every reported model output**; adding five later days had **zero measured effect** on those earlier forecasts. [Actual as-of/future-truncation evidence](evidence/m2/2026-10-17-asof-future-truncation-predictions.json). This supports causal behavior *on those two tested coins and that frozen training cutoff*, and the separate unit tests already show past-only feature prefixes and forward-only labels.
+
+**However,** the official Freqtrade lookahead-analysis on eight tested AI entries/exits still reports `has_bias=Yes` and changed `do_predict`/indicator/decision columns. Model retraining or signal-sliced replay differences are plausible explanations, **not fully established**; the 2-coin checks cannot certify all 25 or every training/model-rotation scenario. We **explicitly refuse to wave away the warning**. The strategy may be safe under the controlled frozen cases and still have an unresolved test sensitivity. An independent all-market as-of/walk-forward protocol and explanation of the warning are needed before any M3-based adaptive model claim.
+
+### M2 outcome: investigation finished, deployment gate FAILED (NO-GO)
+
+The request to **complete M2 properly** results in an evidence-backed **NO-GO**, not a manufactured positive pass. We have run the non-ML/AI/NO TRADE controls, official doubled-fee reruns, real historical funding reconciliation, independent 30-second depth screen, several conservative cost scenarios, full AI prediction filters and risk-time audits, source-prefix causality checks and controlled BTC/ETH training-history tests.
+
+**The remaining acceptance blockers are concrete:**
+1. Exact historic spread/queue/fills/stop slippage and account-specific fee tier cannot be verified from the available public October 2026 data; 17/130 even lack timely depth-band coverage. Real future paper order-book snapshots can prospectively measure them before M4.
+2. Official FreqAI lookahead-analysis still flags changed prediction/entry/exit columns; until reconciled, no claim that every AI entry is free of future-information or replay artifacts.
+3. No evidence that AI improves on the simple strategy or NO TRADE; in the only validated first week, AI lost money. The simple strategy's apparent profit depends on very high market exposure and weakens under large (hypothetical) fill penalties.
+
+**Decision:** M2 **RESEARCH ASSESSMENT COMPLETE; ACCEPTANCE FAILED / NO-GO.** This does **not** unlock M3, M4 persistent paper, M5A live selector or M7 real money. The blockers must be addressed or the architecture changed in an explicitly owner-reviewed new study. Do not force a roadmap checkbox to "pass" merely because the requested tests have been run.
 
 ## Reproduction on the owner-authorized V6 research VPS
 
