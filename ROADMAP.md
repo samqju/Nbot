@@ -87,6 +87,13 @@ Work:
 
 ### M2 detailed checklist (tick only proven items)
 
+- [x] **Owner-requested FULL September 2026 (30 days) instead of seven days only:** 25/25 July-through-September historical data audits passed; **125** rolling 30-day LightGBM fits completed without ERROR lines (five historical weekly model windows × 25 coins). Separate prior-data training prevents simply reusing September as the initial training sample. [September full-month study](evidence/m2/2026-10-17-september-full-month-analysis.md).
+- [x] **September September 1–30, identical 25-pair baseline/AI/NO TRADE test:** AI **137 trades, −444.980 USDT**; non-ML **163 trades, −242.894 USDT**; NO TRADE **0 USDT** at 0.05% fees per side. Both strategies **lost**, unlike the prior no-ML +169.849-USDT October week.
+- [x] **September official fee and exposure retest:** at 0.10% per side AI **−576.688** and non-ML **−388.318 USDT**. One-position time-at-market: AI **40.637%**, non-ML **99.641%**. [Exact machine report](evidence/m2/2026-10-17-september-30day-comparison.json).
+- [x] **September historical funding cross-check completed with exceptions:** 137 AI / 163 non-ML trades evaluated against Binance's real public funding events. Two forced month-boundary exits (AI ATOM, baseline INJ) each show ~0.10 USDT engine-vs-external discrepancy; small but **NOT cleanly reconciled**.
+- [ ] **Resolve September 30/October 1 forced-exit funding treatment** before claiming exact long-window funding accounting.
+
+
 - [x] **Frozen no-ML comparator**: the same EMA20/EMA50 trend, prior-20-candle breakout and pullback setups, independent no-FreqAI strategy [NbotV6NoML](user_data/strategies/NbotV6NoML.py); original AI strategy unchanged.
 - [x] **NO TRADE baseline**: zero positions, zero trading P&L and exposure, no fees.
 - [x] **Matching first-week official backtests:** all 25 USDT-M candidates, **2026-10-01 through 2026-10-08**, fixed 1× / one position / 1,000-USDT stake, 100,000 simulated wallet. **AI: 34 trades, -135.640 USDT; no-ML: 31 trades, +169.849 USDT** at 0.05% per side.
@@ -106,7 +113,7 @@ Work:
 - [ ] **Engine-level explanation of the 46 additional eligible AI signal rows not recorded as accepted or explicit rejections** and live-versus-historical full latency/order life cycle. These cannot be classified as independent missed trades.
 - [ ] **Additional independent market periods, statistical uncertainty and regime comparisons:** M3's explicit multi-window walk-forward acceptance; one losing AI week / one winning non-ML week prove neither strategy's dependable edge.
 
-**First M2 finding:** The no-ML strategy beat FreqAI by **305.489 USDT** in this one week at the baseline simulated fee. This does **not** isolate the *causal* effect of AI because the compared strategies also differ in their exit rules, nor does it prove the simple approach is profitable. Do not tune features to fit this single period. The historical **M2 gate remains OPEN** until defensible execution costs and leakage controls are verified.
+**Updated M2 finding:** No-ML beat FreqAI by **305.489 USDT** during the October week but both lost in full September (no-ML **−242.894 USDT**, AI **−444.980 USDT**). The earlier winning week is **not dependable proof of profitability**. The no-ML strategy was invested **99.641%** of September. Original October detail: no-ML beat FreqAI by **305.489 USDT** in that first week. This does **not** isolate the *causal* effect of AI because the compared strategies also differ in their exit rules, nor does it prove the simple approach is profitable. Do not tune features to fit this single period. The historical **M2 gate remains OPEN** until defensible execution costs and leakage controls are verified.
 
 **Gate M2:** Complete reproducible metrics, defensible costs and no known decision leakage. A loss-making benchmark is a valid finding, not a reason to fabricate performance.
 
@@ -341,7 +348,7 @@ V6 may become the default/main development line when **M0+M1** pass and an owner
 |---|---|---|
 | M0 clean tree | COMPLETE — source isolation only | Clean-tree commit 3e642508; V6 CI run 38906351380 passed both jobs (offline + official strategy discovery) |
 | M1 real FreqAI backtest | **TECHNICAL COMPLETE**: 25/25 full-history fit + independent 7-day 34-trade backtest; **-135.64 USDT** | M2 fee/spread/funding/slippage baseline, M3 broader held-out replay; no deployment |
-| M2 honest baseline | **RESEARCH EVALUATION COMPLETED — NO-GO; ACCEPTANCE FAILED**. 65 trades, true funding, 57 historical depth files, 50,400 model decisions, 99.802% vs 46.776% exposure and BTC/ETH as-of consistency all documented | **BLOCKERS:** no full historical executable bid/ask fills (17/130 stale depth), official `has_bias=Yes` AI indicator warning, no stable economic edge. Do not advance M3/M4 |
+| M2 honest baseline | **RESEARCH EXTENDED TO ALL SEPTEMBER — NO-GO; ACCEPTANCE FAILED**. Sep: **125 actual LightGBM fits**, AI 137 trades **−444.980 USDT**, no-ML 163 trades **−242.894 USDT**, no-trade **0**; both worse after doubled fees; no-ML in a position **99.641%** of month. Prior Oct-week checks and 65-trade funding/depth evidence retained | **BLOCKERS:** no precise historical executable bid/ask fills (October depth had 17/130 stale), official `has_bias=Yes` AI warning, two Sep month-boundary funding differences, no proven edge. Do not advance M3/M4 |
 | M3 FreqAI edge | NOT STARTED | Multi-period walk-forward results |
 | M4 forward dry-run VPS | NOT STARTED; research mode source implemented | Capacity, two-profile official checks, independent forward-paper report |
 | M5 expand and port selected features | DEFERRED | M3/M4 evidence |
