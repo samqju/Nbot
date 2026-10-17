@@ -61,7 +61,7 @@ class M2AIIntegrityTests(unittest.TestCase):
     def test_forward_return_is_label_only_and_last_12_unavailable(self):
         s = NbotV6()
         s.freqai_info = {"feature_parameters": {"label_period_candles": 12}}
-        frame = s.set_freqai_targets(candles(), {})
+        frame = s.set_freqai_targets(candles())
         self.assertTrue(frame["&-forward_return"].iloc[-12:].isna().all())
         self.assertAlmostEqual(
             frame["&-forward_return"].iloc[100],
