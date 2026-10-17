@@ -41,6 +41,7 @@ def main():
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument('--purge-internal', action='store_true', help='Experimentally embargo 12 bars before the native 80/20 internal split; never silently change benchmark')
     args = parser.parse_args()
 
     cfg = json.loads(args.config.read_text())
@@ -52,7 +53,7 @@ def main():
     cfg["freqai"]["feature_parameters"]["reverse_train_test_order"] = False
     cfg["freqai"]["feature_parameters"]["weight_factor"] = 0
     cfg["freqai"]["feature_parameters"]["DI_threshold"] = 0.9
-    cfg["freqai"]["identifier"] = "nbot-v6-offline-native-frozen-prefix-20261017"
+    cfg["freqai"]["identifier"] = "nbot-v6-offline-native-frozen-prefix-20261017" + ("-purged" if args.purge_internal else "")
     cfg["freqai"]["activate_tensorboard"] = False
     cfg["freqai"]["plot_feature_importances"] = 0
     cfg["freqai"]["save_backtest_models"] = False
@@ -64,6 +65,9 @@ def main():
 
     output = {"type": "native_FreqAI_2026_9_lightgbm_4feature_frozen_same_model_prefix_comparison",
               "model_fits": 0, "pairs": 0, "comparisons": 0,
+              "purge_internal_12bars": bool(args.purge_internal),
+              "embargo_removed_training_rows": 0,
+              "post_embargo_boundary_violations": 0,
               "prediction_mismatches": 0, "model_hash_changes": 0,
               "causal_feature_mismatches": 0, "decision_filter_mismatches": 0,
               "results": [], "not_tested": [
@@ -93,7 +97,36 @@ def main():
         dk.set_paths(pair, int(CUT.timestamp()))
         dk.find_features(train)
         dk.find_labels(train)
+        embargo_stats = {"removed": 0, "violations": 0}
+        if args.purge_internal:
+            # This isolated experiment temporarily wraps the native chronological
+            # dataset split BEFORE the native LightGBM fit/pipeline transformations.
+            # It NEVER modifies native FreqAI or the frozen benchmark strategy.
+            make_native_dataset = dk.make_train_test_datasets
+            def make_purged_dataset(features, labels):
+                values = make_native_dataset(features, labels)
+                if len(values["test_features"]) < 1:
+                    raise AssertionError("NO_INTERNAL_VALIDATION")
+                train_idx = values["train_features"].index
+                test_idx = values["test_features"].index
+                dtrain = pd.to_datetime(dk.train_dates.loc[train_idx], utc=True)
+                dtest = pd.to_datetime(dk.train_dates.loc[test_idx], utc=True)
+                assert dtest.notna().all() and dtrain.notna().all()
+                cutoff = dtest.min()
+                keep = (dtrain + pd.Timedelta(minutes=60) < cutoff).to_numpy(dtype=bool)
+                embargo_stats["removed"] = int((~keep).sum())
+                # We permit only training labels that fully finish before the first
+                # validation timestamp. This is conservative for early target/stop.
+                values["train_features"] = values["train_features"].iloc[keep]
+                values["train_labels"] = values["train_labels"].iloc[keep]
+                values["train_weights"] = np.asarray(values["train_weights"])[keep]
+                embargo_stats["violations"] = int(((dtrain.iloc[keep] + pd.Timedelta(minutes=60)) >= cutoff).sum())
+                assert not embargo_stats["violations"] and len(values["train_features"]) > 50
+                return values
+            dk.make_train_test_datasets = make_purged_dataset
         model.model = model.train(train, pair, dk)
+        output["embargo_removed_training_rows"] += embargo_stats["removed"]
+        output["post_embargo_boundary_violations"] += embargo_stats["violations"]
         output["model_fits"] += 1
         booster_text = model.model.booster_.model_to_string()
         model_hash = hashlib.sha256(booster_text.encode()).hexdigest()
@@ -134,7 +167,8 @@ def main():
         output["pairs"] += 1
         output["results"].append({"pair": pair, "model_sha256": model_hash, "checks": pair_results,
                                   "fit_training_end_utc": str(trainraw.date.iloc[-1]),
-                                  "label_non_nan": int(train["&-trade_net_return"].notna().sum())})
+                                  "label_non_nan": int(train["&-trade_net_return"].notna().sum()),
+                                  "internal_embargo_removed_training_rows": embargo_stats["removed"]})
         print(f"CHECK {pair} {len(pair_results)} prefix comparisons; "
               f"cumulative pred_diff={output['prediction_mismatches']}; "
               f"gate_diff={output['decision_filter_mismatches']}", flush=True)
@@ -142,6 +176,7 @@ def main():
         output["pairs"] == 25 and output["comparisons"] == 25 * len(TARGET_HOURS)
         and not output["causal_feature_mismatches"] and not output["prediction_mismatches"]
         and not output["decision_filter_mismatches"] and not output["model_hash_changes"]
+        and not output["post_embargo_boundary_violations"]
     )
     args.output.write_text(json.dumps(output, indent=2) + "\n")
     print("FINAL_JSON", args.output, "PASS", output["integrity_pass"],
