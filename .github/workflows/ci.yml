@@ -44,6 +44,7 @@ jobs:
             user_data/freqaimodels/NbotV6CostAwareRLResearch.py \
             scripts/m2r_strategy_library_selector.py \
             scripts/m2r_v6_library_native_job.py
+            scripts/m2r_v6_library_scorecards.py
           python -m json.tool user_data/config.v6-library-native-offline.json > /dev/null
           python -m json.tool user_data/config.v6-library-lgbm-offline.json > /dev/null
           python -m json.tool user_data/config.v6-library-rl-offline.json > /dev/null
