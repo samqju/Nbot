@@ -79,6 +79,10 @@ def main() -> int:
     assert cfg["freqai"]["model_training_parameters"]["n_jobs"] == 1
     assert cfg["freqai"]["save_backtest_models"] is False
 
+    # Freqtrade's Config object fills these implicit defaults before native DataKitchen.
+    cfg["freqai"]["feature_parameters"].setdefault("shuffle_after_split", False)
+    cfg["freqai"]["feature_parameters"].setdefault("reverse_train_test_order", False)
+    cfg["freqai"]["feature_parameters"].setdefault("weight_factor", 0)
     cfg["timerange"] = "20261008-20261009"
     cfg["config_files"] = [str(args.config)]
     cfg["user_data_dir"] = args.output.parent / "original_72feature_ephemeral_userdir"
