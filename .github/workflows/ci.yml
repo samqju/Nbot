@@ -34,6 +34,20 @@ jobs:
       - name: Validate beginner installer and preflight shell syntax
         run: bash -n scripts/install_docker_ubuntu.sh scripts/check_vps.sh
       - run: python -m py_compile user_data/strategies/NbotV6.py
+      - name: Compile offline strategy library, native selector, LightGBM variants and RL
+        run: |
+          python -m py_compile \
+            user_data/strategies/NbotV6LibraryResearch.py \
+            user_data/strategies/NbotV6LibraryLightGBMResearch.py \
+            user_data/strategies/NbotV6AdaptiveLibraryResearch.py \
+            user_data/strategies/NbotV6RLResearch.py \
+            user_data/freqaimodels/NbotV6CostAwareRLResearch.py \
+            scripts/m2r_strategy_library_selector.py \
+            scripts/m2r_v6_library_native_job.py
+          python -m json.tool user_data/config.v6-library-native-offline.json > /dev/null
+          python -m json.tool user_data/config.v6-library-lgbm-offline.json > /dev/null
+          python -m json.tool user_data/config.v6-library-rl-offline.json > /dev/null
+          python -m json.tool user_data/config.v6-library-adaptive-offline.json > /dev/null
       - run: python -m json.tool user_data/config.json > /dev/null
 
   actual-freqtrade-strategy-discovery:
@@ -49,6 +63,22 @@ jobs:
             list-strategies --config /freqtrade/user_data/config.json \
             | tee /tmp/nbot-v6-strategies.txt
           grep -E 'NbotV6.*OK' /tmp/nbot-v6-strategies.txt
+      - name: Independently discover each candidate in the official Freqtrade image
+        run: |
+          set -euo pipefail
+          for name in \
+            NbotV6EmaCrossResearch NbotV6DonchianResearch \
+            NbotV6BollingerResearch NbotV6RsiResearch \
+            NbotV6MacdResearch NbotV6StochasticResearch \
+            NbotV6AtrBreakoutResearch NbotV6VolumeTrendResearch \
+            NbotV6EmaCrossLightGBMResearch NbotV6DonchianLightGBMResearch \
+            NbotV6BollingerLightGBMResearch NbotV6RsiLightGBMResearch \
+            NbotV6MacdLightGBMResearch NbotV6StochasticLightGBMResearch \
+            NbotV6AtrBreakoutLightGBMResearch NbotV6VolumeTrendLightGBMResearch \
+            NbotV6AdaptiveLibraryResearch NbotV6RLResearch; do
+            grep -E "$name.*OK" /tmp/nbot-v6-strategies.txt \
+              || { echo "FREQTRADE_CANDIDATE_NOT_IMPORTABLE: $name"; exit 1; }
+          done
       - name: Validate independent 20-slot paper configuration with real Freqtrade schema
         run: |
           set -o pipefail
