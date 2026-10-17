@@ -72,6 +72,9 @@ def main() -> int:
             funding = load("-1h-funding_rate.feather")
             mark = load("-1h-mark.feather")
             candles = load("-5m-futures.feather")
+            # Use a funding start strictly after the first staged hourly mark
+            # so the first event has a completed previous mark candle.
+            funding = funding.loc[funding.date >= pd.Timestamp("2026-10-01T00:00:00Z")].reset_index(drop=True)
             sched_by_pair[pair] = (FundingSchedule.from_candles(funding, mark), candles)
         sched, candle_df = sched_by_pair[pair]
         entry = pd.Timestamp(trade["open_date"])
