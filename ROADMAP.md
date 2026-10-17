@@ -125,6 +125,12 @@ Work:
 
 **Why change the learning task?** September 2026 proved the current "price in one hour" FreqAI target did not give an economic edge: current AI **−444.980 USDT**, no-ML **−242.894 USDT** (25 markets, single global slot). The frozen no-ML approach was exposed **99.641% of September**. Trade profitability after realistic costs—not directional forecasting alone—is the research target. A new model is a **Challenger** until tested on untouched future dates.
 
+### Broader history proposal (October 17, 2026) — PLANNED, not downloaded or trained
+
+The owner proposes extending the **existing fixed-25-market** public Binance USDT-M research archive back to **January 1, 2026** for richer market-regime coverage. This is a sound *data collection and independent-testing* direction, **not** a proven model improvement or a change to the existing M2R model. The current research override explicitly sets `train_period_days=30` and `backtest_period_days=7`: extra files alone will not increase each model's historical training window, and saved predictions do not retrain on all history for each decision.
+
+**Correct order:** FIRST audit the native FreqAI 12-bar future-label train cutoff and investigate official `has_bias=Yes`; then acquire/verify Jan-2026-onward 5m/1h futures, mark and funding public data for the original 25 markets (as available by listing date), with exact last complete UTC candle, gaps, disk/resource metrics and data fingerprints. BEFORE examining results, freeze several previously uninspected independent chronological regime windows, untouched validation splits, costs, strategy thresholds and all baselines (original AI/non-AI, matched no-AI, NO TRADE). Compare 30-day baseline versus **proposed 60/90/180-day** rolling fits under equal as-of evaluation dates where warmup and 8-GB VPS limits permit; preserve separate experiment identifiers. Do not mistake overlapping hypothetical labels for executed trades or retrospectively optimize on September/October results. **All steps remain NOT RUN under this note. M2 release NO-GO; M3/M4/M5A/M7 gates unchanged.**
+
 ### Build checklist — distinguish code existence from earned approval
 
 **Stage A — Frozen candidate setups + after-cost outcome labels (implement offline first)**
