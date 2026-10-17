@@ -25,7 +25,7 @@ CUTOFF = 200
 def candles(n=260):
     # Monotonic, valid candles have frequent breakout signals whose trade
     # outcomes take all 12 bars (rather than hitting 2% stop/5% target).
-    price = 100.0 * np.exp(np.arange(n) * 0.001)
+    price = 100.0 * np.exp(np.arange(n) * 0.003)
     return pd.DataFrame({
         "date": pd.date_range("2026-01-01", periods=n, freq="5min", tz="UTC"),
         "open": price, "high": price * 1.002,
@@ -76,7 +76,7 @@ class NativeCutoffContractResearchTests(unittest.TestCase):
         # FreqAI's chronological train_test_split(shuffle=False) reserves a
         # final 20% for internal evaluation, but does not automatically
         # embargo last 12 labels before that INTERNAL split.
-        all_labels = training_labels(candles() .iloc[:CUTOFF].copy())["&-trade_net_return"]
+        all_labels = training_labels(candles().iloc[:CUTOFF].copy())["&-trade_net_return"]
         valid_idx = np.flatnonzero(all_labels.notna().to_numpy())
         split_row = int(len(valid_idx) * 0.8)
         self.assertGreater(split_row, 12)
