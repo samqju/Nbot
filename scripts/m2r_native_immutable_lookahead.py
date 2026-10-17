@@ -87,6 +87,7 @@ def main() -> int:
     real_analyze = native_lookahead.LookaheadAnalysis.analyze_indicators
 
     def traced_analyze(self, full_vars, cut_vars, current_pair):
+        import pandas as pd
         f = full_vars.indicators[current_pair]
         c = cut_vars.indicators[current_pair]
         matched = f.loc[c.index]
@@ -118,6 +119,16 @@ def main() -> int:
             for item in comparisons for sample in item["first_three"]
         ) and all(item["differing_rows"] <= 3 for item in comparisons)
         compared_time = str(cut_vars.compared_dt)
+        before_or_at = pd.to_datetime(c["date"], utc=True) <= pd.Timestamp(
+            cut_vars.compared_dt
+        )
+        full_asof = matched.loc[before_or_at]
+        cut_asof = c.loc[before_or_at]
+        asof_comparison = full_asof.compare(cut_asof)
+        changed_asof_columns = [
+            str(col[0]) for col in asof_comparison.columns
+            if isinstance(col, tuple) and col[1] == "self"
+        ]
         changed_at_compared_time = [
             item["column"] for item in comparisons
             if any(sample["row_date"] == compared_time
@@ -126,6 +137,8 @@ def main() -> int:
         diagnostics.append({
             "pair": current_pair,
             "decision_time": compared_time,
+            "native_full_data_columns_changed_at_or_before_decision": sorted(set(changed_asof_columns)),
+            "native_full_data_rows_differing_at_or_before_decision": len(asof_comparison),
             "all_sampled_differences_last_candle_only": all_diffs_terminal_only,
             "changed_columns_at_decision_time": changed_at_compared_time,
             "replay_start": str(c["date"].iloc[0]),
@@ -182,6 +195,15 @@ def main() -> int:
         "diagnostic_extra_5m_context_per_shortened_replay": a.terminal_padding_candles,
         "extra_context_replays": len(extra_context_replays),
         "sampled_official_indicator_comparisons": diagnostics,
+        "all_sampled_trades_identical_through_decision_candle": bool(diagnostics) and all(
+            x["native_full_data_rows_differing_at_or_before_decision"] == 0
+            for x in diagnostics
+        ),
+        "all_observed_replay_differences_exclusively_on_post_decision_terminal_row": bool(diagnostics) and all(
+            x["all_sampled_differences_last_candle_only"] and
+            x["replay_last_candle"] != x["decision_time"]
+            for x in diagnostics
+        ),
         "strict_fixed_model_integrity_pass": cli_exit == 0 and not training and before == after and len(deleted)>0,
         "caveat": "Any has_bias=Yes recorded in the native official table must still be examined by column and signal; suppressing FreqAI folder cleanup does not guarantee a no-bias verdict or correct strategy."
     }
