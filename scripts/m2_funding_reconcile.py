@@ -76,7 +76,7 @@ def expected_funding(trade: dict, records: list[dict]) -> dict:
     opened = timestamp_ms(trade["open_date"])
     closed = timestamp_ms(trade["close_date"])
     amount = float(trade["amount"])
-    if amount <= 0 or opened >= closed:
+    if amount <= 0 or opened > closed:
         raise ValueError("Invalid trade size/times")
     direction = 1 if trade.get("is_short") else -1
     valid = [r for r in records if opened < int(r["fundingTime"]) <= closed]
