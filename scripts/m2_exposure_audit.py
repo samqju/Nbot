@@ -22,7 +22,7 @@ def exposure(trades: list[dict], start: int = START, end: int = END) -> dict:
     intervals = []
     for t in trades:
         a,b=timestamp_ms(t["open_date"]),timestamp_ms(t["close_date"])
-        if not start <= a < b <= end:
+        if not start <= a <= b <= end:
             raise ValueError(f"Trade outside selected window {a=}, {b=}, {start=}, {end=}")
         intervals.append((a,b,bool(t.get("is_short")),t["pair"]))
     intervals.sort()
