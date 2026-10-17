@@ -1,0 +1,2966 @@
+{
+  "title": "M2 Binance Vision 30-second depth-band, historical trade-time match",
+  "price_band_pct": 0.2,
+  "snapshot_max_age_seconds": 45,
+  "note": "Cumulative depth within ±0.2% is NOT spread or a promised fill price.",
+  "limits": [
+    "No 2026 public historical best bid/ask bookTicker data: exact spread is unavailable.",
+    "Depth-band values may be stale/frozen: flagged by per-day uniqueness.",
+    "Depth may be canceled before execution and snapshots omit queue priority / latency.",
+    "Without tick-level order replay, stop-market gaps and maker fills are NOT reconstructible.",
+    "Exposure and market impact risk extend beyond order-notional vs one depth band."
+  ],
+  "trades": 65,
+  "entry_exit_events": 130,
+  "status_counts": {
+    "MATCH": 113,
+    "STALE": 17
+  },
+  "valid_liquidity_ge_order_count": 113,
+  "matched_depth_multiple_of_order_min": 40.22,
+  "matched_depth_multiple_of_order_median": 380.61,
+  "archive_files_checked": 57,
+  "archives": [
+    {
+      "symbol": "ADAUSDT",
+      "day": "2026-10-05",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "ARBUSDT",
+      "day": "2026-10-01",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "ARBUSDT",
+      "day": "2026-10-02",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "ARBUSDT",
+      "day": "2026-10-05",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "ARBUSDT",
+      "day": "2026-10-06",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "ATOMUSDT",
+      "day": "2026-10-01",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 0.9993,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "AVAXUSDT",
+      "day": "2026-10-02",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "AVAXUSDT",
+      "day": "2026-10-04",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "AVAXUSDT",
+      "day": "2026-10-05",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "AVAXUSDT",
+      "day": "2026-10-06",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "AVAXUSDT",
+      "day": "2026-10-07",
+      "band_0_2": {
+        "count": 339,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 339,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "BNBUSDT",
+      "day": "2026-10-02",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "BNBUSDT",
+      "day": "2026-10-03",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "BTCUSDT",
+      "day": "2026-10-01",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "BTCUSDT",
+      "day": "2026-10-02",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "BTCUSDT",
+      "day": "2026-10-03",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "BTCUSDT",
+      "day": "2026-10-07",
+      "band_0_2": {
+        "count": 339,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 339,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "DOGEUSDT",
+      "day": "2026-10-07",
+      "band_0_2": {
+        "count": 339,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 339,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "DOTUSDT",
+      "day": "2026-10-04",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 0.9997,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "ETHUSDT",
+      "day": "2026-10-02",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "FILUSDT",
+      "day": "2026-10-02",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 0.9997,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "FILUSDT",
+      "day": "2026-10-05",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 0.9997,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "FILUSDT",
+      "day": "2026-10-06",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 0.9997,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "INJUSDT",
+      "day": "2026-10-02",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "INJUSDT",
+      "day": "2026-10-03",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 0.9997,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "INJUSDT",
+      "day": "2026-10-04",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 0.9997,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 0.9997,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "INJUSDT",
+      "day": "2026-10-05",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "INJUSDT",
+      "day": "2026-10-07",
+      "band_0_2": {
+        "count": 339,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 339,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "LINKUSDT",
+      "day": "2026-10-03",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "LINKUSDT",
+      "day": "2026-10-04",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "LINKUSDT",
+      "day": "2026-10-05",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "LTCUSDT",
+      "day": "2026-10-02",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 0.9997,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "LTCUSDT",
+      "day": "2026-10-05",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 0.9997,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "NEARUSDT",
+      "day": "2026-10-03",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "NEARUSDT",
+      "day": "2026-10-04",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "NEARUSDT",
+      "day": "2026-10-05",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "NEARUSDT",
+      "day": "2026-10-07",
+      "band_0_2": {
+        "count": 339,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 339,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "OPUSDT",
+      "day": "2026-10-03",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "OPUSDT",
+      "day": "2026-10-04",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 0.9997,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 0.999,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "OPUSDT",
+      "day": "2026-10-07",
+      "band_0_2": {
+        "count": 339,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 339,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "SOLUSDT",
+      "day": "2026-09-30",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "SOLUSDT",
+      "day": "2026-10-01",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "SOLUSDT",
+      "day": "2026-10-04",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "SOLUSDT",
+      "day": "2026-10-05",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "SUIUSDT",
+      "day": "2026-10-03",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "SUIUSDT",
+      "day": "2026-10-05",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 0.9997,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "SUIUSDT",
+      "day": "2026-10-06",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "TRXUSDT",
+      "day": "2026-10-01",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "TRXUSDT",
+      "day": "2026-10-07",
+      "band_0_2": {
+        "count": 339,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 339,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "UNIUSDT",
+      "day": "2026-10-01",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "UNIUSDT",
+      "day": "2026-10-03",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 0.9993,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "UNIUSDT",
+      "day": "2026-10-04",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 0.9997,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "UNIUSDT",
+      "day": "2026-10-05",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "UNIUSDT",
+      "day": "2026-10-06",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "UNIUSDT",
+      "day": "2026-10-07",
+      "band_0_2": {
+        "count": 339,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 339,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "XLMUSDT",
+      "day": "2026-10-01",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    },
+    {
+      "symbol": "XLMUSDT",
+      "day": "2026-10-02",
+      "band_0_2": {
+        "count": 2880,
+        "unique_fraction": 0.9997,
+        "looks_frozen": false
+      },
+      "band_minus_0_2": {
+        "count": 2880,
+        "unique_fraction": 1,
+        "looks_frozen": false
+      }
+    }
+  ],
+  "trade_events": [
+    {
+      "strategy": "AI_V6",
+      "pair": "UNI/USDT:USDT",
+      "open_date": "2026-10-01 02:00:00+00:00",
+      "close_date": "2026-10-01 03:45:00+00:00",
+      "stake_notional_usdt": 999.598,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 380461.862,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 380.61,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 336786.959,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 336.92,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "ARB/USDT:USDT",
+      "open_date": "2026-10-01 05:30:00+00:00",
+      "close_date": "2026-10-01 07:20:00+00:00",
+      "stake_notional_usdt": 999.986,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 84126.805,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 84.13,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 96488.419,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 96.49,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "ARB/USDT:USDT",
+      "open_date": "2026-10-01 08:10:00+00:00",
+      "close_date": "2026-10-01 10:05:00+00:00",
+      "stake_notional_usdt": 999.989,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 29,
+          "visible_notional_within_20bps_usdt": 98595.469,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 98.6,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 112171.8,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 112.17,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "UNI/USDT:USDT",
+      "open_date": "2026-10-01 11:40:00+00:00",
+      "close_date": "2026-10-01 13:20:00+00:00",
+      "stake_notional_usdt": 993.3,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 29,
+          "visible_notional_within_20bps_usdt": 354256.744,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 356.65,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 324435.524,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 326.62,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "ATOM/USDT:USDT",
+      "open_date": "2026-10-01 16:10:00+00:00",
+      "close_date": "2026-10-01 18:50:00+00:00",
+      "stake_notional_usdt": 999.994,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 53292.034,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 53.29,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 56088.972,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 56.09,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "SOL/USDT:USDT",
+      "open_date": "2026-10-01 19:00:00+00:00",
+      "close_date": "2026-10-01 21:25:00+00:00",
+      "stake_notional_usdt": 999.973,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 5320875.173,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 5321.02,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 29,
+          "visible_notional_within_20bps_usdt": 4182836.787,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 4182.95,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "BTC/USDT:USDT",
+      "open_date": "2026-10-02 00:00:00+00:00",
+      "close_date": "2026-10-02 01:35:00+00:00",
+      "stake_notional_usdt": 933.126,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 59243562.641,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 63489.38,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 44340560.462,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 47518.32,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "ARB/USDT:USDT",
+      "open_date": "2026-10-02 01:45:00+00:00",
+      "close_date": "2026-10-02 06:00:00+00:00",
+      "stake_notional_usdt": 999.99,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 122847.249,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 122.85,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 148821.762,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 148.82,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "ETH/USDT:USDT",
+      "open_date": "2026-10-02 07:10:00+00:00",
+      "close_date": "2026-10-02 08:20:00+00:00",
+      "stake_notional_usdt": 998.594,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 25456142.885,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 25491.97,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 27727961.447,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 27766.99,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "ARB/USDT:USDT",
+      "open_date": "2026-10-02 12:45:00+00:00",
+      "close_date": "2026-10-02 12:55:00+00:00",
+      "stake_notional_usdt": 999.993,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 29,
+          "visible_notional_within_20bps_usdt": 119717.71,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 119.72,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 124660.981,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 124.66,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "ARB/USDT:USDT",
+      "open_date": "2026-10-02 13:00:00+00:00",
+      "close_date": "2026-10-02 14:30:00+00:00",
+      "stake_notional_usdt": 999.994,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 29,
+          "visible_notional_within_20bps_usdt": 132690.686,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 132.69,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 28,
+          "visible_notional_within_20bps_usdt": 193513.25,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 193.51,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "FIL/USDT:USDT",
+      "open_date": "2026-10-02 20:30:00+00:00",
+      "close_date": "2026-10-02 22:40:00+00:00",
+      "stake_notional_usdt": 999.988,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 229253.914,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 229.26,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 28,
+          "visible_notional_within_20bps_usdt": 311719.788,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 311.72,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "INJ/USDT:USDT",
+      "open_date": "2026-10-02 23:15:00+00:00",
+      "close_date": "2026-10-03 00:45:00+00:00",
+      "stake_notional_usdt": 999.779,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 83379.518,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 83.4,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 99604.381,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 99.63,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "UNI/USDT:USDT",
+      "open_date": "2026-10-03 03:10:00+00:00",
+      "close_date": "2026-10-03 08:05:00+00:00",
+      "stake_notional_usdt": 993.535,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 329629.823,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 331.77,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 251181.452,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 252.82,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "SUI/USDT:USDT",
+      "open_date": "2026-10-03 09:30:00+00:00",
+      "close_date": "2026-10-03 15:55:00+00:00",
+      "stake_notional_usdt": 999.99,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 675018.487,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 675.03,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 728632.069,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 728.64,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "OP/USDT:USDT",
+      "open_date": "2026-10-03 16:35:00+00:00",
+      "close_date": "2026-10-03 18:00:00+00:00",
+      "stake_notional_usdt": 999.996,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 28,
+          "visible_notional_within_20bps_usdt": 77113.509,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 77.11,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 82091.494,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 82.09,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "LINK/USDT:USDT",
+      "open_date": "2026-10-03 23:15:00+00:00",
+      "close_date": "2026-10-04 02:25:00+00:00",
+      "stake_notional_usdt": 999.899,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 463336.045,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 463.38,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 366983.951,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 367.02,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "UNI/USDT:USDT",
+      "open_date": "2026-10-04 07:05:00+00:00",
+      "close_date": "2026-10-04 08:05:00+00:00",
+      "stake_notional_usdt": 991.76,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 538300.434,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 542.77,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 429032.647,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 432.6,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "DOT/USDT:USDT",
+      "open_date": "2026-10-04 10:35:00+00:00",
+      "close_date": "2026-10-04 11:00:00+00:00",
+      "stake_notional_usdt": 999.96,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 127355.924,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 127.36,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 224457.289,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 224.47,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "OP/USDT:USDT",
+      "open_date": "2026-10-04 16:15:00+00:00",
+      "close_date": "2026-10-04 18:05:00+00:00",
+      "stake_notional_usdt": 999.993,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 101208.813,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 101.21,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 90798.177,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 90.8,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "INJ/USDT:USDT",
+      "open_date": "2026-10-04 21:30:00+00:00",
+      "close_date": "2026-10-05 04:35:00+00:00",
+      "stake_notional_usdt": 999.566,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 29,
+          "visible_notional_within_20bps_usdt": 102643.117,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 102.69,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 51091.099,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 51.11,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "NEAR/USDT:USDT",
+      "open_date": "2026-10-05 05:40:00+00:00",
+      "close_date": "2026-10-05 10:10:00+00:00",
+      "stake_notional_usdt": 999.702,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 388315.051,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 388.43,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 258265.326,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 258.34,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "FIL/USDT:USDT",
+      "open_date": "2026-10-05 10:10:00+00:00",
+      "close_date": "2026-10-05 13:20:00+00:00",
+      "stake_notional_usdt": 999.923,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 425781.522,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 425.81,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 380865.625,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 380.89,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "ARB/USDT:USDT",
+      "open_date": "2026-10-05 13:20:00+00:00",
+      "close_date": "2026-10-05 14:30:00+00:00",
+      "stake_notional_usdt": 999.998,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 154791.553,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 154.79,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 115024.103,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 115.02,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "LINK/USDT:USDT",
+      "open_date": "2026-10-05 17:05:00+00:00",
+      "close_date": "2026-10-05 19:25:00+00:00",
+      "stake_notional_usdt": 999.941,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 478418.194,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 478.45,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 375761.02,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 375.78,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "ADA/USDT:USDT",
+      "open_date": "2026-10-05 19:55:00+00:00",
+      "close_date": "2026-10-05 20:25:00+00:00",
+      "stake_notional_usdt": 999.957,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 471998.143,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 472.02,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 534851.935,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 534.87,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "SUI/USDT:USDT",
+      "open_date": "2026-10-05 20:40:00+00:00",
+      "close_date": "2026-10-06 00:25:00+00:00",
+      "stake_notional_usdt": 999.881,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 398077.062,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 398.12,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 29,
+          "visible_notional_within_20bps_usdt": 405145.679,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 405.19,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "FIL/USDT:USDT",
+      "open_date": "2026-10-06 06:35:00+00:00",
+      "close_date": "2026-10-06 09:25:00+00:00",
+      "stake_notional_usdt": 999.913,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 29,
+          "visible_notional_within_20bps_usdt": 552128.229,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 552.18,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 267189.276,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 267.21,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "ARB/USDT:USDT",
+      "open_date": "2026-10-06 19:55:00+00:00",
+      "close_date": "2026-10-06 21:30:00+00:00",
+      "stake_notional_usdt": 999.99,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 29,
+          "visible_notional_within_20bps_usdt": 153377.341,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 153.38,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 101673.977,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 101.68,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "AVAX/USDT:USDT",
+      "open_date": "2026-10-07 00:10:00+00:00",
+      "close_date": "2026-10-07 01:55:00+00:00",
+      "stake_notional_usdt": 999.664,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 29,
+          "visible_notional_within_20bps_usdt": 146412.613,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 146.46,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 28,
+          "visible_notional_within_20bps_usdt": 173352.473,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 173.41,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "INJ/USDT:USDT",
+      "open_date": "2026-10-07 04:00:00+00:00",
+      "close_date": "2026-10-07 05:00:00+00:00",
+      "stake_notional_usdt": 999.433,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "STALE",
+          "age_seconds": 4260,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2
+        },
+        {
+          "state": "STALE",
+          "age_seconds": 7860,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "NEAR/USDT:USDT",
+      "open_date": "2026-10-07 17:10:00+00:00",
+      "close_date": "2026-10-07 17:40:00+00:00",
+      "stake_notional_usdt": 996.48,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "STALE",
+          "age_seconds": 51660,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2
+        },
+        {
+          "state": "STALE",
+          "age_seconds": 53460,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "NEAR/USDT:USDT",
+      "open_date": "2026-10-07 17:50:00+00:00",
+      "close_date": "2026-10-07 19:00:00+00:00",
+      "stake_notional_usdt": 998.518,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "STALE",
+          "age_seconds": 54060,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2
+        },
+        {
+          "state": "STALE",
+          "age_seconds": 58260,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2
+        }
+      ]
+    },
+    {
+      "strategy": "AI_V6",
+      "pair": "OP/USDT:USDT",
+      "open_date": "2026-10-07 20:30:00+00:00",
+      "close_date": "2026-10-08 00:00:00+00:00",
+      "stake_notional_usdt": 999.997,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "STALE",
+          "age_seconds": 63660,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2
+        },
+        {
+          "state": "STALE",
+          "age_seconds": 76260,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "SOL/USDT:USDT",
+      "open_date": "2026-10-01 00:05:00+00:00",
+      "close_date": "2026-10-01 03:45:00+00:00",
+      "stake_notional_usdt": 999.962,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 29,
+          "visible_notional_within_20bps_usdt": 5037944.521,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 5038.14,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 7920289.142,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 7920.59,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "SOL/USDT:USDT",
+      "open_date": "2026-10-01 03:45:00+00:00",
+      "close_date": "2026-10-01 07:35:00+00:00",
+      "stake_notional_usdt": 998.874,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 7920289.142,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 7929.22,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 5984478.438,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 5991.22,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "TRX/USDT:USDT",
+      "open_date": "2026-10-01 07:45:00+00:00",
+      "close_date": "2026-10-01 15:50:00+00:00",
+      "stake_notional_usdt": 999.987,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 504981.371,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 504.99,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 430106.783,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 430.11,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "TRX/USDT:USDT",
+      "open_date": "2026-10-01 15:50:00+00:00",
+      "close_date": "2026-10-01 22:20:00+00:00",
+      "stake_notional_usdt": 999.761,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 430106.783,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 430.21,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 319050.563,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 319.13,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "XLM/USDT:USDT",
+      "open_date": "2026-10-01 22:20:00+00:00",
+      "close_date": "2026-10-02 02:30:00+00:00",
+      "stake_notional_usdt": 999.805,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 385789.485,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 385.86,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 404241.598,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 404.32,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "BNB/USDT:USDT",
+      "open_date": "2026-10-02 02:30:00+00:00",
+      "close_date": "2026-10-02 07:50:00+00:00",
+      "stake_notional_usdt": 996.577,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 1674812.754,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 1680.57,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 1330809.497,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 1335.38,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "ETH/USDT:USDT",
+      "open_date": "2026-10-02 07:50:00+00:00",
+      "close_date": "2026-10-02 14:25:00+00:00",
+      "stake_notional_usdt": 998.803,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 32943439.738,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 32982.92,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 19867662.272,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 19891.47,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "LTC/USDT:USDT",
+      "open_date": "2026-10-02 14:25:00+00:00",
+      "close_date": "2026-10-02 16:55:00+00:00",
+      "stake_notional_usdt": 999.956,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 452727.335,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 452.75,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 312128.338,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 312.14,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "AVAX/USDT:USDT",
+      "open_date": "2026-10-02 16:55:00+00:00",
+      "close_date": "2026-10-02 18:40:00+00:00",
+      "stake_notional_usdt": 998.73,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 247754.78,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 248.07,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 258539.239,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 258.87,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "BTC/USDT:USDT",
+      "open_date": "2026-10-02 18:40:00+00:00",
+      "close_date": "2026-10-03 00:40:00+00:00",
+      "stake_notional_usdt": 924.474,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 76945634.125,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 83231.79,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 54999448.481,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 59492.69,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "INJ/USDT:USDT",
+      "open_date": "2026-10-03 00:40:00+00:00",
+      "close_date": "2026-10-03 07:40:00+00:00",
+      "stake_notional_usdt": 999.469,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 72336.4,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 72.37,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 40200.761,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 40.22,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "INJ/USDT:USDT",
+      "open_date": "2026-10-03 07:40:00+00:00",
+      "close_date": "2026-10-03 12:10:00+00:00",
+      "stake_notional_usdt": 999.538,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 40200.761,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 40.22,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 72616.133,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 72.65,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "BNB/USDT:USDT",
+      "open_date": "2026-10-03 12:10:00+00:00",
+      "close_date": "2026-10-03 22:00:00+00:00",
+      "stake_notional_usdt": 994.603,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 1809327.323,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 1819.15,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 1840365.322,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 1850.35,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "NEAR/USDT:USDT",
+      "open_date": "2026-10-03 22:00:00+00:00",
+      "close_date": "2026-10-04 03:40:00+00:00",
+      "stake_notional_usdt": 997.71,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 194232.049,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 194.68,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 312077.167,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 312.79,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "SOL/USDT:USDT",
+      "open_date": "2026-10-04 03:40:00+00:00",
+      "close_date": "2026-10-04 18:10:00+00:00",
+      "stake_notional_usdt": 998.799,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 4885415.685,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 4891.29,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 5286751.106,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 5293.11,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "SOL/USDT:USDT",
+      "open_date": "2026-10-04 18:10:00+00:00",
+      "close_date": "2026-10-04 22:05:00+00:00",
+      "stake_notional_usdt": 999.1,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 5286751.106,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 5291.51,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 4081848.872,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 4085.53,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "SOL/USDT:USDT",
+      "open_date": "2026-10-04 22:05:00+00:00",
+      "close_date": "2026-10-05 00:25:00+00:00",
+      "stake_notional_usdt": 999.99,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 4081848.872,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 4081.89,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 6504864.284,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 6504.93,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "AVAX/USDT:USDT",
+      "open_date": "2026-10-05 00:25:00+00:00",
+      "close_date": "2026-10-05 07:05:00+00:00",
+      "stake_notional_usdt": 991.8,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 400706.485,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 404.02,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 252083.211,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 254.17,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "AVAX/USDT:USDT",
+      "open_date": "2026-10-05 07:05:00+00:00",
+      "close_date": "2026-10-05 09:50:00+00:00",
+      "stake_notional_usdt": 991.98,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 252083.211,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 254.12,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 291180.742,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 293.53,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "LTC/USDT:USDT",
+      "open_date": "2026-10-05 09:50:00+00:00",
+      "close_date": "2026-10-05 15:50:00+00:00",
+      "stake_notional_usdt": 999.958,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 433035.349,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 433.05,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 308908.739,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 308.92,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "ADA/USDT:USDT",
+      "open_date": "2026-10-05 15:50:00+00:00",
+      "close_date": "2026-10-05 20:15:00+00:00",
+      "stake_notional_usdt": 999.809,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 286828.688,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 286.88,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 29,
+          "visible_notional_within_20bps_usdt": 655095.338,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 655.22,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "SUI/USDT:USDT",
+      "open_date": "2026-10-05 20:15:00+00:00",
+      "close_date": "2026-10-06 00:40:00+00:00",
+      "stake_notional_usdt": 1000,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 29,
+          "visible_notional_within_20bps_usdt": 661850.328,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 661.85,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 585963.106,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 585.96,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "UNI/USDT:USDT",
+      "open_date": "2026-10-06 00:40:00+00:00",
+      "close_date": "2026-10-06 10:15:00+00:00",
+      "stake_notional_usdt": 994.84,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 537854.135,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 540.64,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 29,
+          "visible_notional_within_20bps_usdt": 479373.365,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 481.86,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "UNI/USDT:USDT",
+      "open_date": "2026-10-06 10:15:00+00:00",
+      "close_date": "2026-10-06 14:25:00+00:00",
+      "stake_notional_usdt": 997.36,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 29,
+          "visible_notional_within_20bps_usdt": 479373.365,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 480.64,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 337509.303,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 338.4,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "UNI/USDT:USDT",
+      "open_date": "2026-10-06 14:25:00+00:00",
+      "close_date": "2026-10-07 01:35:00+00:00",
+      "stake_notional_usdt": 995.756,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 337509.303,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 338.95,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 28,
+          "visible_notional_within_20bps_usdt": 700240.363,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 703.22,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "DOGE/USDT:USDT",
+      "open_date": "2026-10-07 01:35:00+00:00",
+      "close_date": "2026-10-07 02:00:00+00:00",
+      "stake_notional_usdt": 999.965,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 28,
+          "visible_notional_within_20bps_usdt": 1538813.731,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 1538.87,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 1155264.382,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2,
+          "depth_multiple_of_order": 1155.3,
+          "visible_liquidity_ge_order": true
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "BTC/USDT:USDT",
+      "open_date": "2026-10-07 02:00:00+00:00",
+      "close_date": "2026-10-07 16:30:00+00:00",
+      "stake_notional_usdt": 927.638,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "MATCH",
+          "age_seconds": 30,
+          "visible_notional_within_20bps_usdt": 76094758.035,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2,
+          "depth_multiple_of_order": 82030.69,
+          "visible_liquidity_ge_order": true
+        },
+        {
+          "state": "STALE",
+          "age_seconds": 49260,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "NEAR/USDT:USDT",
+      "open_date": "2026-10-07 16:30:00+00:00",
+      "close_date": "2026-10-07 19:00:00+00:00",
+      "stake_notional_usdt": 999.972,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "STALE",
+          "age_seconds": 49260,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2
+        },
+        {
+          "state": "STALE",
+          "age_seconds": 58260,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "DOGE/USDT:USDT",
+      "open_date": "2026-10-07 19:05:00+00:00",
+      "close_date": "2026-10-07 19:45:00+00:00",
+      "stake_notional_usdt": 999.912,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "STALE",
+          "age_seconds": 58560,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2
+        },
+        {
+          "state": "STALE",
+          "age_seconds": 60960,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "TRX/USDT:USDT",
+      "open_date": "2026-10-07 19:45:00+00:00",
+      "close_date": "2026-10-07 21:50:00+00:00",
+      "stake_notional_usdt": 999.865,
+      "is_short": false,
+      "sides": [
+        {
+          "state": "STALE",
+          "age_seconds": 60960,
+          "action": "BUY",
+          "event": "entry",
+          "band_pct": 0.2
+        },
+        {
+          "state": "STALE",
+          "age_seconds": 68460,
+          "action": "SELL",
+          "event": "exit",
+          "band_pct": -0.2
+        }
+      ]
+    },
+    {
+      "strategy": "NO_ML",
+      "pair": "TRX/USDT:USDT",
+      "open_date": "2026-10-07 21:50:00+00:00",
+      "close_date": "2026-10-08 00:00:00+00:00",
+      "stake_notional_usdt": 999.796,
+      "is_short": true,
+      "sides": [
+        {
+          "state": "STALE",
+          "age_seconds": 68460,
+          "action": "SELL",
+          "event": "entry",
+          "band_pct": -0.2
+        },
+        {
+          "state": "STALE",
+          "age_seconds": 76260,
+          "action": "BUY",
+          "event": "exit",
+          "band_pct": 0.2
+        }
+      ]
+    }
+  ],
+  "download_missing_files": [
+    {
+      "symbol": "OPUSDT",
+      "day": "2026-10-08",
+      "error": "HTTPError"
+    },
+    {
+      "symbol": "TRXUSDT",
+      "day": "2026-10-08",
+      "error": "HTTPError"
+    }
+  ],
+  "archive_sources": [
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/ADAUSDT/ADAUSDT-bookDepth-2026-10-05.zip",
+      "sha256": "2c565b9b071ab237674317210aa9f248aacb2edb6241b66e381c935c322cda3b"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/ARBUSDT/ARBUSDT-bookDepth-2026-10-01.zip",
+      "sha256": "e316d209671e216bfb6d2cad3b0821080339c44b1ecef87d7fa49bb2974a1ddb"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/ARBUSDT/ARBUSDT-bookDepth-2026-10-02.zip",
+      "sha256": "e3fec816e715b06ca079a986eee2e52e5892c7018fcc8535314e4100c8a1962a"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/ARBUSDT/ARBUSDT-bookDepth-2026-10-05.zip",
+      "sha256": "fc54a133e465847c168c3038c18b276c4571f1c9698b0442dd5430dd5dfe98ca"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/ARBUSDT/ARBUSDT-bookDepth-2026-10-06.zip",
+      "sha256": "99e9779d2865fe225a5b98d38fa73ba05dcb712657c129619300c7acc62dfe03"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/ATOMUSDT/ATOMUSDT-bookDepth-2026-10-01.zip",
+      "sha256": "853025b5e83e67a24ad4fef0f5610b13d01a84dbd92c5632a32643952a89b02f"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/AVAXUSDT/AVAXUSDT-bookDepth-2026-10-02.zip",
+      "sha256": "1e415a3c80cbb83185e6aede630ada2ad697745561049aeeb8744bf60f63a84d"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/AVAXUSDT/AVAXUSDT-bookDepth-2026-10-04.zip",
+      "sha256": "f8b3188e2cb7fdad5983a02876b45256170e411acc8d714b1d845584f66750b4"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/AVAXUSDT/AVAXUSDT-bookDepth-2026-10-05.zip",
+      "sha256": "2c0ce6fe2c89cc3a7b69a54dd4cadfd88bc769b63dfd54f083cef47e646ad7dd"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/AVAXUSDT/AVAXUSDT-bookDepth-2026-10-06.zip",
+      "sha256": "32f00de07ea2c4da3014cbf6072f50ecfe978a860a8b984c693552bb631ab2a8"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/AVAXUSDT/AVAXUSDT-bookDepth-2026-10-07.zip",
+      "sha256": "fb6e7b314bb7ea5be03a4319f9cbfa1fdd5f1f2fed23c4da88b8ed420b75698c"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/BNBUSDT/BNBUSDT-bookDepth-2026-10-02.zip",
+      "sha256": "3da1c1d74b29c6a670adca27030de464e0c0d653812b49bccd5f902c0e9d71d9"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/BNBUSDT/BNBUSDT-bookDepth-2026-10-03.zip",
+      "sha256": "f4dbb7f41ac20531a45d3582e1195e388397e8deb0603d23d2f21e58ff9893a3"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/BTCUSDT/BTCUSDT-bookDepth-2026-10-01.zip",
+      "sha256": "f91bb2375505fc02b0a3e8cd15cb8546cc712a793303ffdea337b002b0173986"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/BTCUSDT/BTCUSDT-bookDepth-2026-10-02.zip",
+      "sha256": "5821a653e29fb38678a2fdc8c476e67a0526ee6de2d5acde5b3e8099853d9786"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/BTCUSDT/BTCUSDT-bookDepth-2026-10-03.zip",
+      "sha256": "3d2ec379bd13ea2ff7d5e56bd80b670f4f3b1573dcb3d7665f54831ddb0692dd"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/BTCUSDT/BTCUSDT-bookDepth-2026-10-07.zip",
+      "sha256": "9ff711d9fe81e415708dfcc7703166435dea69e077d720306eaf2e023b419033"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/DOGEUSDT/DOGEUSDT-bookDepth-2026-10-07.zip",
+      "sha256": "0e7f6ae67b13da3c0d7886cabc95cf6ad08f8f1bb34aa1821107e8a4f4383f78"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/DOTUSDT/DOTUSDT-bookDepth-2026-10-04.zip",
+      "sha256": "5a210e5582e8143aecc6db53b345663154c23d8dd6207eeabda9822c07d46119"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/ETHUSDT/ETHUSDT-bookDepth-2026-10-02.zip",
+      "sha256": "b7e5617e17706151a39868c73aa70fd795eb5996f8a0e55bf7ac1d3bbf8977f8"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/FILUSDT/FILUSDT-bookDepth-2026-10-02.zip",
+      "sha256": "6149a91599929a2ab4cd3efc8354d492ebf0b3c53a2d79d474c69eeb4516457f"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/FILUSDT/FILUSDT-bookDepth-2026-10-05.zip",
+      "sha256": "b5ee144348fc3ea0b8cbe6e37401b64449adb2940e0e85b7f12906871c690e4b"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/FILUSDT/FILUSDT-bookDepth-2026-10-06.zip",
+      "sha256": "191eacb45016b03c87c4ac5230909eb05aeecf089463899e71b3ea9b8a2b0c65"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/INJUSDT/INJUSDT-bookDepth-2026-10-02.zip",
+      "sha256": "1be910c0d8b78776b453d6e43accb5d27c84098183647ad6ebacac491aa91520"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/INJUSDT/INJUSDT-bookDepth-2026-10-03.zip",
+      "sha256": "7fbb4f8782c1fb91f6d38147de2c0344be9096de830609c82e86a94bcf8daa4a"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/INJUSDT/INJUSDT-bookDepth-2026-10-04.zip",
+      "sha256": "ea7228af6fa6734cca762815c17ee2de85145b03071a17bc8d98d92331359631"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/INJUSDT/INJUSDT-bookDepth-2026-10-05.zip",
+      "sha256": "9173f6f7f918478f5e5ca51957e7f23d1c2dcd461bd9fe3a50abc0db3f54e282"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/INJUSDT/INJUSDT-bookDepth-2026-10-07.zip",
+      "sha256": "f602648c01ef95f6cd401e574022a7eff1e376d20993bc62ee63d39cc909f9f3"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/LINKUSDT/LINKUSDT-bookDepth-2026-10-03.zip",
+      "sha256": "bf6b0f1a170104fd9b4d0a822b95d5d9165765600fb447617ad1d27bb26dee08"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/LINKUSDT/LINKUSDT-bookDepth-2026-10-04.zip",
+      "sha256": "2a853c78cf88ebe1267d99ae6dd1401c0772663e69156eba7c86ea43546ebbf3"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/LINKUSDT/LINKUSDT-bookDepth-2026-10-05.zip",
+      "sha256": "708e1bcf30ff0e04206e7dea266c5201f8b62b8b108b1dcb79cd868e9276a8bd"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/LTCUSDT/LTCUSDT-bookDepth-2026-10-02.zip",
+      "sha256": "417af6bd0903e3b0bf39a09d9e5c7c28b417ac250bae5cc9741ae2b4701e7e62"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/LTCUSDT/LTCUSDT-bookDepth-2026-10-05.zip",
+      "sha256": "e92ac888b4f8fc705abd7a36037d0309560496d868ef5c090c8402a068e223d4"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/NEARUSDT/NEARUSDT-bookDepth-2026-10-03.zip",
+      "sha256": "1793663f599e3a4ca1761a18d1aba74cb279fa5eacee8eae39a96ba17945132b"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/NEARUSDT/NEARUSDT-bookDepth-2026-10-04.zip",
+      "sha256": "29553a322f789576987aa0017745a9b95ccdb6a800e98ff4d0a41ca1699cfd25"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/NEARUSDT/NEARUSDT-bookDepth-2026-10-05.zip",
+      "sha256": "b28f356ac1427ab7e80f52a24ae37cb558045d4af7c44ec441d473558d0b1e18"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/NEARUSDT/NEARUSDT-bookDepth-2026-10-07.zip",
+      "sha256": "ae400c237c9934464d51dd11b5ae48f9607eaa073716f268dfd6abc17a9d2f16"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/OPUSDT/OPUSDT-bookDepth-2026-10-03.zip",
+      "sha256": "bcc54765cee816637952e1d55b94f115b33073d04a3c6ddfc19b881dead3f54b"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/OPUSDT/OPUSDT-bookDepth-2026-10-04.zip",
+      "sha256": "945c52f6806a0cc844a98941d6b5e692ef6d5f6209b1855dc8b134a6e123527c"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/OPUSDT/OPUSDT-bookDepth-2026-10-07.zip",
+      "sha256": "d30a4e6a13b52ab66cc4446a9a584bedfc926778152b9c26c609843394afabb7"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/SOLUSDT/SOLUSDT-bookDepth-2026-09-30.zip",
+      "sha256": "aa6ba8ddab3c750fce529b3042f091db4f4ff0ee33535b23de9162c8ca70afea"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/SOLUSDT/SOLUSDT-bookDepth-2026-10-01.zip",
+      "sha256": "585af61177e30ed59590eac2ff0fb559f79a4c2d101cef79e8c90f2c1db8f3b9"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/SOLUSDT/SOLUSDT-bookDepth-2026-10-04.zip",
+      "sha256": "c4a5007803bed895dc3751bbf0194ca460c745d13493dee2fcf5c4f7dec8b5e4"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/SOLUSDT/SOLUSDT-bookDepth-2026-10-05.zip",
+      "sha256": "b58f69b6f4084e1d67977aea923e5dfb58258c99f91628dd3de8cfb812a1f687"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/SUIUSDT/SUIUSDT-bookDepth-2026-10-03.zip",
+      "sha256": "ecc443be4a914de448d92fca23dd608e71927895101fe532501f59e75558dd04"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/SUIUSDT/SUIUSDT-bookDepth-2026-10-05.zip",
+      "sha256": "e43c6aea82e8bf14426cd67d199ed21c2680010d4111ed3244159a61a6557b25"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/SUIUSDT/SUIUSDT-bookDepth-2026-10-06.zip",
+      "sha256": "c6caadcb56e05371455b30a05053c328f284bb87a632633ee386c433fb07a351"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/TRXUSDT/TRXUSDT-bookDepth-2026-10-01.zip",
+      "sha256": "8c653ae47fc28988108a704d6966403b5cbe3ca81482219d36199ffc4dadd3b5"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/TRXUSDT/TRXUSDT-bookDepth-2026-10-07.zip",
+      "sha256": "b8fd3cb719aa10f4cc51fd84e1781fefeedb9b2ccb5bedd79599e9b6f6ccdb79"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/UNIUSDT/UNIUSDT-bookDepth-2026-10-01.zip",
+      "sha256": "7a940b7450f7bc37996478c5a4d5889ad76bfa0854c6d2945e8d7a3555c97c53"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/UNIUSDT/UNIUSDT-bookDepth-2026-10-03.zip",
+      "sha256": "563a5c0f2ea1e9ef5193308ec8ff193052e8671e4c125c578fd4484cd1717344"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/UNIUSDT/UNIUSDT-bookDepth-2026-10-04.zip",
+      "sha256": "51cf166ee178acf2cadb529db940e8bf09ab0d5a2b73f61da22ef5634d2a3049"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/UNIUSDT/UNIUSDT-bookDepth-2026-10-05.zip",
+      "sha256": "c783c0e1b0ff7d119ed9444b5dc17344e6f47881af41fc59868f0091b5752173"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/UNIUSDT/UNIUSDT-bookDepth-2026-10-06.zip",
+      "sha256": "1c5248dfae67aa846ac89271d50b81e3da44609d8193546c09f41caeee74ca72"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/UNIUSDT/UNIUSDT-bookDepth-2026-10-07.zip",
+      "sha256": "cd741d088d102b45f45382147c0e4c5e298528cb7a797e1eb8dd53e2fefd532c"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/XLMUSDT/XLMUSDT-bookDepth-2026-10-01.zip",
+      "sha256": "c2a6dfe49f80cd1932ed663a219c8612509c452970d1be69a7058a3a2526503f"
+    },
+    {
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/XLMUSDT/XLMUSDT-bookDepth-2026-10-02.zip",
+      "sha256": "bbcbccde88e48abc2c2c9fec6a30a0159d7f00ec70d207384c70cdc9b8bdeafa"
+    }
+  ]
+}
