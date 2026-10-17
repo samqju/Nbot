@@ -11,7 +11,7 @@ import pandas as pd
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/"scripts"))
 sys.path.insert(0,str(ROOT/"user_data"/"strategies"))
-from m2r_event_cost_labels import FundingSchedule, funding_adjusted_outcome
+from m2r_event_cost_labels import FundingSchedule, funding_adjusted_outcome, event_funding_training_labels
 from nbot_trade_outcome import CostPolicy, outcome
 
 
@@ -63,6 +63,30 @@ class TestEventAwareFunding(unittest.TestCase):
                                raw["net_return"]+cost.funding_reserve+.001)
         self.assertEqual(long["funding_events_crossed_estimate"],1)
         self.assertNotIn("event_aware_label_net_return",self.candles.columns)
+
+    def test_event_funding_training_target_never_labels_unknown_trailing_horizon(self):
+        n=130
+        prices=100*np.exp(np.arange(n)*.002)
+        frame=pd.DataFrame({
+            "date":pd.date_range("2026-10-08",periods=n,freq="5min",tz="UTC"),
+            "open":prices,"close":prices,
+            "high":prices*1.001,"low":prices*.999,"volume":100.0,
+        })
+        start=frame.date.iloc[0]
+        rates=pd.DataFrame({
+            "date":[start+pd.Timedelta(hours=h) for h in (2,4,6,8)],
+            "funding_rate":[.0001]*4,
+        })
+        mark=pd.DataFrame({
+            "date":pd.date_range(start-pd.Timedelta(hours=1),periods=12,freq="1h"),
+            "close":[100.0]*12,
+        })
+        schedule=FundingSchedule.from_candles(rates,mark)
+        out=event_funding_training_labels(frame,schedule,CostPolicy())
+        self.assertTrue(out["&-trade_net_return"].iloc[-12:].isna().all())
+        self.assertGreater(int(out["&-trade_net_return"].iloc[:-12].notna().sum()),0)
+        self.assertFalse(any(k.startswith("%-") for k in out.columns))
+        self.assertEqual(len(out),n)
 
     def test_settlement_at_exit_boundary_is_flagged(self):
         t=self.funding.date.iloc[0]
