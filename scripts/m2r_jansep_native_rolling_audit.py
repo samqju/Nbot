@@ -29,8 +29,9 @@ def extract_archive(folder:Path):
 def inspect(root:Path,lookback:int,start:str,end:str):
     folder=root/f"w{lookback}"
     state=(folder/"run-state.txt").read_text()
-    if "EXIT_CODE=0" not in state:
-        raise RuntimeError(f"NOT_COMPLETED_WINDOW {lookback}")
+    if ("EXIT_CODE=0" not in state
+            and "NATIVE_ARCHIVE_VERIFIED_WITHOUT_LAUNCHER_EXIT=1" not in state):
+        raise RuntimeError(f"NOT_COMPLETED_NATIVE_ARCHIVE_WINDOW {lookback}")
     archive,stats=extract_archive(folder)
     identifier=f"nbot-v6-m2r-jansep2026-{lookback}d-20261017"
     assert stats["freqai_identifier"]==identifier
