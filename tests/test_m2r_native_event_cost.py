@@ -83,6 +83,24 @@ class TestEventAwareFunding(unittest.TestCase):
 
 @unittest.skipUnless(importlib.util.find_spec("freqtrade"),"requires installed Freqtrade runtime")
 class TestNativePurgedModelContract(unittest.TestCase):
+    def test_sparse_split_already_has_safe_gap_without_removal(self):
+        sys.path.insert(0,str(ROOT/"user_data"/"freqaimodels"))
+        from NbotV6PurgedLightGBMRegressor import apply_strict_training_embargo
+        d=pd.Series(pd.date_range("2026-10-01",periods=400,freq="5min",tz="UTC"))
+        frame={
+            "train_features":pd.DataFrame({"x":[1.0]*200},index=range(200)),
+            "train_labels":pd.DataFrame({"y":[1.0]*200},index=range(200)),
+            "train_weights":np.ones(200),
+            "test_features":pd.DataFrame({"x":[1.0]*50},index=range(250,300)),
+            "test_labels":pd.DataFrame({"y":[1.0]*50},index=range(250,300)),
+            "test_weights":np.ones(50),
+        }
+        out,stats=apply_strict_training_embargo(
+            frame,d.iloc[:200],d.iloc[250:300],pd.Timedelta(minutes=60))
+        self.assertEqual(stats["removed_train_rows"],0)
+        self.assertEqual(stats["post_embargo_boundary_violations"],0)
+        self.assertEqual(len(out["train_features"]),200)
+
     def test_native_chronological_internal_embargo(self):
         sys.path.insert(0,str(ROOT/"user_data"/"freqaimodels"))
         from NbotV6PurgedLightGBMRegressor import apply_strict_training_embargo
