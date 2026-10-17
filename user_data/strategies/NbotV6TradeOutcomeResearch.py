@@ -8,6 +8,7 @@ future price movement, with the SAME causal EMA breakout/pullback setups.
 from __future__ import annotations
 
 import numpy as np
+from datetime import timedelta
 from pandas import DataFrame
 
 from NbotV6 import NbotV6
@@ -78,10 +79,22 @@ class NbotV6TradeOutcomeResearch(NbotV6):
         return dataframe
 
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        # Exits remain fixed/trend-only until a fully aligned 12-candle
-        # horizon execution comparison is independently tested.
+        # Model labels exit on stop, 5% target, or 12x5m time horizon.
+        # Unlike original V6, do not add early EMA reversal exits, because
+        # those would make training outcomes refer to different trades.
         dataframe["exit_long"] = 0
         dataframe["exit_short"] = 0
-        dataframe.loc[dataframe["ema_fast"] < dataframe["ema_slow"], "exit_long"] = 1
-        dataframe.loc[dataframe["ema_fast"] > dataframe["ema_slow"], "exit_short"] = 1
         return dataframe
+
+    def custom_exit(self, pair, trade, current_time, current_rate,
+                    current_profit, **kwargs):
+        # Freqtrade runs this callback even in backtesting if exit signals
+        # are enabled. The framework's stoploss and ROI remain active.
+        # This research-only timeout approximates the 12-bar label horizon.
+        # Backtest OHLC and order fills still differ from the label proxy.
+        horizon = int(self.freqai_info["feature_parameters"]["label_period_candles"])
+        if horizon < 1 or horizon > 288:
+            raise RuntimeError("INVALID_RESEARCH_HORIZON")
+        if current_time >= trade.open_date_utc + timedelta(minutes=5 * horizon):
+            return "m2r_time_horizon"
+        return None
