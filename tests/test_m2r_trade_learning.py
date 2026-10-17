@@ -185,6 +185,36 @@ class M2ResearchLearningTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"INVALID_REGIME"):
             choose_candidate(both,market_regime="next_week_bullish")
 
+    def test_family_labels_do_not_include_other_setup_type(self):
+        from nbot_trade_outcome import training_labels_for_family, setups
+        from NbotV6FamilyResearch import NbotV6BreakoutResearch, NbotV6PullbackResearch
+        frame=candles(140)
+        original_flags=setups(frame)
+        labels_breakout=training_labels_for_family(frame,"breakout")
+        labels_pullback=training_labels_for_family(frame,"pullback")
+        for label,family in ((labels_breakout["&-trade_net_return"],"breakout"),
+                             (labels_pullback["&-trade_net_return"],"pullback")):
+            allowable=original_flags[family+"_long"] | original_flags[family+"_short"]
+            self.assertFalse(label[~allowable].notna().any())
+            self.assertTrue(label.tail(12).isna().all())
+        with self.assertRaisesRegex(ValueError,"UNSUPPORTED_SETUP_FAMILY"):
+            training_labels_for_family(frame,"unknown")
+        self.assertEqual(NbotV6BreakoutResearch.family,"breakout")
+        self.assertEqual(NbotV6PullbackResearch.family,"pullback")
+
+    def test_family_predicted_signals_only_trade_own_setup_type(self):
+        from NbotV6FamilyResearch import NbotV6BreakoutResearch, NbotV6PullbackResearch
+        for cls,kind in ((NbotV6BreakoutResearch,"breakout"),
+                         (NbotV6PullbackResearch,"pullback")):
+            bot=cls()
+            frame=candles(130)
+            flags=setups(frame)
+            frame["do_predict"]=1
+            frame["&-trade_net_return"]=.02
+            out=bot.populate_entry_trend(frame,{})
+            self.assertTrue((out["enter_long"] == flags[kind+"_long"].astype(int)).all())
+            self.assertTrue((out["enter_short"] == flags[kind+"_short"].astype(int)).all())
+
     def test_research_strategy_rejects_all_paper_and_live_modes(self):
         config=json.loads((ROOT/"user_data"/"config.json").read_text())
         overlay=json.loads((ROOT/"user_data"/"config.m2r-trade-outcome.json").read_text())
