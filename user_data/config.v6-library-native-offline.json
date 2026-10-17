@@ -1,0 +1,23 @@
+{
+  "bot_name": "nbot-v6-library-native-research-only",
+  "dry_run": true,
+  "nbot_v6_library_research_only": true,
+  "nbot_live_mode": false,
+  "nbot_paper_research_mode": false,
+  "max_open_trades": 1,
+  "stake_amount": 1000,
+  "force_entry_enable": false,
+  "exchange": {
+    "key": "",
+    "secret": ""
+  },
+  "telegram": {
+    "enabled": false
+  },
+  "api_server": {
+    "enabled": false
+  },
+  "freqai": {
+    "enabled": false
+  }
+}
