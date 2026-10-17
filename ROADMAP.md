@@ -88,7 +88,7 @@ Work:
 ### M2 detailed checklist (tick only proven items)
 
 - [x] **Owner-requested FULL September 2026 (30 days) instead of seven days only:** 25/25 July-through-September historical data audits passed; **125** rolling 30-day LightGBM fits completed without ERROR lines (five historical weekly model windows × 25 coins). Separate prior-data training prevents simply reusing September as the initial training sample. [September full-month study](evidence/m2/2026-10-17-september-full-month-analysis.md).
-- [x] **September September 1–30, identical 25-pair baseline/AI/NO TRADE test:** AI **137 trades, −444.980 USDT**; non-ML **163 trades, −242.894 USDT**; NO TRADE **0 USDT** at 0.05% fees per side. Both strategies **lost**, unlike the prior no-ML +169.849-USDT October week.
+- [x] **September 1–30, identical 25-pair baseline/AI/NO TRADE test:** AI **137 trades, −444.980 USDT**; non-ML **163 trades, −242.894 USDT**; NO TRADE **0 USDT** at 0.05% fees per side. Both strategies **lost**, unlike the prior no-ML +169.849-USDT October week.
 - [x] **September official fee and exposure retest:** at 0.10% per side AI **−576.688** and non-ML **−388.318 USDT**. One-position time-at-market: AI **40.637%**, non-ML **99.641%**. [Exact machine report](evidence/m2/2026-10-17-september-30day-comparison.json).
 - [x] **September historical funding cross-check completed with exceptions:** 137 AI / 163 non-ML trades evaluated against Binance's real public funding events. Two forced month-boundary exits (AI ATOM, baseline INJ) each show ~0.10 USDT engine-vs-external discrepancy; small but **NOT cleanly reconciled**.
 - [ ] **Resolve September 30/October 1 forced-exit funding treatment** before claiming exact long-window funding accounting.
