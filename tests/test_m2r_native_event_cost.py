@@ -74,6 +74,7 @@ class TestEventAwareFunding(unittest.TestCase):
 
     def test_invalid_past_mark_or_rates_rejected(self):
         invalid=self.mark.loc[self.mark.date>=self.mark.date.max()].copy()
+        invalid["date"] = self.funding.date.iloc[0]  # closes AFTER settlement; invalid
         self.assertRaises(ValueError,FundingSchedule.from_candles,self.funding,invalid)
         bad=self.funding.copy()
         bad["funding_rate"]=float("nan")
