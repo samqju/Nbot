@@ -64,7 +64,7 @@ Queried Binance public USD-M historical funding events and independently calcula
 
 - AI: **137 trades / 45 actual funding settlement events**. External event total **−0.103678 USDT** versus Freqtrade funding-field total **−0.172038 USDT**.
 - No-ML: **163 trades / 89 actual settlement events**. External total **−1.101568 USDT** versus Freqtrade **−1.202064 USDT**.
-- **One trade in each strategy failed the 0.05-USDT per-trade difference screen:** AI **ATOM** short trade (September 30 23:20 → October 1 00:00), **0 actual settlement events / −0.100345 USDT engine funding**; and no-ML **INJ** trade (September 30 21:35 → October 1 00:00), **0 actual events / −0.100433 USDT engine funding**. Both trades were closed by the backtest at **the test-window boundary**. Other trade-level differences were at most five cents.
+- **One trade in each strategy failed the 0.05-USDT per-trade difference screen:** AI **ATOM** trade (September 30 23:20 → October 1 00:00), **0 actual settlement events / −0.100345 USDT engine funding**; and no-ML **INJ** trade (September 30 21:35 → October 1 00:00), **0 actual events / −0.100433 USDT engine funding**. Both trades were closed by the backtest at **the test-window boundary**. Other trade-level differences were at most five cents.
 
 These are **not silently counted as fully reconciled**. There may be an engine's synthetic period-end funding assumption, closing-boundary accounting issue, or another explanation. We retain the original Freqtrade net P&L and flag the exceptions for investigation. They are ~0.1 USDT each, not enough to reverse losses of hundreds of USDT.
 
