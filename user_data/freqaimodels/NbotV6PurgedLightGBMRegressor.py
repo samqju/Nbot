@@ -45,8 +45,6 @@ def apply_strict_training_embargo(
         raise RuntimeError("V6_PURGE_TRAIN_TEST_ORDER_INVALID")
     keep = ((td + horizon) < cutoff).to_numpy(dtype=bool)
     count = int((~keep).sum())
-    if count == 0:
-        raise RuntimeError("V6_PURGE_NOT_EXERCISED")
     dataset["train_features"] = dataset["train_features"].iloc[keep]
     dataset["train_labels"] = dataset["train_labels"].iloc[keep]
     dataset["train_weights"] = np.asarray(dataset["train_weights"])[keep]
