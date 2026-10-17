@@ -1,5 +1,7 @@
 # NBOT V6 — Clean Freqtrade + FreqAI Bot
 
+**Starting a new ChatGPT conversation?** Read [NEW_CHAT_HANDOFF.md](NEW_CHAT_HANDOFF.md) first. It preserves the owner's exact V6 research permissions, Sep/Oct results, active M2R priority, outstanding safety gates, authorized VPS context and a copy-ready continuation prompt. **No paper/live permission is implied.**
+
 **Status:** Research prototype; the **M1 technical integration test PASSED**: real Binance history, **25/25 trained 30-day LightGBM models**, and an official **seven-day historical backtest with 34 trades and -135.64 simulated USDT P&L**. **No positive trading edge is proven, no persistent paper bot is commissioned and no real orders are authorized.**
 
 NBOT V6 is an isolated Freqtrade strategy powered by FreqAI's LightGBM regression model. We use Freqtrade for exchange data, trade execution, risk/accounting, historical backtesting and dry-run. We use FreqAI for features, retraining and prediction. NBOT's custom code only describes market features and trading decisions.
