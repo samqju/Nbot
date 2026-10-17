@@ -81,7 +81,9 @@ def plan(kind:str, family:str, period:str, *, overlay_path:str="/results/exact-o
             "-v",str(SOURCE)+":/research:ro",
             "-v",str(HISTORY)+":/history:ro",
             "-v",str(OUTPUT/kind/family/period)+":/results",
-            "--entrypoint","freqtrade","freqtradeorg/freqtrade:stable_freqai",*task]
+            "--entrypoint","freqtrade",
+            "freqtradeorg/freqtrade:stable_freqairl" if kind=="rl"
+            else "freqtradeorg/freqtrade:stable_freqai",*task]
 
 def _safe_overrides(kind:str,family:str) -> dict:
     base=json.loads((SOURCE/"user_data"/OVERLAYS[kind]).read_text())
