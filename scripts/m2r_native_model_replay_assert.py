@@ -30,13 +30,16 @@ def main():
     assert args.expected_pairs == 25
     model_files=sorted(args.model_root.glob("sub-train-*/*_model.joblib"))
     before_lines=args.snapshot.joinpath("model-sha256-before.txt").read_text().splitlines()
-    before={path:sha for sha, path in [line.split(maxsplit=1) for line in before_lines]}
+    # Host snapshot paths and container /results differ; match relative
+    # model suffixes, never absolute mount prefixes.
+    before={path.split("/models/",1)[1]:sha
+            for sha, path in [line.split(maxsplit=1) for line in before_lines]}
     assert len(before)==25 and len(model_files)==25
     changes=[]
     for path in model_files:
-        exact=str(path)
-        if exact not in before or digest(path)!=before[exact]:
-            changes.append(exact)
+        relative=str(path).split("/models/",1)[1]
+        if relative not in before or digest(path)!=before[relative]:
+            changes.append(relative)
     first=args.snapshot/"backtesting_predictions"
     second=args.model_root/"backtesting_predictions"
     prev=sorted(first.glob("*_prediction.feather"))
