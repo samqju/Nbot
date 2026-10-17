@@ -1,5 +1,7 @@
 # NBOT V6 — Development and Release Roadmap
 
+**Starting a new ChatGPT conversation?** Read [NEW_CHAT_HANDOFF.md](NEW_CHAT_HANDOFF.md) first. It preserves the owner's exact V6 research permissions, Sep/Oct results, active M2R priority, outstanding safety gates, authorized VPS context and a copy-ready continuation prompt. **No paper/live permission is implied.**
+
 **Roadmap version 1.2, October 17 2026**  
 **Project:** Small Binance USDT-M trading bot using Freqtrade + FreqAI.  
 **Release state:** Prototype. M1 technical proof complete; full September M2 research found losses in AI and non-ML. **M2 release gate NO-GO.** A separate M2R offline design for after-cost learning and bounded strategy routing is authorized for **code/research only**; M3, paper and live trading NOT accepted.  
