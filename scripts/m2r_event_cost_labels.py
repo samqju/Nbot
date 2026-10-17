@@ -68,9 +68,12 @@ def funding_adjusted_outcome(candles:pd.DataFrame, decision:int, side:int,
         return None
     entry=r["entry_index"]
     exit_=r["exit_index"]
-    times=pd.to_datetime(candles["date"],utc=True)
-    start=times.iloc[entry]  # entry at next candle OPEN
-    close=times.iloc[exit_] + pd.Timedelta(minutes=5)
+    # O(1) timestamp access, not reparsing the entire candle history for
+    # each of thousands of hypothetical outcome labels.
+    start=pd.Timestamp(candles["date"].iloc[entry])
+    close=pd.Timestamp(candles["date"].iloc[exit_])+pd.Timedelta(minutes=5)
+    if start.tzinfo is None or close.tzinfo is None:
+        raise ValueError("FUNDING_LABEL_CANDLE_DATES_MUST_BE_UTC_AWARE")
     entry_price=float(candles.iloc[entry].open)
     funding_paid,events,ambiguous=schedule.hypothetical_charge(start,close,entry_price,side)
     result=dict(r)
@@ -82,4 +85,29 @@ def funding_adjusted_outcome(candles:pd.DataFrame, decision:int, side:int,
         "event_aware_label_total_reserved_cost":
             r["assumed_roundtrip_cost"]-cost.funding_reserve+funding_paid,
     })
+    return result
+
+
+def event_funding_training_labels(candles:pd.DataFrame, schedule:FundingSchedule, cost):
+    """Same historical opportunity rules, funding charged at crossed events.
+
+    Future funding is a supervised target ONLY. %-decision features and live
+    signal columns are untouched. Trailing horizon labels remain NaN.
+    """
+    from nbot_trade_outcome import setups, priority_kind, KINDS
+    if "date" not in candles:
+        raise ValueError("MISSING_CANDLE_TIMESTAMPS")
+    flags=setups(candles)
+    code=priority_kind(flags)
+    values=np.full(len(candles),np.nan,dtype=float)
+    for i in range(len(candles)-cost.horizon):
+        k=int(code.iloc[i])
+        if k==0:
+            continue
+        side=-1 if KINDS[k-1].endswith("_short") else 1
+        result=funding_adjusted_outcome(candles,i,side,schedule,cost)
+        if result is not None:
+            values[i]=result["event_aware_label_net_return"]
+    result=candles.copy()
+    result["&-trade_net_return"]=values
     return result
