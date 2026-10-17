@@ -19,7 +19,7 @@
     "enabled": false
   },
   "freqai": {
-    "identifier": "nbot-v6-m2r-funded-purged-smoke-20261017",
+    "identifier": "nbot-v6-m2r-funded-purged-v2-20261017",
     "train_period_days": 30,
     "backtest_period_days": 7,
     "save_backtest_models": true,
