@@ -14,12 +14,17 @@ import numpy as np
 from pandas import DataFrame
 
 from NbotV6TradeOutcomeResearch import NbotV6TradeOutcomeResearch
-from NbotV6LibraryResearch import FAMILIES, library_indicators, library_signals
+from NbotV6LibraryResearch import FAMILIES, library_indicators, library_signals, _NbotV6ResearchLibraryBase
 from nbot_trade_outcome import CostPolicy, outcome
 
 
 class _NbotV6LibraryLightGBMResearchBase(NbotV6TradeOutcomeResearch):
     family = ""
+
+    @property
+    def protections(self):
+        # Same native trade-ledger drawdown/stoploss protection as no-ML peers.
+        return _NbotV6ResearchLibraryBase.protections.fget(self)
 
     def _assert_family_research(self):
         cfg = self.config
