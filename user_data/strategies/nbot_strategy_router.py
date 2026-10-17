@@ -35,7 +35,8 @@ class ResearchDecision:
     for_research_only: bool = True
 
 def choose_candidate(candidates: Iterable[CandidateScore],
-                     policy: RouterPolicy = RouterPolicy()) -> ResearchDecision:
+                     policy: RouterPolicy = RouterPolicy(),
+                     market_regime: str | None = None) -> ResearchDecision:
     """Single theoretical choice, never an order entry.
 
     Predicted net must come from as-of model forecasts that already include
@@ -48,8 +49,19 @@ def choose_candidate(candidates: Iterable[CandidateScore],
         policy.max_adverse_extra_cost
     )):
         raise ValueError("INVALID_ROUTER_POLICY")
+    # The regime must be measured as-of this decision, never calculated from
+    # future candles. Sideways conditions default to abstention, not a
+    # forced trade or an automatically invented new strategy.
+    if market_regime not in (None, "trend_up", "trend_down", "range"):
+        raise ValueError("INVALID_REGIME")
+    if market_regime == "range":
+        return ResearchDecision("NO_TRADE", None, "Sideways regime: abstain")
     finalists = []
     for score in candidates:
+        if market_regime == "trend_up" and not score.kind.endswith("_long"):
+            continue
+        if market_regime == "trend_down" and not score.kind.endswith("_short"):
+            continue
         if score.kind not in KINDS or not score.model_ready:
             continue
         vals = (score.predicted_net, score.uncertainty, score.age_hours,
