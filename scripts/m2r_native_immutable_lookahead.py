@@ -17,6 +17,7 @@ import hashlib
 import json
 import sys
 from pathlib import Path
+from datetime import timedelta
 
 
 def sha256(p: Path) -> str:
@@ -29,6 +30,8 @@ def main() -> int:
     parser.add_argument("--expected-identifier", required=True)
     parser.add_argument("--report", required=True, type=Path)
     parser.add_argument("--expected-models", default=25, type=int)
+    parser.add_argument("--terminal-padding-candles", default=0, choices=(0, 1), type=int,
+                        help="RESEARCH ONLY: one future candle in shortened replay to diagnose terminal missing FreqAI prediction, NOT a causal proof")
     parser.add_argument("freqtrade_args", nargs=argparse.REMAINDER)
     a = parser.parse_args()
     if not a.expected_identifier.startswith("nbot-v6-m2r-native-purged-models-frozen-"):
@@ -120,6 +123,16 @@ def main() -> int:
         return real_analyze(self, full_vars, cut_vars, current_pair)
 
     native_lookahead.LookaheadAnalysis.analyze_indicators = traced_analyze
+    real_prepare = native_lookahead.LookaheadAnalysis.prepare_data
+    extra_context_replays = []
+
+    def diagnostic_prepare(self, varholder, pairs_to_load):
+        if a.terminal_padding_candles and varholder is not self.full_varHolder:
+            extra_context_replays.append(str(varholder.to_dt))
+            varholder.to_dt += timedelta(minutes=5 * a.terminal_padding_candles)
+        return real_prepare(self, varholder, pairs_to_load)
+
+    native_lookahead.LookaheadAnalysis.prepare_data = diagnostic_prepare
 
     def forbid_retrain(self, *args, **kwargs):
         training.append(str(args[1] if len(args)>1 else "unknown"))
@@ -140,6 +153,7 @@ def main() -> int:
     finally:
         native_lookahead.shutil = native_shutil
         native_lookahead.LookaheadAnalysis.analyze_indicators = real_analyze
+        native_lookahead.LookaheadAnalysis.prepare_data = real_prepare
 
     after_files = sorted(model_root.glob("sub-train-*/*_model.joblib"))
     after = {str(p.relative_to(model_root)): sha256(p) for p in after_files}
@@ -152,6 +166,8 @@ def main() -> int:
         "model_delete_attempts_prevented": len(deleted),
         "retraining_attempts": training,
         "native_cli_exit_code": cli_exit,
+        "diagnostic_extra_5m_context_per_shortened_replay": a.terminal_padding_candles,
+        "extra_context_replays": len(extra_context_replays),
         "sampled_official_indicator_comparisons": diagnostics,
         "strict_fixed_model_integrity_pass": cli_exit == 0 and not training and before == after and len(deleted)>0,
         "caveat": "Any has_bias=Yes recorded in the native official table must still be examined by column and signal; suppressing FreqAI folder cleanup does not guarantee a no-bias verdict or correct strategy."
