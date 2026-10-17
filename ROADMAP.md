@@ -438,6 +438,12 @@ V6 may become the default/main development line when **M0+M1** pass and an owner
 - [ ] **M6: Approved-model governance** — shared model version qualification/rollback not built.
 - [ ] **M7: Any live funds** — explicitly **LOCKED**; owner-only code-staged release hook is not deployment approval.
 
+### OCTOBER 17 LATEST — actual 25-market 30/60/90/180-day August native learning comparison COMPLETED
+
+- [x] **Completed bounded initial four-lookback research experiment**, explicitly **NOT full May–August independent multi-month acceptance**: actual native Freqtrade 2026.9 one-week **Aug 1–8 2026** historical backtests, exact **25 fixed markets × 4 time windows = 100/100 fitted native models, 100/100 safe 12-candle internal split-purge logs with 0 boundary overlap**, same funded-aftercost LightGBM strategy/parameters/fees, 1× and single $1,000 simulated trade max. All runs exited 0. [Complete dated reproducible results](evidence/m2r/2026-10-17-august-25pair-four-lookback-results.md).
+- [x] **Cross-window real archive results audited**: 30-day **28 trades −39.976652 USDT**; 60-day **27 trades −21.427845**; 90-day **23 trades −79.701474**; 180-day **10 trades −19.463025**. **NO TRADE = 0 beats every version**. Additional **+25bps round-trip hypothetical execution costs** yield **−109.955250 / −88.913681 / −137.183390 / −44.456832 USDT**, respectively. More training time did not show a robust positive net edge in this inspected week.
+- [ ] **FULL pre-registered May–August monthly / weekly retrained multiwindow benchmark and all matched controls remain pending**. One inspected August week cannot decide 30/60/90/180 winner; May/June 180day is not eligible from January history. Do not change model/entry rules based on this week. Official lookahead `has_bias=Yes` and unobserved executable bid/ask/stops/settlement still block M2 release. **Owner explicitly ordered: PAPER TRADING ON HOLD for this extra historical experiment.** No paper daemon started or model promoted; M2 NO-GO, M3 not formally started, M7 LOCKED.
+
 ## G. Progress ledger — 2026-10-17
 
 | Milestone | State | Required next proof |
