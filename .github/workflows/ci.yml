@@ -79,6 +79,14 @@ jobs:
             grep -E "$name.*OK" /tmp/nbot-v6-strategies.txt \
               || { echo "FREQTRADE_CANDIDATE_NOT_IMPORTABLE: $name"; exit 1; }
           done
+      - name: Verify custom FreqAI PPO reward-model API imports in official image
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD/user_data:/freqtrade/user_data:ro" \
+            --entrypoint python \
+            freqtradeorg/freqtrade:stable_freqai \
+            -c 'import sys; sys.path.insert(0, "/freqtrade/user_data/freqaimodels"); from NbotV6CostAwareRLResearch import NbotV6CostAwareRLResearch; assert hasattr(NbotV6CostAwareRLResearch, "MyRLEnv"); print("V6_OFFLINE_RL_NATIVE_MODEL_API_OK")'
       - name: Validate independent 20-slot paper configuration with real Freqtrade schema
         run: |
           set -o pipefail
