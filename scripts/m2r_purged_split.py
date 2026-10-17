@@ -10,11 +10,11 @@ from pandas import DataFrame
 
 
 def purged_opportunity_split(opportunities: DataFrame, cutoff_index: int):
+    if type(cutoff_index) is not int or cutoff_index < 1:
+        raise ValueError("INVALID_CUTOFF")
     needed={"decision_index","exit_index","candidate","net_return"}
     if not needed.issubset(opportunities):
         raise ValueError("MISSING_OPPORTUNITY_FIELDS")
-    if type(cutoff_index) is not int or cutoff_index < 1:
-        raise ValueError("INVALID_CUTOFF")
     if (opportunities["exit_index"]<opportunities["decision_index"]).any():
         raise ValueError("INVALID_TRADE_WINDOW")
     train=opportunities.loc[
