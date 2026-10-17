@@ -95,9 +95,10 @@ Work:
 - [x] **Trade-level coin, side, duration and funding-field audit:** reproducible [scripts/m2_evaluate.py](scripts/m2_evaluate.py) generates per-pair/per-side closed-trade summaries, fees, approximate exposure and hypothetical adjusted returns; official ZIP results remain private on the V6 research VPS.
 - [x] **Non-ML signal lookahead screening:** official `lookahead-analysis` checked **30** baseline signals, with **0 detected** biased entries/exits (not proof of every possible signal).
 - [ ] **Realistic historical spread, maker/taker fill probability, slippage/market impact, and adverse stop fills:** estimate from independently sourced timestamped exchange data or defensible conservative ranges, not cherry-picked present-day quotes. Re-evaluate all-pair net P&L.
-- [ ] **Funding and fee model reconciliation:** confirm Freqtrade funding conventions versus historical Binance events per position, and whether assumptions apply to relevant order types. Current export funding fields are recorded but not independently reconciled.
-- [ ] **FreqAI lookahead + future-label isolation checks:** native AI `lookahead-analysis` currently blocked by the deliberate one-global-position safety guard, because the diagnostic overrides it; use a separate safe test-only approach without weakening the core strategy. Future-return labels must remain excluded from decision-time features.
-- [ ] **Full signal/abstention/exposure accounting:** correlate eligibility, model abstention, signals, selection, order rejection, exits, holding-time and drawdown across the same period.
+- [x] **Historical funding-event reconciliation:** all **65** official trades (34 AI + 31 no-ML) cross-checked against public Binance USD-M settlement timestamps/rates/mark prices; aggregate AI −0.721885 vs −0.721893 USDT; baseline +0.367678 vs +0.367662 USDT; zero trades differ by more than five cents. [Per-trade evidence](evidence/m2/2026-10-17-public-binance-funding-reconciliation.json). Actual order type fee tiers/quality remain [ ] unverified.
+- [ ] **AI lookahead/label isolation:** a separate historical-only, credential-free audit subclass passed the framework invocation without weakening the original strategy and tested **8 entry/exit signals**. Official result: `has_bias=Yes` (0 explicitly biased entry/exit *signals*, but changed `do_predict`, `DI_values`, `enter_long`, `exit_*` and label columns). Offline full-series-vs-prefix features and isolated 12-candle labels passed; **do not certify AI leakage-free until the changed prediction/decision columns are explained**. [Evidence](evidence/m2/2026-10-17-ai-lookahead-and-signals.md).
+- [x] **Export and reconcile actual entered/rejected/exited signal rows** from full original-strategy Freqtrade reruns: AI **34/68/34**, no-ML **31/6,531/31**. Repeated rejected rows are not independent trades. [Evidence](evidence/m2/2026-10-17-ai-lookahead-and-signals.md).
+- [ ] **Full raw decision eligibility, FreqAI `do_predict` abstention and slot-occupancy exposure accounting:** the official entered/rejected/exported rows alone do not distinguish model abstention from structural gating.
 - [ ] **Additional independent market periods, statistical uncertainty and regime comparisons:** M3's explicit multi-window walk-forward acceptance; one losing AI week / one winning non-ML week prove neither strategy's dependable edge.
 
 **First M2 finding:** The no-ML strategy beat FreqAI by **305.489 USDT** in this one week at the baseline simulated fee. This does **not** isolate the *causal* effect of AI because the compared strategies also differ in their exit rules, nor does it prove the simple approach is profitable. Do not tune features to fit this single period. The historical **M2 gate remains OPEN** until defensible execution costs and leakage controls are verified.
@@ -116,6 +117,14 @@ Work:
 - Compare net and risk-adjusted outcomes to both non-ML and NO TRADE baselines, using predeclared criteria. Record failures. If results are weak, HOLD rather than deploy another model farm.
 
 **Gate M3:** Credible out-of-sample, after-cost and risk results, or explicit rejection. Do not call any continuously retrained FreqAI model a validated Champion merely because it exists.
+
+### Planned adaptive-learning hypothesis — NOT AUTHORIZED UNTIL M2 PASSES
+
+The owner's hypothesis is sound enough to test **only after M2**: rather than let AI freely rewrite strategies, use a **small transparent library of frozen entry/exit candidates** (initial EMA trend/breakout/pullback plus later evidence-based alternatives) and train a lightweight **regime-conditioned accept/reject/router** that chooses a candidate or **NO TRADE**. Inputs may include causal BTC regime, liquidity, volatility, trend strength and observed relative costs. Define target as **after-cost realized opportunity outcome**, not merely the 12-candle forward close return; use holdouts, fees, funding and cost-stressed execution.
+
+**Governance:** continuous model fitting may occur during **authorized research**, but automatic promotion must not happen. Any new model/selection policy is a **Challenger** until it beats both the non-ML baseline and NO TRADE in independent chronological walk-forward periods, has no unresolved leakage, meets risk/turnover limits, and a specific owner-approved release/rollback process is established. Underperformance chooses **NO TRADE / safe hold**, not model churn.
+
+This remains **design only**: no meta-learner, dynamic strategy switching, model auto-promotion, universe selector daemon, or 20-position forward paper bot has been coded or commissioned for M3.
 
 ## M4 — Isolated VPS paper/dry-run reliability
 
@@ -326,7 +335,7 @@ V6 may become the default/main development line when **M0+M1** pass and an owner
 |---|---|---|
 | M0 clean tree | COMPLETE — source isolation only | Clean-tree commit 3e642508; V6 CI run 38906351380 passed both jobs (offline + official strategy discovery) |
 | M1 real FreqAI backtest | **TECHNICAL COMPLETE**: 25/25 full-history fit + independent 7-day 34-trade backtest; **-135.64 USDT** | M2 fee/spread/funding/slippage baseline, M3 broader held-out replay; no deployment |
-| M2 honest baseline | **PARTIAL — WORKING BENCHMARK**; non-ML +169.849 USDT vs AI -135.640 USDT, 0.05%/side; fee stress and non-ML lookahead checked | True spread/slippage/funding reconciliation, FreqAI leakage audit, full signal counts, multi-period comparison; NOT YET ACCEPTED |
+| M2 honest baseline | **PARTIAL — gate still BLOCKED**; no-ML +169.849 vs AI −135.640 USDT; matched doubled-fee, historical funding and exact signal exports verified; **AI lookahead flagged differences** | Verify historical execution/slippage, fee tiers, root-cause changing AI prediction/signal indicators and full `do_predict` abstentions; NOT ACCEPTED |
 | M3 FreqAI edge | NOT STARTED | Multi-period walk-forward results |
 | M4 forward dry-run VPS | NOT STARTED; research mode source implemented | Capacity, two-profile official checks, independent forward-paper report |
 | M5 expand and port selected features | DEFERRED | M3/M4 evidence |
