@@ -84,6 +84,10 @@ def main() -> int:
     LightGBMRegressor.train = forbid_retrain
     try:
         from freqtrade.main import main as freqtrade_main
+        # Preserve the upstream diagnostic's command sentinel for the existing
+        # NbotV6M2Audit safety guard. Without this, its lookahead-only startup
+        # intentionally refuses Freqtrade's unlimited simulated slots.
+        sys.argv = ["freqtrade", *ftargs]
         try:
             freqtrade_main(ftargs)
             cli_exit = 0
