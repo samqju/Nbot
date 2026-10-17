@@ -105,36 +105,32 @@ class NbotV6AdaptiveLibraryResearch(_NbotV6ResearchLibraryBase):
             raise RuntimeError("ADAPTIVE_DECISION_REQUIRES_CHRONOLOGICAL_UTC_DATES")
         if asof.duplicated().any():
             raise RuntimeError("DUPLICATE_CANDLE_FORBIDDEN")
-        interval = asof.dt.floor("8h")
-        cache = {}
-        kinds = {}
-        for family in FAMILIES:
-            kinds[family] = library_signals(dataframe, family)
-
+        intervals = asof.dt.floor("8h")
         regimes = dataframe["nb_market_regime"]
-        # Cache at most one purely historical decision per (8h bucket, regime).
-        # Every past-scorecard test end must precede the bucket by >= 8h.
-        for bucket in interval.unique():
-            for regime in ("trend_up", "trend_down", "range", "high_volatility"):
-                mask = (interval == bucket) & (regimes == regime)
-                if not mask.any():
-                    continue
-                key = (bucket, regime)
-                if key not in cache:
-                    cache[key] = choose_validated_strategy(
-                        self._offline_native_scorecards,
-                        decision_at=bucket.isoformat(), regime=regime
-                    )
-                winner = cache[key]
-                if winner.is_no_trade:
-                    continue
-                eligible = kinds[winner.family]
-                allow_long = regime != "trend_down"
-                allow_short = regime != "trend_up"
-                if allow_long:
-                    dataframe.loc[mask & eligible["long"], "enter_long"] = 1
-                    dataframe.loc[mask & eligible["long"], "enter_tag"] = "v6_adaptive_" + winner.family + "_long"
-                if allow_short:
-                    dataframe.loc[mask & eligible["short"], "enter_short"] = 1
-                    dataframe.loc[mask & eligible["short"], "enter_tag"] = "v6_adaptive_" + winner.family + "_short"
+        # O(N) mapping across many months of history, not a quadratic scan
+        # of every candle for every eight-hour bucket and every regime.
+        # At every 8h decision the model uses ONLY previously finished tests.
+        keys = list(zip(intervals.tolist(), regimes.tolist()))
+        choices = {}
+        for key in set(keys):
+            timestamp, regime = key
+            choices[key] = choose_validated_strategy(
+                self._offline_native_scorecards,
+                decision_at=timestamp.isoformat(), regime=regime
+            ).family
+        selected = pd.Series([choices[key] for key in keys],
+                             index=dataframe.index, dtype=object)
+        if selected.isna().all():
+            return dataframe
+        for family in FAMILIES:
+            mask = selected == family
+            if not bool(mask.any()):
+                continue
+            eligible = library_signals(dataframe, family)
+            long = mask & eligible["long"] & (regimes != "trend_down")
+            short = mask & eligible["short"] & (regimes != "trend_up")
+            dataframe.loc[long, "enter_long"] = 1
+            dataframe.loc[short, "enter_short"] = 1
+            dataframe.loc[long, "enter_tag"] = "v6_adaptive_" + family + "_long"
+            dataframe.loc[short, "enter_tag"] = "v6_adaptive_" + family + "_short"
         return dataframe
