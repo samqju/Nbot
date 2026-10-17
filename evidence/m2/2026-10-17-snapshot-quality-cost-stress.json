@@ -1,0 +1,149 @@
+{
+  "study": "M2 actual Binance 30s depth match + hypothetical fill penalty scenarios",
+  "depth_data_quality": {
+    "MATCH": 113,
+    "STALE": 17
+  },
+  "fully_observed_top_of_book_bid_ask": false,
+  "assumptions": [
+    "The 'MATCH' label means a 30s depth snapshot <=45s old, and aggregate quote notional within 0.2% >= size.",
+    "The match only screens liquidity and does NOT establish the spread, queue position, fill price or impact.",
+    "Missing/stale snapshots receive a larger assumed incremental cost, not zero.",
+    "Costs are additive to Freqtrade's base simulated 0.05% per side fee and historical funding.",
+    "All hypothetical execution costs are charged on unchanged original trades, not a new order-level simulation.",
+    "A single seven-day period is not enough to approve profit or strategy adaptation."
+  ],
+  "comparisons": {
+    "AI_V6": {
+      "trades": 34,
+      "scenarios": {
+        "no_additional_cost": {
+          "additional_cost_usdt": 0,
+          "adjusted_net_usdt": -135.64,
+          "entry_exit_snapshot_quality": {
+            "MATCH": 60,
+            "STALE": 8
+          },
+          "assumed_extra_bps_each_side": {
+            "MATCH": 0,
+            "UNVERIFIED": 0
+          }
+        },
+        "low": {
+          "additional_cost_usdt": 49.88,
+          "adjusted_net_usdt": -185.52,
+          "entry_exit_snapshot_quality": {
+            "MATCH": 60,
+            "STALE": 8
+          },
+          "assumed_extra_bps_each_side": {
+            "MATCH": 5,
+            "UNVERIFIED": 25
+          }
+        },
+        "medium": {
+          "additional_cost_usdt": 99.76,
+          "adjusted_net_usdt": -235.4,
+          "entry_exit_snapshot_quality": {
+            "MATCH": 60,
+            "STALE": 8
+          },
+          "assumed_extra_bps_each_side": {
+            "MATCH": 10,
+            "UNVERIFIED": 50
+          }
+        },
+        "severe": {
+          "additional_cost_usdt": 199.52,
+          "adjusted_net_usdt": -335.16,
+          "entry_exit_snapshot_quality": {
+            "MATCH": 60,
+            "STALE": 8
+          },
+          "assumed_extra_bps_each_side": {
+            "MATCH": 20,
+            "UNVERIFIED": 100
+          }
+        },
+        "extreme": {
+          "additional_cost_usdt": 399.041,
+          "adjusted_net_usdt": -534.681,
+          "entry_exit_snapshot_quality": {
+            "MATCH": 60,
+            "STALE": 8
+          },
+          "assumed_extra_bps_each_side": {
+            "MATCH": 40,
+            "UNVERIFIED": 200
+          }
+        }
+      }
+    },
+    "NO_ML": {
+      "trades": 31,
+      "scenarios": {
+        "no_additional_cost": {
+          "additional_cost_usdt": 0,
+          "adjusted_net_usdt": 169.849,
+          "entry_exit_snapshot_quality": {
+            "MATCH": 53,
+            "STALE": 9
+          },
+          "assumed_extra_bps_each_side": {
+            "MATCH": 0,
+            "UNVERIFIED": 0
+          }
+        },
+        "low": {
+          "additional_cost_usdt": 48.658,
+          "adjusted_net_usdt": 121.191,
+          "entry_exit_snapshot_quality": {
+            "MATCH": 53,
+            "STALE": 9
+          },
+          "assumed_extra_bps_each_side": {
+            "MATCH": 5,
+            "UNVERIFIED": 25
+          }
+        },
+        "medium": {
+          "additional_cost_usdt": 97.316,
+          "adjusted_net_usdt": 72.533,
+          "entry_exit_snapshot_quality": {
+            "MATCH": 53,
+            "STALE": 9
+          },
+          "assumed_extra_bps_each_side": {
+            "MATCH": 10,
+            "UNVERIFIED": 50
+          }
+        },
+        "severe": {
+          "additional_cost_usdt": 194.633,
+          "adjusted_net_usdt": -24.784,
+          "entry_exit_snapshot_quality": {
+            "MATCH": 53,
+            "STALE": 9
+          },
+          "assumed_extra_bps_each_side": {
+            "MATCH": 20,
+            "UNVERIFIED": 100
+          }
+        },
+        "extreme": {
+          "additional_cost_usdt": 389.266,
+          "adjusted_net_usdt": -219.417,
+          "entry_exit_snapshot_quality": {
+            "MATCH": 53,
+            "STALE": 9
+          },
+          "assumed_extra_bps_each_side": {
+            "MATCH": 40,
+            "UNVERIFIED": 200
+          }
+        }
+      }
+    }
+  },
+  "no_trade_pnl_usdt": 0
+}
