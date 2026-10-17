@@ -20,6 +20,9 @@ STRATEGIES = {
     "after_cost_combined_AI": "NbotV6TradeOutcomeResearch",
     "after_cost_breakout_AI": "NbotV6BreakoutResearch",
     "after_cost_pullback_AI": "NbotV6PullbackResearch",
+    "matched_no_AI_combined": "NbotV6MatchedNoMLResearch",
+    "matched_no_AI_breakout": "NbotV6MatchedBreakoutNoMLResearch",
+    "matched_no_AI_pullback": "NbotV6MatchedPullbackNoMLResearch",
 }
 
 
