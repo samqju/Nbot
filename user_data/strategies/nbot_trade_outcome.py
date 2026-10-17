@@ -148,6 +148,32 @@ def training_labels(df: DataFrame, cost: CostPolicy = CostPolicy()) -> DataFrame
     return frame
 
 
+
+def training_labels_for_family(df: DataFrame, family: str,
+                               cost: CostPolicy = CostPolicy()) -> DataFrame:
+    """One separately trained FreqAI model per setup family.
+
+    Train breakout and pullback from their OWN eligible opportunities,
+    including any overlap with the other family, not using an arbitrary
+    other-strategy priority. Never use the future net outcome as feature.
+    """
+    if family not in ("breakout", "pullback"):
+        raise ValueError("UNSUPPORTED_SETUP_FAMILY")
+    flags = setups(df)
+    label = np.full(len(df), np.nan)
+    for i in range(len(df) - cost.horizon):
+        for side, kind in ((1, family+"_long"), (-1, family+"_short")):
+            if not flags[kind].iloc[i]:
+                continue
+            actual = outcome(df, i, side, cost)
+            if actual is not None:
+                label[i] = actual["net_return"]
+            break
+    frame = df.copy()
+    frame["&-trade_net_return"] = label
+    return frame
+
+
 def decision_features(df: DataFrame) -> DataFrame:
     """Numeric past-only FreqAI %-features; never use trade outcomes here."""
     flags = setups(df)
