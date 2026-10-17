@@ -5,7 +5,7 @@ import subprocess
 ROOT=Path(__file__).resolve().parents[1]
 
 def test_finite_offline_vps_scripts_parse_in_bash():
-    for name in ("m2r_jansep_research_runner.sh","m2r_jansep_vps_sequential_coordinator.sh"):
+    for name in ("m2r_jansep_research_runner.sh","m2r_jansep_vps_sequential_coordinator.sh","m2r_jansep_vps_safe_restart_once.sh"):
         filename=ROOT/"scripts"/name
         run=subprocess.run(["bash","-n",str(filename)],capture_output=True,text=True)
         assert run.returncode==0,(name,run.stderr)
@@ -25,3 +25,12 @@ def test_finite_research_scripts_do_not_enable_paper_live_or_ordering():
     assert "--network none" in coordinator
     assert "scripts/m2r_jansep_native_rolling_audit.py" in coordinator
     assert "systemctl start" not in runner+coordinator
+
+
+def test_recovery_requires_native_archive_audit_before_new_systemd():
+    script=(ROOT/"scripts/m2r_jansep_vps_safe_restart_once.sh").read_text()
+    assert "m2r_jansep_native_rolling_audit.py" in script
+    assert "systemd-run" in script
+    assert script.index("m2r_jansep_native_rolling_audit.py") < script.index("systemd-run")
+    assert "DOCKER_RUNNING" not in script  # no restart without checking docker ps
+    assert "docker ps -q" in script
