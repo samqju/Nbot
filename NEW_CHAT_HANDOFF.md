@@ -1,5 +1,7 @@
 # NBOT V6 — NEW CHAT HANDOFF / CONTINUATION PROMPT
 
+**Owner's standing handoff-maintenance instruction (October 17, 2026, ~11:05 IST):** **Update THIS file `NEW_CHAT_HANDOFF.md` after every material change made in a chat** (code, tests, new data, evidence, strategy results, milestone decisions, safety permissions, new blockers or revised next steps), **including refreshing the copy/paste new-chat prompt in section A**. Update the roadmap and draft PR description if milestones or conclusions change. Confirm the GitHub commit actually succeeded before claiming the handoff is current. If repository tools are unavailable, say the handoff could not be updated. **`HANDOFF.md` is a pointer to this canonical file; do NOT maintain two divergent handoffs.**  
+
 **Canonical continuation record:** October 17, 2026.  
 **Repository:** [samqju/Nbot](https://github.com/samqju/Nbot) — PRIVATE owner-controlled project  
 **Work branch:** `prototype/v6-freqtrade-freqai-20261016` — DO NOT work on default branch  
@@ -20,6 +22,8 @@
 > **Permissions and safety:** You may examine and update only the isolated V6 research branch and do bounded offline/historical tests on the owner-authorized 8GB-Observation V6 research VPS, using public Binance history and no credentials. **Never touch legacy V5 bots/VPSes; never merge PR #50, run a persistent trading service, start M4 virtual paper mode, enable exchange orders, ask for keys, or unlock M7 live money without fresh explicit owner authorization.** One global 1,000-USDT, 1× historical position is the current benchmark; future approved M4 paper mode may hold **up to 20 virtual positions** (not the same as 25 candidate assets), and planned M5A selector should reassess eligible Binance USDT-M markets about **every eight hours** and choose up to **25**. These two future milestones must not be forgotten.
 >
 > **Current priority:** First audit FreqAI's *actual* training-boundary handling for 12-candle future complete-trade labels and root-cause the official `has_bias=Yes` lookahead diagnostic. Then strengthen realistic execution/funding treatment and pre-register several **fresh, previously uninspected, time-held-out multi-regime tests**, retaining NO TRADE and the frozen original AI/non-AI as baselines. Test the already-built separate breakout/pullback after-cost LightGBM models; do not interpret 29,033 counterfactual opportunities as executed trades. Keep M2 release **NO-GO** until proven otherwise.
+>
+> **Ongoing cross-chat continuity:** After every material repository/test/conclusion change, update the GitHub **`NEW_CHAT_HANDOFF.md`** itself **AND revise this section A continuation prompt** to reflect the latest confirmed state, plus relevant roadmap/evidence/draft PR. Do not rely only on ChatGPT memory or create competing stale handoff files.
 >
 > **Continue the existing roadmap; check off only work actually verified, publish reproducible logs/evidence in GitHub, and explain the results without financial hype.** If a connected tool or VPS is unavailable, say so; never invent execution or results.
 
@@ -130,6 +134,13 @@ At +15bps, combined is already **−33.855**. These are extra assumed deductions
 - [Frozen Oct 8–15 protocol](evidence/m2r/2026-10-17-preregistered-setup-comparison.md), [full official eight-strategy backtest evidence](evidence/m2r/2026-10-17-oct08-16-eight-strategy-official-backtests.json), [full forecast findings](evidence/m2r/2026-10-17-aftercost-model-learning-results.md), [fee sensitivity](evidence/m2r/2026-10-17-oct08-16-full-cost-sensitivity.json).
 - [M2_EVIDENCE.md](M2_EVIDENCE.md) — historically important unresolved no-leakage/fill gate.
 - [tests/test_m2r_trade_learning.py](tests/test_m2r_trade_learning.py), [tests/test_m2r_purged_split.py](tests/test_m2r_purged_split.py) — source unit tests. Last recorded V6 offline suite **90 tests passed**, all **nine** Freqtrade strategy classes discovered in framework. Recheck CI after future commits.
+
+### Owner's October 17 ~11:05 IST priority decision — validate before switching
+
+The owner explicitly asked whether the new after-cost model's eight-day results justify switching from the **original price-only AI**, which earned **+205.976 USDT on Oct 8–15**, versus the best newer pullback-only **+146.237** (combined **+113.046**, breakout **+62.552**). **Answer: NO.** The new model has displayed selective learning (e.g. combined 45.364% positive selected candidates versus 33.148% unfiltered), but **+0.0153% average hypothetical selected net outcome is tiny**, its combined base simulated +113.046 collapses to +15.112 at extra 10bps and negative at extra 15bps, and **September after-cost AI still lost −442.471 USDT**. Its like-for-like 60min no-AI controls lost in October; this is promising *filtering research*, not stable economics or release approval.
+
+**Owner requested exact next recommendation:** FIRST investigate all FreqAI lookahead and 12-candle forward-target native model-boundary purging; SECOND preregister and test multiple untouched chronological market regimes with genuine matched-exit no-AI and original AI vs after-cost breakout/pullback/combined and NO TRADE; THIRD examine model calibration and real after-cost execution robustness; only then test offline regime-aware strategy selection, **NOT automated paper/live switching**. Continue using simple English, report negative evidence, and keep GitHub handoff and section A current after material work.
+
 
 ## F. EXACT NEXT RESEARCH WORK (do this FIRST, in order)
 
