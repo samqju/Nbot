@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import argparse
 import io
-import pickle
+import joblib
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -23,7 +23,7 @@ def main():
                 print(suffix, "NOT FOUND")
                 continue
             # Accept only our own official Freqtrade backtest exports.
-            content = pickle.load(io.BytesIO(z.read(members[0])))
+            content = joblib.load(io.BytesIO(z.read(members[0])))
             print("\n", suffix, "TYPE", type(content).__name__)
             if isinstance(content, dict):
                 print("STRATEGIES", list(content.keys())[:5])
