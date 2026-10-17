@@ -1,8 +1,8 @@
 # NBOT V6 — Development and Release Roadmap
 
-**Roadmap version 1.1, October 17 2026**  
+**Roadmap version 1.2, October 17 2026**  
 **Project:** Small Binance USDT-M trading bot using Freqtrade + FreqAI.  
-**Release state:** Prototype. M0 and M1 technical integration are complete, but the 25-pair FreqAI test lost money. M2 benchmark/fee-stress has begun; realistic costs, M3 validation and paper/live release have NOT been accepted.  
+**Release state:** Prototype. M1 technical proof complete; full September M2 research found losses in AI and non-ML. **M2 release gate NO-GO.** A separate M2R offline design for after-cost learning and bounded strategy routing is authorized for **code/research only**; M3, paper and live trading NOT accepted.  
 **This document controls V6 scope.** Legacy V5 documentation is historical, not an active V6 specification.
 
 ## A. What we are building
@@ -116,6 +116,41 @@ Work:
 **Updated M2 finding:** No-ML beat FreqAI by **305.489 USDT** during the October week but both lost in full September (no-ML **−242.894 USDT**, AI **−444.980 USDT**). The earlier winning week is **not dependable proof of profitability**. The no-ML strategy was invested **99.641%** of September. Original October detail: no-ML beat FreqAI by **305.489 USDT** in that first week. This does **not** isolate the *causal* effect of AI because the compared strategies also differ in their exit rules, nor does it prove the simple approach is profitable. Do not tune features to fit this single period. The historical **M2 gate remains OPEN** until defensible execution costs and leakage controls are verified.
 
 **Gate M2:** Complete reproducible metrics, defensible costs and no known decision leakage. A loss-making benchmark is a valid finding, not a reason to fabricate performance.
+
+## M2R — Research-only upgrade: learn from complete trades, after costs, then controlled strategy selection
+
+**Owner decision — October 17, 2026:** Build the three requested capabilities in the following order. **This authorizes offline source development and short-lived historical research tests ONLY.** It does not overturn the M2 NO-GO, authorize a 20-slot persistent paper bot or approve live money.
+
+**Why change the learning task?** September 2026 proved the current "price in one hour" FreqAI target did not give an economic edge: current AI **−444.980 USDT**, no-ML **−242.894 USDT** (25 markets, single global slot). The frozen no-ML approach was exposed **99.641% of September**. Trade profitability after realistic costs—not directional forecasting alone—is the research target. A new model is a **Challenger** until tested on untouched future dates.
+
+### Build checklist — distinguish code existence from earned approval
+
+**Stage A — Frozen candidate setups + after-cost outcome labels (implement offline first)**
+- [ ] Define **causal** breakout and pullback candidates independently, each with LONG/SHORT variants; features available at the decision candle close, actual entry assumed at **next candle OPEN**, no trading on known future fills.
+- [ ] Create a transparent **"what if we had traded?" outcome** for every candidate, including setups the real bot skipped. Include fee per side, extra assumed spread/slippage, conservative funding buffer, a clear holding horizon, 2% stop and 5% target; when a 5-minute candle touches both stop and target, assume **the losing stop happened first**.
+- [ ] Never use a future outcome as a model input. Last horizon rows and unavailable future prices have **no label**, not zero profit. Chronological train/test splits must **purge overlapping future-outcome periods**, and model features must be past-only. Do not interpret this simplified exit model as real execution.
+- [ ] Build isolated offline tests for fees, long/short symmetry, stop/target ambiguity, zero/NaN data, no-entry/no-trade, out-of-history samples, and future-data prefix consistency.
+
+**Stage B — After-cost LightGBM Challenger (research only)**
+- [ ] Preserve the original `NbotV6` and non-ML control unchanged; implement a separate FreqAI-compatible **after-cost target** with a unique model identifier and a runmode lock that forbids any real or persistent paper trading.
+- [ ] Compare the Challenger to original AI, no-ML and NO TRADE with the **same markets, periods, stops, risk and realistic fee assumptions**. Do not evaluate on the same days used to choose thresholds or parameters.
+- [ ] Reject the Challenger if out-of-sample net profit, drawdown, turnover, calibration or costs fail predeclared criteria. **Retraining is not permission to deploy.**
+
+**Stage C — Bounded strategy selection / regime routing (do not activate early)**
+- [ ] Maintain a small, frozen library of setups (initially trend breakout and EMA pullback), not arbitrary dynamically generated code. Train candidate-specific success/after-cost scores or compare separate fixed models.
+- [ ] Build a deterministic offline **one-action chooser**: compare eligible candidates, predicted net after-cost reward, liquidity, market regime, risk/stale-model filters, and **NO TRADE**. Route only among *already tested* candidates. Never select by the actual future outcomes.
+- [ ] Test zero-qualified choices, multiple candidates, stale or missing scores, wrong cost assumptions, direction clashes, and maximum one winner per time step. The router cannot alter strategy code or automatically promote a new model.
+- [ ] Only after separate multi-regime forward tests can governance consider promoting a Champion, with owner-controlled rollback; default is **NO TRADE** on uncertainty or failure.
+
+**Non-negotiable existing safety gates**
+- [ ] Resolve the M2 FreqAI `has_bias=Yes` lookahead-diagnostic differences and historical order execution/slippage limitations, including September's two ~0.10-USDT funding exit exceptions. Offline feature and model-prefix checks help but do not clear all warning columns.
+- [ ] After M2 acceptance, conduct M3 *genuine* independent chronological walk-forward tests with realistic extra costs and confidence intervals. September 2026 and Oct 1–7 2026 have now been inspected; **neither can be silently presented as untouched blind validation after design changes**.
+- [ ] **M5A intelligent universe selector:** still must sample markets every **8 hours**, find up to **25** eligible/fundable/liquid candidates with model-history readiness, limit churn, and protect open positions. The existing fixed 25-coin comparison does **not** substitute for this.
+- [ ] **M4 virtual paper up to 20 positions:** source-level future paper configuration already exists but is **not commissioned**. A 20-slot cap refers to paper-research **only**; real-money one-position lock remains.
+- [ ] **M7 live funds:** **LOCKED**, requiring separate explicit owner approval, independent M2–M6 quality and safety evidence, and no changes to legacy V5 VPSes.
+
+### Acceptance checkpoints
+**A code written + unit tests pass ≠ model trained ≠ historical profits ≠ accepted trading system.** Every implementation must be compared against non-ML and NO TRADE, with explicit funding, trading-cost and lookahead limitations. It is acceptable—and scientifically important—to conclude "no edge; NO TRADE."
 
 ## M3 — FreqAI incremental value test
 
