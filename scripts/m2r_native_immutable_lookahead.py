@@ -61,6 +61,7 @@ def main() -> int:
 
     deleted = []
     training = []
+    diagnostics = []
     native_shutil = native_lookahead.shutil
 
     class ProtectedShutil:
@@ -76,6 +77,49 @@ def main() -> int:
             return getattr(native_shutil, name)
 
     native_lookahead.shutil = ProtectedShutil()
+
+    # Sample exactly the rows and columns the native official checker compares.
+    # This captures where a frozen cached prediction becomes a zero-filled
+    # missing prediction during a shortened replay (instead of guessing why).
+    real_analyze = native_lookahead.LookaheadAnalysis.analyze_indicators
+
+    def traced_analyze(self, full_vars, cut_vars, current_pair):
+        f = full_vars.indicators[current_pair]
+        c = cut_vars.indicators[current_pair]
+        matched = f.loc[c.index]
+        columns = ["date", "&-forward_return", "&-forward_return_mean",
+                   "&-forward_return_std", "do_predict", "DI_values",
+                   "enter_long", "enter_short", "exit_long", "exit_short"]
+        available = [col for col in columns if col in c.columns and col in f.columns]
+        comparisons = []
+        for col in available:
+            try:
+                comparison = matched[col].compare(c[col])
+            except (TypeError, ValueError):
+                continue
+            differing = len(comparison)
+            if not differing:
+                continue
+            excerpt = []
+            for idx in comparison.index[:3]:
+                excerpt.append({
+                    "index": int(idx) if hasattr(idx, "__int__") else str(idx),
+                    "row_date": str(c.loc[idx, "date"]),
+                    "baseline": str(matched.loc[idx, col]),
+                    "replay": str(c.loc[idx, col]),
+                })
+            comparisons.append({"column": col, "differing_rows": differing,
+                                "first_three": excerpt})
+        diagnostics.append({
+            "pair": current_pair,
+            "replay_start": str(c["date"].iloc[0]),
+            "replay_last_candle": str(c["date"].iloc[-1]),
+            "row_count": len(c),
+            "differences": comparisons,
+        })
+        return real_analyze(self, full_vars, cut_vars, current_pair)
+
+    native_lookahead.LookaheadAnalysis.analyze_indicators = traced_analyze
 
     def forbid_retrain(self, *args, **kwargs):
         training.append(str(args[1] if len(args)>1 else "unknown"))
@@ -95,6 +139,7 @@ def main() -> int:
             cli_exit = int(exc.code or 0) if isinstance(exc.code, int) or not exc.code else 1
     finally:
         native_lookahead.shutil = native_shutil
+        native_lookahead.LookaheadAnalysis.analyze_indicators = real_analyze
 
     after_files = sorted(model_root.glob("sub-train-*/*_model.joblib"))
     after = {str(p.relative_to(model_root)): sha256(p) for p in after_files}
@@ -107,6 +152,7 @@ def main() -> int:
         "model_delete_attempts_prevented": len(deleted),
         "retraining_attempts": training,
         "native_cli_exit_code": cli_exit,
+        "sampled_official_indicator_comparisons": diagnostics,
         "strict_fixed_model_integrity_pass": cli_exit == 0 and not training and before == after and len(deleted)>0,
         "caveat": "Any has_bias=Yes recorded in the native official table must still be examined by column and signal; suppressing FreqAI folder cleanup does not guarantee a no-bias verdict or correct strategy."
     }
