@@ -1,9 +1,31 @@
-# NBOT V6 — M2 first after-fee baseline and stress evaluation
+# NBOT V6 — M2 historical benchmarks: September full month and October first week
 
 **Date:** October 17, 2026 (UTC)
 **Status:** **M2 INVESTIGATION COMPLETED WITH A NO-GO DECISION. M2 RELEASE/ACCEPTANCE GATE FAILED. DO NOT DEPLOY OR ADVANCE TO M3.**
 **Market:** fixed 25 Binance USDT-M futures, 5m candles, historical **2026-10-01 through 2026-10-08**.
 **Risk parity:** both backtest variants used **max_open_trades=1**, 1×, roughly **1,000 USDT fixed stake**, the same fixed 25-pair whitelist, **100,000 USDT simulated wallet**, initial stop **2%** and ROI target **5%**. Futures funding handling remains native Freqtrade; no exchange credentials or real orders were used.
+
+## New full-month September 2026 comparison (owner-requested extension)
+
+**September 1–30 (30 complete days):** Public Binance history was extended back to **July 15**, with **25/25** candidate data audits passing. FreqAI trained **125 real LightGBM models** (25 coins × 5 sequential 30-day rolling training windows), with **zero errors**, and tested September only after training from earlier data. The static 25-coin universe, one global position, 1× leverage and 1,000-USDT stake remained unchanged.
+
+| Official historical metric | AI V6 | Frozen non-ML | NO TRADE |
+|---|---:|---:|---:|
+| September net P&L, 0.05% fee per side | **−444.980 USDT** | **−242.894 USDT** | **0** |
+| September closed trades | **137** | **163** | 0 |
+| September wins / losses | **43 / 94** | **42 / 121** | 0 |
+| September win rate | **31.4%** | **25.8%** | N/A |
+| September maximum drawdown | **446.755 USDT** | **306.942 USDT** | 0 |
+| September net P&L, 0.10% fee per side | **−576.688 USDT** (137 trades) | **−388.318 USDT** (166 trades) | **0** |
+| Share of 720h in a trade (base fee) | **40.637%** | **99.641%** | 0 |
+
+**Both strategies lost money during September.** The simple strategy's **+169.849 USDT October first-week result** was not representative of September. AI underperformed no-ML by **202.086 USDT** in September, while NO TRADE was the best of these three alternatives. Extra hypothetical spread/slippage cost deductions make both results worse, not better.
+
+Independent September funding reconciliation found **one approximately 0.10-USDT discrepancy per strategy** on positions force-closed at exactly the October 1 backtest boundary (AI ATOM and non-ML INJ); **do not claim every September funding field reconciled precisely**. The discrepancies are small compared with the losses but remain logged as a check failure. Historical market fill/bid-ask data and the earlier FreqAI lookahead warning remain unresolved.
+
+**Full reproducible September report:** [30-day analysis](evidence/m2/2026-10-17-september-full-month-analysis.md), [all-25 history audit](evidence/m2/2026-10-17-september-25pair-data-audit.json), [per-market/fee/funding/exposure machine evidence](evidence/m2/2026-10-17-september-30day-comparison.json), [report generator](scripts/m2_september_summary.py).
+
+**M2 decision unchanged: research execution succeeded, but acceptance FAILED / NO-GO. M3 and persistent paper/live trading remain unapproved.**
 
 ## What was implemented
 
