@@ -15,5 +15,8 @@
   "exchange": {
     "key": "",
     "secret": ""
+  },
+  "freqai": {
+    "enabled": false
   }
 }
