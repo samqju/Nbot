@@ -31,7 +31,7 @@ CUTOFF = pd.Timestamp("2026-10-08T00:00:00Z")
 TRAIN_START = CUTOFF - pd.Timedelta(days=30)
 RAW_START = TRAIN_START - pd.Timedelta(days=17)
 END = CUTOFF + pd.Timedelta(days=1)
-TEST_HOURS = (3, 9, 15, 21)
+TEST_MINUTES = (5, 180, 215, 540, 565, 900, 955, 1260, 1300, 1435)
 MODEL_FILE_SUFFIXES = {"5m": "-5m-futures.feather", "1h": "-1h-futures.feather"}
 
 
@@ -108,7 +108,7 @@ def main() -> int:
         "limitations": [
             "newly fit original-strategy 30-day native models; not reused from previous cached backtest artifacts",
             "fixed-model invariance only, not original full-engine FreqAI lookahead diagnostic, funding/stop-fill truth, or profit",
-            "four as-of decision instants per pair on October 8 2026, not every historical bar",
+            "ten as-of decision instants per pair, including off-hour/1h-boundary times, on October 8 2026; not every historical bar",
             "not an independently purged internal 80/20 validation split",
         ],
     }
@@ -163,8 +163,8 @@ def main() -> int:
             "valid_target_count": int(train["&-forward_return"].notna().sum()),
             "samples": [],
         }
-        for hour in TEST_HOURS:
-            target = CUTOFF + pd.Timedelta(hours=hour)
+        for minute in TEST_MINUTES:
+            target = CUTOFF + pd.Timedelta(minutes=minute)
             idx = full.index[full["date"] == target]
             assert len(idx) == 1, (pair, str(target))
             ix = idx[0]
@@ -256,7 +256,7 @@ def main() -> int:
 
     report["limited_scope_pass"] = (
         report["pairs_tested"] == len(pairs)
-        and report["asof_comparisons"] == len(pairs)*len(TEST_HOURS)
+        and report["asof_comparisons"] == len(pairs)*len(TEST_MINUTES)
         and all(report[k] == 0 for k in
                 ("feature_mismatches", "prediction_mismatches", "prediction_filter_mismatches",
                  "entry_exit_mismatches", "model_hash_changes","feature_count_failures"))
