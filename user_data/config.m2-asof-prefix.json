@@ -1,0 +1,12 @@
+{
+  "bot_name": "nbot-v6-m2-asof-prefix",
+  "dry_run": true,
+  "max_open_trades": 1,
+  "exchange": {
+    "key": "",
+    "secret": ""
+  },
+  "freqai": {
+    "identifier": "nbot-v6-m2-asof-prefix-20261017"
+  }
+}
