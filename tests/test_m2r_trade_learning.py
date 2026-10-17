@@ -172,6 +172,19 @@ class M2ResearchLearningTests(unittest.TestCase):
             with self.subTest(candidate=candidate):
                 self.assertEqual(choose_candidate([candidate]).action,"NO_TRADE")
 
+    def test_router_fails_closed_in_range_and_obeys_current_regime(self):
+        long=CandidateScore("breakout_long",.022,.001,True,0,100000,1000)
+        short=CandidateScore("breakout_short",.021,.001,True,0,100000,1000)
+        both=[long,short]
+        self.assertEqual(choose_candidate(both,market_regime="trend_up").action,
+                         "breakout_long")
+        self.assertEqual(choose_candidate(both,market_regime="trend_down").action,
+                         "breakout_short")
+        self.assertEqual(choose_candidate(both,market_regime="range").action,
+                         "NO_TRADE")
+        with self.assertRaisesRegex(ValueError,"INVALID_REGIME"):
+            choose_candidate(both,market_regime="next_week_bullish")
+
     def test_research_strategy_rejects_all_paper_and_live_modes(self):
         config=json.loads((ROOT/"user_data"/"config.json").read_text())
         overlay=json.loads((ROOT/"user_data"/"config.m2r-trade-outcome.json").read_text())
