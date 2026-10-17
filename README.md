@@ -135,6 +135,12 @@ Detailed evidence, reproducible commands and prior low-memory context: **[M1_EVI
 
 ## M2 status — October 17, 2026 (RESEARCH ASSESSMENT COMPLETED: **NO-GO**)
 
+**NEW — Full September 1–30 study:** [Full-month results and method](evidence/m2/2026-10-17-september-full-month-analysis.md) using **25 pairs and 125 separate historical LightGBM model fits**, trained from August/earlier data with five 7-day steps. At 0.05% per-side fees, **AI lost 444.980 USDT (137 trades)**, **non-AI lost 242.894 USDT (163 trades)**, and **NO TRADE remained 0 USDT**. At double the fee AI lost **576.688 USDT**, and non-AI lost **388.318 USDT**. The no-ML strategy was in a position for **99.641% of September**. [Audited machine evidence](evidence/m2/2026-10-17-september-30day-comparison.json).
+
+**Conclusion:** A profitable-looking first October week did not survive a full September test. **Neither fixed-universe strategy is profitable in September. M2 release still NO-GO; no M3, unattended 20-slot paper or live orders.** The owner-requested future universe selector is still separate/unbuilt and its benefits are not assumed.
+
+
+
 The all-25-pair seven-day Freqtrade M2 comparison is fully documented in [M2_EVIDENCE.md](M2_EVIDENCE.md). At the official base historical 0.05%-per-side fee: **no-ML +169.849 simulated USDT (31 trades)**; **FreqAI −135.640 simulated USDT (34 trades)**; **NO TRADE 0 USDT**. That is **one historical week only**, not proven profitability.
 
 **New risk and execution findings:**
