@@ -40,9 +40,11 @@ def inspect(root:Path,lookback:int,start:str,end:str):
             and float(stats["starting_balance"])==100000)
     assert (len(stats["pairlist"])==25 and stats["trading_mode"]=="futures"
             and stats["timeframe"]=="5m")
-    text=(folder/"freqtrade.log").read_text()
-    if "boundary_violations=" not in text or "boundary_violations=1" in text:
-        raise RuntimeError("TRAINING_BOUNDARY_VIOLATION")
+    log_paths=([folder/"freqtrade.log"] if (folder/"freqtrade.log").is_file() else [])
+    log_paths+=sorted(folder.glob("attempt-*.log"))
+    text="\n".join(p.read_text(errors="replace") for p in log_paths)
+    if "boundary_violations=" not in text:
+        raise RuntimeError("TRAINING_BOUNDARY_EVIDENCE_MISSING")
     fitting=re.findall(r"boundary_violations=(\d+)",text)
     if not fitting or any(x!="0" for x in fitting):
         raise RuntimeError("NONZERO_SPLIT_OVERLAP")
