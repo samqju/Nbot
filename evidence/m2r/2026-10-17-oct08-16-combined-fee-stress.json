@@ -1,0 +1,43 @@
+{
+  "method": "Freeze official already-completed trade paths, then subtract assumed ADDITIONAL roundtrip execution costs from each actual trade's stake x leverage.",
+  "not_measured": true,
+  "engine_initial_fee_side": 0.0005,
+  "notes": [
+    "Never claim this estimates observed historical bid/ask or market impact.",
+    "Freqtrade base fee and engine funding already reflected in starting net.",
+    "A 10-basis-point EXTRA roundtrip haircut is about 1 USDT for a 1,000-USDT 1x trade.",
+    "The after-cost learning labels already reserved a hypothetical 10bps roundtrip slippage plus 1bp funding; this extra-cost evaluation is an independent stress on engine accounting, not an added second model target.",
+    "Fixed-trade stress does not replay exits, fill rejection, order timing or model switching.",
+    "NO TRADE returns exactly zero and involves no trades."
+  ],
+  "NO_TRADE_USDT": 0,
+  "results": {
+    "combined": {
+      "trades": 98,
+      "starting_net_usdt": 113.046,
+      "gross_stake_notional_sum_usdt": 97933.728,
+      "fixed_trade_scenario_adjusted_net_usdt": {
+        "0": 113.046,
+        "5": 64.079,
+        "10": 15.112,
+        "11": 5.319,
+        "15": -33.855,
+        "20": -82.822,
+        "25": -131.788,
+        "50": -376.623,
+        "100": -866.291
+      },
+      "extra_roundtrip_cost_bps": [
+        0,
+        5,
+        10,
+        11,
+        15,
+        20,
+        25,
+        50,
+        100
+      ]
+    }
+  }
+}
