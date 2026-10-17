@@ -195,6 +195,20 @@ class M2ResearchLearningTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,"HISTORICAL_ONLY"):
             bot.bot_start()
 
+    def test_historical_challenger_enforces_one_hour_research_hold(self):
+        from datetime import datetime, timedelta, timezone
+        bot=NbotV6TradeOutcomeResearch()
+        bot.freqai_info={"feature_parameters":{"label_period_candles":12}}
+        start=datetime(2026, 10, 1, 0, 0, tzinfo=timezone.utc)
+        trade=type("ResearchTrade", (), {"open_date_utc":start})()
+        self.assertIsNone(bot.custom_exit("BTC/USDT:USDT",trade,
+            start+timedelta(minutes=55),100,0))
+        self.assertEqual(bot.custom_exit("BTC/USDT:USDT",trade,
+            start+timedelta(minutes=60),100,0),"m2r_time_horizon")
+        with self.assertRaisesRegex(RuntimeError,"HORIZON"):
+            bot.freqai_info["feature_parameters"]["label_period_candles"]=0
+            bot.custom_exit("BTC/USDT:USDT",trade,start,100,0)
+
     def test_after_cost_freqai_target_is_distinct_from_original_price_target(self):
         bot=NbotV6TradeOutcomeResearch()
         bot.freqai_info={"feature_parameters":{"label_period_candles":12}}
