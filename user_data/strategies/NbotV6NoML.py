@@ -32,7 +32,12 @@ class NbotV6NoML(IStrategy):
     def bot_start(self, **kwargs) -> None:
         if self.config.get("dry_run") is not True:
             raise RuntimeError("NBOT_M2_NONML_BASELINE_DRY_RUN_ONLY")
-        if self.config.get("max_open_trades") != 1:
+        # Freqtrade lookahead-analysis forces unlimited slots and 10k stake.
+        # Permit this override only in BACKTEST mode; never normal dry-run.
+        mode = self.config.get("runmode")
+        mode = str(getattr(mode, "value", mode)).lower()
+        slots = self.config.get("max_open_trades")
+        if slots != 1 and not (mode == "backtest" and slots == -1):
             raise RuntimeError("NBOT_M2_NONML_BASELINE_ONE_SLOT_ONLY")
         credentials = self.config.get("exchange", {})
         if credentials.get("key") or credentials.get("secret"):
