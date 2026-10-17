@@ -63,7 +63,7 @@ class M2ExtendedTests(unittest.TestCase):
         date=pd.date_range("2026-10-01", periods=n, freq="5min", tz="UTC")
         price=np.linspace(100,130,n)
         candles=pd.DataFrame({"date":date, "close":price, "open":price-0.1,
-                              "high":price+0.2, "low":price-0.2,
+                              "high":price+0.02, "low":price-0.02,
                               "volume":np.ones(n)*10})
         preds=pd.DataFrame({"date":date, "&-forward_return":np.full(n,0.01),
                             "do_predict":np.ones(n)})
