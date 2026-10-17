@@ -1,8 +1,8 @@
 # NBOT V6 — Development and Release Roadmap
 
-**Roadmap version 1.0, October 16 2026**  
+**Roadmap version 1.1, October 17 2026**  
 **Project:** Small Binance USDT-M trading bot using Freqtrade + FreqAI.  
-**Release state:** Prototype. M1 technical 25-pair historical training/backtest accepted with **negative simulated returns**; M2/M3 economics are unaccepted and no paper/live trading is authorized.  
+**Release state:** Prototype. M0 and M1 technical integration are complete, but the 25-pair FreqAI test lost money. M2 benchmark/fee-stress has begun; realistic costs, M3 validation and paper/live release have NOT been accepted.  
 **This document controls V6 scope.** Legacy V5 documentation is historical, not an active V6 specification.
 
 ## A. What we are building
@@ -83,12 +83,24 @@ Work:
 
 **Goal:** Establish what basic trading signals achieve without assuming ML is helpful.
 
-Work:
-- Freeze the initial EMA20/EMA50 trend and 20-candle breakout/pullback hypotheses.
-- Run a simple non-ML strategy benchmark and a NO TRADE benchmark on the same historical periods.
-- Evaluate after fees, spread/slippage assumptions and relevant futures funding. State which charges are simulated and which are observed. The starter 0.2% roundtrip proxy is a placeholder, not a fill-derived label.
-- Measure eligible decisions, signals, abstentions, opened/closed trades, net returns, drawdown, profit factor, win/loss distribution, exposure, holding time and results by coin and side.
-- Execute leakage/lookahead checks. The future-return FreqAI training target must never appear as a decision-time feature.
+**Status: IN PROGRESS — evidence collected, release gate NOT PASSED.** Source results and exact limitations: [M2_EVIDENCE.md](M2_EVIDENCE.md); [machine-readable fee/cost/coin/side comparison](evidence/m2/2026-10-17-first-week-cost-sensitivity.json).
+
+### M2 detailed checklist (tick only proven items)
+
+- [x] **Frozen no-ML comparator**: the same EMA20/EMA50 trend, prior-20-candle breakout and pullback setups, independent no-FreqAI strategy [NbotV6NoML](user_data/strategies/NbotV6NoML.py); original AI strategy unchanged.
+- [x] **NO TRADE baseline**: zero positions, zero trading P&L and exposure, no fees.
+- [x] **Matching first-week official backtests:** all 25 USDT-M candidates, **2026-10-01 through 2026-10-08**, fixed 1× / one position / 1,000-USDT stake, 100,000 simulated wallet. **AI: 34 trades, -135.640 USDT; no-ML: 31 trades, +169.849 USDT** at 0.05% per side.
+- [x] **Official fee sensitivity:** both strategies rerun using 0.10% per side; **AI: 34 trades, -169.555 USDT; no-ML: 30 trades, +138.554 USDT**. Fee choices may change the trade path.
+- [x] **Additional hypothetical cost stress:** exported-trade **+10/+25/+50/+100 roundtrip bps** sensitivity, labeled as *fixed-fill illustrative deductions*, not measured actual fills. The positive non-ML result vanishes under the +100 bps stress.
+- [x] **Trade-level coin, side, duration and funding-field audit:** reproducible [scripts/m2_evaluate.py](scripts/m2_evaluate.py) generates per-pair/per-side closed-trade summaries, fees, approximate exposure and hypothetical adjusted returns; official ZIP results remain private on the V6 research VPS.
+- [x] **Non-ML signal lookahead screening:** official `lookahead-analysis` checked **30** baseline signals, with **0 detected** biased entries/exits (not proof of every possible signal).
+- [ ] **Realistic historical spread, maker/taker fill probability, slippage/market impact, and adverse stop fills:** estimate from independently sourced timestamped exchange data or defensible conservative ranges, not cherry-picked present-day quotes. Re-evaluate all-pair net P&L.
+- [ ] **Funding and fee model reconciliation:** confirm Freqtrade funding conventions versus historical Binance events per position, and whether assumptions apply to relevant order types. Current export funding fields are recorded but not independently reconciled.
+- [ ] **FreqAI lookahead + future-label isolation checks:** native AI `lookahead-analysis` currently blocked by the deliberate one-global-position safety guard, because the diagnostic overrides it; use a separate safe test-only approach without weakening the core strategy. Future-return labels must remain excluded from decision-time features.
+- [ ] **Full signal/abstention/exposure accounting:** correlate eligibility, model abstention, signals, selection, order rejection, exits, holding-time and drawdown across the same period.
+- [ ] **Additional independent market periods, statistical uncertainty and regime comparisons:** M3's explicit multi-window walk-forward acceptance; one losing AI week / one winning non-ML week prove neither strategy's dependable edge.
+
+**First M2 finding:** The no-ML strategy beat FreqAI by **305.489 USDT** in this one week at the baseline simulated fee. This does **not** isolate the *causal* effect of AI because the compared strategies also differ in their exit rules, nor does it prove the simple approach is profitable. Do not tune features to fit this single period. The historical **M2 gate remains OPEN** until defensible execution costs and leakage controls are verified.
 
 **Gate M2:** Complete reproducible metrics, defensible costs and no known decision leakage. A loss-making benchmark is a valid finding, not a reason to fabricate performance.
 
@@ -297,13 +309,24 @@ V6 may become the default/main development line when **M0+M1** pass and an owner
 - A losing result should trigger diagnosis or pause, not uncontrolled new indicator development.
 - Never use the words profitable, verified or deployed without the corresponding dated evidence.
 
-## G. Progress ledger — 2026-10-16
+### Reviewed milestone checklist (2026-10-17)
+
+- [x] **M0: Clean V6 source and baseline CI** — isolated from V5; CI and strategy discovery passed.
+- [x] **M1: Historical engine/model technical proof** — all 25 Binance USDT-M datasets and 30-day FreqAI models checked, seven-day official historical backtest completed. *Returns were negative; M1 is not a profitability approval.*
+- [ ] **M2: Honest after-cost/non-ML baseline** — non-ML strategy and first-week comparisons completed; realistic execution/funding verification **OPEN**.
+- [ ] **M3: Credible FreqAI improvement** — untouched multiple-regime walk-forward and cost-adjusted model attribution not established.
+- [ ] **M4: 20-slot simulated research forward trial** — configuration **exists**; independent VPS daemon/restarts/position safety not yet approved or tested.
+- [ ] **M5A: Eight-hour intelligent 25-candidate universe selector** — **not built**; ranking, liquidity, churn caps, BTC anchoring, history/model readiness, open-trade protection and replay acceptance still required. A 25-coin fixed history test does NOT replace the selector.
+- [ ] **M6: Approved-model governance** — shared model version qualification/rollback not built.
+- [ ] **M7: Any live funds** — explicitly **LOCKED**; owner-only code-staged release hook is not deployment approval.
+
+## G. Progress ledger — 2026-10-17
 
 | Milestone | State | Required next proof |
 |---|---|---|
 | M0 clean tree | COMPLETE — source isolation only | Clean-tree commit 3e642508; V6 CI run 38906351380 passed both jobs (offline + official strategy discovery) |
 | M1 real FreqAI backtest | **TECHNICAL COMPLETE**: 25/25 full-history fit + independent 7-day 34-trade backtest; **-135.64 USDT** | M2 fee/spread/funding/slippage baseline, M3 broader held-out replay; no deployment |
-| M2 honest baseline | NOT STARTED | Baseline and after-cost report |
+| M2 honest baseline | **PARTIAL — WORKING BENCHMARK**; non-ML +169.849 USDT vs AI -135.640 USDT, 0.05%/side; fee stress and non-ML lookahead checked | True spread/slippage/funding reconciliation, FreqAI leakage audit, full signal counts, multi-period comparison; NOT YET ACCEPTED |
 | M3 FreqAI edge | NOT STARTED | Multi-period walk-forward results |
 | M4 forward dry-run VPS | NOT STARTED; research mode source implemented | Capacity, two-profile official checks, independent forward-paper report |
 | M5 expand and port selected features | DEFERRED | M3/M4 evidence |
@@ -312,4 +335,4 @@ V6 may become the default/main development line when **M0+M1** pass and an owner
 | Owner-only live release hook | CODE STAGED; NOT EXECUTED | Native framework smoke + private-file/Telegram/risk tests; M7 acceptance still required |
 | M7 any live money | LOCKED | Separate user-approved risk plan |
 
-**Current priority: M2 — investigate the loss-making 25-pair baseline after realistic fees, spreads, slippage and funding, then M3 independently held-out walk-forward validation. M1 technical integration has passed, but the model has no demonstrated positive trading edge. No persistent VPS paper service, default-branch change, real trading permission or legacy data migration is authorized.**
+**Current priority: Finish M2 after-cost assumptions/AI no-leakage checks, then M3 multi-regime held-out tests. M5A universe selector and the separate up-to-20-position paper-research mode remain explicit future milestones, NOT forgotten or silently replaced by a one-slot historical benchmark. No continuous VPS trading daemon, default-branch change, real-money permission or legacy data migration is authorized.**
