@@ -1,6 +1,6 @@
 # NBOT V6 — after-cost learning and cautious strategy selection (M2R)
 
-**Started:** October 17, 2026. **Status:** Research-code prototype and single-coin FreqAI historical integration proof. **NOT** an accepted trading system. **M2 NO-GO still applies.**
+**Started:** October 17, 2026. **Status:** Research-code prototype, full 25-pair September FreqAI replay, separate breakout/pullback trained models and first predeclared October 8–15 comparison completed. **NOT** an accepted trading system. **M2 NO-GO still applies.**
 
 The owner asked for three capabilities, implemented incrementally instead of throwing away FreqAI/LightGBM: (1) learn which complete trading setups work, including those rejected by the original bot, (2) train on results **after assumed trading costs and risks**, and (3) eventually select the best approved setup or **NO TRADE**. This is a *new research design*; the original strategy and its 25-pair September/October negative results remain frozen.
 
@@ -57,6 +57,34 @@ docker run --rm --memory=6g --cpus=2 \
   --freqaimodel LightGBMRegressor --pairs BTC/USDT:USDT \
   --timerange 20261001-20261008 --fee 0.0005 --cache none
 ~~~
+
+## New actual full-model comparison — September and October 8–15
+
+**The first answer to the owner's learning question is now measurable.** LightGBM didn't simply learn from a 32.3% aggregate statistic: the labels describe individual complete trades, and FreqAI trained separate 30-day models using causal price/setup features, then predicted net returns on later bars. The entry filter takes only model-ready setups with predicted after-cost net return above **0.4%**. A new [evidence report](evidence/m2r/2026-10-17-aftercost-model-learning-results.md) contains the exact source results, date cutoffs, fees, no-AI matched-exit comparisons, cost stresses and remaining concerns.
+
+**September 1–30 (25 coins):** new after-cost combined AI **332 trades, −442.471 USDT**, original price-only AI **137, −444.980 USDT**, original no-AI **163, −242.894 USDT**, **NO TRADE 0**. **The new model still lost money that month.** The 29,033 hypothetical opportunity labels from September are overlapping training examples, NOT these 332 actual simulated trades.
+
+**Predeclared later test October 8–15, same 25 coins, one slot and 0.05%-per-side engine fee:**
+
+| Variant | Official trades | Simulated USDT |
+|---|---:|---:|
+| Original price-only AI | 45 | **+205.976** |
+| New pullback-only after-cost AI | 68 | **+146.237** |
+| New combined after-cost AI | 98 | **+113.046** |
+| New breakout-only after-cost AI | 83 | **+62.552** |
+| Original no-AI (different exits) | 52 | +24.135 |
+| Matched breakout no-AI (same 60-min exit/2% stop/5% target) | 178 | **−34.227** |
+| Matched pullback no-AI (same exits) | 177 | **−88.489** |
+| Matched combined no-AI (same exits) | 189 | **−141.359** |
+| NO TRADE | 0 | **0** |
+
+The distinct breakout and pullback LightGBM models were actually trained using their own historical completed-trade labels. Three matched non-AI research variants isolate the value of **choosing** candidates from merely changing trade exits. **The new AI outperformed these matched no-AI variants in this 8-day test, but the original price-only AI still earned more simulated USDT.** No safe model promotion can follow one favorable eight-day block.
+
+**Saved model predictions show selective learning:** Combined version had **7,732** raw hypothetical candidate opportunities (33.148% winners, average **−0.1430%** net under assumptions). It favored only **302** (45.364% winners, average **+0.0153%**). Breakout-only favored 235 of 4,295 (win rate **43.404%**, mean **+0.0608%**), pullback-only favored 154 of 3,437 (win rate **44.156%**, mean **+0.0602%**). These are NOT portfolio fills, and the estimated per-opportunity edge is modest.
+
+**Execution-cost fragility:** Charging extra **10 basis points** of hypothetical roundtrip slippage beyond the engine base fee changes combined after-cost AI to **+15.112 USDT**, breakout-only to **−20.367**, pullback-only to **+78.293**, original price-only AI to **+161.003**, and original no-AI to **−27.521**. At extra 25bps, **ALL the new after-cost models become negative**, while original price-only AI still shows +93.542 for these eight days. These are assumed fixed-trade deductions, not observed spreads. [Full machine-readable cost evidence](evidence/m2r/2026-10-17-oct08-16-full-cost-sensitivity.json).
+
+**Release decision remains NO-GO.** The official FreqAI `has_bias=Yes` warning, native train-boundary future-label purge and historic fill costs are not cleared. Auto-selection remains a separate **offline** router, not an active market algorithm; M5A and M4 are unchanged.
 
 ## Still required before real evaluation or activation
 
