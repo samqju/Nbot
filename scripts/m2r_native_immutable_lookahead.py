@@ -113,8 +113,21 @@ def main() -> int:
                 })
             comparisons.append({"column": col, "differing_rows": differing,
                                 "first_three": excerpt})
+        all_diffs_terminal_only = all(
+            sample["row_date"] == str(c["date"].iloc[-1])
+            for item in comparisons for sample in item["first_three"]
+        ) and all(item["differing_rows"] <= 3 for item in comparisons)
+        compared_time = str(cut_vars.compared_dt)
+        changed_at_compared_time = [
+            item["column"] for item in comparisons
+            if any(sample["row_date"] == compared_time
+                   for sample in item["first_three"])
+        ]
         diagnostics.append({
             "pair": current_pair,
+            "decision_time": compared_time,
+            "all_sampled_differences_last_candle_only": all_diffs_terminal_only,
+            "changed_columns_at_decision_time": changed_at_compared_time,
             "replay_start": str(c["date"].iloc[0]),
             "replay_last_candle": str(c["date"].iloc[-1]),
             "row_count": len(c),
