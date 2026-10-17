@@ -23,8 +23,7 @@ from NbotV6LibraryResearch import (
     _NbotV6ResearchLibraryBase, FAMILIES, library_indicators, library_signals
 )
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-from m2r_strategy_library_selector import (
+from nbot_v6_library_selector import (
     choose_validated_strategy, parse_blocks,
 )
 
