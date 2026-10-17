@@ -67,8 +67,9 @@ def plan(kind:str, family:str, period:str, *, overlay_path:str="/results/exact-o
               "--disable-param-export","--enable-protections"]
     else:
         task=["backtesting",*common,"--cache","none","--export","trades"]
-        if kind in ("native","adaptive"):
-            task+=["--enable-protections"]
+        # The identical native Freqtrade max-drawdown / stoploss guards
+        # must be ON even for LightGBM and PPO aftercost evaluations.
+        task+=["--enable-protections"]
         if kind=="lgbm":
             task+=["--freqaimodel","NbotV6PurgedLightGBMRegressor",
                    "--freqaimodel-path","/research/user_data/freqaimodels"]
