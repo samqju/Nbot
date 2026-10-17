@@ -108,7 +108,7 @@ def main() -> int:
         "limitations": [
             "newly fit original-strategy 30-day native models; not reused from previous cached backtest artifacts",
             "fixed-model invariance only, not original full-engine FreqAI lookahead diagnostic, funding/stop-fill truth, or profit",
-            "ten as-of decision instants per pair, including off-hour/1h-boundary times, on October 8 2026; not every historical bar",
+            "ten as-of five-minute candle CLOSE instants per pair including 1h/5m co-close boundary; not every historical bar",
             "not an independently purged internal 80/20 validation split",
         ],
     }
@@ -177,7 +177,14 @@ def main() -> int:
                 if tf == "5m":
                     f = f.loc[f.date <= target]
                 else:
-                    f = f.loc[f.date + pd.Timedelta(hours=1) <= target]
+                    # Native Freqtrade merges a 1h informative candle opened at HH:00
+                    # into the 5m HH:55 row, because the decision is made
+                    # AFTER the 5m HH:55 candle closes at HH+1:00. The 1h
+                    # candle also closes then, so it is as-of AVAILABLE.
+                    # Excluding it at HH:55 was an overstrict audit-harness
+                    # error (found in deliberately expanded off-hour probes).
+                    f = f.loc[f.date + pd.Timedelta(hours=1)
+                              <= target + pd.Timedelta(minutes=5)]
                 reduced[tf] = f.reset_index(drop=True)
             btc_reduced = {}
             for tf in MODEL_FILE_SUFFIXES:
@@ -185,7 +192,14 @@ def main() -> int:
                 if tf == "5m":
                     f = f.loc[f.date <= target]
                 else:
-                    f = f.loc[f.date + pd.Timedelta(hours=1) <= target]
+                    # Native Freqtrade merges a 1h informative candle opened at HH:00
+                    # into the 5m HH:55 row, because the decision is made
+                    # AFTER the 5m HH:55 candle closes at HH+1:00. The 1h
+                    # candle also closes then, so it is as-of AVAILABLE.
+                    # Excluding it at HH:55 was an overstrict audit-harness
+                    # error (found in deliberately expanded off-hour probes).
+                    f = f.loc[f.date + pd.Timedelta(hours=1)
+                              <= target + pd.Timedelta(minutes=5)]
                 btc_reduced[tf] = f.reset_index(drop=True)
             assert reduced["5m"].date.iloc[-1] == target
             asof_dk = FreqaiDataKitchen(model.config, live=False, pair=pair)
