@@ -30,8 +30,19 @@ PY
   identity="nbot-v6-m2r-jansep2026-$w""d-20261017"
   models="$folder/models/$identity"
   zips="$folder/backtest_results"
-  zipcount=$(find "$zips" -name '*.zip' -type f 2>/dev/null | wc -l)
-  modelcount=$(find "$models" -name '*_model.joblib' -type f 2>/dev/null | wc -l)
+  # Missing output directories are normal for not-yet-started 60/90/180d windows.
+  # With pipefail enabled, "find" on absent directory exits nonzero even
+  # though wc prints zero, so explicitly check existence first.
+  if [[ -d "$zips" ]]; then
+    zipcount=$(find "$zips" -name '*.zip' -type f | wc -l)
+  else
+    zipcount=0
+  fi
+  if [[ -d "$models" ]]; then
+    modelcount=$(find "$models" -name '*_model.joblib' -type f | wc -l)
+  else
+    modelcount=0
+  fi
   if [[ "$zipcount" == 1 && "$modelcount" == "$expected" ]]; then
     # A complete native archive may survive its interactive SSH launcher.
     # Validate actual native Freqtrade fields; do not invent EXIT_CODE=0.
