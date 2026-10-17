@@ -32,15 +32,31 @@ while [[ -n "$(docker ps -q)" ]]; do
   sleep 45
 done
 
-# Existing foreground launcher may take a few seconds after Docker termination
-# to write EXIT_CODE=124 or =0. No blind restart if process disappeared.
+# The original 30d Windows->SSH launch client was observed to terminate
+# while its Docker container continued training. Never fake an EXIT_CODE=0.
+# Recovery requires native ZIP+all 825 model artifacts; otherwise preserve
+# existing partial models and explicitly authorize an offline cache resume.
 state="$OUT/w30/run-state.txt"
-if [[ -f "$state" ]] && ! grep -q '^EXIT_CODE=' "$state"; then
+[[ -f "$state" ]] || fail "MISSING_30DAY_PRIOR_RUN_STATE"
+if ! grep -q '^EXIT_CODE=' "$state"; then
+  # Allow time for the original launcher's status write if it is still alive.
   for i in $(seq 1 12); do
     grep -q '^EXIT_CODE=' "$state" && break
     sleep 10
   done
-  grep -q '^EXIT_CODE=' "$state" || fail "PRIOR_30DAY_PROCESS_ENDED_WITHOUT_EXIT_MARKER; requires manual diagnosis"
+fi
+if ! grep -q '^EXIT_CODE=' "$state"; then
+  prior_zip_count=$(find "$OUT/w30/backtest_results" -name '*.zip' -type f 2>/dev/null | wc -l)
+  prior_model_count=$(find "$OUT/w30/models" -name '*_model.joblib' -type f 2>/dev/null | wc -l)
+  if [[ "$prior_zip_count" == 1 && "$prior_model_count" == 825 ]] &&
+     grep -q 'boundary_violations=0' "$OUT/w30/freqtrade.log" &&
+     ! grep -Eq 'boundary_violations=[1-9]' "$OUT/w30/freqtrade.log"; then
+    stamp "RECOVER_NATIVE_ARCHIVE_VERIFIED_WITHOUT_LAUNCHER_EXIT; full later native ZIP/statistics audit still required"
+    printf 'NATIVE_ARCHIVE_VERIFIED_WITHOUT_LAUNCHER_EXIT=1\n' >> "$state"
+  else
+    stamp "ORPHANED_LAUNCHER_INCOMPLETE; original model artifacts preserved; offline cached-model resume permitted after no Docker containers remain"
+    printf 'RESEARCH_RESUME_APPROVED_AFTER_ORPHAN=1\n' >> "$state"
+  fi
 fi
 stamp "Existing historical run status: $(tr '\n' ' ' < "$state")"
 
@@ -67,7 +83,349 @@ for attempt in $(seq 1 12); do
   complete=0
   for w in 30 60 90 180; do
     f="$OUT/w$w/run-state.txt"
-    if [[ -f "$f" ]] && grep -q '^EXIT_CODE=0$' "$f"; then
+    if [[ -f "$f" ]] && { grep -q '^EXIT_CODE=0
+      complete=$((complete+1))
+    fi
+  done
+  stamp "Validated-run-markers $complete/4 windows"
+  if [[ "$complete" == 4 ]]; then break; fi
+done
+for w in 30 60 90 180; do
+  f="$OUT/w$w/run-state.txt"
+  [[ -f "$f" ]] && { grep -q '^EXIT_CODE=0
+done
+stamp "ALL FOUR NATIVE HISTORICAL RUNS MARKED SUCCESS; now audit actual Freqtrade archives"
+
+python3 "$SOURCE/scripts/m2r_jansep_native_rolling_audit.py" \
+  --root "$OUT" \
+  --output "$OUT/jansep-native-four-window-audit.json" \
+  --completed-lookbacks 30 60 90 180 || fail "FULL_NATIVE_ARCHIVE_AUDIT_FAILED"
+stamp "Stage1 native archive audit PASSED (do not imply original non-AI baseline was executed)"
+
+# Stage 2: Metadata-only broader-universe discovery. This reads public index
+# keys but does NOT assume 2026 as-of listing/tradability or live spreads.
+timeout -s TERM -k 10 2400 python3 \
+  "$SOURCE/scripts/m2r_binance_historical_universe_inventory.py" \
+  --out "$OUT/binance-vision-2026-archived-usdt-symbol-months.json" \
+  --threads 8 || fail "HISTORIC_EXCHANGE_METADATA_INVENTORY_FAILED"
+stamp "Stage2 broader-market archive metadata inventory saved; no as-of contract eligibility certified"
+
+# Strictly as-of 8h 25-symbol liquidity/range DIAGNOSTIC.
+[[ -z "$(docker ps -q)" ]] || fail "OTHER_DOCKER_JOB_STARTED"
+mkdir -p "$OUT/selector"
+timeout -s TERM -k 15 1200 docker run --rm \
+  --name nbot-v6-jansep-historical-pair-diagnostic \
+  --network none --memory=1g --cpus=1 \
+  -v "$SOURCE:/research:ro" \
+  -v "$ROOT/january-2026-public-history-stage:/history:ro" \
+  -v "$OUT/selector:/results" \
+  --entrypoint python freqtradeorg/freqtrade:stable_freqai \
+  /research/scripts/m2r_asof_25market_selector_diagnostic.py \
+  --data /history/futures \
+  --config /research/user_data/config.json \
+  --output /results/25-market-8h-asof-ranking.json \
+  || fail "HISTORICAL_25_ONLY_RANKING_DIAGNOSTIC_FAILED"
+stamp "Stage2 25-original-markets as-of 8h diagnostic saved. FULL REAL 25-of-broader-market economic trial remains BLOCKED until historically eligible alternate market data/quotes and native matched trades are validated."
+
+stamp "FINITE_OFFLINE_RESEARCH_COORDINATOR_COMPLETE. No trading service, no model promotion, no paper/live, no futures order."
+ "$f" || grep -q '^NATIVE_ARCHIVE_VERIFIED_WITHOUT_LAUNCHER_EXIT=1
+      complete=$((complete+1))
+    fi
+  done
+  stamp "Validated-run-markers $complete/4 windows"
+  if [[ "$complete" == 4 ]]; then break; fi
+done
+for w in 30 60 90 180; do
+  f="$OUT/w$w/run-state.txt"
+  [[ -f "$f" ]] && grep -q '^EXIT_CODE=0$' "$f" || fail "HISTORICAL_WINDOW_INCOMPLETE_w$w"
+done
+stamp "ALL FOUR NATIVE HISTORICAL RUNS MARKED SUCCESS; now audit actual Freqtrade archives"
+
+python3 "$SOURCE/scripts/m2r_jansep_native_rolling_audit.py" \
+  --root "$OUT" \
+  --output "$OUT/jansep-native-four-window-audit.json" \
+  --completed-lookbacks 30 60 90 180 || fail "FULL_NATIVE_ARCHIVE_AUDIT_FAILED"
+stamp "Stage1 native archive audit PASSED (do not imply original non-AI baseline was executed)"
+
+# Stage 2: Metadata-only broader-universe discovery. This reads public index
+# keys but does NOT assume 2026 as-of listing/tradability or live spreads.
+timeout -s TERM -k 10 2400 python3 \
+  "$SOURCE/scripts/m2r_binance_historical_universe_inventory.py" \
+  --out "$OUT/binance-vision-2026-archived-usdt-symbol-months.json" \
+  --threads 8 || fail "HISTORIC_EXCHANGE_METADATA_INVENTORY_FAILED"
+stamp "Stage2 broader-market archive metadata inventory saved; no as-of contract eligibility certified"
+
+# Strictly as-of 8h 25-symbol liquidity/range DIAGNOSTIC.
+[[ -z "$(docker ps -q)" ]] || fail "OTHER_DOCKER_JOB_STARTED"
+mkdir -p "$OUT/selector"
+timeout -s TERM -k 15 1200 docker run --rm \
+  --name nbot-v6-jansep-historical-pair-diagnostic \
+  --network none --memory=1g --cpus=1 \
+  -v "$SOURCE:/research:ro" \
+  -v "$ROOT/january-2026-public-history-stage:/history:ro" \
+  -v "$OUT/selector:/results" \
+  --entrypoint python freqtradeorg/freqtrade:stable_freqai \
+  /research/scripts/m2r_asof_25market_selector_diagnostic.py \
+  --data /history/futures \
+  --config /research/user_data/config.json \
+  --output /results/25-market-8h-asof-ranking.json \
+  || fail "HISTORICAL_25_ONLY_RANKING_DIAGNOSTIC_FAILED"
+stamp "Stage2 25-original-markets as-of 8h diagnostic saved. FULL REAL 25-of-broader-market economic trial remains BLOCKED until historically eligible alternate market data/quotes and native matched trades are validated."
+
+stamp "FINITE_OFFLINE_RESEARCH_COORDINATOR_COMPLETE. No trading service, no model promotion, no paper/live, no futures order."
+ "$f"; }; then
+      complete=$((complete+1))
+    fi
+  done
+  stamp "Validated-run-markers $complete/4 windows"
+  if [[ "$complete" == 4 ]]; then break; fi
+done
+for w in 30 60 90 180; do
+  f="$OUT/w$w/run-state.txt"
+  [[ -f "$f" ]] && grep -q '^EXIT_CODE=0$' "$f" || fail "HISTORICAL_WINDOW_INCOMPLETE_w$w"
+done
+stamp "ALL FOUR NATIVE HISTORICAL RUNS MARKED SUCCESS; now audit actual Freqtrade archives"
+
+python3 "$SOURCE/scripts/m2r_jansep_native_rolling_audit.py" \
+  --root "$OUT" \
+  --output "$OUT/jansep-native-four-window-audit.json" \
+  --completed-lookbacks 30 60 90 180 || fail "FULL_NATIVE_ARCHIVE_AUDIT_FAILED"
+stamp "Stage1 native archive audit PASSED (do not imply original non-AI baseline was executed)"
+
+# Stage 2: Metadata-only broader-universe discovery. This reads public index
+# keys but does NOT assume 2026 as-of listing/tradability or live spreads.
+timeout -s TERM -k 10 2400 python3 \
+  "$SOURCE/scripts/m2r_binance_historical_universe_inventory.py" \
+  --out "$OUT/binance-vision-2026-archived-usdt-symbol-months.json" \
+  --threads 8 || fail "HISTORIC_EXCHANGE_METADATA_INVENTORY_FAILED"
+stamp "Stage2 broader-market archive metadata inventory saved; no as-of contract eligibility certified"
+
+# Strictly as-of 8h 25-symbol liquidity/range DIAGNOSTIC.
+[[ -z "$(docker ps -q)" ]] || fail "OTHER_DOCKER_JOB_STARTED"
+mkdir -p "$OUT/selector"
+timeout -s TERM -k 15 1200 docker run --rm \
+  --name nbot-v6-jansep-historical-pair-diagnostic \
+  --network none --memory=1g --cpus=1 \
+  -v "$SOURCE:/research:ro" \
+  -v "$ROOT/january-2026-public-history-stage:/history:ro" \
+  -v "$OUT/selector:/results" \
+  --entrypoint python freqtradeorg/freqtrade:stable_freqai \
+  /research/scripts/m2r_asof_25market_selector_diagnostic.py \
+  --data /history/futures \
+  --config /research/user_data/config.json \
+  --output /results/25-market-8h-asof-ranking.json \
+  || fail "HISTORICAL_25_ONLY_RANKING_DIAGNOSTIC_FAILED"
+stamp "Stage2 25-original-markets as-of 8h diagnostic saved. FULL REAL 25-of-broader-market economic trial remains BLOCKED until historically eligible alternate market data/quotes and native matched trades are validated."
+
+stamp "FINITE_OFFLINE_RESEARCH_COORDINATOR_COMPLETE. No trading service, no model promotion, no paper/live, no futures order."
+ "$f" || grep -q '^NATIVE_ARCHIVE_VERIFIED_WITHOUT_LAUNCHER_EXIT=1
+done
+stamp "ALL FOUR NATIVE HISTORICAL RUNS MARKED SUCCESS; now audit actual Freqtrade archives"
+
+python3 "$SOURCE/scripts/m2r_jansep_native_rolling_audit.py" \
+  --root "$OUT" \
+  --output "$OUT/jansep-native-four-window-audit.json" \
+  --completed-lookbacks 30 60 90 180 || fail "FULL_NATIVE_ARCHIVE_AUDIT_FAILED"
+stamp "Stage1 native archive audit PASSED (do not imply original non-AI baseline was executed)"
+
+# Stage 2: Metadata-only broader-universe discovery. This reads public index
+# keys but does NOT assume 2026 as-of listing/tradability or live spreads.
+timeout -s TERM -k 10 2400 python3 \
+  "$SOURCE/scripts/m2r_binance_historical_universe_inventory.py" \
+  --out "$OUT/binance-vision-2026-archived-usdt-symbol-months.json" \
+  --threads 8 || fail "HISTORIC_EXCHANGE_METADATA_INVENTORY_FAILED"
+stamp "Stage2 broader-market archive metadata inventory saved; no as-of contract eligibility certified"
+
+# Strictly as-of 8h 25-symbol liquidity/range DIAGNOSTIC.
+[[ -z "$(docker ps -q)" ]] || fail "OTHER_DOCKER_JOB_STARTED"
+mkdir -p "$OUT/selector"
+timeout -s TERM -k 15 1200 docker run --rm \
+  --name nbot-v6-jansep-historical-pair-diagnostic \
+  --network none --memory=1g --cpus=1 \
+  -v "$SOURCE:/research:ro" \
+  -v "$ROOT/january-2026-public-history-stage:/history:ro" \
+  -v "$OUT/selector:/results" \
+  --entrypoint python freqtradeorg/freqtrade:stable_freqai \
+  /research/scripts/m2r_asof_25market_selector_diagnostic.py \
+  --data /history/futures \
+  --config /research/user_data/config.json \
+  --output /results/25-market-8h-asof-ranking.json \
+  || fail "HISTORICAL_25_ONLY_RANKING_DIAGNOSTIC_FAILED"
+stamp "Stage2 25-original-markets as-of 8h diagnostic saved. FULL REAL 25-of-broader-market economic trial remains BLOCKED until historically eligible alternate market data/quotes and native matched trades are validated."
+
+stamp "FINITE_OFFLINE_RESEARCH_COORDINATOR_COMPLETE. No trading service, no model promotion, no paper/live, no futures order."
+ "$f" || grep -q '^NATIVE_ARCHIVE_VERIFIED_WITHOUT_LAUNCHER_EXIT=1
+      complete=$((complete+1))
+    fi
+  done
+  stamp "Validated-run-markers $complete/4 windows"
+  if [[ "$complete" == 4 ]]; then break; fi
+done
+for w in 30 60 90 180; do
+  f="$OUT/w$w/run-state.txt"
+  [[ -f "$f" ]] && grep -q '^EXIT_CODE=0$' "$f" || fail "HISTORICAL_WINDOW_INCOMPLETE_w$w"
+done
+stamp "ALL FOUR NATIVE HISTORICAL RUNS MARKED SUCCESS; now audit actual Freqtrade archives"
+
+python3 "$SOURCE/scripts/m2r_jansep_native_rolling_audit.py" \
+  --root "$OUT" \
+  --output "$OUT/jansep-native-four-window-audit.json" \
+  --completed-lookbacks 30 60 90 180 || fail "FULL_NATIVE_ARCHIVE_AUDIT_FAILED"
+stamp "Stage1 native archive audit PASSED (do not imply original non-AI baseline was executed)"
+
+# Stage 2: Metadata-only broader-universe discovery. This reads public index
+# keys but does NOT assume 2026 as-of listing/tradability or live spreads.
+timeout -s TERM -k 10 2400 python3 \
+  "$SOURCE/scripts/m2r_binance_historical_universe_inventory.py" \
+  --out "$OUT/binance-vision-2026-archived-usdt-symbol-months.json" \
+  --threads 8 || fail "HISTORIC_EXCHANGE_METADATA_INVENTORY_FAILED"
+stamp "Stage2 broader-market archive metadata inventory saved; no as-of contract eligibility certified"
+
+# Strictly as-of 8h 25-symbol liquidity/range DIAGNOSTIC.
+[[ -z "$(docker ps -q)" ]] || fail "OTHER_DOCKER_JOB_STARTED"
+mkdir -p "$OUT/selector"
+timeout -s TERM -k 15 1200 docker run --rm \
+  --name nbot-v6-jansep-historical-pair-diagnostic \
+  --network none --memory=1g --cpus=1 \
+  -v "$SOURCE:/research:ro" \
+  -v "$ROOT/january-2026-public-history-stage:/history:ro" \
+  -v "$OUT/selector:/results" \
+  --entrypoint python freqtradeorg/freqtrade:stable_freqai \
+  /research/scripts/m2r_asof_25market_selector_diagnostic.py \
+  --data /history/futures \
+  --config /research/user_data/config.json \
+  --output /results/25-market-8h-asof-ranking.json \
+  || fail "HISTORICAL_25_ONLY_RANKING_DIAGNOSTIC_FAILED"
+stamp "Stage2 25-original-markets as-of 8h diagnostic saved. FULL REAL 25-of-broader-market economic trial remains BLOCKED until historically eligible alternate market data/quotes and native matched trades are validated."
+
+stamp "FINITE_OFFLINE_RESEARCH_COORDINATOR_COMPLETE. No trading service, no model promotion, no paper/live, no futures order."
+ "$f"; }; then
+      complete=$((complete+1))
+    fi
+  done
+  stamp "Validated-run-markers $complete/4 windows"
+  if [[ "$complete" == 4 ]]; then break; fi
+done
+for w in 30 60 90 180; do
+  f="$OUT/w$w/run-state.txt"
+  [[ -f "$f" ]] && grep -q '^EXIT_CODE=0$' "$f" || fail "HISTORICAL_WINDOW_INCOMPLETE_w$w"
+done
+stamp "ALL FOUR NATIVE HISTORICAL RUNS MARKED SUCCESS; now audit actual Freqtrade archives"
+
+python3 "$SOURCE/scripts/m2r_jansep_native_rolling_audit.py" \
+  --root "$OUT" \
+  --output "$OUT/jansep-native-four-window-audit.json" \
+  --completed-lookbacks 30 60 90 180 || fail "FULL_NATIVE_ARCHIVE_AUDIT_FAILED"
+stamp "Stage1 native archive audit PASSED (do not imply original non-AI baseline was executed)"
+
+# Stage 2: Metadata-only broader-universe discovery. This reads public index
+# keys but does NOT assume 2026 as-of listing/tradability or live spreads.
+timeout -s TERM -k 10 2400 python3 \
+  "$SOURCE/scripts/m2r_binance_historical_universe_inventory.py" \
+  --out "$OUT/binance-vision-2026-archived-usdt-symbol-months.json" \
+  --threads 8 || fail "HISTORIC_EXCHANGE_METADATA_INVENTORY_FAILED"
+stamp "Stage2 broader-market archive metadata inventory saved; no as-of contract eligibility certified"
+
+# Strictly as-of 8h 25-symbol liquidity/range DIAGNOSTIC.
+[[ -z "$(docker ps -q)" ]] || fail "OTHER_DOCKER_JOB_STARTED"
+mkdir -p "$OUT/selector"
+timeout -s TERM -k 15 1200 docker run --rm \
+  --name nbot-v6-jansep-historical-pair-diagnostic \
+  --network none --memory=1g --cpus=1 \
+  -v "$SOURCE:/research:ro" \
+  -v "$ROOT/january-2026-public-history-stage:/history:ro" \
+  -v "$OUT/selector:/results" \
+  --entrypoint python freqtradeorg/freqtrade:stable_freqai \
+  /research/scripts/m2r_asof_25market_selector_diagnostic.py \
+  --data /history/futures \
+  --config /research/user_data/config.json \
+  --output /results/25-market-8h-asof-ranking.json \
+  || fail "HISTORICAL_25_ONLY_RANKING_DIAGNOSTIC_FAILED"
+stamp "Stage2 25-original-markets as-of 8h diagnostic saved. FULL REAL 25-of-broader-market economic trial remains BLOCKED until historically eligible alternate market data/quotes and native matched trades are validated."
+
+stamp "FINITE_OFFLINE_RESEARCH_COORDINATOR_COMPLETE. No trading service, no model promotion, no paper/live, no futures order."
+ "$f"; } || fail "HISTORICAL_WINDOW_INCOMPLETE_w$w"
+done
+stamp "ALL FOUR NATIVE HISTORICAL RUNS MARKED SUCCESS; now audit actual Freqtrade archives"
+
+python3 "$SOURCE/scripts/m2r_jansep_native_rolling_audit.py" \
+  --root "$OUT" \
+  --output "$OUT/jansep-native-four-window-audit.json" \
+  --completed-lookbacks 30 60 90 180 || fail "FULL_NATIVE_ARCHIVE_AUDIT_FAILED"
+stamp "Stage1 native archive audit PASSED (do not imply original non-AI baseline was executed)"
+
+# Stage 2: Metadata-only broader-universe discovery. This reads public index
+# keys but does NOT assume 2026 as-of listing/tradability or live spreads.
+timeout -s TERM -k 10 2400 python3 \
+  "$SOURCE/scripts/m2r_binance_historical_universe_inventory.py" \
+  --out "$OUT/binance-vision-2026-archived-usdt-symbol-months.json" \
+  --threads 8 || fail "HISTORIC_EXCHANGE_METADATA_INVENTORY_FAILED"
+stamp "Stage2 broader-market archive metadata inventory saved; no as-of contract eligibility certified"
+
+# Strictly as-of 8h 25-symbol liquidity/range DIAGNOSTIC.
+[[ -z "$(docker ps -q)" ]] || fail "OTHER_DOCKER_JOB_STARTED"
+mkdir -p "$OUT/selector"
+timeout -s TERM -k 15 1200 docker run --rm \
+  --name nbot-v6-jansep-historical-pair-diagnostic \
+  --network none --memory=1g --cpus=1 \
+  -v "$SOURCE:/research:ro" \
+  -v "$ROOT/january-2026-public-history-stage:/history:ro" \
+  -v "$OUT/selector:/results" \
+  --entrypoint python freqtradeorg/freqtrade:stable_freqai \
+  /research/scripts/m2r_asof_25market_selector_diagnostic.py \
+  --data /history/futures \
+  --config /research/user_data/config.json \
+  --output /results/25-market-8h-asof-ranking.json \
+  || fail "HISTORICAL_25_ONLY_RANKING_DIAGNOSTIC_FAILED"
+stamp "Stage2 25-original-markets as-of 8h diagnostic saved. FULL REAL 25-of-broader-market economic trial remains BLOCKED until historically eligible alternate market data/quotes and native matched trades are validated."
+
+stamp "FINITE_OFFLINE_RESEARCH_COORDINATOR_COMPLETE. No trading service, no model promotion, no paper/live, no futures order."
+ "$f" || grep -q '^NATIVE_ARCHIVE_VERIFIED_WITHOUT_LAUNCHER_EXIT=1
+      complete=$((complete+1))
+    fi
+  done
+  stamp "Validated-run-markers $complete/4 windows"
+  if [[ "$complete" == 4 ]]; then break; fi
+done
+for w in 30 60 90 180; do
+  f="$OUT/w$w/run-state.txt"
+  [[ -f "$f" ]] && grep -q '^EXIT_CODE=0$' "$f" || fail "HISTORICAL_WINDOW_INCOMPLETE_w$w"
+done
+stamp "ALL FOUR NATIVE HISTORICAL RUNS MARKED SUCCESS; now audit actual Freqtrade archives"
+
+python3 "$SOURCE/scripts/m2r_jansep_native_rolling_audit.py" \
+  --root "$OUT" \
+  --output "$OUT/jansep-native-four-window-audit.json" \
+  --completed-lookbacks 30 60 90 180 || fail "FULL_NATIVE_ARCHIVE_AUDIT_FAILED"
+stamp "Stage1 native archive audit PASSED (do not imply original non-AI baseline was executed)"
+
+# Stage 2: Metadata-only broader-universe discovery. This reads public index
+# keys but does NOT assume 2026 as-of listing/tradability or live spreads.
+timeout -s TERM -k 10 2400 python3 \
+  "$SOURCE/scripts/m2r_binance_historical_universe_inventory.py" \
+  --out "$OUT/binance-vision-2026-archived-usdt-symbol-months.json" \
+  --threads 8 || fail "HISTORIC_EXCHANGE_METADATA_INVENTORY_FAILED"
+stamp "Stage2 broader-market archive metadata inventory saved; no as-of contract eligibility certified"
+
+# Strictly as-of 8h 25-symbol liquidity/range DIAGNOSTIC.
+[[ -z "$(docker ps -q)" ]] || fail "OTHER_DOCKER_JOB_STARTED"
+mkdir -p "$OUT/selector"
+timeout -s TERM -k 15 1200 docker run --rm \
+  --name nbot-v6-jansep-historical-pair-diagnostic \
+  --network none --memory=1g --cpus=1 \
+  -v "$SOURCE:/research:ro" \
+  -v "$ROOT/january-2026-public-history-stage:/history:ro" \
+  -v "$OUT/selector:/results" \
+  --entrypoint python freqtradeorg/freqtrade:stable_freqai \
+  /research/scripts/m2r_asof_25market_selector_diagnostic.py \
+  --data /history/futures \
+  --config /research/user_data/config.json \
+  --output /results/25-market-8h-asof-ranking.json \
+  || fail "HISTORICAL_25_ONLY_RANKING_DIAGNOSTIC_FAILED"
+stamp "Stage2 25-original-markets as-of 8h diagnostic saved. FULL REAL 25-of-broader-market economic trial remains BLOCKED until historically eligible alternate market data/quotes and native matched trades are validated."
+
+stamp "FINITE_OFFLINE_RESEARCH_COORDINATOR_COMPLETE. No trading service, no model promotion, no paper/live, no futures order."
+ "$f"; }; then
       complete=$((complete+1))
     fi
   done
