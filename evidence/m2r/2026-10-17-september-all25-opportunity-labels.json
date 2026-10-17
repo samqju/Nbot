@@ -1,0 +1,343 @@
+{
+  "pairs": 25,
+  "window_utc": [
+    "2026-09-01",
+    "2026-10-01"
+  ],
+  "total_market_candles": 216000,
+  "all_four_setup_types_overlapping": {
+    "opportunities": 29033,
+    "hypothetical_after_cost_win_pct": 32.332,
+    "avg_hypothetical_net_pct": -0.246,
+    "median_hypothetical_net_pct": -0.2691,
+    "exit_reasons": {
+      "time": 26701,
+      "stop_first": 2064,
+      "target": 268
+    }
+  },
+  "by_setup": {
+    "breakout_long": {
+      "opportunities": 8991,
+      "hypothetical_after_cost_win_pct": 34.368,
+      "avg_hypothetical_net_pct": -0.1842,
+      "median_hypothetical_net_pct": -0.2738,
+      "exit_reasons": {
+        "time": 7987,
+        "stop_first": 839,
+        "target": 165
+      }
+    },
+    "breakout_short": {
+      "opportunities": 6346,
+      "hypothetical_after_cost_win_pct": 27.655,
+      "avg_hypothetical_net_pct": -0.3676,
+      "median_hypothetical_net_pct": -0.3317,
+      "exit_reasons": {
+        "time": 5950,
+        "stop_first": 369,
+        "target": 27
+      }
+    },
+    "pullback_long": {
+      "opportunities": 7124,
+      "hypothetical_after_cost_win_pct": 34.686,
+      "avg_hypothetical_net_pct": -0.1988,
+      "median_hypothetical_net_pct": -0.2273,
+      "exit_reasons": {
+        "time": 6545,
+        "stop_first": 525,
+        "target": 54
+      }
+    },
+    "pullback_short": {
+      "opportunities": 6572,
+      "hypothetical_after_cost_win_pct": 31.512,
+      "avg_hypothetical_net_pct": -0.2642,
+      "median_hypothetical_net_pct": -0.2512,
+      "exit_reasons": {
+        "time": 6219,
+        "stop_first": 331,
+        "target": 22
+      }
+    }
+  },
+  "by_pair": {
+    "BTC/USDT:USDT": {
+      "opportunities": 1148,
+      "hypothetical_after_cost_win_pct": 19.512,
+      "avg_hypothetical_net_pct": -0.2216,
+      "median_hypothetical_net_pct": -0.2395,
+      "exit_reasons": {
+        "time": 1146,
+        "stop_first": 2
+      }
+    },
+    "ETH/USDT:USDT": {
+      "opportunities": 1099,
+      "hypothetical_after_cost_win_pct": 25.023,
+      "avg_hypothetical_net_pct": -0.2427,
+      "median_hypothetical_net_pct": -0.2507,
+      "exit_reasons": {
+        "time": 1087,
+        "stop_first": 11,
+        "target": 1
+      }
+    },
+    "SOL/USDT:USDT": {
+      "opportunities": 1063,
+      "hypothetical_after_cost_win_pct": 28.598,
+      "avg_hypothetical_net_pct": -0.2723,
+      "median_hypothetical_net_pct": -0.2769,
+      "exit_reasons": {
+        "time": 1047,
+        "stop_first": 16
+      }
+    },
+    "BNB/USDT:USDT": {
+      "opportunities": 1259,
+      "hypothetical_after_cost_win_pct": 25.655,
+      "avg_hypothetical_net_pct": -0.2263,
+      "median_hypothetical_net_pct": -0.2414,
+      "exit_reasons": {
+        "time": 1256,
+        "stop_first": 3
+      }
+    },
+    "XRP/USDT:USDT": {
+      "opportunities": 1156,
+      "hypothetical_after_cost_win_pct": 32.007,
+      "avg_hypothetical_net_pct": -0.2381,
+      "median_hypothetical_net_pct": -0.2458,
+      "exit_reasons": {
+        "time": 1126,
+        "stop_first": 30
+      }
+    },
+    "ADA/USDT:USDT": {
+      "opportunities": 1137,
+      "hypothetical_after_cost_win_pct": 32.718,
+      "avg_hypothetical_net_pct": -0.3125,
+      "median_hypothetical_net_pct": -0.3298,
+      "exit_reasons": {
+        "time": 1071,
+        "stop_first": 65,
+        "target": 1
+      }
+    },
+    "LINK/USDT:USDT": {
+      "opportunities": 1253,
+      "hypothetical_after_cost_win_pct": 31.285,
+      "avg_hypothetical_net_pct": -0.1943,
+      "median_hypothetical_net_pct": -0.2715,
+      "exit_reasons": {
+        "time": 1203,
+        "stop_first": 36,
+        "target": 14
+      }
+    },
+    "DOGE/USDT:USDT": {
+      "opportunities": 1118,
+      "hypothetical_after_cost_win_pct": 33.631,
+      "avg_hypothetical_net_pct": -0.1916,
+      "median_hypothetical_net_pct": -0.2487,
+      "exit_reasons": {
+        "time": 1078,
+        "stop_first": 34,
+        "target": 6
+      }
+    },
+    "AVAX/USDT:USDT": {
+      "opportunities": 1154,
+      "hypothetical_after_cost_win_pct": 33.016,
+      "avg_hypothetical_net_pct": -0.2091,
+      "median_hypothetical_net_pct": -0.277,
+      "exit_reasons": {
+        "time": 1072,
+        "stop_first": 69,
+        "target": 13
+      }
+    },
+    "DOT/USDT:USDT": {
+      "opportunities": 1193,
+      "hypothetical_after_cost_win_pct": 37.552,
+      "avg_hypothetical_net_pct": -0.2436,
+      "median_hypothetical_net_pct": -0.3142,
+      "exit_reasons": {
+        "time": 1092,
+        "stop_first": 94,
+        "target": 7
+      }
+    },
+    "LTC/USDT:USDT": {
+      "opportunities": 1113,
+      "hypothetical_after_cost_win_pct": 30.728,
+      "avg_hypothetical_net_pct": -0.2597,
+      "median_hypothetical_net_pct": -0.2647,
+      "exit_reasons": {
+        "time": 1070,
+        "stop_first": 34,
+        "target": 9
+      }
+    },
+    "BCH/USDT:USDT": {
+      "opportunities": 1113,
+      "hypothetical_after_cost_win_pct": 32.075,
+      "avg_hypothetical_net_pct": -0.2196,
+      "median_hypothetical_net_pct": -0.3041,
+      "exit_reasons": {
+        "time": 1045,
+        "stop_first": 55,
+        "target": 13
+      }
+    },
+    "NEAR/USDT:USDT": {
+      "opportunities": 1113,
+      "hypothetical_after_cost_win_pct": 37.916,
+      "avg_hypothetical_net_pct": -0.2863,
+      "median_hypothetical_net_pct": -0.4605,
+      "exit_reasons": {
+        "time": 848,
+        "stop_first": 238,
+        "target": 27
+      }
+    },
+    "UNI/USDT:USDT": {
+      "opportunities": 1158,
+      "hypothetical_after_cost_win_pct": 37.651,
+      "avg_hypothetical_net_pct": -0.2663,
+      "median_hypothetical_net_pct": -0.3699,
+      "exit_reasons": {
+        "time": 963,
+        "stop_first": 175,
+        "target": 20
+      }
+    },
+    "APT/USDT:USDT": {
+      "opportunities": 1154,
+      "hypothetical_after_cost_win_pct": 35.962,
+      "avg_hypothetical_net_pct": -0.2878,
+      "median_hypothetical_net_pct": -0.3587,
+      "exit_reasons": {
+        "time": 987,
+        "stop_first": 148,
+        "target": 19
+      }
+    },
+    "ARB/USDT:USDT": {
+      "opportunities": 1137,
+      "hypothetical_after_cost_win_pct": 38.61,
+      "avg_hypothetical_net_pct": -0.2565,
+      "median_hypothetical_net_pct": -0.4195,
+      "exit_reasons": {
+        "time": 825,
+        "stop_first": 269,
+        "target": 43
+      }
+    },
+    "OP/USDT:USDT": {
+      "opportunities": 1208,
+      "hypothetical_after_cost_win_pct": 36.755,
+      "avg_hypothetical_net_pct": -0.3063,
+      "median_hypothetical_net_pct": -0.3565,
+      "exit_reasons": {
+        "time": 1049,
+        "stop_first": 152,
+        "target": 7
+      }
+    },
+    "SUI/USDT:USDT": {
+      "opportunities": 1195,
+      "hypothetical_after_cost_win_pct": 35.481,
+      "avg_hypothetical_net_pct": -0.2704,
+      "median_hypothetical_net_pct": -0.3147,
+      "exit_reasons": {
+        "time": 1067,
+        "stop_first": 111,
+        "target": 17
+      }
+    },
+    "TRX/USDT:USDT": {
+      "opportunities": 1363,
+      "hypothetical_after_cost_win_pct": 15.407,
+      "avg_hypothetical_net_pct": -0.1733,
+      "median_hypothetical_net_pct": -0.1921,
+      "exit_reasons": {
+        "time": 1363
+      }
+    },
+    "ETC/USDT:USDT": {
+      "opportunities": 1089,
+      "hypothetical_after_cost_win_pct": 31.221,
+      "avg_hypothetical_net_pct": -0.3187,
+      "median_hypothetical_net_pct": -0.3454,
+      "exit_reasons": {
+        "time": 1016,
+        "stop_first": 68,
+        "target": 5
+      }
+    },
+    "ATOM/USDT:USDT": {
+      "opportunities": 1101,
+      "hypothetical_after_cost_win_pct": 35.422,
+      "avg_hypothetical_net_pct": -0.242,
+      "median_hypothetical_net_pct": -0.2725,
+      "exit_reasons": {
+        "time": 1057,
+        "stop_first": 44
+      }
+    },
+    "FIL/USDT:USDT": {
+      "opportunities": 1097,
+      "hypothetical_after_cost_win_pct": 42.024,
+      "avg_hypothetical_net_pct": -0.117,
+      "median_hypothetical_net_pct": -0.1999,
+      "exit_reasons": {
+        "time": 961,
+        "stop_first": 109,
+        "target": 27
+      }
+    },
+    "INJ/USDT:USDT": {
+      "opportunities": 1183,
+      "hypothetical_after_cost_win_pct": 35.334,
+      "avg_hypothetical_net_pct": -0.311,
+      "median_hypothetical_net_pct": -0.3905,
+      "exit_reasons": {
+        "time": 1001,
+        "stop_first": 163,
+        "target": 19
+      }
+    },
+    "XLM/USDT:USDT": {
+      "opportunities": 1197,
+      "hypothetical_after_cost_win_pct": 33.918,
+      "avg_hypothetical_net_pct": -0.25,
+      "median_hypothetical_net_pct": -0.2554,
+      "exit_reasons": {
+        "time": 1135,
+        "stop_first": 57,
+        "target": 5
+      }
+    },
+    "HBAR/USDT:USDT": {
+      "opportunities": 1232,
+      "hypothetical_after_cost_win_pct": 33.929,
+      "avg_hypothetical_net_pct": -0.246,
+      "median_hypothetical_net_pct": -0.2775,
+      "exit_reasons": {
+        "time": 1136,
+        "stop_first": 81,
+        "target": 15
+      }
+    }
+  },
+  "caution": [
+    "Training LABEL outcomes from future candles, not prices known when placing a trade.",
+    "Every setup is a separate hypothetical opportunity; duplicate times across pairs overlap.",
+    "Not executable positions, wallet returns or proof of investment edge.",
+    "Stop-first intrabar assumption, next OPEN entry, after-cost reserve; no real order book.",
+    "October and September are already examined research periods, NOT untouched final validation.",
+    "Rolling 30-day training must purge labels whose exit times exceed its cutoff."
+  ]
+}
