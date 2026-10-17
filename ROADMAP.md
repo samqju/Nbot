@@ -126,20 +126,24 @@ Work:
 ### Build checklist — distinguish code existence from earned approval
 
 **Stage A — Frozen candidate setups + after-cost outcome labels (implement offline first)**
-- [ ] Define **causal** breakout and pullback candidates independently, each with LONG/SHORT variants; features available at the decision candle close, actual entry assumed at **next candle OPEN**, no trading on known future fills.
-- [ ] Create a transparent **"what if we had traded?" outcome** for every candidate, including setups the real bot skipped. Include fee per side, extra assumed spread/slippage, conservative funding buffer, a clear holding horizon, 2% stop and 5% target; when a 5-minute candle touches both stop and target, assume **the losing stop happened first**.
-- [ ] Never use a future outcome as a model input. Last horizon rows and unavailable future prices have **no label**, not zero profit. Chronological train/test splits must **purge overlapping future-outcome periods**, and model features must be past-only. Do not interpret this simplified exit model as real execution.
-- [ ] Build isolated offline tests for fees, long/short symmetry, stop/target ambiguity, zero/NaN data, no-entry/no-trade, out-of-history samples, and future-data prefix consistency.
+- [x] Define causal breakout and EMA pullback **LONG/SHORT** as four frozen setups with past-only indicators; hypothetical entry at **next 5-minute OPEN**. Implemented in [research opportunity library](user_data/strategies/nbot_trade_outcome.py).
+- [x] Label every historical setup including rejected/unexecuted choices: 12-bar 60-minute horizon, 2% stop/5% target, adverse gap open, stop-first intrabar, **0.05% exchange fee + 0.05% extra slippage each side + 0.01% conservative funding reserve** (0.21% modeled roundtrip), all labeled **assumptions**, not observed Binance fills. [M2R explanation](M2R_RESEARCH.md).
+- [x] Keep future outcomes solely in FreqAI `&-trade_net_return` training label, never a `%-` feature; missing/nonsetup/final-horizon outcomes are **NaN**. Offline [purged chronological split](scripts/m2r_purged_split.py) removes training samples whose trade exits enter the future test window.
+- [ ] Independently certify the **actual FreqAI rolling train/test boundary purge**, all-pair model lookahead and realistic fill/stop accounting. The offline split tool is **not automatically integrated** into FreqAI's training internals.
+- [x] Add [after-cost/exit/router tests](tests/test_m2r_trade_learning.py) and [split tests](tests/test_m2r_purged_split.py), covering stop-first, next open, fee/funding/slippage, invalid data, trailing missing labels, historical model safety, market regimes and no-trade fallback. Unit tests exercise code contracts only.
 
 **Stage B — After-cost LightGBM Challenger (research only)**
-- [ ] Preserve the original `NbotV6` and non-ML control unchanged; implement a separate FreqAI-compatible **after-cost target** with a unique model identifier and a runmode lock that forbids any real or persistent paper trading.
+- [x] Keep original `NbotV6` and `NbotV6NoML` unchanged; introduce [historical-only after-cost LightGBM Challenger](user_data/strategies/NbotV6TradeOutcomeResearch.py) and [separate no-key FreqAI config](user_data/config.m2r-trade-outcome.json). Code rejects paper/live startup, has 2% stop, 5% ROI target and approximated 12-candle time exit.
+- [x] Run **real official Freqtrade BTC-only FreqAI smoke** on Oct 1–8 (already-inspected data). Training/strategy load **exit 0**; one simulated BTC trade **−1.104 USDT**, holding **60 minutes**. This is only a technical proof, NOT model edge or M3.
 - [ ] Compare the Challenger to original AI, no-ML and NO TRADE with the **same markets, periods, stops, risk and realistic fee assumptions**. Do not evaluate on the same days used to choose thresholds or parameters.
 - [ ] Reject the Challenger if out-of-sample net profit, drawdown, turnover, calibration or costs fail predeclared criteria. **Retraining is not permission to deploy.**
 
 **Stage C — Bounded strategy selection / regime routing (do not activate early)**
-- [ ] Maintain a small, frozen library of setups (initially trend breakout and EMA pullback), not arbitrary dynamically generated code. Train candidate-specific success/after-cost scores or compare separate fixed models.
-- [ ] Build a deterministic offline **one-action chooser**: compare eligible candidates, predicted net after-cost reward, liquidity, market regime, risk/stale-model filters, and **NO TRADE**. Route only among *already tested* candidates. Never select by the actual future outcomes.
-- [ ] Test zero-qualified choices, multiple candidates, stale or missing scores, wrong cost assumptions, direction clashes, and maximum one winner per time step. The router cannot alter strategy code or automatically promote a new model.
+- [x] Freeze four candidate setup labels (breakout/pullback × LONG/SHORT), no auto-invented strategy code. The [September all-25 offline audit](evidence/m2r/2026-10-17-september-all25-opportunity-labels.json) found **29,033 hypothetical setup outcomes** across 216,000 market candles; only **32.332%** positive after assumptions, mean hypothetical net **−0.246% per overlapping opportunity**. These are not portfolio trades/returns.
+- [ ] Train and independently validate **candidate-specific** estimated after-cost scores under a fair as-of protocol; the first one-target Challenger prioritizes breakouts when they coincide with pullbacks.
+- [x] Code an [offline deterministic research-only router](user_data/strategies/nbot_strategy_router.py) accepting **externally provided, as-of predicted** after-cost scores. It checks known candidate names, current optional market regime (up/down/range), risk/uncertainty, model age, liquidity and extra cost stress; returns **one** candidate or **NO TRADE**, never an actual order.
+- [ ] Connect only **approved candidate-specific models** to any runtime router after separate M2/M3 validation; nothing here auto-switches live or paper positions.
+- [x] Test multiple candidate rankings, zero-qualified NO TRADE, stale/unready model, NaNs, insufficient liquidity, unfavorable stress, sideways regime and opposing regime/direction; router has no Freqtrade order placement, model replacement or promotion permissions.
 - [ ] Only after separate multi-regime forward tests can governance consider promoting a Champion, with owner-controlled rollback; default is **NO TRADE** on uncertainty or failure.
 
 **Non-negotiable existing safety gates**
@@ -148,6 +152,8 @@ Work:
 - [ ] **M5A intelligent universe selector:** still must sample markets every **8 hours**, find up to **25** eligible/fundable/liquid candidates with model-history readiness, limit churn, and protect open positions. The existing fixed 25-coin comparison does **not** substitute for this.
 - [ ] **M4 virtual paper up to 20 positions:** source-level future paper configuration already exists but is **not commissioned**. A 20-slot cap refers to paper-research **only**; real-money one-position lock remains.
 - [ ] **M7 live funds:** **LOCKED**, requiring separate explicit owner approval, independent M2–M6 quality and safety evidence, and no changes to legacy V5 VPSes.
+
+**Evidence and state:** [M2R_RESEARCH.md](M2R_RESEARCH.md) documents the 29,033 hypothetical September opportunities, actual one-BTC FreqAI smoke (−1.104 USDT), conservative assumptions and all remaining safety/quality gates. The 25-pair September and October model comparisons still describe the *original* AI and non-ML approaches, NOT proof of this new Challenger. No untouched multi-regime trial yet.
 
 ### Acceptance checkpoints
 **A code written + unit tests pass ≠ model trained ≠ historical profits ≠ accepted trading system.** Every implementation must be compared against non-ML and NO TRADE, with explicit funding, trading-cost and lookahead limitations. It is acceptable—and scientifically important—to conclude "no edge; NO TRADE."
@@ -384,6 +390,7 @@ V6 may become the default/main development line when **M0+M1** pass and an owner
 | M0 clean tree | COMPLETE — source isolation only | Clean-tree commit 3e642508; V6 CI run 38906351380 passed both jobs (offline + official strategy discovery) |
 | M1 real FreqAI backtest | **TECHNICAL COMPLETE**: 25/25 full-history fit + independent 7-day 34-trade backtest; **-135.64 USDT** | M2 fee/spread/funding/slippage baseline, M3 broader held-out replay; no deployment |
 | M2 honest baseline | **RESEARCH EXTENDED TO ALL SEPTEMBER — NO-GO; ACCEPTANCE FAILED**. Sep: **125 actual LightGBM fits**, AI 137 trades **−444.980 USDT**, no-ML 163 trades **−242.894 USDT**, no-trade **0**; both worse after doubled fees; no-ML in a position **99.641%** of month. Prior Oct-week checks and 65-trade funding/depth evidence retained | **BLOCKERS:** no precise historical executable bid/ask fills (October depth had 17/130 stale), official `has_bias=Yes` AI warning, two Sep month-boundary funding differences, no proven edge. Do not advance M3/M4 |
+| M2R after-cost AI + strategy router (offline) | **SOURCE PROTOTYPE + BTC HISTORICAL SMOKE COMPLETE, NOT ACCEPTED**. Four setup labels, 29,033 Sept hypothetical outcomes, LightGBM BTC 1 trade −1.104 USDT, fail-closed offline regime router and purged split tests. | Train candidate-specific validated models, audit FreqAI label boundary, full after-cost holdouts and M2 leak/fill fixes; NO PAPER/LIVE |
 | M3 FreqAI edge | NOT STARTED | Multi-period walk-forward results |
 | M4 forward dry-run VPS | NOT STARTED; research mode source implemented | Capacity, two-profile official checks, independent forward-paper report |
 | M5 expand and port selected features | DEFERRED | M3/M4 evidence |
