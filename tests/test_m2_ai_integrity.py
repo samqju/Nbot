@@ -126,6 +126,16 @@ class M2AIIntegrityTests(unittest.TestCase):
         base["is_short"] = False
         self.assertEqual(funding.expected_funding(base, records)["calculated_usdt"], -0.02)
 
+    def test_zero_minute_stop_is_valid_and_has_no_funding_event(self):
+        tick = "2026-09-10T00:30:00+00:00"
+        row = {
+            "open_date": tick, "close_date": tick,
+            "amount": 2.0, "is_short": True, "funding_fees": 0.0
+        }
+        got = funding.expected_funding(row, [])
+        self.assertEqual(got["event_count"], 0)
+        self.assertEqual(got["calculated_usdt"], 0.0)
+
     def test_funding_url_safety_filters(self):
         with self.assertRaisesRegex(ValueError, "Unsupported"):
             funding.symbol_from_pair("BTC/USDT")
