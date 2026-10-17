@@ -118,6 +118,14 @@ A separate **already examined September–October** 25-market funding/mark/candl
 
 **No Jan-onward 30/60/90/180-day model comparison, May–August PnL, strategy selection or release decision in this test. M2 stays NO-GO, M3/M4/M5A not activated, M7 locked.**
 
+## October 17 original 36/72-feature FreqAI causal inference verification — LATEST
+
+**Executed successfully on owner-authorized V6 VPS (Freqtrade 2026.9, 25 historical USDT-M markets, October 8 2026):** source-controlled [native frozen original AI auditor](scripts/m2r_original_72feature_asof_probe.py) invoked original FreqAI 5m+1h/14+28/BTC cross-pair feature expansion, original `&-forward_return` 12-candle price target, actual native FreqAI LightGBM and trained prediction/DI pipeline, and original NbotV6 `populate_indicators`, `populate_entry_trend`, `populate_exit_trend` with injected *frozen identical* model predictions. Original config yields **36 BTC / 72 other market features**. **25 models newly fitted once and frozen; 250/250 full-future-context versus strict-as-of-CANDLE-CLOSE comparisons identical**, including features, forecasts, eligibility and actual strategy entry/exit expressions; model hashes invariant. Not original previously saved model artifacts; not full engine backtest or a proof of profit.
+
+**Test-boundary learning preserved:** preliminary **as-of-open** 1h predicate incorrectly excluded the hourly candle closing exactly with the 5m `HH:55` candle, causing **50 mismatched feature/prediction/gate cases and 10 changed entry/exit decisions**. A code/source inspection of native 2026.9 `merge_informative_pair` verified it shifts 1h candles by `60−5 =55` minutes because signal time is at 5m *close*. Corrected *audit-only* 1h availability to `hourly_open+60m <= five_minute_open+5m` and reran **all 25×10=250**, zero mismatches. Original strategy/model parameters unchanged. See [complete dated original feature audit](evidence/m2r/2026-10-17-original-72feature-fixed-model-audit.md), [machine summary](evidence/m2r/2026-10-17-original-72feature-fixed-model-summary.json).
+
+**Gates unchanged:** official original Freqtrade `has_bias=Yes` still unresolved, because native lookahead repeatedly deletes/retrains models; to certify all engine paths, compare immutable saved model artifacts across replay rather than retraining. Original model `test_size=.2` internal boundary purge still unimplemented, and true funding/stop-market/fee execution costs unresolved. **No Jan-based 30/60/90/180-day May–August model PnL, no release, no activated paper/live. M2 NO-GO, M3/M4/M5A not started, M7 locked.**
+
 ## Still required before real evaluation or activation
 
 1. **M2 integrity issues:** The official FreqAI lookahead diagnostic still reported \`has_bias=Yes\` on some prediction/decision columns; precise old historical bid/ask and stop fills remain missing, and two small September funding boundary differences are unresolved. New code does not erase these.
