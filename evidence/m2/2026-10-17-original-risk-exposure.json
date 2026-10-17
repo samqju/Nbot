@@ -1,0 +1,28 @@
+{
+  "window": "2026-10-01 to 2026-10-08 UTC",
+  "duration_hours": 168,
+  "one_slot_historical_only": true,
+  "results": {
+    "AI_V6": {
+      "trades": 34,
+      "overlapping_global_positions": 0,
+      "position_hours": 78.583,
+      "one_global_slot_utilization_pct": 46.776,
+      "long_position_hours": 65.083,
+      "short_position_hours": 13.5,
+      "flat_hours": 89.417,
+      "max_individual_holding_hours": 7.083
+    },
+    "NO_ML": {
+      "trades": 31,
+      "overlapping_global_positions": 0,
+      "position_hours": 167.667,
+      "one_global_slot_utilization_pct": 99.802,
+      "long_position_hours": 86,
+      "short_position_hours": 81.667,
+      "flat_hours": 0.333,
+      "max_individual_holding_hours": 14.5
+    }
+  },
+  "interpretation": "Actual time-in-position; NOT number of all eligible signals or capacity of 20-slot future paper research"
+}
