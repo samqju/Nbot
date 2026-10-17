@@ -18,11 +18,11 @@ START = timestamp_ms("2026-10-01T00:00:00+00:00")
 END = timestamp_ms("2026-10-08T00:00:00+00:00")
 
 
-def exposure(trades: list[dict]) -> dict:
+def exposure(trades: list[dict], start: int = START, end: int = END) -> dict:
     intervals = []
     for t in trades:
         a,b=timestamp_ms(t["open_date"]),timestamp_ms(t["close_date"])
-        if not START <= a < b <= END:
+        if not start <= a < b <= end:
             raise ValueError("Trade outside the selected complete 7-day test")
         intervals.append((a,b,bool(t.get("is_short")),t["pair"]))
     intervals.sort()
@@ -35,10 +35,10 @@ def exposure(trades: list[dict]) -> dict:
     summary = {
         "trades":len(trades), "overlapping_global_positions":overlapping,
         "position_hours":round(held/3_600_000,3),
-        "one_global_slot_utilization_pct":round(held/(END-START)*100,3),
+        "one_global_slot_utilization_pct":round(held/(end-start)*100,3),
         "long_position_hours":round(held_long/3_600_000,3),
         "short_position_hours":round(held_short/3_600_000,3),
-        "flat_hours":round((END-START-held)/3_600_000,3),
+        "flat_hours":round((end-start-held)/3_600_000,3),
         "max_individual_holding_hours":round(max((b-a for a,b,*_ in intervals),default=0)/3_600_000,3)
     }
     if overlapping:
@@ -51,12 +51,18 @@ def main():
     p.add_argument("--ai",required=True,type=Path)
     p.add_argument("--baseline",required=True,type=Path)
     p.add_argument("--output",required=True,type=Path)
+    p.add_argument("--start",default="20261001",help="UTC YYYYMMDD, inclusive")
+    p.add_argument("--end",default="20261008",help="UTC YYYYMMDD, exclusive")
     a=p.parse_args()
+    start=timestamp_ms(f"{a.start[:4]}-{a.start[4:6]}-{a.start[6:8]}T00:00:00+00:00")
+    end=timestamp_ms(f"{a.end[:4]}-{a.end[4:6]}-{a.end[6:8]}T00:00:00+00:00")
+    if not start < end:
+        raise ValueError("End must be after start")
     data={
-        "AI_V6":exposure(archive_strategy(a.ai,"NbotV6")["trades"]),
-        "NO_ML":exposure(archive_strategy(a.baseline,"NbotV6NoML")["trades"])
+        "AI_V6":exposure(archive_strategy(a.ai,"NbotV6")["trades"],start,end),
+        "NO_ML":exposure(archive_strategy(a.baseline,"NbotV6NoML")["trades"],start,end)
     }
-    out={"window":"2026-10-01 to 2026-10-08 UTC", "duration_hours":168,
+    out={"window":f"{a.start} to {a.end} UTC", "duration_hours":round((end-start)/3600000,3),
          "one_slot_historical_only":True,"results":data,
          "interpretation":"Actual time-in-position; NOT number of all eligible signals or capacity of 20-slot future paper research"}
     a.output.parent.mkdir(parents=True,exist_ok=True)
