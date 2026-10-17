@@ -52,6 +52,24 @@ Existing original V6 **breakout/pullback** AI research remains unchanged. The ne
 7. Run adaptive router **in offline historical replay** against per-regime frozen qualified candidates and NO TRADE. Compare it to the best fixed qualified strategy, naive switching, and NO TRADE. An OOS improvement is not established until this is done. New RL and ML action models require a separate independently checked native adapter; current selector routes eight **non-ML** native setups only.
 8. **Only after independent proof and owner review** consider paper-research deployment (M4); it is NOT authorized now. Live money (M7) remains owner-locked.
 
+## Native trade/evidence extraction (not a shortcut to promotion)
+
+Once a historical native backtest completes in its own isolated results directory, use [the actual native trade scorecard extractor](scripts/m2r_v6_library_scorecards.py) to inspect cost-stressed outcomes **by the market regime at trade-entry decision time**. The extractor reads the Freqtrade ZIP itself, requires 25 pairs, exact 1× $1000 native fills, the 0.05%/side native fee, compares saved trade PnL to Freqtrade portfolio totals, and reads the exact public archived 5m candles for each pair. For each entry, it classifies regime from the **last completed 5m candle before the native entry open**, not from the eventual exit or a full-window hindsight label. It computes at least +25bp additional hypothetical round-trip execution stress, independent by-regime trade PnL, conservative per-regime closed-trade drawdown, and SHA256 fingerprints of each source ZIP and the original market dataset.
+
+Example command **only after** the native family test has actually finished and while no competing Freqtrade training is running:
+
+```bash
+python3 scripts/m2r_v6_library_scorecards.py \
+  --zip /root/nbot-v6-m1-20261016/library-20261017/native/ema_cross/validation_july/backtest_results/ACTUAL_NATIVE_ZIP.zip \
+  --family ema_cross \
+  --history /root/nbot-v6-m1-20261016/january-2026-public-history-stage/futures \
+  --training-ended 2026-06-30T23:55:00Z \
+  --extra-cost-bps 25 \
+  --output /root/nbot-v6-m1-20261016/library-20261017/native/ema_cross/validation_july/scorecards-review-only.json
+```
+
+Replace `ACTUAL_NATIVE_ZIP.zip` with the file's *real* filename. The scorecard extractor **deliberately sets `decision_boundary_passed=false` and `scorecard_selector_ready=false`**. Passing the trade arithmetic audit is **not** the same as independently clearing Freqtrade's native lookahead analysis, all FreqAI model/target embargo checks, or certifying actual executable bid/ask/stop-market fills. It cannot populate the positive/approved adaptive-selector manifest by itself. Explicit independent lookahead/cost review, separate qualified windows and a point-in-time evidence ledger are necessary before any candidate selection. This prevents self-validation or gaming the untouched test set.
+
 ## How to preview native research plans WITHOUT starting VPS jobs
 
 From the V6 repository checkout (any computer with Python3):
