@@ -4,6 +4,16 @@
 
 NBOT V6 is an isolated Freqtrade strategy powered by FreqAI's LightGBM regression model. We use Freqtrade for exchange data, trade execution, risk/accounting, historical backtesting and dry-run. We use FreqAI for features, retraining and prediction. NBOT's custom code only describes market features and trading decisions.
 
+## New M2R research source — after-cost learning, no trading approval (October 17, 2026)
+
+The owner approved **research-code development** for three capabilities: learn from *hypothetical completed trades*, estimate success **after fees/estimated slippage/funding**, and eventually route among *frozen* breakout/pullback strategies or **NO TRADE**. The complete staged and checked plan is in [ROADMAP.md](ROADMAP.md), with implementation details and limitations in [M2R_RESEARCH.md](M2R_RESEARCH.md).
+
+- **Implemented, test only:** Four causal breakout/pullback LONG/SHORT candidate labels with next-open entry, conservative stop-first outcomes and a 0.21% **assumed** roundtrip cost reserve, including setups the old one-slot bot skipped. In September's 25-coin historical sample there were **29,033 overlapping hypothetical training opportunities**; only **32.332%** were positive *under these assumptions*. These are **not executed trades** or wallet profit.
+- **Implemented, historical-only:** Independent [NbotV6TradeOutcomeResearch](user_data/strategies/NbotV6TradeOutcomeResearch.py) FreqAI LightGBM Challenger with a unique [locked model/config](user_data/config.m2r-trade-outcome.json); original V6 and no-ML strategies are unchanged. Real BTC-only Oct 1–8 Freqtrade smoke ran, **one virtual loss −1.104 USDT**, 60-minute holding time. Not a statistical/economic evaluation.
+- **Implemented, offline only:** A deterministic [NO TRADE / regime-aware candidate selector](user_data/strategies/nbot_strategy_router.py) and [purged chronological label-split test utility](scripts/m2r_purged_split.py). There are **no approved candidate-specific forecasts driving an active router**, no model auto-promotion and no continuous paper bot.
+
+**M2 quality gate still NO-GO:** The original official AI lookahead warning, historical real spread/stop-fill uncertainties and separate prospective fill measurement are unresolved. The actual FreqAI rolling-label split must also be independently inspected. **M3 not commissioned; M4's 20-simultaneous-virtual-trade mode and M5A's 8-hour 25-coin universe selector remain separate, unstarted operating milestones; M7 live money remains locked.** No V5 servers, model promotions or real exchange orders are touched.
+
 ## VPS installation and operating guide
 
 **New to Linux or Freqtrade? Start with [VPS_SETUP.md](VPS_SETUP.md).** It has the complete step-by-step Ubuntu/PuTTY setup, short copy/paste commands, historical M1 training test, optional future paper research, logs, backup and troubleshooting instructions.
