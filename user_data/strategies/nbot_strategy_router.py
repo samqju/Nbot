@@ -3,7 +3,6 @@
 Compare predicted net (already after costs) across FROZEN candidate setups,
 require model/data/cost sanity, then select at most one or NO TRADE.
 """
-from __future__ import annotations
 from dataclasses import dataclass
 import math
 from typing import Iterable
