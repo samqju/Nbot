@@ -166,6 +166,8 @@ The owner proposes extending the **existing fixed-25-market** public Binance USD
 - [x] **Signed event-funded after-cost labels and strict historical research challenger**, 25-market funding/mark audit and separate native engine training. Exact live bid/ask/slippage and stop-fill gate **not** passed.
 - [ ] Independently close official lookahead-analysis FreqAI refit warning, obtain defensible real fill/spread costs, and evaluate preregistered May–August windows on unseen samples. M2 NO-GO; paper/live inactive.
 
+**LATEST OCTOBER 17 — VERIFIED NATIVE COST STRESS:** Interrupted original unpurged 25-pair control completed: **13 trades −33.762866 USDT** in Oct 8–9, versus native original internally purged **7 trades −28.799423** and native funded aftercost internally purged **24 trades +39.085015**; NO TRADE **0**. Historical 25-pair one-position Freqtrade control ZIPs. Funding-aware small-period gain is entirely reversed by **+20bps** hypothetical extra roundtrip execution charge (**−8.885390 USDT**) and **+25bps** (**−20.877991**); breakeven **+16.2955bps**. Full [date-scoped actual-engine cost stress evidence](evidence/m2r/2026-10-17-native-three-way-matched-cost-stress.md). **Do not declare actual measured bid/ask/slippage/stop or precise funding paid; not observed.** 25-model/7,200-sample native saved replay PASS limited; gated native research-only internal 12-candle purge PASS; official Freqtrade lookahead still `has_bias=Yes`, real fill gate NO-GO, M2 NO-GO. No release or Jan May–August backtest.
+
 ### Build checklist — distinguish code existence from earned approval
 
 **Stage A — Frozen candidate setups + after-cost outcome labels (implement offline first)**
