@@ -4,6 +4,14 @@
 
 The owner asked for three capabilities, implemented incrementally instead of throwing away FreqAI/LightGBM: (1) learn which complete trading setups work, including those rejected by the original bot, (2) train on results **after assumed trading costs and risks**, and (3) eventually select the best approved setup or **NO TRADE**. This is a *new research design*; the original strategy and its 25-pair September/October negative results remain frozen.
 
+## October 17 broader-history question — research plan only, NOT EXECUTED
+
+The owner proposed retaining Binance USDT-M market history from **2026-01-01 onward**, rather than limiting the research archive to the downloaded July/September/October coverage. **Recommendation: expand the raw research dataset** for more chronological/regime tests, but do **not** assume more bars guarantee a better LightGBM model. The actual [M2R config](user_data/config.m2r-trade-outcome.json) currently trains on a **rolling 30 days** and backtests **7 days** before refitting. Downloading January history does **not** automatically change the 30-day fitted window, and prediction from a saved model does not refit on all history every decision. This is a planning conclusion, **not a download, new fit, or new test result**.
+
+**Proposed order (no start yet):** (1) first certify native FreqAI 12-future-5m-candle label cutoffs and root-cause official `has_bias=Yes`; (2) inventory/download public **5m/1h futures OHLCV, mark/funding** for the same frozen 25 markets from 2026-01-01 to the latest *complete UTC* history, respecting listing dates and gaps; record availability, hashes, chronology, VPS storage and training-resource costs; (3) **before inspecting any new results**, pre-register several calendar-block/market-regime walk-forward comparisons, untouched time-held-out periods and exact cost/NO TRADE baselines; (4) compare the *same frozen models/rules* under 30-day versus candidate 60/90/180-day rolling training windows, as resource constraints permit, using separate model identifiers and equal as-of dates. Keep data outside GitHub (publish compact reproducible manifests/results). A 180-day window cannot be fairly tested near January without earlier training history; never borrow future outcomes to supply missing warmup.
+
+For every fitting cutoff, purge any label whose **12-candle maximum future outcome horizon** crosses that cutoff. Also ensure chronological train/validation partitions and account for correlation and overlapping labels when estimating statistical confidence. No M2 release acceptance, M3 commissioning, M4 paper, M5A selector or M7 release is implied.
+
 ## What code exists
 
 | Component | Status | What it does |
