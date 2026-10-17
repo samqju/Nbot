@@ -9,9 +9,16 @@ from pandas import DataFrame
 import numpy as np
 
 from NbotV6 import NbotV6
+from NbotV6LibraryResearch import _NbotV6ResearchLibraryBase
 
 
 class NbotV6RLResearch(NbotV6):
+    @property
+    def protections(self):
+        # These operate in native historical Freqtrade evaluation, not the
+        # simplified internal RL training environment.
+        return _NbotV6ResearchLibraryBase.protections.fget(self)
+
     def _rl_safe(self) -> bool:
         c = self.config
         e = c.get("exchange", {})
