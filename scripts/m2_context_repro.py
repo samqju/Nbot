@@ -14,13 +14,17 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-def compare(ref: pd.DataFrame, single: pd.DataFrame) -> dict:
+def compare(ref: pd.DataFrame, single: pd.DataFrame, prefix: bool = False) -> dict:
     if ref["date"].duplicated().any() or single["date"].duplicated().any():
         raise ValueError("Duplicate prediction timestamp")
     cols = ["date", "&-forward_return", "&-forward_return_mean",
             "&-forward_return_std", "do_predict", "DI_values"]
     l = ref[cols].sort_values("date")
     r = single[cols].sort_values("date")
+    if prefix:
+        if len(r) >= len(l) or not l["date"].iloc[:len(r)].reset_index(drop=True).equals(r["date"].reset_index(drop=True)):
+            raise ValueError("Short range must be a strict chronological prefix")
+        l = l.iloc[:len(r)].copy()
     d = l.merge(r, on="date", validate="one_to_one", suffixes=("_full", "_single"),
                 how="outer", indicator=True)
     if not (d["_merge"] == "both").all():
@@ -45,6 +49,7 @@ def main() -> int:
     p.add_argument("--single", required=True, type=Path)
     p.add_argument("--output", required=True, type=Path)
     p.add_argument("--coins", nargs="+", default=["btc", "eth"])
+    p.add_argument("--prefix", action="store_true", help="Require truncated future predictions to match full-history prefix")
     args=p.parse_args()
     result = {}
     for coin in args.coins:
@@ -52,9 +57,9 @@ def main() -> int:
         singles=sorted((args.single/"backtesting_predictions").glob(f"cb_{coin}_*_prediction.feather"))
         if len(fulls)!=1 or len(singles)!=1:
             raise ValueError(f"{coin}: missing pair predictions full:{len(fulls)} single:{len(singles)}")
-        result[coin]=compare(pd.read_feather(fulls[0]), pd.read_feather(singles[0]))
+        result[coin]=compare(pd.read_feather(fulls[0]), pd.read_feather(singles[0]), prefix=args.prefix)
         print(coin.upper(),result[coin])
-    report={"purpose":"Same history + model features; compare models fitted in 25-pair vs one-pair FreqAI context",
+    report={"purpose":("As-of shorter data: compare 2-day forecast prefix vs full 7-day forecast" if args.prefix else "Same history + features: full-25 vs one-pair training"),
             "limitations":["Differences do not prove information leakage.",
                            "Equal predictions would not establish overall no-leakage.",
                            "Training must be separately audited for chronological label isolation."],
