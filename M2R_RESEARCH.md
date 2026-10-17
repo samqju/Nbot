@@ -119,4 +119,4 @@ The next guarded offline step is all-25 **fixed-model, time-prefix forecast and 
 5. **Original M5A selector is still UNBUILT:** every eight hours choose up to **25** suitable markets with fees/liquidity/model readiness, controlled rotation and protection of open positions. A fixed 25-coin audit is not this selector.
 6. **Separate M4 virtual paper capacity remains up to 20 positions, NOT started.** Any actual live-money release stays **ONE position max** and locked behind independent owner approval. Do not touch V5 servers, main branch, real exchange credentials or orders.
 
-**Decision: Code and BTC historical smoke exist; this is early M2R research only. M2 release NO-GO, M3 NOT STARTED, M4/M5A NOT COMMISSIONED, M7 LIVE LOCKED.**
+**Updated decision: Four setup labels/models and 25-pair September/October simulated research are documented; Jan 1–Oct 16 public market history (100 files) is now separately acquired and audit-passed, but no longer-window model performance has been tested. Original official AI lookahead still has `has_bias=Yes` and no actual execution fill proof. M2 release NO-GO, M3 NOT STARTED, M4/M5A NOT COMMISSIONED, M7 LIVE LOCKED.**
