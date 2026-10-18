@@ -18,7 +18,7 @@ import pandas as pd
 sys.path.insert(0, "/research/user_data/strategies")
 from NbotV6LibraryResearch import FAMILIES, library_indicators, library_signals
 
-FIRST="2026-07-01T00:00:00Z"
+FIRST="2026-07-15T00:00:00Z"
 LAST="2026-10-01T00:00:00Z"
 WINDOWS=(30,60,90,180)
 FEE=0.001                 # 5bps per side; NOT including future funding
@@ -149,6 +149,7 @@ def build(raw, pairlist, directory):
 
 def learn_and_rank(df, days, start, stop, outdir, pairlist):
     from lightgbm import LGBMRegressor,LGBMClassifier
+    from sklearn.isotonic import IsotonicRegression
     from m2r_v6_global_opportunity_ranker import Opportunity,RankPolicy,choose_global_opportunity
     start=pd.Timestamp(start)
     stop=pd.Timestamp(stop)
@@ -197,6 +198,8 @@ def learn_and_rank(df, days, start, stop, outdir, pairlist):
         after=date+pd.Timedelta(minutes=5)
         opportunities=[]
         for x in rows.itertuples(index=False):
+            if x.win_probability<0.50:
+                continue  # Explicit calibrated probability gate, no fabricated forecast.
             opportunities.append(Opportunity(
                 pair=x.pair,family=x.family,side=x.side,
                 regime=("trend_up" if x.trend>0.003 else
@@ -234,6 +237,7 @@ def learn_and_rank(df, days, start, stop, outdir, pairlist):
           "candidate_count":len(observed),"selected_decisions":len(decisions),
           "calibration_absolute_residual_75pct":error,"calibration_downside_10pct":downside,
           "uses_proxy_labels_without_future_funding":True,
+          "calibrated_probability_gate":0.50,
           "liquidity_is_bar_volume_capacity_proxy_not_measured_depth":True,
           "signal_universe_exactly_eight_families":True,
           "model_trained_on_pre_calibration_chronology":True}
