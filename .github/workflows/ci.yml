@@ -45,7 +45,10 @@ jobs:
             scripts/m2r_strategy_library_selector.py \
             scripts/m2r_v6_library_native_job.py \
             scripts/m2r_v6_library_scorecards.py \
-            scripts/m2r_v6_library_full_batch.py
+            scripts/m2r_v6_library_full_batch.py \
+            scripts/m2r_v6_profit_protection_batch.py \
+            scripts/m2r_v6_profit_reversal_audit.py \
+            user_data/strategies/NbotV6ProfitProtectionResearch.py
           python -m json.tool user_data/config.v6-library-native-offline.json > /dev/null
           python -m json.tool user_data/config.v6-library-lgbm-offline.json > /dev/null
           python -m json.tool user_data/config.v6-library-rl-offline.json > /dev/null
@@ -81,6 +84,26 @@ jobs:
             NbotV6BollingerTrailingResearch NbotV6RsiTrailingResearch \
             NbotV6MacdTrailingResearch NbotV6StochasticTrailingResearch \
             NbotV6AtrBreakoutTrailingResearch NbotV6VolumeTrendTrailingResearch \
+            NbotV6EmaCrossTrailEarlyOneResearch NbotV6DonchianTrailEarlyOneResearch \
+            NbotV6BollingerTrailEarlyOneResearch NbotV6RsiTrailEarlyOneResearch \
+            NbotV6MacdTrailEarlyOneResearch NbotV6StochasticTrailEarlyOneResearch \
+            NbotV6AtrBreakoutTrailEarlyOneResearch NbotV6VolumeTrendTrailEarlyOneResearch \
+            NbotV6EmaCrossTrailEarlyOneHalfResearch NbotV6DonchianTrailEarlyOneHalfResearch \
+            NbotV6BollingerTrailEarlyOneHalfResearch NbotV6RsiTrailEarlyOneHalfResearch \
+            NbotV6MacdTrailEarlyOneHalfResearch NbotV6StochasticTrailEarlyOneHalfResearch \
+            NbotV6AtrBreakoutTrailEarlyOneHalfResearch NbotV6VolumeTrendTrailEarlyOneHalfResearch \
+            NbotV6EmaCrossTrailTightTwoResearch NbotV6DonchianTrailTightTwoResearch \
+            NbotV6BollingerTrailTightTwoResearch NbotV6RsiTrailTightTwoResearch \
+            NbotV6MacdTrailTightTwoResearch NbotV6StochasticTrailTightTwoResearch \
+            NbotV6AtrBreakoutTrailTightTwoResearch NbotV6VolumeTrendTrailTightTwoResearch \
+            NbotV6EmaCrossTakeProfitTwoResearch NbotV6DonchianTakeProfitTwoResearch \
+            NbotV6BollingerTakeProfitTwoResearch NbotV6RsiTakeProfitTwoResearch \
+            NbotV6MacdTakeProfitTwoResearch NbotV6StochasticTakeProfitTwoResearch \
+            NbotV6AtrBreakoutTakeProfitTwoResearch NbotV6VolumeTrendTakeProfitTwoResearch \
+            NbotV6EmaCrossTakeProfitThreeResearch NbotV6DonchianTakeProfitThreeResearch \
+            NbotV6BollingerTakeProfitThreeResearch NbotV6RsiTakeProfitThreeResearch \
+            NbotV6MacdTakeProfitThreeResearch NbotV6StochasticTakeProfitThreeResearch \
+            NbotV6AtrBreakoutTakeProfitThreeResearch NbotV6VolumeTrendTakeProfitThreeResearch \
             NbotV6AdaptiveLibraryResearch NbotV6RLResearch; do
             grep -E "$name.*OK" /tmp/nbot-v6-strategies.txt \
               || { echo "FREQTRADE_CANDIDATE_NOT_IMPORTABLE: $name"; exit 1; }
