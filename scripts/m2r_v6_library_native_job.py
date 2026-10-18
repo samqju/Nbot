@@ -18,7 +18,7 @@ import sys
 ROOT=Path("/root/nbot-v6-m1-20261016")
 SOURCE=ROOT/"source"
 HISTORY=ROOT/"january-2026-public-history-stage"
-OUTPUT=ROOT/"library-20261017"
+OUTPUT=ROOT/"library-20261018"
 BRANCH="prototype/v6-freqtrade-freqai-20261016"
 
 CANDIDATES={
@@ -131,18 +131,27 @@ def execute(kind:str, family:str, period:str) -> int:
     if out.exists():
         raise RuntimeError("NEVER_OVERWRITE_PRIOR_RESEARCH_EVIDENCE")
     out.mkdir(parents=True)
+    # Official Freqtrade image uses non-root ftuser uid/gid 1000. Do not
+    # repeat the Oct17 root-only mounted-output permission failure.
+    os.chown(out, 1000, 1000)
+    os.chmod(out, 0o750)
     (out/"exact-overlay.json").write_text(json.dumps(overrides,indent=2)+"\n")
     (out/"run-state.txt").write_text(
         "START_UTC="+datetime.now(timezone.utc).isoformat()+"\n"
         +"GIT_COMMIT="+_run(["git","rev-parse","HEAD"],SOURCE)+"\n"
         +"RESEARCH_KIND="+kind+"\nFAMILY="+family+"\nPERIOD="+period+"\n")
+    # Read access to the overlay and writable isolated output are required
+    # by the Docker UID1000 process. Keep input source/history read-only.
+    os.chmod(out/"exact-overlay.json", 0o644)
+    if _run(["docker","ps","-q"]):
+        raise RuntimeError("DOCKER_STARTED_DURING_PREFLIGHT_ABORT")
     command=plan(kind,family,period)
     with (out/"native.log").open("w") as log:
         result=subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=False)
     with (out/"run-state.txt").open("a") as state:
         state.write("EXIT_CODE="+str(result.returncode)+"\n"
                     +"FINISH_UTC="+datetime.now(timezone.utc).isoformat()+"\n")
-    print("NATIVE_OFFLINE_JOB_END",kind,family,period,"exit",result.returncode,"output",str(out))
+    print("NATIVE_OFFLINE_JOB_END",kind,family,period,"exit",result.returncode,"output",str(out),flush=True)
     return result.returncode
 
 def main() -> int:
