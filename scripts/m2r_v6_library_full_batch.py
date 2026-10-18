@@ -235,6 +235,9 @@ def main():
         step("preflight","Smoke test all eight families, basic + trailing, July-like 3d")
         # Full official backtesting per strategy is run below, with immutable
         # CSV/JSON/ZIP archived after each. CI already validated imports.
+        step("original_no_ml_baseline","Reproduce original V6 non-AI breakout/pullback comparison on all three periods")
+        for period in PERIODS:
+            run_one("baseline","ema_cross",period)
         step("native_frozen","8 families × July, August, September; common risk fees/25 markets")
         for family in FAMILIES:
             for period in PERIODS:
@@ -266,6 +269,7 @@ def main():
         summary={"finished_utc":iso(),"git_commit":commit,
                  "economic_audit_count":len(details),
                  "frozen_native_results":[x for x in details if x["kind"]=="native"],
+                 "original_breakout_pullback_no_ml_baselines":[x for x in details if x["kind"]=="baseline"],
                  "trailing_stops_ab_results":[x for x in details if x["kind"]=="trailing"],
                  "freqai_lightgbm_diagnostics":[x for x in details if x["kind"]=="lgbm"],
                  "ppo_rl_diagnostics":[x for x in details if x["kind"]=="rl"],
@@ -273,7 +277,8 @@ def main():
                  "no_trade_portfolio_baseline_usdt":0.0,
                  "no_models_or_parameters_promoted":True,
                  "aftercost_winners_require_future_out_of_sample_validation":True,
-                 "original_baseline_independently_reproduced":False,
+                 "original_baseline_independently_reproduced":bool([x for x in details if x["kind"]=="baseline"]),
+                 "original_no_ml_baseline_exit_horizon_differs_from_new_library":True,
                  "not_all_candidate_runs_are_guaranteed_complete":True}
         save_atomic(OUTPUT/"candidate-native-aftercost-summary.json",summary)
         state.update(status="complete_with_individual_failures_if_any",stage="complete",
