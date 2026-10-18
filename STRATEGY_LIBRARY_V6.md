@@ -1,5 +1,8 @@
 # NBOT V6 — Expanded open-indicator strategy library and AI/RL research
 
+> **2026-10-18 global integration implemented, NOT validated economically:** [Global 25×8 queue evidence](evidence/m2r/2026-10-18-global-eight-strategy-implementation-vps-queue.md). Our eight frozen family signals now have a separate historical LightGBM candidate generator, global simultaneous timestamp ranker and native portfolio strategy adapter; a third finite study is enabled on VPS and WAITING behind the library + profit-protection batches. Original strategy families and existing native trade archives are preserved. This does **not** authorize trading or make all models validated; full native selected-portfolio results are still pending.
+
+
 > **Next integration design (owner approved 2026-10-18):** [Global 25×8 opportunity competition](V6_GLOBAL_OPPORTUNITY_SELECTION_DESIGN.md). Keep all eight independent families as separate candidates evaluated for all 25 pairs at each eligible completed 5m decision candle; rank calibrated after-cost opportunity forecasts globally, not merely the best single family or 8h regime. FreqAI multi-family inference and one-slot native Freqtrade replay **remain to be built**. Original breakout/pullback are optional separate controls/challengers. No source deployment, new VPS job, promotion, paper/live authorization or result deletion is implied.
 
 **Owner-approved 2026-10-17. Source-only GitHub work on \`prototype/v6-freqtrade-freqai-20261016\`. No VPS historical jobs started, restarted, stopped or modified for this new feature. No paper/live trading permitted. All implementations are RESEARCH CANDIDATES, not independently proven winners.**
