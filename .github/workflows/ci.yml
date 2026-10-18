@@ -127,7 +127,7 @@ jobs:
       - name: Verify third-stage global queue, no launch in CI
         run: |
           bash -n scripts/m2r_v6_global_successor_wait.sh
-          python -m py_compile scripts/m2r_v6_global_dataset.py scripts/m2r_v6_global_batch.py user_data/strategies/NbotV6GlobalOfflineResearch.py
+          PYTHONPYCACHEPREFIX=/tmp/nbot-v6-global-ci-pyc python -m py_compile scripts/m2r_v6_global_dataset.py scripts/m2r_v6_global_batch.py user_data/strategies/NbotV6GlobalOfflineResearch.py
       - name: Run real pandas and LightGBM synthetic global research tests inside official FreqAI image
         run: |
           docker run --rm --network none --workdir /research \
