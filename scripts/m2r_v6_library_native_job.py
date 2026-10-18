@@ -31,6 +31,16 @@ CANDIDATES={
  "atr_breakout":("NbotV6AtrBreakoutResearch","NbotV6AtrBreakoutLightGBMResearch"),
  "volume_trend":("NbotV6VolumeTrendResearch","NbotV6VolumeTrendLightGBMResearch"),
 }
+# Frozen OFFLINE exit-policy variants to run only after original batch is complete.
+# Trailing variants use same entry signals and baseline 60-minute holding limit.
+PROFIT_PROTECTION_VARIANTS = {
+ "protect_trail_1p0_gap_0p5": "TrailEarlyOne",
+ "protect_trail_1p5_gap_0p5": "TrailEarlyOneHalf",
+ "protect_trail_2p0_gap_0p5": "TrailTightTwo",
+ "protect_take_profit_2p0": "TakeProfitTwo",
+ "protect_take_profit_3p0": "TakeProfitThree",
+}
+
 PERIODS={
  "tuning_may_june":"20260501-20260701",
  "validation_july":"20260701-20260801",
@@ -45,6 +55,7 @@ OVERLAYS={
  "lgbm":"config.v6-library-lgbm-offline.json",
  "rl":"config.v6-library-rl-offline.json",
  "adaptive":"config.v6-library-adaptive-offline.json",
+ **{key:"config.v6-library-native-offline.json" for key in PROFIT_PROTECTION_VARIANTS},
 }
 
 def plan(kind:str, family:str, period:str, *, overlay_path:str="/results/exact-overlay.json") -> list[str]:
@@ -55,6 +66,8 @@ def plan(kind:str, family:str, period:str, *, overlay_path:str="/results/exact-o
     if kind=="adaptive" and period=="tuning_may_june":
         raise ValueError("ADAPTIVE_USE_REQUIRES_HISTORICAL_EVIDENCE")
     strategy=CANDIDATES[family][1] if kind=="lgbm" else CANDIDATES[family][0]
+    if kind in PROFIT_PROTECTION_VARIANTS:
+        strategy=strategy.replace("Research", PROFIT_PROTECTION_VARIANTS[kind]+"Research")
     if kind=="trailing":strategy=strategy.replace("Research","TrailingResearch")
     if kind=="baseline":strategy="NbotV6NoML"
     if kind=="rl":strategy="NbotV6RLResearch"
@@ -103,7 +116,7 @@ def _safe_overrides(kind:str,family:str) -> dict:
         assert base["nbot_m2r_purge_internal"] is True
         assert base["nbot_v6_library_ml_research_only"] is True
         base["freqai"]["identifier"]="nbot-v6-library-"+family+"-native-frozen-20261017"
-    if kind in ("native","trailing","baseline","hyperopt","adaptive"):
+    if kind in ("native","trailing","baseline","hyperopt","adaptive") or kind in PROFIT_PROTECTION_VARIANTS:
         assert base["freqai"]["enabled"] is False
         assert base["nbot_v6_library_research_only"] is True
     if kind=="rl":
