@@ -503,6 +503,8 @@ V6 may become the default/main development line when **M0+M1** pass and an owner
 
 ## G. Progress ledger — 2026-10-17
 
+- [x] **Owner preference for modest gains test queued on authorized VPS, VERIFIED Oct18 04:23:02 UTC:** The follow-up **`nbot-v6-profit-protection-next-20261018.service`** started safely as a one-time WAITING systemd service, PID 148502, while predecessor eight-strategy native research remains active PID 142873 and original checkout untouched. CI [39096771429](https://github.com/samqju/Nbot/actions/runs/39096771429) GREEN; successor shell syntax and five-policy 40-class Freqtrade discovery passed, shell staged outside current source. It checks original batch completion and entire baseline/native/trailing ZIP audit before moving to 120 new 25-market native A/B tests; 24h maximum wait, no concurrent Docker, no live/paper, no recurring ChatGPT scheduled task. **Not actually begun new exit-rule Docker trials yet**, no profitability claim. [Full owner's profit-protection study contract and actual VPS queue proof](evidence/m2r/2026-10-18-profit-protection-next-phase-contract.md). Original deleted ChatGPT monitor remains deleted, so status checks require user follow-up. Next-stage study will not survive VPS reboot.
+
 | Milestone | State | Required next proof |
 |---|---|---|
 | M0 clean tree | COMPLETE — source isolation only | Clean-tree commit 3e642508; V6 CI run 38906351380 passed both jobs (offline + official strategy discovery) |
