@@ -120,7 +120,7 @@ class TestDatasetProxyContract(unittest.TestCase):
                                  start-pd.Timedelta(days=8),periods=260))
         times+=list(pd.date_range(start-pd.Timedelta(days=5),
                                   start-pd.Timedelta(days=2),periods=75))
-        times+=list(pd.date_range(start,start+pd.Timedelta(hours=1),periods=26))
+        times+=list(pd.date_range(start,periods=26,freq="5min"))
         for n,t in enumerate(times):
             row=dict(date=t,pair=pairs[n%2],
                      family=self.module.FAMILIES[n%8],
