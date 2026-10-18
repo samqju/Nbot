@@ -1,5 +1,7 @@
 # NBOT V6 — after-cost learning and cautious strategy selection (M2R)
 
+> **2026-10-18 next research specification:** [Global 25-coin × 8-strategy opportunity selector design](V6_GLOBAL_OPPORTUNITY_SELECTION_DESIGN.md). Existing LightGBM outcome models and the synthetic pure global ranker are building blocks, **not** deployed simultaneous inference or a verified unified one-slot Freqtrade portfolio. Owner selected a full 25×8×eligible-side per-candle contest, after-cost/risk/exit-policy calibrated ranking or NO TRADE, reuse of completed native and trailing research, and separate original breakout/pullback expanded challenger. Preserve all outcomes for later owner review; keep current finite VPS and queued 120 profit-protection experiments intact; no paper/live/model promotion.
+
 **Started:** October 17, 2026. **Status:** Research-code prototype, full 25-pair September FreqAI replay, separate breakout/pullback trained models and first predeclared October 8–15 comparison completed. **NOT** an accepted trading system. **M2 NO-GO still applies.**
 
 The owner asked for three capabilities, implemented incrementally instead of throwing away FreqAI/LightGBM: (1) learn which complete trading setups work, including those rejected by the original bot, (2) train on results **after assumed trading costs and risks**, and (3) eventually select the best approved setup or **NO TRADE**. This is a *new research design*; the original strategy and its 25-pair September/October negative results remain frozen.
