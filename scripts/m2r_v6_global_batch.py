@@ -210,7 +210,7 @@ def native_job(days,policy):
         "--datadir","/history",
         "--strategy",model,"--strategy-path","/research/user_data/strategies",
         "--timerange","20260715-20261001","--fee","0.0005",
-        "--export","trades"],
+        "--cache","none","--export","trades","--enable-protections"],
         folder/"native-backtest.log",timeout=14400)
     a=native_audit(folder,policy,days)
     append_event("complete",f"native_{days}_{policy}",
