@@ -285,11 +285,38 @@ def main():
     config=json.loads(Path(a.config).read_text())
     pairs=config["exchange"]["pair_whitelist"]
     if len(pairs)!=25 or len(set(pairs))!=25:raise RuntimeError("REQUIRE_FIXED_25")
-    manifest=out/"historical-data-and-proxy-manifest.json"
-    df=build(manifest,pairs,a.history)
-    # Future labels are saved for OFFLINE inspection only. Ranking sees strictly
-    # historical features from numeric_matrix, never the net_proxy outcome.
-    df.to_parquet(out/"all-valid-opportunities-and-research-labels.parquet",index=False)
+    # Build one immutable, hashed candidate/label universe and SHARE it among
+    # all 30/60/90/180 windows. Never redo costly 25x8 signal generation.
+    shared=out.parent/"shared-candidate-universe"
+    archive=shared/"all-valid-opportunities-and-research-labels.parquet"
+    manifest=shared/"historical-data-and-proxy-manifest.json"
+    sealed=shared/"immutable-candidate-cache-audit.json"
+    if shared.exists():
+        if not (archive.is_file() and manifest.is_file() and sealed.is_file()):
+            raise RuntimeError("PARTIAL_SHARED_CANDIDATE_CACHE_MANUAL_REVIEW_REQUIRED")
+        saved=json.loads(sealed.read_text())
+        info=json.loads(manifest.read_text())
+        if saved.get("pairlist")!=pairs or info.get("pairs")!=pairs:
+            raise RuntimeError("SHARED_CANDIDATE_PAIR_UNIVERSE_CHANGED")
+        if hashlib.sha256(archive.read_bytes()).hexdigest()!=saved.get("sha256"):
+            raise RuntimeError("SHARED_CANDIDATE_CACHE_HASH_CHANGED")
+        df=pd.read_parquet(archive)
+        print("REUSING_VERIFIED_SHARED_25x8_CANDIDATE_UNIVERSE",flush=True)
+    else:
+        shared.mkdir()
+        df=build(manifest,pairs,a.history)
+        # Labels contain the FUTURE path for training/audit ONLY. Ranking
+        # uses only numeric_matrix historical feature columns, not these labels.
+        temp=shared/"unsealed-25x8-candidates.tmp.parquet"
+        df.to_parquet(temp,index=False)
+        temp.replace(archive)
+        safe_json(sealed,{"schema":"v6-global-shared-candidates-1",
+                          "sha256":hashlib.sha256(archive.read_bytes()).hexdigest(),
+                          "pairlist":pairs,"rows":len(df),
+                          "future_labels_never_passed_into_model_features":True})
+    safe_json(out/"shared-candidate-universe-reference.json",{
+        "shared_parquet":str(archive),"sha256":hashlib.sha256(archive.read_bytes()).hexdigest(),
+        "rows":len(df),"no_hindsight_feature_column":True})
     all_decisions=[]
     all_forecasts=[]
     audit=[]
