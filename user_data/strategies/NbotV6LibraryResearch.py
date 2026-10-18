@@ -259,3 +259,42 @@ class NbotV6AtrBreakoutResearch(_NbotV6ResearchLibraryBase):
 
 class NbotV6VolumeTrendResearch(_NbotV6ResearchLibraryBase):
     family = "volume_trend"
+
+
+# Controlled research-only exit-rule A/B comparison: same indicator entries,
+# same nominal -2% initial safety stop, same 5% ROI, same one-hour limit.
+# Trailing begins ONLY once a trade reaches +2% and follows with a 1%
+# trail thereafter. Those figures are FROZEN exploratory assumptions;
+# V1-V5 original trailing parameters have not been recovered and this is
+# NOT claimed to reproduce the old bot. Native Freqtrade candles determine
+# actual hypothetical fills; results can improve OR worsen after costs.
+class _NbotV6TrailingResearchBase(_NbotV6ResearchLibraryBase):
+    trailing_stop = True
+    trailing_stop_positive = 0.01
+    trailing_stop_positive_offset = 0.02
+    trailing_only_offset_is_reached = True
+
+
+class NbotV6EmaCrossTrailingResearch(_NbotV6TrailingResearchBase):
+    family = "ema_cross"
+
+class NbotV6DonchianTrailingResearch(_NbotV6TrailingResearchBase):
+    family = "donchian_breakout"
+
+class NbotV6BollingerTrailingResearch(_NbotV6TrailingResearchBase):
+    family = "bollinger_reversion"
+
+class NbotV6RsiTrailingResearch(_NbotV6TrailingResearchBase):
+    family = "rsi_reversion"
+
+class NbotV6MacdTrailingResearch(_NbotV6TrailingResearchBase):
+    family = "macd_momentum"
+
+class NbotV6StochasticTrailingResearch(_NbotV6TrailingResearchBase):
+    family = "stochastic_reversal"
+
+class NbotV6AtrBreakoutTrailingResearch(_NbotV6TrailingResearchBase):
+    family = "atr_breakout"
+
+class NbotV6VolumeTrendTrailingResearch(_NbotV6TrailingResearchBase):
+    family = "volume_trend"
