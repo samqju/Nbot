@@ -49,6 +49,9 @@ jobs:
             scripts/m2r_v6_profit_protection_batch.py \
             scripts/m2r_v6_profit_reversal_audit.py \
             scripts/m2r_v6_global_opportunity_ranker.py \
+            scripts/m2r_v6_global_batch.py \
+            scripts/m2r_v6_global_dataset.py \
+            user_data/strategies/NbotV6GlobalOfflineResearch.py \
             user_data/strategies/NbotV6ProfitProtectionResearch.py
           python -m json.tool user_data/config.v6-library-native-offline.json > /dev/null
           python -m json.tool user_data/config.v6-library-lgbm-offline.json > /dev/null
@@ -105,7 +108,8 @@ jobs:
             NbotV6BollingerTakeProfitThreeResearch NbotV6RsiTakeProfitThreeResearch \
             NbotV6MacdTakeProfitThreeResearch NbotV6StochasticTakeProfitThreeResearch \
             NbotV6AtrBreakoutTakeProfitThreeResearch NbotV6VolumeTrendTakeProfitThreeResearch \
-            NbotV6AdaptiveLibraryResearch NbotV6RLResearch; do
+            NbotV6AdaptiveLibraryResearch NbotV6RLResearch \
+            NbotV6GlobalOfflineResearch NbotV6GlobalTrailingOfflineResearch; do
             grep -E "$name.*OK" /tmp/nbot-v6-strategies.txt \
               || { echo "FREQTRADE_CANDIDATE_NOT_IMPORTABLE: $name"; exit 1; }
           done
@@ -120,6 +124,16 @@ jobs:
             --entrypoint python \
             freqtradeorg/freqtrade:stable_freqairl \
             -c 'import sys; sys.path.insert(0, "/freqtrade/user_data/freqaimodels"); from NbotV6CostAwareRLResearch import NbotV6CostAwareRLResearch; assert hasattr(NbotV6CostAwareRLResearch, "MyRLEnv"); print("V6_OFFLINE_RL_NATIVE_MODEL_API_OK")'
+      - name: Verify third-stage global queue, no launch in CI
+        run: |
+          bash -n scripts/m2r_v6_global_successor_wait.sh
+          python -m py_compile scripts/m2r_v6_global_dataset.py scripts/m2r_v6_global_batch.py user_data/strategies/NbotV6GlobalOfflineResearch.py
+      - name: Run real pandas and LightGBM synthetic global research tests inside official FreqAI image
+        run: |
+          docker run --rm --network none \
+            -v "$PWD:/research:ro" \
+            --entrypoint python freqtradeorg/freqtrade:stable_freqai \
+            -m unittest tests.test_m2r_v6_global_batch_contract -v
       - name: Parse finite post-batch profit-protection VPS handoff (never start in CI)
         run: |
           bash -n scripts/m2r_v6_profit_protection_successor_wait.sh
