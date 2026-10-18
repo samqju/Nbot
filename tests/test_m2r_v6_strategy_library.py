@@ -175,6 +175,28 @@ class TestResearchExecutionSafety(unittest.TestCase):
         with self.assertRaises(ValueError):
             plan("native","nonexistent","validation_july")
 
+    def test_trailing_comparison_differs_only_in_exit_and_is_never_paper_live(self):
+        for family in CANDIDATES:
+            cmd=plan("trailing",family,"validation_july")
+            assert "--enable-protections" in cmd
+            assert CANDIDATES[family][0].replace("Research","TrailingResearch") in cmd
+            assert "freqtradeorg/freqtrade:stable_freqai" in cmd
+        # The native source uses identical indicator entry gates for both
+        # comparison arms, and trailing is activated only after positive profit.
+        content=(ROOT/"user_data/strategies/NbotV6LibraryResearch.py").read_text()
+        assert "class _NbotV6TrailingResearchBase(_NbotV6ResearchLibraryBase)" in content
+        assert "trailing_stop_positive = 0.01" in content
+        assert "trailing_stop_positive_offset = 0.02" in content
+        assert "trailing_only_offset_is_reached = True" in content
+        assert "trailing_stop = False" in content  # original unchanged
+        batch=(ROOT/"scripts/m2r_v6_library_full_batch.py").read_text()
+        assert 'run_one("native",family,period)' in batch
+        assert 'run_one("trailing",family,period)' in batch
+        assert 'run_one("adaptive","ema_cross","replication_september")' in batch
+        assert 'run_one("rl","ema_cross","validation_july")' in batch
+        assert 'for family in FAMILIES:' in batch
+        assert "paper_trading" in batch and "real_trading" in batch
+
     def test_rl_and_adaptive_are_isolated_and_empty_manifest_no_auto_winner(self):
         self.assertIn("NbotV6CostAwareRLResearch",plan("rl","ema_cross","validation_july"))
         self.assertIn("NbotV6AdaptiveLibraryResearch",plan("adaptive","ema_cross","validation_july"))
