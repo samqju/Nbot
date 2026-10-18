@@ -39,6 +39,7 @@ PERIODS={
 }
 OVERLAYS={
  "native":"config.v6-library-native-offline.json",
+ "trailing":"config.v6-library-native-offline.json",
  "hyperopt":"config.v6-library-native-offline.json",
  "lgbm":"config.v6-library-lgbm-offline.json",
  "rl":"config.v6-library-rl-offline.json",
@@ -53,6 +54,7 @@ def plan(kind:str, family:str, period:str, *, overlay_path:str="/results/exact-o
     if kind=="adaptive" and period=="tuning_may_june":
         raise ValueError("ADAPTIVE_USE_REQUIRES_HISTORICAL_EVIDENCE")
     strategy=CANDIDATES[family][1] if kind=="lgbm" else CANDIDATES[family][0]
+    if kind=="trailing":strategy=strategy.replace("Research","TrailingResearch")
     if kind=="rl":strategy="NbotV6RLResearch"
     if kind=="adaptive":strategy="NbotV6AdaptiveLibraryResearch"
     common=[
@@ -99,7 +101,7 @@ def _safe_overrides(kind:str,family:str) -> dict:
         assert base["nbot_m2r_purge_internal"] is True
         assert base["nbot_v6_library_ml_research_only"] is True
         base["freqai"]["identifier"]="nbot-v6-library-"+family+"-native-frozen-20261017"
-    if kind in ("native","hyperopt","adaptive"):
+    if kind in ("native","trailing","hyperopt","adaptive"):
         assert base["freqai"]["enabled"] is False
         assert base["nbot_v6_library_research_only"] is True
     if kind=="rl":
@@ -124,7 +126,7 @@ def execute(kind:str, family:str, period:str) -> int:
         raise RuntimeError("ANOTHER_DOCKER_JOB_BUSY_DO_NOT_COMPETE_WITH_ORIGINAL_RESEARCH")
     if not (HISTORY/"futures").is_dir():
         raise RuntimeError("HISTORICAL_MARKET_DATA_NOT_INSTALLED")
-    if _run(["git","rev-parse","HEAD"],SOURCE) is None:
+    if not _run(["git","rev-parse","HEAD"],SOURCE):
         raise RuntimeError("MISSING_GIT_COMMIT")
     overrides=_safe_overrides(kind,family)
     out=OUTPUT/kind/family/period
