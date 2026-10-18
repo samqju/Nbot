@@ -74,6 +74,8 @@ class RankPolicy:
     minimum_liquidity_multiple: float = 10.0
     downside_penalty_weight: float = 0.5
     max_model_age_hours: float = 24.0 * 8.0
+    # Research challenger mode only; NEVER represents economic approval.
+    allow_exploratory_unvalidated: bool = False
 
 @dataclass(frozen=True)
 class RankedDecision:
@@ -162,7 +164,7 @@ def choose_global_opportunity(
             reason="NO_FROZEN_TECHNICAL_ENTRY_SIGNAL"
         elif not c.historical_market_eligible:
             reason="MARKET_NOT_POINT_IN_TIME_ELIGIBLE"
-        elif not c.historical_oos_approved:
+        elif not c.historical_oos_approved and not policy.allow_exploratory_unvalidated:
             reason="STRATEGY_NOT_HISTORICALLY_VALIDATED"
         elif not c.calibrated_same_target_and_exit or \
              c.prediction_target!=policy.required_target or \
