@@ -53,10 +53,10 @@ def append_event(type_,name,**fields):
 def ensure_prerequisites():
     if os.geteuid()!=0 or os.environ.get(ENV)!=OFFLINE:
         raise RuntimeError("EXPLICIT_ISOLATED_OFFLINE_ROOT_CONSENT_REQUIRED")
-    if cmd(["systemctl","is-active","nbot-v6-library-20261018.service"])=="active":
+    if subprocess.run(["systemctl","is-active","--quiet","nbot-v6-library-20261018.service"],check=False).returncode==0:
         raise RuntimeError("ORIGINAL_LIBRARY_STILL_RUNNING")
     # profit protector must *complete*, not merely stop/timeout.
-    if cmd(["systemctl","is-active","nbot-v6-profit-protection-next-20261018.service"])=="active":
+    if subprocess.run(["systemctl","is-active","--quiet","nbot-v6-profit-protection-next-20261018.service"],check=False).returncode==0:
         raise RuntimeError("PROFIT_PROTECTION_STILL_RUNNING")
     if cmd(["docker","ps","-q"]):
         raise RuntimeError("OTHER_DOCKER_ACTIVITY_PROHIBITED")
@@ -229,6 +229,7 @@ def main():
     # Do not modify existing work when critical prerequisites fail.
     head=ensure_prerequisites()
     OUTPUT.mkdir(parents=True,exist_ok=True)
+    os.chown(OUTPUT,1000,1000)
     with (OUTPUT/"singleton.lock").open("w") as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         state={"schema":"nbot-v6-global-25x8-progress-1","status":"running",
