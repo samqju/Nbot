@@ -118,7 +118,7 @@ def trade_metrics(kind,family,period):
          "wins":sum(float(t["profit_abs"])>0 for t in trades),
          "hypothetical_extra_bps_not_observed_spread":True,
          "trade_count_and_native_cost_audit_passed":True,
-         "trailing_enabled":kind=="trailing",
+         "trailing_enabled":kind=="trailing" or kind.startswith("protect_trail"),
          "backtest_start":v.get("backtest_start"),
          "backtest_end":v.get("backtest_end")}
     save_atomic(folder/"native-economic-audit.json",out)
