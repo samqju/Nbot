@@ -163,7 +163,7 @@ def learn_and_rank(df, days, start, stop, outdir, pairlist):
     calib=training[training.date>=split]
     if len(core)<100 or len(calib)<30:
         return {"status":"insufficient_training_or_calibration",
-                "window_days":days,"from":str(start),"train":len(core),"calib":len(calib)},[]
+                "window_days":days,"from":str(start),"train":len(core),"calib":len(calib)},[],[]
     X=numeric_matrix(core,pairlist)
     y=core.net_proxy.to_numpy(float)
     reg=LGBMRegressor(n_estimators=90,learning_rate=.04,num_leaves=15,
@@ -181,10 +181,20 @@ def learn_and_rank(df, days, start, stop, outdir, pairlist):
     # Conservative empirical calibration; don't claim independent net-PnL proof.
     if not np.isfinite(error):raise RuntimeError("UNCALIBRATED_RESIDUAL")
     observed= df[(df.date>=start)&(df.date<stop)].copy()
-    if observed.empty:return {"status":"no_valid_signals","window_days":days,"from":str(start)},[]
+    if observed.empty:return {"status":"no_valid_signals","window_days":days,"from":str(start)},[],[]
     observed["prediction"]=reg.predict(numeric_matrix(observed,pairlist))
-    observed["win_probability"]=(clf.predict_proba(numeric_matrix(observed))[:,1]
-                                  if clf is not None else np.full(len(observed),0.0))
+    if clf is not None:
+        calibration_raw=clf.predict_proba(numeric_matrix(calib,pairlist))[:,1]
+        calibration_truth=(calib.net_proxy.to_numpy()>0).astype(int)
+        if len(set(calibration_truth))>1:
+            isotonic=IsotonicRegression(out_of_bounds="clip")
+            isotonic.fit(calibration_raw,calibration_truth)
+            observed["win_probability"]=isotonic.predict(
+                clf.predict_proba(numeric_matrix(observed,pairlist))[:,1])
+        else:
+            observed["win_probability"]=float(np.mean(calibration_truth))
+    else:
+        observed["win_probability"]=0.0
     # Dynamic overall candidate downside reserve from earlier calibration only.
     worst=float(np.quantile(calib.net_proxy.to_numpy(),.10))
     downside=max(0.0,-worst)
@@ -192,8 +202,9 @@ def learn_and_rank(df, days, start, stop, outdir, pairlist):
     policy=RankPolicy(minimum_conservative_edge_fraction=0.001,
         max_model_age_hours=24*15,maximum_uncertainty_fraction=1.0,
         maximum_downside_risk_fraction=1.0,maximum_additional_cost_fraction=.02,
-        downside_penalty_weight=.25)
+        downside_penalty_weight=.25,allow_exploratory_unvalidated=True)
     decisions=[]
+    forecast_rows=[]
     for date,rows in observed.groupby("date",sort=True):
         after=date+pd.Timedelta(minutes=5)
         opportunities=[]
@@ -218,7 +229,7 @@ def learn_and_rank(df, days, start, stop, outdir, pairlist):
                 # hypothetical liquidity capacity proxy, NOT book depth.
                 available_market_depth_usdt=float(x.liquidity_turnover_proxy_usdt),
                 intended_stake_usdt=1000,
-                has_valid_signal=True,historical_oos_approved=True,
+                has_valid_signal=True,historical_oos_approved=False,
                 calibrated_same_target_and_exit=True,valid_model_prediction=True,
                 historical_market_eligible=True,training_label_embargo_verified=True))
         result=choose_global_opportunity(opportunities,
@@ -232,6 +243,24 @@ def learn_and_rank(df, days, start, stop, outdir, pairlist):
                 "predicted_net":float(scored.prediction),
                 "prob_positive":float(scored.win_probability),
                 "model_train_cutoff":str(cutoff)})
+        rejection=dict(result.rejected_reasons)
+        selected_identity=result.winner
+        for x in rows.itertuples(index=False):
+            identity=(x.pair,x.family,x.side,"frozen_60m_exit_after_2pct_stop")
+            key="|".join(identity)
+            is_selected=bool(result.action=="SELECT" and identity==selected_identity)
+            reason=("SELECTED" if is_selected else
+                    "PROBABILITY_BELOW_PREDECLARED_MINIMUM" if x.win_probability<.50
+                    else rejection.get(key,"BEATEN_BY_BETTER_OPPORTUNITY"))
+            forecast_rows.append({
+                "date":date.isoformat(),"pair":x.pair,"family":x.family,
+                "side":x.side,"predicted_net_fraction":float(x.prediction),
+                "calibrated_positive_probability":float(x.win_probability),
+                "uncertainty_fraction":error,"downside_fraction":downside,
+                "extra_execution_stress_fraction":EXTRA_COST,
+                "exploratory_not_economically_validated":True,
+                "selected":is_selected,"reason":reason,
+                "model_train_cutoff":str(cutoff)})
     info={"status":"complete","window_days":days,"from":str(start),"to":str(stop),
           "train_samples":len(core),"calibration_samples":len(calib),
           "candidate_count":len(observed),"selected_decisions":len(decisions),
@@ -241,7 +270,7 @@ def learn_and_rank(df, days, start, stop, outdir, pairlist):
           "liquidity_is_bar_volume_capacity_proxy_not_measured_depth":True,
           "signal_universe_exactly_eight_families":True,
           "model_trained_on_pre_calibration_chronology":True}
-    return info,decisions
+    return info,decisions,forecast_rows
 
 def main():
     p=argparse.ArgumentParser()
@@ -258,22 +287,29 @@ def main():
     if len(pairs)!=25 or len(set(pairs))!=25:raise RuntimeError("REQUIRE_FIXED_25")
     manifest=out/"historical-data-and-proxy-manifest.json"
     df=build(manifest,pairs,a.history)
+    # Future labels are saved for OFFLINE inspection only. Ranking sees strictly
+    # historical features from numeric_matrix, never the net_proxy outcome.
+    df.to_parquet(out/"all-valid-opportunities-and-research-labels.parquet",index=False)
     all_decisions=[]
+    all_forecasts=[]
     audit=[]
     for start in pd.date_range(START,END,freq="7D",inclusive="left"):
         stop=min(start+pd.Timedelta(days=7),END)
-        info,decisions=learn_and_rank(df,a.lookback,start,stop,out,pairs)
+        info,decisions,forecasts=learn_and_rank(df,a.lookback,start,stop,out,pairs)
         audit.append(info)
         all_decisions.extend(decisions)
+        all_forecasts.extend(forecasts)
         print(f"RANK_PROGRESS lookback={a.lookback} start={start} {info['status']} decisions={len(decisions)}",flush=True)
     # A distinct row per shared completed candle; never select two competing trades.
     d=pd.DataFrame(all_decisions,columns=["date","pair","family","side","score",
                                "predicted_net","prob_positive","model_train_cutoff"])
     if d.duplicated(["date"]).any():raise RuntimeError("MULTIPLE_GLOBAL_WINNERS")
     d.to_csv(out/"global_decisions.csv",index=False)
+    pd.DataFrame(all_forecasts).to_parquet(out/"asof-forecasts-and-rejections.parquet",index=False)
     safe_json(out/"training-and-calibration-audit.json",{
         "schema":"v6-global-eight-20261018","window_days":a.lookback,
-        "stages":audit,"decisions":len(d),"historically_viewed_months_not_blind":True,
+        "stages":audit,"decisions":len(d),"scored_valid_candidates":len(all_forecasts),
+        "all_candidate_rows_saved_for_owner_review":len(df),"historically_viewed_months_not_blind":True,
         "fee_and_exit_proxy_not_native_execution":True,"no_paper_or_live":True,
         "native_portfolio_test_required":True})
     print("OFFLINE_FORECAST_OUTPUT_OK decisions="+str(len(d)),flush=True)
