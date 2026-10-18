@@ -39,6 +39,13 @@ def safe_json(path, obj):
     t.write_text(json.dumps(obj,sort_keys=True,indent=2,default=str)+"\n")
     t.replace(p)
 
+def file_sha256(path):
+    digest=hashlib.sha256()
+    with Path(path).open("rb") as inp:
+        for chunk in iter(lambda:inp.read(4*1024*1024),b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
 def compute_features(v):
     c=v.close.replace(0,np.nan)
     out=pd.DataFrame(index=v.index)
@@ -298,7 +305,7 @@ def main():
         info=json.loads(manifest.read_text())
         if saved.get("pairlist")!=pairs or info.get("pairs")!=pairs:
             raise RuntimeError("SHARED_CANDIDATE_PAIR_UNIVERSE_CHANGED")
-        if hashlib.sha256(archive.read_bytes()).hexdigest()!=saved.get("sha256"):
+        if file_sha256(archive)!=saved.get("sha256"):
             raise RuntimeError("SHARED_CANDIDATE_CACHE_HASH_CHANGED")
         df=pd.read_parquet(archive)
         print("REUSING_VERIFIED_SHARED_25x8_CANDIDATE_UNIVERSE",flush=True)
@@ -311,11 +318,11 @@ def main():
         df.to_parquet(temp,index=False)
         temp.replace(archive)
         safe_json(sealed,{"schema":"v6-global-shared-candidates-1",
-                          "sha256":hashlib.sha256(archive.read_bytes()).hexdigest(),
+                          "sha256":file_sha256(archive),
                           "pairlist":pairs,"rows":len(df),
                           "future_labels_never_passed_into_model_features":True})
     safe_json(out/"shared-candidate-universe-reference.json",{
-        "shared_parquet":str(archive),"sha256":hashlib.sha256(archive.read_bytes()).hexdigest(),
+        "shared_parquet":str(archive),"sha256":file_sha256(archive),
         "rows":len(df),"no_hindsight_feature_column":True})
     all_decisions=[]
     all_forecasts=[]
