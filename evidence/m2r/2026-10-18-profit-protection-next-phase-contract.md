@@ -1,5 +1,16 @@
 # NBOT V6 — owner-ordered NEXT native profit-protection exit research phase (2026-10-18)
 
+**ACTUALLY QUEUED ON OWNER'S ISOLATED V6 VPS AT 2026-10-18T04:23:02Z (09:53 IST).** GitHub native unit / exact 40 strategy class discovery CI [39096771429](https://github.com/samqju/Nbot/actions/runs/39096771429) PASSED, including 5 pre-registered exit policies × 8 Freqtrade native classes and source syntax. An immutable, root-only **once-only VPS successor wait script**, mirrored from [scripts/m2r_v6_profit_protection_successor_wait.sh](../../scripts/m2r_v6_profit_protection_successor_wait.sh), was saved outside the active Git checkout as `/root/nbot-v6-m1-20261016/library-20261018/v6-profit-protection-successor-wait-once.sh`, syntax checked, SHA256 `89f5a1762c8bcfa03ecae646cda2344b4364a63fc0a361e9c2fc092443684b72`. Explicitly started finite VPS systemd transient **`nbot-v6-profit-protection-next-20261018.service`** at **04:23:02 UTC**, independently verified **active/running PID 148502**, with log line `WAIT_FOR_FINITE_RESEARCH_ONLY_STUDY_COMPLETION: nbot-v6-library-20261018.service`. The **original batch remains active/running PID 142873 at launch**, source checkout still frozen at `aa97a32`; no new native Docker was started, no Git pull or prior research modification, no paper/live activities or keys.
+
+The successor's wait loop checks the original service once per minute **for at most 24 hours** (not a repeating ChatGPT automation), then ONLY after the original service stops **and** its saved status says `complete_with_individual_failures_if_any` and its actual native summary exists and Docker is idle does it perform `git pull --ff-only` on the SAME V6 research branch. The new coordinator independently requires **all 24 original fixed + 24 original trailing real native ZIP economic audits and all three NoML baseline audits**, and refuses partial/inconsistent portfolios. Then and only then will it execute the conservative OHLCV loss-path diagnostic and **120 one-at-a-time** new native exit backtests. A premature/blocked original batch, dirty branch, missing archive, another Docker, source/syntax failure, job timeout/reboot or code audit error **halts the successor without claiming completion**. **The follow-up does NOT survive VPS reboot**. It is **QUEUED, NOT YET EXECUTING EXIT TRIALS**, as of 04:23:02 UTC. VPS status:
+```bash
+systemctl status nbot-v6-profit-protection-next-20261018.service --no-pager
+tail -n 15 /root/nbot-v6-m1-20261016/library-20261018/v6-profit-protection-successor-wait-once.log
+cat /root/nbot-v6-m1-20261016/library-20261018/profit-protection-next-phase/status.json
+```
+The last command returns missing until the previous batch completes and the successor actually starts; that is expected. Owner's previously deleted ChatGPT scheduler was NOT recreated.
+
+
 **Owner direction:** “the changes in research priorities you just suggested should be tested next once current run of things is completed.” This is a real execution directive to study profit protection and smaller reasonable gain targets **after** the currently active eight-family native strategy, trailing-stop, Hyperopt, LightGBM, regime NO_TRADE, PPO research batch completes.
 
 ## Strictly after the ongoing batch
