@@ -25,7 +25,7 @@ sys.path.insert(0,str(ROOT/"user_data"/"strategies"))
 from m2r_strategy_library_selector import (
     CandidateBlock, choose_validated_strategy, parse_blocks, VALID_FAMILIES
 )
-from m2r_v6_library_native_job import CANDIDATES, OVERLAYS, PERIODS, plan
+from m2r_v6_library_native_job import CANDIDATES, OVERLAYS, PERIODS, PROFIT_PROTECTION_VARIANTS, plan
 
 
 def make_block(family="ema_cross",regime="trend_up",start="2026-05-01T00:00:00Z",
@@ -196,6 +196,31 @@ class TestResearchExecutionSafety(unittest.TestCase):
         assert 'run_one("rl","ema_cross","validation_july")' in batch
         assert 'for family in FAMILIES:' in batch
         assert "paper_trading" in batch and "real_trading" in batch
+
+    def test_five_followup_exit_policies_remain_separate_native_trials(self):
+        self.assertEqual(len(PROFIT_PROTECTION_VARIANTS),5)
+        library=(ROOT/"user_data/strategies/NbotV6ProfitProtectionResearch.py").read_text()
+        for policy, suffix in PROFIT_PROTECTION_VARIANTS.items():
+            for family,(original,ml) in CANDIDATES.items():
+                expected=original.replace("Research",suffix+"Research")
+                cmd=plan(policy,family,"validation_july")
+                self.assertIn(expected,cmd)
+                self.assertIn("--enable-protections",cmd)
+                self.assertIn("freqtradeorg/freqtrade:stable_freqai",cmd)
+                self.assertIn("class "+expected+"(",library)
+            self.assertTrue(json.loads((ROOT/"user_data"/OVERLAYS[policy]).read_text())["dry_run"])
+        self.assertIn('minimal_roi = {"0": 0.02}',library)
+        self.assertIn('minimal_roi = {"0": 0.03}',library)
+        self.assertIn('trailing_stop_positive_offset = 0.01',library)
+        self.assertIn('trailing_stop_positive_offset = 0.015',library)
+        self.assertIn('trailing_stop_positive_offset = 0.02',library)
+        successor=(ROOT/"scripts/m2r_v6_profit_protection_batch.py").read_text()
+        self.assertIn('CURRENT_BATCH_NOT_SUCCESSFULLY_COMPLETE',successor)
+        self.assertIn('PREREQUISITE_NATIVE_AUDIT_MISSING',successor)
+        self.assertIn('status="complete_offline_not_release_ready"',successor)
+        self.assertIn('native_exit_study(commit)',successor)
+        self.assertIn('no_trade_baseline_usdt',successor)
+        assert 'REAL_TRADING_ENABLED' not in successor
 
     def test_rl_and_adaptive_are_isolated_and_empty_manifest_no_auto_winner(self):
         self.assertIn("NbotV6CostAwareRLResearch",plan("rl","ema_cross","validation_july"))
