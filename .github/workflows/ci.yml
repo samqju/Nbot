@@ -130,7 +130,7 @@ jobs:
           python -m py_compile scripts/m2r_v6_global_dataset.py scripts/m2r_v6_global_batch.py user_data/strategies/NbotV6GlobalOfflineResearch.py
       - name: Run real pandas and LightGBM synthetic global research tests inside official FreqAI image
         run: |
-          docker run --rm --network none \
+          docker run --rm --network none --workdir /research \
             -v "$PWD:/research:ro" \
             --entrypoint python freqtradeorg/freqtrade:stable_freqai \
             -m unittest tests.test_m2r_v6_global_batch_contract -v
