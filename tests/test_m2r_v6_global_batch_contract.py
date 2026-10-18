@@ -109,4 +109,38 @@ class TestDatasetProxyContract(unittest.TestCase):
         self.assertEqual(m.shape,(2,len(self.module.BASE_FEATURES)+8+1+2))
         self.assertFalse((m[0]==m[1]).all())
 
+    def test_chronological_lightgbm_scoring_retains_all_rejected_candidates(self):
+        import numpy as np
+        pd=self.pd
+        start=pd.Timestamp("2026-08-01T00:00:00Z")
+        pairs=("BTC/USDT:USDT","ETH/USDT:USDT")+tuple(
+            f"TEST{i}/USDT:USDT" for i in range(23))
+        rows=[]
+        times=list(pd.date_range(start-pd.Timedelta(days=28),
+                                 start-pd.Timedelta(days=8),periods=260))
+        times+=list(pd.date_range(start-pd.Timedelta(days=5),
+                                  start-pd.Timedelta(days=2),periods=75))
+        times+=list(pd.date_range(start,start+pd.Timedelta(hours=1),periods=26))
+        for n,t in enumerate(times):
+            row=dict(date=t,pair=pairs[n%2],
+                     family=self.module.FAMILIES[n%8],
+                     side="short" if n%3==0 else "long",
+                     label_observed_at=t+pd.Timedelta(minutes=60),
+                     net_proxy=(.022 if n%3 else -.024),
+                     liquidity_turnover_proxy_usdt=25000)
+            for j,key in enumerate(self.module.BASE_FEATURES):
+                row[key]=float(.01*(j+1)+np.sin(n/7.0+j)*.003)
+            rows.append(row)
+        df=pd.DataFrame(rows)
+        audit,selected,forecasts=self.module.learn_and_rank(
+            df,30,start,start+pd.Timedelta(days=1),None,pairs)
+        self.assertEqual(audit["status"],"complete")
+        self.assertEqual(len(forecasts),26)
+        self.assertEqual(audit["candidate_count"],26)
+        self.assertLessEqual(len(selected),26)
+        self.assertTrue(all("reason" in x for x in forecasts))
+        self.assertTrue(all(x["exploratory_not_economically_validated"]
+                            for x in forecasts))
+        self.assertTrue(all("net_proxy" not in x for x in forecasts))
+
 if __name__=="__main__":unittest.main()
