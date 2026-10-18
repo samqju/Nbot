@@ -119,6 +119,10 @@ jobs:
             --entrypoint python \
             freqtradeorg/freqtrade:stable_freqairl \
             -c 'import sys; sys.path.insert(0, "/freqtrade/user_data/freqaimodels"); from NbotV6CostAwareRLResearch import NbotV6CostAwareRLResearch; assert hasattr(NbotV6CostAwareRLResearch, "MyRLEnv"); print("V6_OFFLINE_RL_NATIVE_MODEL_API_OK")'
+      - name: Parse finite post-batch profit-protection VPS handoff (never start in CI)
+        run: |
+          bash -n scripts/m2r_v6_profit_protection_successor_wait.sh
+          python3 -m py_compile scripts/m2r_v6_profit_protection_batch.py scripts/m2r_v6_profit_reversal_audit.py
       - name: Validate independent 20-slot paper configuration with real Freqtrade schema
         run: |
           set -o pipefail
