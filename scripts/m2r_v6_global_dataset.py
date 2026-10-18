@@ -29,7 +29,6 @@ HORIZON=12
 BASE_FEATURES=("trend","atr_pct","rsi","macd_norm","volume_ratio",
                "body","range","past_3","past_12")
 FAMILIES=tuple(FAMILIES)
-DATA_COLS=tuple(BASE_FEATURES)+tuple("family_"+x for x in FAMILIES)+("short",)
 START=pd.Timestamp(FIRST)
 END=pd.Timestamp(LAST)
 
@@ -117,14 +116,16 @@ def pair_events(pair, directory):
                      "date":date,"label_observed_at":observed,
                      "net_proxy":float(actual)}
                 row.update({col:float(feat[col]) for col in BASE_FEATURES})
+                row["liquidity_turnover_proxy_usdt"]=max(0.0,float(v.close.iloc[int(i)]*v.volume.iloc[int(i)])*.01)
                 rows.append(row)
     return rows,hashlib.sha256(path.read_bytes()).hexdigest()
 
-def numeric_matrix(df):
+def numeric_matrix(df,pairlist):
     # All encodings are explicit to stop train/eval column mismatches.
     cols=[df[c].to_numpy(dtype=np.float32) for c in BASE_FEATURES]
     cols += [(df.family==f).to_numpy(dtype=np.float32) for f in FAMILIES]
     cols += [(df.side=="short").to_numpy(dtype=np.float32)]
+    cols += [(df.pair==p).to_numpy(dtype=np.float32) for p in pairlist]
     return np.column_stack(cols)
 
 def build(raw, pairlist, directory):
@@ -162,7 +163,7 @@ def learn_and_rank(df, days, start, stop, outdir, pairlist):
     if len(core)<100 or len(calib)<30:
         return {"status":"insufficient_training_or_calibration",
                 "window_days":days,"from":str(start),"train":len(core),"calib":len(calib)},[]
-    X=numeric_matrix(core)
+    X=numeric_matrix(core,pairlist)
     y=core.net_proxy.to_numpy(float)
     reg=LGBMRegressor(n_estimators=90,learning_rate=.04,num_leaves=15,
                      max_depth=5,min_child_samples=50,verbosity=-1,n_jobs=1,
@@ -174,13 +175,13 @@ def learn_and_rank(df, days, start, stop, outdir, pairlist):
                            random_state=20261018)
         clf.fit(X,(y>0).astype(int))
     else:clf=None
-    predicted=reg.predict(numeric_matrix(calib))
+    predicted=reg.predict(numeric_matrix(calib,pairlist))
     error=float(np.quantile(abs(calib.net_proxy.to_numpy()-predicted),.75))
     # Conservative empirical calibration; don't claim independent net-PnL proof.
     if not np.isfinite(error):raise RuntimeError("UNCALIBRATED_RESIDUAL")
     observed= df[(df.date>=start)&(df.date<stop)].copy()
     if observed.empty:return {"status":"no_valid_signals","window_days":days,"from":str(start)},[]
-    observed["prediction"]=reg.predict(numeric_matrix(observed))
+    observed["prediction"]=reg.predict(numeric_matrix(observed,pairlist))
     observed["win_probability"]=(clf.predict_proba(numeric_matrix(observed))[:,1]
                                   if clf is not None else np.full(len(observed),0.0))
     # Dynamic overall candidate downside reserve from earlier calibration only.
@@ -198,7 +199,8 @@ def learn_and_rank(df, days, start, stop, outdir, pairlist):
         for x in rows.itertuples(index=False):
             opportunities.append(Opportunity(
                 pair=x.pair,family=x.family,side=x.side,
-                regime=("trend_down" if x.side=="short" else "trend_up"),
+                regime=("trend_up" if x.trend>0.003 else
+                        "trend_down" if x.trend< -0.003 else "range"),
                 signal_candle_closed_utc=after.isoformat(),
                 prediction_generated_utc=after.isoformat(),
                 model_training_last_feature_utc=(split-pd.Timedelta(minutes=70)).isoformat(),
@@ -209,7 +211,10 @@ def learn_and_rank(df, days, start, stop, outdir, pairlist):
                 uncertainty_fraction=error,
                 additional_execution_cost_fraction=EXTRA_COST,
                 downside_risk_fraction=downside,
-                available_market_depth_usdt=10000, intended_stake_usdt=1000,
+                # Last closed 5m traded notional / 100 is an explicitly
+                # hypothetical liquidity capacity proxy, NOT book depth.
+                available_market_depth_usdt=float(x.liquidity_turnover_proxy_usdt),
+                intended_stake_usdt=1000,
                 has_valid_signal=True,historical_oos_approved=True,
                 calibrated_same_target_and_exit=True,valid_model_prediction=True,
                 historical_market_eligible=True,training_label_embargo_verified=True))
@@ -229,6 +234,7 @@ def learn_and_rank(df, days, start, stop, outdir, pairlist):
           "candidate_count":len(observed),"selected_decisions":len(decisions),
           "calibration_absolute_residual_75pct":error,"calibration_downside_10pct":downside,
           "uses_proxy_labels_without_future_funding":True,
+          "liquidity_is_bar_volume_capacity_proxy_not_measured_depth":True,
           "signal_universe_exactly_eight_families":True,
           "model_trained_on_pre_calibration_chronology":True}
     return info,decisions
