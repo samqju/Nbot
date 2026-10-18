@@ -34,3 +34,10 @@ python3 /root/nbot-v6-m1-20261016/global-next-source/scripts/m2r_v6_global_batch
 ```
 
 When running, `global-25x8-20261018/progress.json` contains `jobs_completed / jobs_total` out of 12. If queue is waiting, no new model percentage is earned.
+
+## CI and cache update
+
+- [GitHub Actions CI run 39126551856](https://github.com/samqju/Nbot/actions/runs/39126551856) passed both `offline-unit-tests` and `actual-freqtrade-strategy-discovery` after actual global model/adapter code edits; M1 historical job was intentionally skipped. A CI success checks syntax, synthetic LightGBM pipeline behavior and official Freqtrade strategy imports, **not a real 25-coin global-portfolio backtest**.
+- The 30/60/90/180 lookbacks now **reuse a single SHA256-verified candidate-feature and aftercost proxy-label dataset** instead of regenerating all 25×8 historical signals four times. The saved as-of forecast and rejection ledger contains eligible candidates, their predicted probabilities and reasons, WITHOUT adding future realized labels to forecast decisions.
+- The native backtests enforce `--cache none` and Freqtrade drawdown/stoploss/cooldown protections, so they cannot reuse prior cached results for different globally selected entry signals.
+- The global ranker defaults to rejecting economically unvalidated families; only the explicitly marked **research-only exploratory policy** permits challenger comparisons without falsely marking them as accepted trading strategies. Native adapter refuses non-backtest modes.
