@@ -48,6 +48,7 @@ jobs:
             scripts/m2r_v6_library_full_batch.py \
             scripts/m2r_v6_profit_protection_batch.py \
             scripts/m2r_v6_profit_reversal_audit.py \
+            scripts/m2r_v6_global_opportunity_ranker.py \
             user_data/strategies/NbotV6ProfitProtectionResearch.py
           python -m json.tool user_data/config.v6-library-native-offline.json > /dev/null
           python -m json.tool user_data/config.v6-library-lgbm-offline.json > /dev/null
