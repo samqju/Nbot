@@ -92,8 +92,9 @@ def ensure_prerequisites():
 def docker_run(args, logfile, timeout=14400):
     with logfile.open("w") as f:
         try:
+            network="bridge" if len(args)>1 and args[1]=="freqtrade" else "none"
             p=subprocess.run(["timeout","-s","TERM","-k","60",str(timeout),
-                              "docker","run","--rm","--network","none",
+                              "docker","run","--rm","--network",network,
                               "--memory","6g","--cpus","2",
                               "--cap-drop","ALL","--security-opt","no-new-privileges",
                               "-v",str(SOURCE)+":/research:ro",
@@ -208,13 +209,25 @@ def native_job(days,policy):
         "--userdir",f"/results/w{days}/native-{policy}",
         "--datadir","/history",
         "--strategy",model,"--strategy-path","/research/user_data/strategies",
-        "--timerange","20260701-20261001","--fee","0.0005",
+        "--timerange","20260715-20261001","--fee","0.0005",
         "--export","trades"],
         folder/"native-backtest.log",timeout=14400)
     a=native_audit(folder,policy,days)
     append_event("complete",f"native_{days}_{policy}",
                  trades=a["trades"],net=a["native_net_usdt"],stress=a["additional_25bp_stressed_net_usdt"])
     return a
+
+def audited_completed_count():
+    total=0
+    for days in WINDOWS:
+        base=OUTPUT/f"w{days}"
+        if (base/"training-and-calibration-audit.json").is_file() and (base/"global_decisions.csv").is_file():
+            total+=1
+        for policy in PROFILES:
+            p=base/f"native-{policy}"
+            if (p/"native-audit.json").is_file() and len(list((p/"backtest_results").glob("*.zip")))==1:
+                total+=1
+    return total
 
 def main():
     p=argparse.ArgumentParser()
@@ -246,7 +259,7 @@ def main():
             for days in WINDOWS:
                 data_job(days)
                 state.update(stage=f"forecast_{days}",
-                             jobs_completed=state["jobs_completed"]+1,last_heartbeat=now())
+                             jobs_completed=audited_completed_count(),last_heartbeat=now())
                 atomic_json(STATUS,state)
             reports=[]
             for days in WINDOWS:
