@@ -146,5 +146,17 @@ class TestFull25CoinGlobalForecastRanking(unittest.TestCase):
         self.assertTrue(select([replace(sample(),historical_oos_approved=False)]).is_no_trade)
 
 
+    def test_exploratory_unvalidated_requires_explicit_policy(self):
+        from dataclasses import replace
+        candidate=replace(sample(),historical_oos_approved=False)
+        self.assertTrue(select([candidate]).is_no_trade)
+        result=choose_global_opportunity(
+            [candidate],decision_at_utc=NOW,original_25_pairs=PAIRS,
+            portfolio_has_open_position=False,
+            policy=RankPolicy(allow_exploratory_unvalidated=True))
+        self.assertEqual(result.action,"SELECT")
+        self.assertTrue(result.research_only)
+
+
 if __name__=="__main__":
     unittest.main()
