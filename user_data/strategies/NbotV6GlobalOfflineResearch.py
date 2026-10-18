@@ -30,6 +30,17 @@ class NbotV6GlobalOfflineResearch(IStrategy):
     trailing_stop=False
     _cache=None
 
+    @property
+    def protections(self):
+        return [
+            {"method":"CooldownPeriod","stop_duration_candles":2},
+            {"method":"StoplossGuard","lookback_period_candles":48,
+             "trade_limit":3,"stop_duration_candles":24,"only_per_pair":False},
+            {"method":"MaxDrawdown","calculation_mode":"equity",
+             "lookback_period_candles":288,"trade_limit":8,
+             "stop_duration_candles":48,"max_allowed_drawdown":0.06},
+        ]
+
     def _guard(self):
         c=self.config
         mode=str(getattr(c.get("runmode"),"value",c.get("runmode"))).lower()
