@@ -1,5 +1,7 @@
 # NBOT V6 — owner proposal: compare all strategy opportunities across all 25 coins BEFORE every entry
 
+> **Scope clarification approved 2026-10-18:** The owner's core comparison is **25 coins × eight new independent strategy families**, up to two valid sides per family. The original breakout and pullback families in this *earlier ten-family* proof-of-concept remain separately reportable benchmark or optional expanded challenger. The canonical, phased and more detailed specification is [V6_GLOBAL_OPPORTUNITY_SELECTION_DESIGN.md](../../V6_GLOBAL_OPPORTUNITY_SELECTION_DESIGN.md). This older contract and pure ranker are not a deployed simultaneous all-model portfolio.
+
 **2026-10-18 — GitHub source/design only. Laptop unavailable; no attempt to access, pull code to, or restart the authorized V6 VPS. Original native 30/60/90/180 lookback experiments and the currently running finite 8-family research and queued profit-protection successor remain unchanged.**
 
 ## What the original experiment did and why this is new
