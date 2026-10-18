@@ -1,4 +1,7 @@
 # NBOT V6 — Global Coin × Strategy Opportunity Selection
+
+> **IMPLEMENTATION UPDATE 2026-10-18:** Original specification below is now complemented by [working source and VPS queue evidence](evidence/m2r/2026-10-18-global-eight-strategy-implementation-vps-queue.md). Historical LightGBM 25×8 candidate generation, basic calibrated probability and risk-based ranking, a unified *native* one-slot Freqtrade adapter, 30/60/90/180 offline 4-lookback coordination, fixed-vs-trailing native comparisons and an enabled **waiting third-stage service** exist. The first actual integrated historical backtest is **NOT YET EXECUTED**; results and untouched holdout remain pending. The original eight-family study and 120-run profit protection retain precedence. Further dynamic exit-policy-specific learning, measured depth/spread/fill evidence and final economic gate are not yet built/proven.
+
 **Owner-approved research design — 2026-10-18.** **DESIGN / OFFLINE RESEARCH ONLY.** No new VPS jobs, paper/live orders, automatic promotions, V5 edits, default-branch merges, or changes to already-running studies are authorized by this document.
 
 ## 1. What the owner wants (binding scope)
