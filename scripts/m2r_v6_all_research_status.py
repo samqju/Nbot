@@ -83,7 +83,21 @@ def main():
     successes = 0
     alljobs = 0
     for label, prefix, total in PLANNED:
-        good = sum(key.startswith(prefix) for key in finished)
+        if prefix in ("baseline/", "native/", "trailing/"):
+            # A previously audited job can be RESUMED without a new 'complete'
+            # event. The actual native ZIP + economic audit is authoritative.
+            kind = prefix.rstrip("/")
+            valid = []
+            for proof in (LIB / kind).glob("*/*/native-economic-audit.json"):
+                obj = safe_json(proof)
+                archive = proof.parent / "backtest_results" / str(obj.get("archive_name", ""))
+                if (obj.get("kind") == kind
+                    and obj.get("trade_count_and_native_cost_audit_passed") is True
+                    and archive.is_file()):
+                    valid.append((obj.get("family"), obj.get("period")))
+            good = len(set(valid))
+        else:
+            good = sum(key.startswith(prefix) for key in finished)
         bad = sum(key.startswith(prefix) for key in failures)
         successes += good
         alljobs += total
