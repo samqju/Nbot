@@ -36,6 +36,7 @@ class TestGlobalOfflineResearchSafety(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             dest=Path(temporary)
             with patch.object(batch,"OUTPUT",dest), \
+                 patch.object(batch,"EVENTS",dest/"events.jsonl"), \
                  patch.object(batch.os,"chown",return_value=None), \
                  patch.object(batch,"docker_run",side_effect=RuntimeError("INTENTIONAL_NO_DOCKER")):
                 with self.assertRaisesRegex(RuntimeError,"INTENTIONAL_NO_DOCKER"):
