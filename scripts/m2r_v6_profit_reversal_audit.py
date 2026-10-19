@@ -78,8 +78,15 @@ def report(archive:Path,history:Path):
             exits[t.get("exit_reason","UNKNOWN")]+=1
             entry=pd.Timestamp(t["open_date"]).tz_convert("UTC")
             exit_dt=pd.Timestamp(t["close_date"]).tz_convert("UTC")
-            if not entry<exit_dt:
+            if exit_dt<entry:
                 raise RuntimeError("REVERSE_DATE_IN_NATIVE_TRADE")
+            if exit_dt==entry:
+                # Freqtrade can legitimately open and stop out during one 5m
+                # candle. There is no earlier fully completed candle to inspect.
+                # This is an *unobservable path*, NOT a reversed trade.
+                counts["losses_without_pre_exit_complete_candle"]+=1
+                counts["losses_native_same_candle_entry_and_exit"]+=1
+                continue
             # Exclude the native EXIT candle entirely so an intrabar
             # stop-vs-high ambiguity on the exit candle is not labeled as an
             # earlier recoverable profit. This undercounts opportunities.
