@@ -37,10 +37,22 @@ def preflight(root=BASE):
         blockers.append("REQUIRE_EXACT_25_UNIQUE_PAIRS")
     if c.get("exchange",{}).get("key") or c.get("exchange",{}).get("secret"):
         blockers.append("EXCHANGE_CREDENTIALS_MUST_BE_EMPTY")
-    if c.get("dry_run") is not True or c.get("nbot_live_mode") is not False:
+    # The shared V6 base config omits the research-only flags; Stage3's
+    # explicit Freqtrade overlay provides both FALSE values. An explicit
+    # TRUE in the base config is still blocked.
+    if c.get("dry_run") is not True or c.get("nbot_live_mode") is True:
         blockers.append("OFFLINE_ONLY_CONFIG_GATE")
-    if c.get("nbot_paper_research_mode") is not False:
+    if c.get("nbot_paper_research_mode") is True:
         blockers.append("PAPER_RESEARCH_MUST_BE_OFF")
+    runner=(source/"scripts/m2r_v6_global_batch.py")
+    if runner.is_file():
+        content=runner.read_text()
+        for token in ('"nbot_live_mode":False',
+                      '"nbot_paper_research_mode":False',
+                      '"nbot_v6_global_research_only":True',
+                      '"freqai":{"enabled":False}'):
+            if token not in content:
+                blockers.append("MISSING_EXPLICIT_STAGE3_OVERLAY_FLAG_"+token)
     if c.get("max_open_trades")!=1 or c.get("stake_amount")!=1000:
         blockers.append("RESEARCH_PORTFOLIO_CAPITAL_POLICY_MISMATCH")
     for rel in DEFAULTS:
