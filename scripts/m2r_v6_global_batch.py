@@ -77,6 +77,15 @@ def ensure_prerequisites():
         raise RuntimeError("ISOLATED_GLOBAL_GIT_CHECKOUT_REQUIRED")
     if cmd(["git","-C",str(SOURCE),"status","--porcelain=v1"]):
         raise RuntimeError("ISOLATED_GIT_CHECKOUT_DIRTY")
+    # The official FreqAI container runs as uid 1000. A git pull after
+    # restrictive umask 077 has historically left source files mode 0600:
+    # root can import them, but Freqtrade's Docker strategy loader cannot.
+    import stat
+    for folder in ("scripts", "user_data/strategies", "user_data/freqaimodels"):
+        root=SOURCE/folder
+        for module in root.rglob("*.py"):
+            if not (module.stat().st_mode & stat.S_IROTH):
+                raise RuntimeError("GLOBAL_UID1000_PYTHON_UNREADABLE_"+str(module))
     for p in ("scripts/m2r_v6_global_dataset.py",
               "user_data/strategies/NbotV6GlobalOfflineResearch.py",
               "scripts/m2r_v6_global_batch.py",
@@ -126,6 +135,13 @@ def data_job(days):
         "--config","/research/user_data/config.json",
         "--out",f"/results/w{days}","--lookback",str(days)],
         OUTPUT/f"model_{days}.log",timeout=14400)
+    if not marker.is_file() or not csv.is_file():
+        raise RuntimeError("MISSING_VERIFIED_OFFLINE_MODEL_RESULT")
+    if not (folder/"asof-forecasts-and-rejections.parquet").is_file():
+        raise RuntimeError("MISSING_FULL_AI_CANDIDATE_RANKING_LEDGER")
+    if not (OUTPUT/"shared-candidate-universe/immutable-candidate-cache-audit.json").is_file():
+        raise RuntimeError("MISSING_IMMUTABLE_SHARED_CANDIDATE_CACHE")
+    # Existing checks continue below.
     if not marker.is_file() or not csv.is_file():
         raise RuntimeError("MISSING_VERIFIED_OFFLINE_MODEL_RESULT")
     info=json.loads(marker.read_text())
@@ -198,6 +214,12 @@ def native_job(days,policy):
        "exchange":{"name":"binance","key":"","secret":""},
        "api_server":{"enabled":False},"telegram":{"enabled":False}}
     atomic_json(folder/"exact-overlay.json",options)
+    # The coordinator runs as root with umask inherited from systemd,
+    # but official Freqtrade runs as uid 1000 inside Docker.
+    # Never leave the overlay at root-only 0600 (the Stage2 failure).
+    os.chmod(folder/"exact-overlay.json",0o644)
+    if not (folder/"exact-overlay.json").stat().st_mode & 0o004:
+        raise RuntimeError("GLOBAL_NATIVE_OVERLAY_NOT_CONTAINER_READABLE")
     # Freqtrade may need the output folder writable for ZIP export.
     os.chown(folder,1000,1000)
     model=("NbotV6GlobalOfflineResearch" if policy=="fixed"
