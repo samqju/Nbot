@@ -1,0 +1,20 @@
+[Unit]
+Description=NBOT V6 finite recovery of seven missing first-stage jobs, no repetition or trading
+After=docker.service
+Wants=docker.service
+ConditionPathExists=/root/nbot-v6-m1-20261016/global-next-source/scripts/m2r_v6_library_failure_recovery.py
+
+[Service]
+Type=exec
+User=root
+WorkingDirectory=/root/nbot-v6-m1-20261016/global-next-source
+Environment=NBOT_V6_LIBRARY_OFFLINE_EXECUTION=OWNER_AUTHORIZED_OFFLINE_RESEARCH_ONLY
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /root/nbot-v6-m1-20261016/global-next-source/scripts/m2r_v6_library_failure_recovery.py --execute
+Restart=no
+TimeoutStartSec=0
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

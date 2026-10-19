@@ -1,0 +1,102 @@
+{
+  "date_utc": "2026-10-17",
+  "research_branch": "prototype/v6-freqtrade-freqai-20261016",
+  "vps_checkout_at_native_probe": "d2ed6e719c8ec3a3142e8b225ec0c68502e559a9",
+  "audit_script_commit": "dbc13675f1238c53ed0063dc95de3e16bc05d78c",
+  "environment": {
+    "vps": "owner-authorized 8GB-Observation V6-only research VPS",
+    "freqtrade": "2026.9",
+    "docker_image_id": "sha256:e0ca51420b80357edcbec3970fd8a33ebebeacd53b914aed2735a9c14fe94535",
+    "no_running_containers_after": true,
+    "original_research_branch_clean": true,
+    "credentials_used": false
+  },
+  "native_label_prefix_test": {
+    "asof_training_cutoff_utc": "2026-10-08T00:00:00Z",
+    "pair": "BTC/USDT:USDT",
+    "training_candles_5m": 8640,
+    "last_12_label_rows_nan_for_each": true,
+    "valid_complete_trade_label_counts": {
+      "combined": 1145,
+      "breakout": 617,
+      "pullback": 539
+    },
+    "installed_freqai_2026_9_prefix_before_target": true
+  },
+  "internal_validation_warning": {
+    "train_test_split": {
+      "test_size": 0.2,
+      "shuffle": false
+    },
+    "explicit_12bar_internal_embargo": false,
+    "estimated_label_only_overlaps_at_internal_split": {
+      "BTC_combined": 1,
+      "BTC_breakout": 2,
+      "BTC_pullback": 1,
+      "ETH_combined": 2,
+      "ETH_breakout": 1,
+      "ETH_pullback": 0
+    },
+    "these_are_not_verified_actual_fitted_row_counts": true
+  },
+  "official_lookahead_repeat": {
+    "strategy": "NbotV6M2Audit",
+    "dates_utc": "2026-10-01 through 2026-10-08 exclusive",
+    "exit_code": 0,
+    "duration_seconds": 98.8,
+    "signals_checked": 8,
+    "has_bias": true,
+    "explicit_biased_entry_signals": 0,
+    "explicit_biased_exit_signals": 0,
+    "different_columns": [
+      "&-forward_return",
+      "&-forward_return_mean",
+      "&-forward_return_std",
+      "do_predict",
+      "DI_values",
+      "exit_long",
+      "exit_short",
+      "enter_tag",
+      "enter_long"
+    ],
+    "diagnostic_purges_and_refits_model_on_slice": true,
+    "warning_not_cleared": true
+  },
+  "public_history_stage": {
+    "location_on_authorized_v6_vps": "/root/nbot-v6-m1-20261016/january-2026-public-history-stage/futures",
+    "from_inclusive_utc": "2026-01-01T00:00:00Z",
+    "through_exclusive_utc": "2026-10-17T00:00:00Z",
+    "markets": 25,
+    "file_types": [
+      "5m-futures",
+      "1h-futures",
+      "1h-mark",
+      "1h-funding_rate"
+    ],
+    "expected_files": 100,
+    "downloaded_files": 100,
+    "download_exit_code_5m": 0,
+    "download_exit_code_1h": 0,
+    "staged_size_approx_mib": 51,
+    "audit_exit_code": 0,
+    "audit_pass": true,
+    "missing_files": 0,
+    "unexpected_interval_steps": 0,
+    "duplicate_timestamps": 0,
+    "invalid_ohlcv_rows": 0,
+    "original_overlap_changed_rows": 0,
+    "original_overlap_missing_timestamps": 0,
+    "full_audit_json_sha256": "26510558946960794b6f147ee6abd17114025f236cbc683a1f8806e97ffcbba5",
+    "full_audit_json_on_v6_vps": "/root/nbot-v6-m1-20261016/lookahead-boundary-20261017/january-staged-history-audit.json",
+    "active_research_data_replaced": false,
+    "new_lightgbm_window_comparisons_run": false
+  },
+  "release": {
+    "M2": "NO-GO",
+    "M3": "NOT STARTED",
+    "M4": "NOT STARTED; planned 20 virtual positions only with fresh approval",
+    "M5A": "UNBUILT; planned 8-hour up-to-25 dynamic universe",
+    "M7": "LOCKED",
+    "pr_50": "DRAFT UNMERGED"
+  }
+}

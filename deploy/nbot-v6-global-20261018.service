@@ -1,0 +1,19 @@
+[Unit]
+Description=NBOT V6 third finite offline 25x8 global opportunity research after TWO predecessors (NO trading)
+After=docker.service
+Wants=docker.service
+ConditionPathExists=/root/nbot-v6-m1-20261016/global-next-source/scripts/m2r_v6_global_batch.py
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/nbot-v6-m1-20261016/global-next-source
+ExecStart=/bin/bash /root/nbot-v6-m1-20261016/global-next-source/scripts/m2r_v6_global_successor_wait.sh
+TimeoutStartSec=0
+Restart=no
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

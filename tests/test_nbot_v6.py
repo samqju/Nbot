@@ -66,12 +66,84 @@ class NbotV6OfflineTests(unittest.TestCase):
     def test_prototype_locked_to_dry_run_and_one_position(self):
         self.bot.bot_start()
         self.bot.config["dry_run"] = False
-        with self.assertRaisesRegex(RuntimeError, "LIVE_ORDERS_FORBIDDEN"):
+        with self.assertRaisesRegex(RuntimeError, "LIVE_OWNER_APPROVAL_REQUIRED"):
             self.bot.bot_start()
         self.bot.config["dry_run"] = True
         self.bot.config["max_open_trades"] = 2
         with self.assertRaisesRegex(RuntimeError, "ONE_GLOBAL_POSITION"):
             self.bot.bot_start()
+
+    def test_paper_research_is_opt_in_and_bounded(self):
+        overlay = json.loads((ROOT / "user_data" / "config.paper-research.json").read_text())
+        self.bot.config.update(overlay)
+        # Freqtrade merges nested settings when the overlay is read last.
+        self.bot.config["freqai"] = {
+            **json.loads(CONFIG.read_text())["freqai"], **overlay["freqai"]
+        }
+        self.bot.bot_start()
+        self.assertEqual(self.bot.config["max_open_trades"], 20)
+        self.bot.config["max_open_trades"] = 20
+        self.bot.bot_start()
+        for cap in (0, -1, 21, 10.5, True):
+            with self.subTest(cap=cap):
+                self.bot.config["max_open_trades"] = cap
+                with self.assertRaisesRegex(RuntimeError, "PAPER_CAP"):
+                    self.bot.bot_start()
+
+    def test_paper_research_still_forbids_real_orders_and_keys(self):
+        base = json.loads(CONFIG.read_text())
+        overlay = json.loads((ROOT / "user_data" / "config.paper-research.json").read_text())
+        self.bot.config = {**base, **overlay, "freqai": {**base["freqai"], **overlay["freqai"]}}
+        self.bot.config["dry_run"] = False
+        with self.assertRaisesRegex(RuntimeError, "LIVE_OWNER_APPROVAL_REQUIRED"):
+            self.bot.bot_start()
+        self.bot.config["dry_run"] = True
+        self.bot.config["exchange"]["key"] = "should-be-rejected"
+        with self.assertRaisesRegex(RuntimeError, "PAPER_MUST_NOT_HAVE_EXCHANGE_KEYS"):
+            self.bot.bot_start()
+        self.bot.config["exchange"]["key"] = ""
+        self.bot.config["nbot_paper_research_mode"] = False
+        with self.assertRaisesRegex(RuntimeError, "ONE_GLOBAL_POSITION"):
+            self.bot.bot_start()
+
+    def test_paper_research_is_isolated_by_model_and_database(self):
+        base = json.loads(CONFIG.read_text())
+        paper = json.loads((ROOT / "user_data" / "config.paper-research.json").read_text())
+        self.assertIs(paper["dry_run"], True)
+        self.assertIs(paper["nbot_paper_research_mode"], True)
+        self.assertNotEqual(base["freqai"]["identifier"], paper["freqai"]["identifier"])
+        self.assertTrue(paper["db_url"].endswith("/tradesv3.research.sqlite"))
+        self.assertFalse(base["exchange"]["key"])
+        self.assertFalse(base["exchange"]["secret"])
+        self.assertEqual(len(base["exchange"]["pair_whitelist"]), 25)
+
+    def test_requested_wallet_position_stop_and_target(self):
+        base = self.bot.config
+        paper = json.loads((ROOT / "user_data" / "config.paper-research.json").read_text())
+        self.assertEqual(base["dry_run_wallet"], 100000)
+        self.assertEqual(paper["dry_run_wallet"], 100000)
+        self.assertEqual(base["stake_amount"], 1000)
+        self.assertEqual(paper["stake_amount"], 1000)
+        self.assertEqual(base["max_open_trades"], 1)
+        self.assertEqual(paper["max_open_trades"], 20)
+        self.assertEqual(self.bot.stoploss, -0.02)
+        self.assertEqual(self.bot.minimal_roi, {"0": 0.05})
+        self.assertEqual(base["freqai"]["live_retrain_hours"], 24)
+        self.assertEqual(self.bot.timeframe, "5m")
+
+    def test_ai_evaluates_fixed_25_pair_universe_without_dynamic_pairlist(self):
+        cfg = self.bot.config
+        pairs = cfg["exchange"]["pair_whitelist"]
+        self.assertEqual(len(pairs), 25)
+        self.assertEqual(len(set(pairs)), 25)
+        self.assertTrue(all(p.endswith("/USDT:USDT") for p in pairs))
+        self.assertEqual(cfg["pairlists"], [{"method": "StaticPairList"}])
+        self.assertTrue(cfg["freqai"]["enabled"])
+        self.assertIn("BTC/USDT:USDT", pairs)
+        self.assertNotEqual(
+            cfg["freqai"]["identifier"],
+            json.loads((ROOT / "user_data" / "config.paper-research.json").read_text())["freqai"]["identifier"],
+        )
 
     def test_training_disabled_cannot_enter(self):
         self.bot.config["freqai"]["enabled"] = False
@@ -166,7 +238,7 @@ class NbotV6OfflineTests(unittest.TestCase):
         self.assertEqual(cfg["max_open_trades"], 1)
         self.assertEqual(cfg["trading_mode"], "futures")
         self.assertEqual(cfg["margin_mode"], "isolated")
-        self.assertEqual(len(cfg["exchange"]["pair_whitelist"]), 8)
+        self.assertEqual(len(cfg["exchange"]["pair_whitelist"]), 25)
         self.assertIn("BTC/USDT:USDT", cfg["freqai"]["feature_parameters"]["include_corr_pairlist"])
         self.assertFalse(cfg["force_entry_enable"])
         self.assertFalse(cfg["api_server"]["enabled"])

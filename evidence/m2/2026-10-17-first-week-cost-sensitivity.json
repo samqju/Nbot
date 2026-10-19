@@ -1,0 +1,1225 @@
+{
+  "study": "M2 matching-period NON-ML vs FreqAI technical benchmark",
+  "period_utc": [
+    "2026-10-01 00:00:00",
+    "2026-10-08 00:00:00"
+  ],
+  "pair_count": 25,
+  "max_open_trades": 1,
+  "starting_balance_usdt": 100000,
+  "assumptions": [
+    "Official Freqtrade profit_abs is net of simulated exchange entry/exit fees and its funding treatment.",
+    "Extra costs are an additive, hypothetical roundtrip bps stress on stake*leverage; NOT actual observed spread/slippage.",
+    "Additive stress holds all fills, entry times, exit times, and original trade selection fixed.",
+    "NO TRADE means zero trades, zero PnL, no exposure; it is a risk-free trading abstention benchmark (cash yields excluded).",
+    "One seven-day window is not a profitability estimate, market-universe optimization, or scientific proof of AI incremental value.",
+    "A valid model prediction is a forward close-price return estimate, NOT realized trade profit."
+  ],
+  "benchmarks": {
+    "AI_V6": {
+      "official_profit_usdt": -135.64,
+      "official_profit_factor": 0.4928441109696295,
+      "official_sharpe": -27.921482846705295,
+      "official_max_drawdown_usdt": 165.156,
+      "rejected_entry_signals": 68,
+      "realized_by_scenario_extra_roundtrip_bps": {
+        "0": {
+          "trades": 34,
+          "winners": 9,
+          "losers": 25,
+          "breakeven": 0,
+          "win_rate_pct": 26.471,
+          "pnl_usdt": -135.64,
+          "incremental_execution_cost_usdt": 0,
+          "total_oneway_trade_notional_usdt": 33902.401,
+          "sum_engine_reported_funding_fee_field": -0.722,
+          "engine_fee_open_close_rates": [
+            [
+              0.0005,
+              0.0005
+            ]
+          ],
+          "short_trades": 9,
+          "long_trades": 25,
+          "avg_duration_minutes": 138.676,
+          "total_duration_minutes": 4715,
+          "per_pair": {
+            "ADA/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -13.076,
+              "wins": 0
+            },
+            "ARB/USDT:USDT": {
+              "trades": 7,
+              "adjusted_usdt": -53.025,
+              "wins": 2
+            },
+            "ATOM/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -0.415,
+              "wins": 0
+            },
+            "AVAX/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -12.346,
+              "wins": 0
+            },
+            "BTC/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -3.937,
+              "wins": 0
+            },
+            "DOT/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -2.341,
+              "wins": 0
+            },
+            "ETH/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": 12.853,
+              "wins": 1
+            },
+            "FIL/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": -20.364,
+              "wins": 1
+            },
+            "INJ/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": 25.859,
+              "wins": 2
+            },
+            "LINK/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -17.033,
+              "wins": 0
+            },
+            "NEAR/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": -7.907,
+              "wins": 1
+            },
+            "OP/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": -6.151,
+              "wins": 1
+            },
+            "SOL/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -4.969,
+              "wins": 0
+            },
+            "SUI/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -8.154,
+              "wins": 1
+            },
+            "UNI/USDT:USDT": {
+              "trades": 4,
+              "adjusted_usdt": -24.633,
+              "wins": 0
+            }
+          },
+          "per_side": {
+            "long": {
+              "trades": 25,
+              "adjusted_usdt": -63.728,
+              "wins": 8
+            },
+            "short": {
+              "trades": 9,
+              "adjusted_usdt": -71.912,
+              "wins": 1
+            }
+          },
+          "daily_closed_pnl": {
+            "2026-10-01": -34.423,
+            "2026-10-02": -25.861,
+            "2026-10-03": 25.003,
+            "2026-10-04": -23.618,
+            "2026-10-05": -26.171,
+            "2026-10-06": -38.638,
+            "2026-10-07": -19.179,
+            "2026-10-08": 7.246
+          }
+        },
+        "10": {
+          "trades": 34,
+          "winners": 9,
+          "losers": 25,
+          "breakeven": 0,
+          "win_rate_pct": 26.471,
+          "pnl_usdt": -169.543,
+          "incremental_execution_cost_usdt": 33.902,
+          "total_oneway_trade_notional_usdt": 33902.401,
+          "sum_engine_reported_funding_fee_field": -0.722,
+          "engine_fee_open_close_rates": [
+            [
+              0.0005,
+              0.0005
+            ]
+          ],
+          "short_trades": 9,
+          "long_trades": 25,
+          "avg_duration_minutes": 138.676,
+          "total_duration_minutes": 4715,
+          "per_pair": {
+            "ADA/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -14.076,
+              "wins": 0
+            },
+            "ARB/USDT:USDT": {
+              "trades": 7,
+              "adjusted_usdt": -60.025,
+              "wins": 2
+            },
+            "ATOM/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -1.415,
+              "wins": 0
+            },
+            "AVAX/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -13.346,
+              "wins": 0
+            },
+            "BTC/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -4.87,
+              "wins": 0
+            },
+            "DOT/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -3.341,
+              "wins": 0
+            },
+            "ETH/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": 11.855,
+              "wins": 1
+            },
+            "FIL/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": -23.364,
+              "wins": 1
+            },
+            "INJ/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": 22.86,
+              "wins": 2
+            },
+            "LINK/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -19.033,
+              "wins": 0
+            },
+            "NEAR/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": -10.901,
+              "wins": 1
+            },
+            "OP/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": -9.151,
+              "wins": 1
+            },
+            "SOL/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -5.969,
+              "wins": 0
+            },
+            "SUI/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -10.154,
+              "wins": 1
+            },
+            "UNI/USDT:USDT": {
+              "trades": 4,
+              "adjusted_usdt": -28.611,
+              "wins": 0
+            }
+          },
+          "per_side": {
+            "long": {
+              "trades": 25,
+              "adjusted_usdt": -88.64,
+              "wins": 8
+            },
+            "short": {
+              "trades": 9,
+              "adjusted_usdt": -80.903,
+              "wins": 1
+            }
+          },
+          "daily_closed_pnl": {
+            "2026-10-01": -40.416,
+            "2026-10-02": -31.793,
+            "2026-10-03": 21.01,
+            "2026-10-04": -27.61,
+            "2026-10-05": -32.17,
+            "2026-10-06": -41.637,
+            "2026-10-07": -23.173,
+            "2026-10-08": 6.246
+          }
+        },
+        "25": {
+          "trades": 34,
+          "winners": 9,
+          "losers": 25,
+          "breakeven": 0,
+          "win_rate_pct": 26.471,
+          "pnl_usdt": -220.396,
+          "incremental_execution_cost_usdt": 84.756,
+          "total_oneway_trade_notional_usdt": 33902.401,
+          "sum_engine_reported_funding_fee_field": -0.722,
+          "engine_fee_open_close_rates": [
+            [
+              0.0005,
+              0.0005
+            ]
+          ],
+          "short_trades": 9,
+          "long_trades": 25,
+          "avg_duration_minutes": 138.676,
+          "total_duration_minutes": 4715,
+          "per_pair": {
+            "ADA/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -15.576,
+              "wins": 0
+            },
+            "ARB/USDT:USDT": {
+              "trades": 7,
+              "adjusted_usdt": -70.525,
+              "wins": 2
+            },
+            "ATOM/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -2.915,
+              "wins": 0
+            },
+            "AVAX/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -14.845,
+              "wins": 0
+            },
+            "BTC/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -6.269,
+              "wins": 0
+            },
+            "DOT/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -4.841,
+              "wins": 0
+            },
+            "ETH/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": 10.357,
+              "wins": 1
+            },
+            "FIL/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": -27.864,
+              "wins": 1
+            },
+            "INJ/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": 18.362,
+              "wins": 2
+            },
+            "LINK/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -22.032,
+              "wins": 0
+            },
+            "NEAR/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": -15.393,
+              "wins": 1
+            },
+            "OP/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": -13.651,
+              "wins": 1
+            },
+            "SOL/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -7.469,
+              "wins": 0
+            },
+            "SUI/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -13.154,
+              "wins": 1
+            },
+            "UNI/USDT:USDT": {
+              "trades": 4,
+              "adjusted_usdt": -34.579,
+              "wins": 0
+            }
+          },
+          "per_side": {
+            "long": {
+              "trades": 25,
+              "adjusted_usdt": -126.007,
+              "wins": 8
+            },
+            "short": {
+              "trades": 9,
+              "adjusted_usdt": -94.389,
+              "wins": 1
+            }
+          },
+          "daily_closed_pnl": {
+            "2026-10-01": -49.405,
+            "2026-10-02": -40.69,
+            "2026-10-03": 15.02,
+            "2026-10-04": -33.597,
+            "2026-10-05": -41.168,
+            "2026-10-06": -46.137,
+            "2026-10-07": -29.164,
+            "2026-10-08": 4.746
+          }
+        },
+        "50": {
+          "trades": 34,
+          "winners": 8,
+          "losers": 26,
+          "breakeven": 0,
+          "win_rate_pct": 23.529,
+          "pnl_usdt": -305.152,
+          "incremental_execution_cost_usdt": 169.512,
+          "total_oneway_trade_notional_usdt": 33902.401,
+          "sum_engine_reported_funding_fee_field": -0.722,
+          "engine_fee_open_close_rates": [
+            [
+              0.0005,
+              0.0005
+            ]
+          ],
+          "short_trades": 9,
+          "long_trades": 25,
+          "avg_duration_minutes": 138.676,
+          "total_duration_minutes": 4715,
+          "per_pair": {
+            "ADA/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -18.076,
+              "wins": 0
+            },
+            "ARB/USDT:USDT": {
+              "trades": 7,
+              "adjusted_usdt": -88.025,
+              "wins": 2
+            },
+            "ATOM/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -5.415,
+              "wins": 0
+            },
+            "AVAX/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -17.344,
+              "wins": 0
+            },
+            "BTC/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -8.602,
+              "wins": 0
+            },
+            "DOT/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -7.341,
+              "wins": 0
+            },
+            "ETH/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": 7.861,
+              "wins": 1
+            },
+            "FIL/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": -35.363,
+              "wins": 1
+            },
+            "INJ/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": 10.865,
+              "wins": 2
+            },
+            "LINK/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -27.032,
+              "wins": 0
+            },
+            "NEAR/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": -22.88,
+              "wins": 1
+            },
+            "OP/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": -21.151,
+              "wins": 1
+            },
+            "SOL/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -9.969,
+              "wins": 0
+            },
+            "SUI/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -18.154,
+              "wins": 0
+            },
+            "UNI/USDT:USDT": {
+              "trades": 4,
+              "adjusted_usdt": -44.524,
+              "wins": 0
+            }
+          },
+          "per_side": {
+            "long": {
+              "trades": 25,
+              "adjusted_usdt": -188.287,
+              "wins": 7
+            },
+            "short": {
+              "trades": 9,
+              "adjusted_usdt": -116.865,
+              "wins": 1
+            }
+          },
+          "daily_closed_pnl": {
+            "2026-10-01": -64.387,
+            "2026-10-02": -55.519,
+            "2026-10-03": 5.037,
+            "2026-10-04": -43.576,
+            "2026-10-05": -56.166,
+            "2026-10-06": -53.637,
+            "2026-10-07": -39.149,
+            "2026-10-08": 2.246
+          }
+        },
+        "100": {
+          "trades": 34,
+          "winners": 5,
+          "losers": 29,
+          "breakeven": 0,
+          "win_rate_pct": 14.706,
+          "pnl_usdt": -474.664,
+          "incremental_execution_cost_usdt": 339.024,
+          "total_oneway_trade_notional_usdt": 33902.401,
+          "sum_engine_reported_funding_fee_field": -0.722,
+          "engine_fee_open_close_rates": [
+            [
+              0.0005,
+              0.0005
+            ]
+          ],
+          "short_trades": 9,
+          "long_trades": 25,
+          "avg_duration_minutes": 138.676,
+          "total_duration_minutes": 4715,
+          "per_pair": {
+            "ADA/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -23.076,
+              "wins": 0
+            },
+            "ARB/USDT:USDT": {
+              "trades": 7,
+              "adjusted_usdt": -123.025,
+              "wins": 1
+            },
+            "ATOM/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -10.415,
+              "wins": 0
+            },
+            "AVAX/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -22.343,
+              "wins": 0
+            },
+            "BTC/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -13.268,
+              "wins": 0
+            },
+            "DOT/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -12.34,
+              "wins": 0
+            },
+            "ETH/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": 2.868,
+              "wins": 1
+            },
+            "FIL/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": -50.363,
+              "wins": 1
+            },
+            "INJ/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": -4.129,
+              "wins": 1
+            },
+            "LINK/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -37.031,
+              "wins": 0
+            },
+            "NEAR/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": -37.854,
+              "wins": 1
+            },
+            "OP/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": -36.151,
+              "wins": 0
+            },
+            "SOL/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -14.969,
+              "wins": 0
+            },
+            "SUI/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -28.153,
+              "wins": 0
+            },
+            "UNI/USDT:USDT": {
+              "trades": 4,
+              "adjusted_usdt": -64.415,
+              "wins": 0
+            }
+          },
+          "per_side": {
+            "long": {
+              "trades": 25,
+              "adjusted_usdt": -312.846,
+              "wins": 5
+            },
+            "short": {
+              "trades": 9,
+              "adjusted_usdt": -161.819,
+              "wins": 0
+            }
+          },
+          "daily_closed_pnl": {
+            "2026-10-01": -94.352,
+            "2026-10-02": -85.178,
+            "2026-10-03": -14.93,
+            "2026-10-04": -63.534,
+            "2026-10-05": -86.162,
+            "2026-10-06": -68.635,
+            "2026-10-07": -59.12,
+            "2026-10-08": -2.754
+          }
+        }
+      }
+    },
+    "NO_ML": {
+      "official_profit_usdt": 169.849,
+      "official_profit_factor": 2.729952529565971,
+      "official_sharpe": 24.921762527228044,
+      "official_max_drawdown_usdt": 48.006,
+      "rejected_entry_signals": 6531,
+      "realized_by_scenario_extra_roundtrip_bps": {
+        "0": {
+          "trades": 31,
+          "winners": 14,
+          "losers": 17,
+          "breakeven": 0,
+          "win_rate_pct": 45.161,
+          "pnl_usdt": 169.849,
+          "incremental_execution_cost_usdt": 0,
+          "total_oneway_trade_notional_usdt": 30804.787,
+          "sum_engine_reported_funding_fee_field": 0.368,
+          "engine_fee_open_close_rates": [
+            [
+              0.0005,
+              0.0005
+            ]
+          ],
+          "short_trades": 15,
+          "long_trades": 16,
+          "avg_duration_minutes": 324.516,
+          "total_duration_minutes": 10060,
+          "per_pair": {
+            "ADA/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -20.685,
+              "wins": 0
+            },
+            "AVAX/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": 43.281,
+              "wins": 1
+            },
+            "BNB/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": 20.714,
+              "wins": 2
+            },
+            "BTC/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": 1.145,
+              "wins": 1
+            },
+            "DOGE/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": 47.658,
+              "wins": 1
+            },
+            "ETH/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": 2.146,
+              "wins": 1
+            },
+            "INJ/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -6.781,
+              "wins": 1
+            },
+            "LTC/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -11.049,
+              "wins": 0
+            },
+            "NEAR/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": 59.183,
+              "wins": 2
+            },
+            "SOL/USDT:USDT": {
+              "trades": 5,
+              "adjusted_usdt": -20.746,
+              "wins": 1
+            },
+            "SUI/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -2.338,
+              "wins": 0
+            },
+            "TRX/USDT:USDT": {
+              "trades": 4,
+              "adjusted_usdt": 8.125,
+              "wins": 2
+            },
+            "UNI/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": 52.64,
+              "wins": 2
+            },
+            "XLM/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -3.444,
+              "wins": 0
+            }
+          },
+          "per_side": {
+            "long": {
+              "trades": 16,
+              "adjusted_usdt": 44.128,
+              "wins": 8
+            },
+            "short": {
+              "trades": 15,
+              "adjusted_usdt": 125.72,
+              "wins": 6
+            }
+          },
+          "daily_closed_pnl": {
+            "2026-10-01": 3.936,
+            "2026-10-02": 44.59,
+            "2026-10-03": 4.15,
+            "2026-10-04": 3.941,
+            "2026-10-05": -38.897,
+            "2026-10-06": 0.551,
+            "2026-10-07": 153.326,
+            "2026-10-08": -1.747
+          }
+        },
+        "10": {
+          "trades": 31,
+          "winners": 13,
+          "losers": 18,
+          "breakeven": 0,
+          "win_rate_pct": 41.935,
+          "pnl_usdt": 139.044,
+          "incremental_execution_cost_usdt": 30.805,
+          "total_oneway_trade_notional_usdt": 30804.787,
+          "sum_engine_reported_funding_fee_field": 0.368,
+          "engine_fee_open_close_rates": [
+            [
+              0.0005,
+              0.0005
+            ]
+          ],
+          "short_trades": 15,
+          "long_trades": 16,
+          "avg_duration_minutes": 324.516,
+          "total_duration_minutes": 10060,
+          "per_pair": {
+            "ADA/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -21.685,
+              "wins": 0
+            },
+            "AVAX/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": 40.299,
+              "wins": 1
+            },
+            "BNB/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": 18.723,
+              "wins": 2
+            },
+            "BTC/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -0.707,
+              "wins": 1
+            },
+            "DOGE/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": 45.658,
+              "wins": 1
+            },
+            "ETH/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": 1.147,
+              "wins": 1
+            },
+            "INJ/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -8.78,
+              "wins": 0
+            },
+            "LTC/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -13.049,
+              "wins": 0
+            },
+            "NEAR/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": 57.185,
+              "wins": 2
+            },
+            "SOL/USDT:USDT": {
+              "trades": 5,
+              "adjusted_usdt": -25.743,
+              "wins": 1
+            },
+            "SUI/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -3.338,
+              "wins": 0
+            },
+            "TRX/USDT:USDT": {
+              "trades": 4,
+              "adjusted_usdt": 4.125,
+              "wins": 2
+            },
+            "UNI/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": 49.652,
+              "wins": 2
+            },
+            "XLM/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -4.444,
+              "wins": 0
+            }
+          },
+          "per_side": {
+            "long": {
+              "trades": 16,
+              "adjusted_usdt": 28.155,
+              "wins": 7
+            },
+            "short": {
+              "trades": 15,
+              "adjusted_usdt": 110.889,
+              "wins": 6
+            }
+          },
+          "daily_closed_pnl": {
+            "2026-10-01": -0.063,
+            "2026-10-02": 39.596,
+            "2026-10-03": 0.232,
+            "2026-10-04": 0.945,
+            "2026-10-05": -43.881,
+            "2026-10-06": -2.441,
+            "2026-10-07": 147.403,
+            "2026-10-08": -2.747
+          }
+        },
+        "25": {
+          "trades": 31,
+          "winners": 11,
+          "losers": 20,
+          "breakeven": 0,
+          "win_rate_pct": 35.484,
+          "pnl_usdt": 92.837,
+          "incremental_execution_cost_usdt": 77.012,
+          "total_oneway_trade_notional_usdt": 30804.787,
+          "sum_engine_reported_funding_fee_field": 0.368,
+          "engine_fee_open_close_rates": [
+            [
+              0.0005,
+              0.0005
+            ]
+          ],
+          "short_trades": 15,
+          "long_trades": 16,
+          "avg_duration_minutes": 324.516,
+          "total_duration_minutes": 10060,
+          "per_pair": {
+            "ADA/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -23.184,
+              "wins": 0
+            },
+            "AVAX/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": 35.825,
+              "wins": 1
+            },
+            "BNB/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": 15.736,
+              "wins": 2
+            },
+            "BTC/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -3.485,
+              "wins": 1
+            },
+            "DOGE/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": 42.658,
+              "wins": 1
+            },
+            "ETH/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -0.351,
+              "wins": 0
+            },
+            "INJ/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -11.779,
+              "wins": 0
+            },
+            "LTC/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -16.049,
+              "wins": 0
+            },
+            "NEAR/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": 54.189,
+              "wins": 2
+            },
+            "SOL/USDT:USDT": {
+              "trades": 5,
+              "adjusted_usdt": -33.238,
+              "wins": 0
+            },
+            "SUI/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -4.838,
+              "wins": 0
+            },
+            "TRX/USDT:USDT": {
+              "trades": 4,
+              "adjusted_usdt": -1.874,
+              "wins": 2
+            },
+            "UNI/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": 45.17,
+              "wins": 2
+            },
+            "XLM/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -5.943,
+              "wins": 0
+            }
+          },
+          "per_side": {
+            "long": {
+              "trades": 16,
+              "adjusted_usdt": 4.194,
+              "wins": 5
+            },
+            "short": {
+              "trades": 15,
+              "adjusted_usdt": 88.643,
+              "wins": 6
+            }
+          },
+          "daily_closed_pnl": {
+            "2026-10-01": -6.061,
+            "2026-10-02": 32.105,
+            "2026-10-03": -5.645,
+            "2026-10-04": -3.548,
+            "2026-10-05": -51.356,
+            "2026-10-06": -6.93,
+            "2026-10-07": 138.518,
+            "2026-10-08": -4.246
+          }
+        },
+        "50": {
+          "trades": 31,
+          "winners": 9,
+          "losers": 22,
+          "breakeven": 0,
+          "win_rate_pct": 29.032,
+          "pnl_usdt": 15.825,
+          "incremental_execution_cost_usdt": 154.024,
+          "total_oneway_trade_notional_usdt": 30804.787,
+          "sum_engine_reported_funding_fee_field": 0.368,
+          "engine_fee_open_close_rates": [
+            [
+              0.0005,
+              0.0005
+            ]
+          ],
+          "short_trades": 15,
+          "long_trades": 16,
+          "avg_duration_minutes": 324.516,
+          "total_duration_minutes": 10060,
+          "per_pair": {
+            "ADA/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -25.684,
+              "wins": 0
+            },
+            "AVAX/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": 28.369,
+              "wins": 1
+            },
+            "BNB/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": 10.758,
+              "wins": 1
+            },
+            "BTC/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -8.115,
+              "wins": 1
+            },
+            "DOGE/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": 37.659,
+              "wins": 1
+            },
+            "ETH/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -2.848,
+              "wins": 0
+            },
+            "INJ/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -16.776,
+              "wins": 0
+            },
+            "LTC/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -21.049,
+              "wins": 0
+            },
+            "NEAR/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": 49.195,
+              "wins": 2
+            },
+            "SOL/USDT:USDT": {
+              "trades": 5,
+              "adjusted_usdt": -45.73,
+              "wins": 0
+            },
+            "SUI/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -7.338,
+              "wins": 0
+            },
+            "TRX/USDT:USDT": {
+              "trades": 4,
+              "adjusted_usdt": -11.872,
+              "wins": 1
+            },
+            "UNI/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": 37.7,
+              "wins": 2
+            },
+            "XLM/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -8.443,
+              "wins": 0
+            }
+          },
+          "per_side": {
+            "long": {
+              "trades": 16,
+              "adjusted_usdt": -35.74,
+              "wins": 3
+            },
+            "short": {
+              "trades": 15,
+              "adjusted_usdt": 51.565,
+              "wins": 6
+            }
+          },
+          "daily_closed_pnl": {
+            "2026-10-01": -16.057,
+            "2026-10-02": 19.621,
+            "2026-10-03": -15.44,
+            "2026-10-04": -11.037,
+            "2026-10-05": -63.815,
+            "2026-10-06": -14.41,
+            "2026-10-07": 123.71,
+            "2026-10-08": -6.746
+          }
+        },
+        "100": {
+          "trades": 31,
+          "winners": 6,
+          "losers": 25,
+          "breakeven": 0,
+          "win_rate_pct": 19.355,
+          "pnl_usdt": -138.199,
+          "incremental_execution_cost_usdt": 308.048,
+          "total_oneway_trade_notional_usdt": 30804.787,
+          "sum_engine_reported_funding_fee_field": 0.368,
+          "engine_fee_open_close_rates": [
+            [
+              0.0005,
+              0.0005
+            ]
+          ],
+          "short_trades": 15,
+          "long_trades": 16,
+          "avg_duration_minutes": 324.516,
+          "total_duration_minutes": 10060,
+          "per_pair": {
+            "ADA/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -30.683,
+              "wins": 0
+            },
+            "AVAX/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": 13.456,
+              "wins": 1
+            },
+            "BNB/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": 0.802,
+              "wins": 1
+            },
+            "BTC/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -17.376,
+              "wins": 0
+            },
+            "DOGE/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": 27.659,
+              "wins": 1
+            },
+            "ETH/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -7.842,
+              "wins": 0
+            },
+            "INJ/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -26.771,
+              "wins": 0
+            },
+            "LTC/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": -31.048,
+              "wins": 0
+            },
+            "NEAR/USDT:USDT": {
+              "trades": 2,
+              "adjusted_usdt": 39.206,
+              "wins": 1
+            },
+            "SOL/USDT:USDT": {
+              "trades": 5,
+              "adjusted_usdt": -70.714,
+              "wins": 0
+            },
+            "SUI/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -12.338,
+              "wins": 0
+            },
+            "TRX/USDT:USDT": {
+              "trades": 4,
+              "adjusted_usdt": -31.869,
+              "wins": 0
+            },
+            "UNI/USDT:USDT": {
+              "trades": 3,
+              "adjusted_usdt": 22.761,
+              "wins": 2
+            },
+            "XLM/USDT:USDT": {
+              "trades": 1,
+              "adjusted_usdt": -13.442,
+              "wins": 0
+            }
+          },
+          "per_side": {
+            "long": {
+              "trades": 16,
+              "adjusted_usdt": -115.608,
+              "wins": 2
+            },
+            "short": {
+              "trades": 15,
+              "adjusted_usdt": -22.591,
+              "wins": 4
+            }
+          },
+          "daily_closed_pnl": {
+            "2026-10-01": -36.05,
+            "2026-10-02": -5.349,
+            "2026-10-03": -35.031,
+            "2026-10-04": -26.015,
+            "2026-10-05": -88.733,
+            "2026-10-06": -29.371,
+            "2026-10-07": 94.095,
+            "2026-10-08": -11.745
+          }
+        }
+      }
+    },
+    "NO_TRADE": {
+      "official_profit_usdt": 0,
+      "trades": 0,
+      "additional_fee_or_slippage_cost": 0,
+      "drawdown_usdt": 0
+    }
+  },
+  "comparison": {
+    "non_ml_minus_ai_usdt_at_fees_only": 305.489,
+    "non_ml_break_even_incremental_roundtrip_bps": 55.137,
+    "ai_outperforms_nonml_at_baseline_costs": false,
+    "nonml_outperforms_no_trade_at_all_tested_extra_costs": false
+  }
+}

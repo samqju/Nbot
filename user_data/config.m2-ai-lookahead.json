@@ -1,0 +1,12 @@
+{
+  "bot_name": "nbot-v6-m2-ai-lookahead-only",
+  "dry_run": true,
+  "nbot_m2_audit_only": true,
+  "exchange": {
+    "key": "",
+    "secret": ""
+  },
+  "freqai": {
+    "identifier": "nbot-v6-m2-ai-lookahead-20261017"
+  }
+}

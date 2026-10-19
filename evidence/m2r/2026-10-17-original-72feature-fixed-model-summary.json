@@ -1,0 +1,80 @@
+{
+  "date": "2026-10-17",
+  "scope": "Nbot V6 original price AI native FreqAI 2026.9 feature/data/prediction/signal as-of audit",
+  "tested_region": "Oct 8, 2026 UTC (previously examined historical research, not untouched May-Aug blind data)",
+  "pair_count": 25,
+  "feature_counts": {
+    "BTC": 36,
+    "other_24_pairs": 72
+  },
+  "training_days": 30,
+  "train_cutoff_utc": "2026-10-08T00:00:00Z",
+  "model_type": "FreqAI LightGBMRegressor fitted once per pair with original &-forward_return target and 5m/1h/BTC-correlated native feature engineering",
+  "comparison": {
+    "initial_4_candle_closes": {
+      "pair_fits": 25,
+      "checks": 100,
+      "feature_mismatches": 0,
+      "prediction_mismatches": 0,
+      "predict_filter_mismatches": 0,
+      "signal_mismatches": 0,
+      "model_hash_changes": 0,
+      "pass": true,
+      "artifact_sha256": "b6536bb189ec72e1e34a0243058fdd2274dc902daab2b9fe592b2a72e7a9e231"
+    },
+    "intentionally_stricter_but_incorrect_asof_h1_rule": {
+      "pair_fits": 25,
+      "checks": 250,
+      "feature_mismatches": 50,
+      "prediction_mismatches": 50,
+      "predict_filter_mismatches": 50,
+      "signal_mismatches": 10,
+      "model_hash_changes": 0,
+      "pass": false,
+      "mismatches_by_candle_open_utc": {
+        "2026-10-08T15:55:00Z": 25,
+        "2026-10-08T23:55:00Z": 25
+      },
+      "error": "Harness excluded 1h HH:00 candle until its hour-ending time <= the 5m candle OPEN, but Freqtrade makes its decision after 5m HH:55 CLOSE and by then that 1h candle also closes and becomes known; its native informative merge shifts 1h by 60m-5m=55m.",
+      "artifact_sha256": "6b394b22a027fcfe656ebe010c1addac8f6a2d90b5a99fde742eaa2543aceb04"
+    },
+    "corrected_exact_candle_close_rule": {
+      "pair_fits": 25,
+      "checks": 250,
+      "feature_mismatches": 0,
+      "prediction_mismatches": 0,
+      "predict_filter_mismatches": 0,
+      "signal_mismatches": 0,
+      "model_hash_changes": 0,
+      "pass": true,
+      "artifact_sha256": "55f5b1e1853aa59f48f6bb6ed812b40fc313e8e1c645035c8d8684f5d66b9c78"
+    }
+  },
+  "audited_test_schedule_candle_open_minutes_from_oct8_00utc": [
+    5,
+    180,
+    215,
+    540,
+    565,
+    900,
+    955,
+    1260,
+    1300,
+    1435
+  ],
+  "script": "scripts/m2r_original_72feature_asof_probe.py",
+  "original_engine_replay": false,
+  "original_saved_models_reused": false,
+  "original_training_split_purged": false,
+  "original_official_lookahead_has_bias_yes_still_unresolved": true,
+  "experiment_source_data": "V6 original 25 Binance futures 5m and 1h files, July-Oct archive; no January data used",
+  "full_detail_local_to_authorized_vps": "/root/nbot-v6-m1-20261016/original-feature-audit/",
+  "permitted_actions": "bounded network-none historical Docker tests; existing branch only; no live, paper, VPS V5 or PR merge",
+  "release": {
+    "M2": "NO-GO",
+    "M3": "NOT STARTED",
+    "M4": "NOT STARTED",
+    "M5A": "NOT BUILT",
+    "M7": "LOCKED"
+  }
+}

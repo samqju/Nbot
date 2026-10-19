@@ -1,0 +1,24 @@
+[Unit]
+Description=Nbot V6 M5A 8-hour PUBLIC shadow market discovery (NO ORDERS)
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/root/nbot-v6-m1-20261016/global-next-source/scripts/m5a_shadow_cycle.py
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/root/nbot-v6-m1-20261016/global-next-source
+ExecStart=/usr/bin/python3 /root/nbot-v6-m1-20261016/global-next-source/scripts/m5a_shadow_cycle.py --config /root/nbot-v6-m1-20261016/global-next-source/user_data/config.json --output-dir /root/nbot-v6-m1-20261016/m5a-shadow-20261019/reviews
+TimeoutStartSec=120
+Restart=no
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+# Only PUBLIC fapi GET endpoints, no exchange keys, no FreqAI edits, no
+# running trading process restart and no possibility of a live order.

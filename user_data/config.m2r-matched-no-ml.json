@@ -1,0 +1,22 @@
+{
+  "bot_name": "nbot-v6-m2r-matched-no-ml-historical-only",
+  "dry_run": true,
+  "max_open_trades": 1,
+  "nbot_m2r_research_only": true,
+  "nbot_live_mode": false,
+  "nbot_paper_research_mode": false,
+  "force_entry_enable": false,
+  "api_server": {
+    "enabled": false
+  },
+  "telegram": {
+    "enabled": false
+  },
+  "exchange": {
+    "key": "",
+    "secret": ""
+  },
+  "freqai": {
+    "enabled": false
+  }
+}

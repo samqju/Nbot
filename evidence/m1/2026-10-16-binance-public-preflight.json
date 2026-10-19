@@ -1,0 +1,610 @@
+{
+  "source": "Public Binance USD-M futures REST metadata and 5m/1h sample candles",
+  "asof_utc": "2026-10-16T15:58:55.609000+00:00",
+  "note": "This is a bounded data PRECHECK, not full 60-day candle continuity, data download, successful model fit or a FreqAI backtest.",
+  "pairs_count": 25,
+  "preflight_pass": 25,
+  "preflight_fail": 0,
+  "results": [
+    {
+      "pair": "BTC/USDT:USDT",
+      "symbol": "BTCUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "ETH/USDT:USDT",
+      "symbol": "ETHUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "SOL/USDT:USDT",
+      "symbol": "SOLUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "BNB/USDT:USDT",
+      "symbol": "BNBUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "XRP/USDT:USDT",
+      "symbol": "XRPUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "ADA/USDT:USDT",
+      "symbol": "ADAUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "LINK/USDT:USDT",
+      "symbol": "LINKUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "DOGE/USDT:USDT",
+      "symbol": "DOGEUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "AVAX/USDT:USDT",
+      "symbol": "AVAXUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "DOT/USDT:USDT",
+      "symbol": "DOTUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "LTC/USDT:USDT",
+      "symbol": "LTCUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "BCH/USDT:USDT",
+      "symbol": "BCHUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "NEAR/USDT:USDT",
+      "symbol": "NEARUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "UNI/USDT:USDT",
+      "symbol": "UNIUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "APT/USDT:USDT",
+      "symbol": "APTUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "ARB/USDT:USDT",
+      "symbol": "ARBUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "OP/USDT:USDT",
+      "symbol": "OPUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "SUI/USDT:USDT",
+      "symbol": "SUIUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "TRX/USDT:USDT",
+      "symbol": "TRXUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "ETC/USDT:USDT",
+      "symbol": "ETCUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "ATOM/USDT:USDT",
+      "symbol": "ATOMUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "FIL/USDT:USDT",
+      "symbol": "FILUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "INJ/USDT:USDT",
+      "symbol": "INJUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "XLM/USDT:USDT",
+      "symbol": "XLMUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    },
+    {
+      "pair": "HBAR/USDT:USDT",
+      "symbol": "HBARUSDT",
+      "contract_checks": [],
+      "candles": {
+        "5m": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T15:54:59.999000+00:00",
+          "history_60d_probe": true
+        },
+        "1h": {
+          "recent_closed_candles": 499,
+          "recent_gaps": 0,
+          "invalid_ohlcv": 0,
+          "fresh": true,
+          "last_close_utc": "2026-10-16T14:59:59.999000+00:00",
+          "history_60d_probe": true
+        }
+      },
+      "eligible_for_history_download_preflight": true
+    }
+  ]
+}

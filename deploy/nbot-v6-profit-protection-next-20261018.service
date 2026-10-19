@@ -1,0 +1,19 @@
+[Unit]
+Description=NBOT V6 second finite profit protection study after library verified (NO trading)
+After=docker.service
+Wants=docker.service
+ConditionPathExists=/root/nbot-v6-m1-20261016/library-20261018/v6-profit-protection-successor-wait-once.sh
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/nbot-v6-m1-20261016
+ExecStart=/bin/bash /root/nbot-v6-m1-20261016/library-20261018/v6-profit-protection-successor-wait-once.sh
+TimeoutStartSec=0
+Restart=no
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

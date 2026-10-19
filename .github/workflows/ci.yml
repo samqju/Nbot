@@ -11,6 +11,10 @@ on:
       - 'docker-compose.yml'
       - 'README.md'
       - 'ROADMAP.md'
+      - 'VPS_SETUP.md'
+      - 'DEPENDENCIES.md'
+      - 'LIVE_SAFETY.md'
+      - 'scripts/**'
       - '.github/workflows/ci.yml'
   workflow_dispatch:
 
@@ -27,7 +31,32 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install numpy pandas
       - run: python -m unittest discover -s tests -v
+      - name: Validate beginner installer and preflight shell syntax
+        run: bash -n scripts/install_docker_ubuntu.sh scripts/check_vps.sh
       - run: python -m py_compile user_data/strategies/NbotV6.py
+      - name: Compile offline strategy library, native selector, LightGBM variants and RL
+        run: |
+          python -m py_compile \
+            user_data/strategies/NbotV6LibraryResearch.py \
+            user_data/strategies/NbotV6LibraryLightGBMResearch.py \
+            user_data/strategies/NbotV6AdaptiveLibraryResearch.py \
+            user_data/strategies/NbotV6RLResearch.py \
+            user_data/freqaimodels/NbotV6CostAwareRLResearch.py \
+            scripts/m2r_strategy_library_selector.py \
+            scripts/m2r_v6_library_native_job.py \
+            scripts/m2r_v6_library_scorecards.py \
+            scripts/m2r_v6_library_full_batch.py \
+            scripts/m2r_v6_profit_protection_batch.py \
+            scripts/m2r_v6_profit_reversal_audit.py \
+            scripts/m2r_v6_global_opportunity_ranker.py \
+            scripts/m2r_v6_global_batch.py \
+            scripts/m2r_v6_global_dataset.py \
+            user_data/strategies/NbotV6GlobalOfflineResearch.py \
+            user_data/strategies/NbotV6ProfitProtectionResearch.py
+          python -m json.tool user_data/config.v6-library-native-offline.json > /dev/null
+          python -m json.tool user_data/config.v6-library-lgbm-offline.json > /dev/null
+          python -m json.tool user_data/config.v6-library-rl-offline.json > /dev/null
+          python -m json.tool user_data/config.v6-library-adaptive-offline.json > /dev/null
       - run: python -m json.tool user_data/config.json > /dev/null
 
   actual-freqtrade-strategy-discovery:
@@ -43,3 +72,180 @@ jobs:
             list-strategies --config /freqtrade/user_data/config.json \
             | tee /tmp/nbot-v6-strategies.txt
           grep -E 'NbotV6.*OK' /tmp/nbot-v6-strategies.txt
+      - name: Independently discover each candidate in the official Freqtrade image
+        run: |
+          set -euo pipefail
+          for name in \
+            NbotV6EmaCrossResearch NbotV6DonchianResearch \
+            NbotV6BollingerResearch NbotV6RsiResearch \
+            NbotV6MacdResearch NbotV6StochasticResearch \
+            NbotV6AtrBreakoutResearch NbotV6VolumeTrendResearch \
+            NbotV6EmaCrossLightGBMResearch NbotV6DonchianLightGBMResearch \
+            NbotV6BollingerLightGBMResearch NbotV6RsiLightGBMResearch \
+            NbotV6MacdLightGBMResearch NbotV6StochasticLightGBMResearch \
+            NbotV6AtrBreakoutLightGBMResearch NbotV6VolumeTrendLightGBMResearch \
+            NbotV6EmaCrossTrailingResearch NbotV6DonchianTrailingResearch \
+            NbotV6BollingerTrailingResearch NbotV6RsiTrailingResearch \
+            NbotV6MacdTrailingResearch NbotV6StochasticTrailingResearch \
+            NbotV6AtrBreakoutTrailingResearch NbotV6VolumeTrendTrailingResearch \
+            NbotV6EmaCrossTrailEarlyOneResearch NbotV6DonchianTrailEarlyOneResearch \
+            NbotV6BollingerTrailEarlyOneResearch NbotV6RsiTrailEarlyOneResearch \
+            NbotV6MacdTrailEarlyOneResearch NbotV6StochasticTrailEarlyOneResearch \
+            NbotV6AtrBreakoutTrailEarlyOneResearch NbotV6VolumeTrendTrailEarlyOneResearch \
+            NbotV6EmaCrossTrailEarlyOneHalfResearch NbotV6DonchianTrailEarlyOneHalfResearch \
+            NbotV6BollingerTrailEarlyOneHalfResearch NbotV6RsiTrailEarlyOneHalfResearch \
+            NbotV6MacdTrailEarlyOneHalfResearch NbotV6StochasticTrailEarlyOneHalfResearch \
+            NbotV6AtrBreakoutTrailEarlyOneHalfResearch NbotV6VolumeTrendTrailEarlyOneHalfResearch \
+            NbotV6EmaCrossTrailTightTwoResearch NbotV6DonchianTrailTightTwoResearch \
+            NbotV6BollingerTrailTightTwoResearch NbotV6RsiTrailTightTwoResearch \
+            NbotV6MacdTrailTightTwoResearch NbotV6StochasticTrailTightTwoResearch \
+            NbotV6AtrBreakoutTrailTightTwoResearch NbotV6VolumeTrendTrailTightTwoResearch \
+            NbotV6EmaCrossTakeProfitTwoResearch NbotV6DonchianTakeProfitTwoResearch \
+            NbotV6BollingerTakeProfitTwoResearch NbotV6RsiTakeProfitTwoResearch \
+            NbotV6MacdTakeProfitTwoResearch NbotV6StochasticTakeProfitTwoResearch \
+            NbotV6AtrBreakoutTakeProfitTwoResearch NbotV6VolumeTrendTakeProfitTwoResearch \
+            NbotV6EmaCrossTakeProfitThreeResearch NbotV6DonchianTakeProfitThreeResearch \
+            NbotV6BollingerTakeProfitThreeResearch NbotV6RsiTakeProfitThreeResearch \
+            NbotV6MacdTakeProfitThreeResearch NbotV6StochasticTakeProfitThreeResearch \
+            NbotV6AtrBreakoutTakeProfitThreeResearch NbotV6VolumeTrendTakeProfitThreeResearch \
+            NbotV6AdaptiveLibraryResearch NbotV6RLResearch \
+            NbotV6GlobalOfflineResearch NbotV6GlobalTrailingOfflineResearch; do
+            grep -E "$name.*OK" /tmp/nbot-v6-strategies.txt \
+              || { echo "FREQTRADE_CANDIDATE_NOT_IMPORTABLE: $name"; exit 1; }
+          done
+      - name: Verify custom PPO reward model in official RL image (not basic FreqAI image)
+        run: |
+          set -euo pipefail
+          # The standard :stable_freqai image intentionally excludes torch,
+          # stable-baselines3 and gymnasium. Only the dedicated _freqairl tag
+          # includes the FreqAI five-action native reward-model dependencies.
+          docker run --rm \
+            -v "$PWD/user_data:/freqtrade/user_data:ro" \
+            --entrypoint python \
+            freqtradeorg/freqtrade:stable_freqairl \
+            -c 'import sys; sys.path.insert(0, "/freqtrade/user_data/freqaimodels"); from NbotV6CostAwareRLResearch import NbotV6CostAwareRLResearch; assert hasattr(NbotV6CostAwareRLResearch, "MyRLEnv"); print("V6_OFFLINE_RL_NATIVE_MODEL_API_OK")'
+      - name: Verify third-stage global queue, no launch in CI
+        run: |
+          bash -n scripts/m2r_v6_global_successor_wait.sh
+          PYTHONPYCACHEPREFIX=/tmp/nbot-v6-global-ci-pyc python -m py_compile scripts/m2r_v6_global_dataset.py scripts/m2r_v6_global_batch.py user_data/strategies/NbotV6GlobalOfflineResearch.py
+      - name: Run real pandas and LightGBM synthetic global research tests inside official FreqAI image
+        run: |
+          docker run --rm --network none --workdir /research \
+            -v "$PWD:/research:ro" \
+            --entrypoint python freqtradeorg/freqtrade:stable_freqai \
+            -m unittest tests.test_m2r_v6_global_batch_contract -v
+      - name: Parse finite post-batch profit-protection VPS handoff (never start in CI)
+        run: |
+          bash -n scripts/m2r_v6_profit_protection_successor_wait.sh
+          python3 -m py_compile scripts/m2r_v6_profit_protection_batch.py scripts/m2r_v6_profit_reversal_audit.py
+      - name: Validate independent 20-slot paper configuration with real Freqtrade schema
+        run: |
+          set -o pipefail
+          docker run --rm \
+            -v "$PWD/user_data:/freqtrade/user_data" \
+            freqtradeorg/freqtrade:stable_freqai \
+            list-strategies --config /freqtrade/user_data/config.json \
+            --config /freqtrade/user_data/config.paper-research.json \
+            | tee /tmp/nbot-v6-research-strategies.txt
+          grep -E 'NbotV6.*OK' /tmp/nbot-v6-research-strategies.txt
+
+  # Isolated, opt-in historical M1; disabled on US-hosted runner unless deliberately reviewed.
+  real-freqai-m1:
+    # Requires deliberate PR title marker on a region-eligible >=2 GB runner.
+    # GH-hosted US runner is Binance geo-restricted (451): do not hammer it.
+    if: github.event_name == 'pull_request' && github.event.pull_request.number == 50 && contains(github.event.pull_request.title, '[RUN-M1]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm isolated no-key historical-test mode
+        run: |
+          set -euo pipefail
+          mkdir -p m1-output user_data/backtest_results
+          # Official image uses its own ftuser with an executable in its HOME.
+          # Make the temporary, ephemeral CI userdata mount writable to it.
+          chmod -R a+rwX user_data
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          c = json.loads(Path("user_data/config.json").read_text())
+          assert c["dry_run"] is True and not c["exchange"]["key"] and not c["exchange"]["secret"]
+          assert c["trading_mode"] == "futures" and c["exchange"]["name"] == "binance"
+          assert c["freqai"]["enabled"] is True and c["freqai"]["train_period_days"] == 30
+          assert c["stake_amount"] == 1000 and c["dry_run_wallet"] == 100000
+          assert c["max_open_trades"] == 1
+          # M1 smoke starts with TWO official Binance perpetual contracts;
+          # other 23 pairs remain configured in the production baseline.
+          overlay = {
+              "exchange": {"pair_whitelist": ["BTC/USDT:USDT", "ETH/USDT:USDT"]},
+              "freqai": {
+                  "identifier": "nbot-v6-m1-real-btc-eth-20261016",
+                  "model_training_parameters": {
+                      "n_estimators": 75, "learning_rate": 0.05,
+                      "num_leaves": 15, "n_jobs": 1
+                  }
+              },
+          }
+          Path("user_data/config.m1-smoke.json").write_text(json.dumps(overlay, indent=2) + "\n")
+          print("M1: 2 pairs; real Binance public candles; 30d training; 7d out-of-sample backtest.")
+          print("No exchange keys, no Telegram credentials, no live trading, no VPS modifications.")
+          PY
+          free -h | tee m1-output/runner-memory.txt
+      - name: Pull official FreqAI image and record immutable digest
+        run: |
+          set -euo pipefail
+          docker pull freqtradeorg/freqtrade:stable_freqai
+          docker image inspect freqtradeorg/freqtrade:stable_freqai \
+            --format '{{index .RepoDigests 0}}' | tee m1-output/image-digest.txt
+          docker run --rm freqtradeorg/freqtrade:stable_freqai --version \
+            | tee m1-output/freqtrade-version.txt
+      - name: Download real 60-day Binance futures history, funding and mark data
+        run: |
+          set -euo pipefail
+          docker run --rm --cpus=2 --memory=5g \
+            -v "$PWD/user_data:/freqtrade/user_data" \
+            freqtradeorg/freqtrade:stable_freqai \
+            download-data \
+              --config /freqtrade/user_data/config.json \
+              --config /freqtrade/user_data/config.m1-smoke.json \
+              --trading-mode futures \
+              --pairs BTC/USDT:USDT ETH/USDT:USDT \
+              --timeframes 5m 1h --days 60 \
+            2>&1 | tee m1-output/download.log
+      - name: Inspect downloaded historical ranges
+        run: |
+          set -euo pipefail
+          docker run --rm --cpus=2 --memory=5g \
+            -v "$PWD/user_data:/freqtrade/user_data" \
+            freqtradeorg/freqtrade:stable_freqai \
+            list-data \
+              --config /freqtrade/user_data/config.json \
+              --config /freqtrade/user_data/config.m1-smoke.json \
+              --trading-mode futures \
+              --pairs BTC/USDT:USDT ETH/USDT:USDT \
+              --show-timerange \
+            2>&1 | tee m1-output/available-candles.txt
+      - name: Train real LightGBM and backtest historical 7-day window
+        run: |
+          set -euo pipefail
+          docker run --rm --cpus=2 --memory=5g \
+            -v "$PWD/user_data:/freqtrade/user_data" \
+            freqtradeorg/freqtrade:stable_freqai \
+            backtesting \
+              --config /freqtrade/user_data/config.json \
+              --config /freqtrade/user_data/config.m1-smoke.json \
+              --strategy NbotV6 \
+              --freqaimodel LightGBMRegressor \
+              --timerange 20261001-20261008 \
+              --export trades \
+            2>&1 | tee m1-output/backtesting.log
+      - name: Preserve M1 logs and official backtest outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nbot-v6-m1-btc-eth-20261016
+          path: |
+            m1-output/
+            user_data/backtest_results/
+          retention-days: 30
+          if-no-files-found: warn

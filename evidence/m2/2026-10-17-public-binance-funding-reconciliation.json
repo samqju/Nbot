@@ -1,0 +1,624 @@
+{
+  "status": "diagnostic, not certification",
+  "source": "public Binance USD-M /fapi/v1/fundingRate",
+  "endpoint_window_utc": [
+    "2026-09-30T00:05:00+00:00",
+    "2026-10-09T00:00:00+00:00"
+  ],
+  "symbols_queried": 20,
+  "method": "Sum signed quantity * settlement mark price * exchange fundingRate for settlement open<time<=close. Gross quote estimate;",
+  "possible_differences": [
+    "Freqtrade may include partial settlement periods, synthetic rate interpolation or inverse funding fee sign.",
+    "Trade lifecycle timestamps and Binance event timestamps can have boundary effects.",
+    "This only tests reported funding fields; not whether resulting order fills are realistic."
+  ],
+  "results": {
+    "AI_V6": {
+      "trades": 34,
+      "total_external_estimate_usdt": -0.721885,
+      "total_engine_funding_field_usdt": -0.721893,
+      "absolute_delta_sum_usdt": 0.000008,
+      "max_trade_abs_delta_usdt": 0.000008,
+      "trades_disagreeing_by_over_0_05_usdt": 0,
+      "settlement_events_in_trade_windows": 11,
+      "trade_differences": [
+        {
+          "pair": "UNI/USDT:USDT",
+          "open_date": "2026-10-01 02:00:00+00:00",
+          "close_date": "2026-10-01 03:45:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "ARB/USDT:USDT",
+          "open_date": "2026-10-01 05:30:00+00:00",
+          "close_date": "2026-10-01 07:20:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "ARB/USDT:USDT",
+          "open_date": "2026-10-01 08:10:00+00:00",
+          "close_date": "2026-10-01 10:05:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "UNI/USDT:USDT",
+          "open_date": "2026-10-01 11:40:00+00:00",
+          "close_date": "2026-10-01 13:20:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "ATOM/USDT:USDT",
+          "open_date": "2026-10-01 16:10:00+00:00",
+          "close_date": "2026-10-01 18:50:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "SOL/USDT:USDT",
+          "open_date": "2026-10-01 19:00:00+00:00",
+          "close_date": "2026-10-01 21:25:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "BTC/USDT:USDT",
+          "open_date": "2026-10-02 00:00:00+00:00",
+          "close_date": "2026-10-02 01:35:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": -0.025129,
+          "engine_usdt": -0.025129,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "ARB/USDT:USDT",
+          "open_date": "2026-10-02 01:45:00+00:00",
+          "close_date": "2026-10-02 06:00:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "ETH/USDT:USDT",
+          "open_date": "2026-10-02 07:10:00+00:00",
+          "close_date": "2026-10-02 08:20:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": -0.100172,
+          "engine_usdt": -0.100172,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "ARB/USDT:USDT",
+          "open_date": "2026-10-02 12:45:00+00:00",
+          "close_date": "2026-10-02 12:55:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "ARB/USDT:USDT",
+          "open_date": "2026-10-02 13:00:00+00:00",
+          "close_date": "2026-10-02 14:30:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "FIL/USDT:USDT",
+          "open_date": "2026-10-02 20:30:00+00:00",
+          "close_date": "2026-10-02 22:40:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "INJ/USDT:USDT",
+          "open_date": "2026-10-02 23:15:00+00:00",
+          "close_date": "2026-10-03 00:45:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": -0.062346,
+          "engine_usdt": -0.062346,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "UNI/USDT:USDT",
+          "open_date": "2026-10-03 03:10:00+00:00",
+          "close_date": "2026-10-03 08:05:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": -0.099509,
+          "engine_usdt": -0.099517,
+          "delta_usdt": 0.000008
+        },
+        {
+          "pair": "SUI/USDT:USDT",
+          "open_date": "2026-10-03 09:30:00+00:00",
+          "close_date": "2026-10-03 15:55:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "OP/USDT:USDT",
+          "open_date": "2026-10-03 16:35:00+00:00",
+          "close_date": "2026-10-03 18:00:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "LINK/USDT:USDT",
+          "open_date": "2026-10-03 23:15:00+00:00",
+          "close_date": "2026-10-04 02:25:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": -0.06704,
+          "engine_usdt": -0.06704,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "UNI/USDT:USDT",
+          "open_date": "2026-10-04 07:05:00+00:00",
+          "close_date": "2026-10-04 08:05:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": 0.035943,
+          "engine_usdt": 0.035943,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "DOT/USDT:USDT",
+          "open_date": "2026-10-04 10:35:00+00:00",
+          "close_date": "2026-10-04 11:00:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "OP/USDT:USDT",
+          "open_date": "2026-10-04 16:15:00+00:00",
+          "close_date": "2026-10-04 18:05:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "INJ/USDT:USDT",
+          "open_date": "2026-10-04 21:30:00+00:00",
+          "close_date": "2026-10-05 04:35:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": -0.072497,
+          "engine_usdt": -0.072497,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "NEAR/USDT:USDT",
+          "open_date": "2026-10-05 05:40:00+00:00",
+          "close_date": "2026-10-05 10:10:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": -0.102264,
+          "engine_usdt": -0.102264,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "FIL/USDT:USDT",
+          "open_date": "2026-10-05 10:10:00+00:00",
+          "close_date": "2026-10-05 13:20:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "ARB/USDT:USDT",
+          "open_date": "2026-10-05 13:20:00+00:00",
+          "close_date": "2026-10-05 14:30:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "LINK/USDT:USDT",
+          "open_date": "2026-10-05 17:05:00+00:00",
+          "close_date": "2026-10-05 19:25:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "ADA/USDT:USDT",
+          "open_date": "2026-10-05 19:55:00+00:00",
+          "close_date": "2026-10-05 20:25:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "SUI/USDT:USDT",
+          "open_date": "2026-10-05 20:40:00+00:00",
+          "close_date": "2026-10-06 00:25:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": -0.098848,
+          "engine_usdt": -0.098848,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "FIL/USDT:USDT",
+          "open_date": "2026-10-06 06:35:00+00:00",
+          "close_date": "2026-10-06 09:25:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": -0.101413,
+          "engine_usdt": -0.101413,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "ARB/USDT:USDT",
+          "open_date": "2026-10-06 19:55:00+00:00",
+          "close_date": "2026-10-06 21:30:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "AVAX/USDT:USDT",
+          "open_date": "2026-10-07 00:10:00+00:00",
+          "close_date": "2026-10-07 01:55:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "INJ/USDT:USDT",
+          "open_date": "2026-10-07 04:00:00+00:00",
+          "close_date": "2026-10-07 05:00:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "NEAR/USDT:USDT",
+          "open_date": "2026-10-07 17:10:00+00:00",
+          "close_date": "2026-10-07 17:40:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "NEAR/USDT:USDT",
+          "open_date": "2026-10-07 17:50:00+00:00",
+          "close_date": "2026-10-07 19:00:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "OP/USDT:USDT",
+          "open_date": "2026-10-07 20:30:00+00:00",
+          "close_date": "2026-10-08 00:00:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": -0.02861,
+          "engine_usdt": -0.02861,
+          "delta_usdt": 0
+        }
+      ]
+    },
+    "NO_ML": {
+      "trades": 31,
+      "total_external_estimate_usdt": 0.367678,
+      "total_engine_funding_field_usdt": 0.367662,
+      "absolute_delta_sum_usdt": 0.000018,
+      "max_trade_abs_delta_usdt": 0.000017,
+      "trades_disagreeing_by_over_0_05_usdt": 0,
+      "settlement_events_in_trade_windows": 21,
+      "trade_differences": [
+        {
+          "pair": "SOL/USDT:USDT",
+          "open_date": "2026-10-01 00:05:00+00:00",
+          "close_date": "2026-10-01 03:45:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "SOL/USDT:USDT",
+          "open_date": "2026-10-01 03:45:00+00:00",
+          "close_date": "2026-10-01 07:35:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "TRX/USDT:USDT",
+          "open_date": "2026-10-01 07:45:00+00:00",
+          "close_date": "2026-10-01 15:50:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": -0.087391,
+          "engine_usdt": -0.087391,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "TRX/USDT:USDT",
+          "open_date": "2026-10-01 15:50:00+00:00",
+          "close_date": "2026-10-01 22:20:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": 0.947311,
+          "engine_usdt": 0.947311,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "XLM/USDT:USDT",
+          "open_date": "2026-10-01 22:20:00+00:00",
+          "close_date": "2026-10-02 02:30:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": 0.026015,
+          "engine_usdt": 0.026015,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "BNB/USDT:USDT",
+          "open_date": "2026-10-02 02:30:00+00:00",
+          "close_date": "2026-10-02 07:50:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "ETH/USDT:USDT",
+          "open_date": "2026-10-02 07:50:00+00:00",
+          "close_date": "2026-10-02 14:25:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": -0.100172,
+          "engine_usdt": -0.100172,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "LTC/USDT:USDT",
+          "open_date": "2026-10-02 14:25:00+00:00",
+          "close_date": "2026-10-02 16:55:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": -0.100712,
+          "engine_usdt": -0.100712,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "AVAX/USDT:USDT",
+          "open_date": "2026-10-02 16:55:00+00:00",
+          "close_date": "2026-10-02 18:40:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "BTC/USDT:USDT",
+          "open_date": "2026-10-02 18:40:00+00:00",
+          "close_date": "2026-10-03 00:40:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": 0.042507,
+          "engine_usdt": 0.042507,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "INJ/USDT:USDT",
+          "open_date": "2026-10-03 00:40:00+00:00",
+          "close_date": "2026-10-03 07:40:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "INJ/USDT:USDT",
+          "open_date": "2026-10-03 07:40:00+00:00",
+          "close_date": "2026-10-03 12:10:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": 0.099875,
+          "engine_usdt": 0.099875,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "BNB/USDT:USDT",
+          "open_date": "2026-10-03 12:10:00+00:00",
+          "close_date": "2026-10-03 22:00:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": -0.013189,
+          "engine_usdt": -0.013189,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "NEAR/USDT:USDT",
+          "open_date": "2026-10-03 22:00:00+00:00",
+          "close_date": "2026-10-04 03:40:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": -0.101472,
+          "engine_usdt": -0.101489,
+          "delta_usdt": 0.000017
+        },
+        {
+          "pair": "SOL/USDT:USDT",
+          "open_date": "2026-10-04 03:40:00+00:00",
+          "close_date": "2026-10-04 18:10:00+00:00",
+          "event_count": 2,
+          "calculated_usdt": -0.200412,
+          "engine_usdt": -0.200412,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "SOL/USDT:USDT",
+          "open_date": "2026-10-04 18:10:00+00:00",
+          "close_date": "2026-10-04 22:05:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "SOL/USDT:USDT",
+          "open_date": "2026-10-04 22:05:00+00:00",
+          "close_date": "2026-10-05 00:25:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": -0.099669,
+          "engine_usdt": -0.099668,
+          "delta_usdt": -0.000001
+        },
+        {
+          "pair": "AVAX/USDT:USDT",
+          "open_date": "2026-10-05 00:25:00+00:00",
+          "close_date": "2026-10-05 07:05:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "AVAX/USDT:USDT",
+          "open_date": "2026-10-05 07:05:00+00:00",
+          "close_date": "2026-10-05 09:50:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": -0.023755,
+          "engine_usdt": -0.023755,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "LTC/USDT:USDT",
+          "open_date": "2026-10-05 09:50:00+00:00",
+          "close_date": "2026-10-05 15:50:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "ADA/USDT:USDT",
+          "open_date": "2026-10-05 15:50:00+00:00",
+          "close_date": "2026-10-05 20:15:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": 0.100361,
+          "engine_usdt": 0.100361,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "SUI/USDT:USDT",
+          "open_date": "2026-10-05 20:15:00+00:00",
+          "close_date": "2026-10-06 00:40:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": -0.100206,
+          "engine_usdt": -0.100206,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "UNI/USDT:USDT",
+          "open_date": "2026-10-06 00:40:00+00:00",
+          "close_date": "2026-10-06 10:15:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": -0.005437,
+          "engine_usdt": -0.005437,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "UNI/USDT:USDT",
+          "open_date": "2026-10-06 10:15:00+00:00",
+          "close_date": "2026-10-06 14:25:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "UNI/USDT:USDT",
+          "open_date": "2026-10-06 14:25:00+00:00",
+          "close_date": "2026-10-07 01:35:00+00:00",
+          "event_count": 2,
+          "calculated_usdt": 0.097434,
+          "engine_usdt": 0.097434,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "DOGE/USDT:USDT",
+          "open_date": "2026-10-07 01:35:00+00:00",
+          "close_date": "2026-10-07 02:00:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "BTC/USDT:USDT",
+          "open_date": "2026-10-07 02:00:00+00:00",
+          "close_date": "2026-10-07 16:30:00+00:00",
+          "event_count": 2,
+          "calculated_usdt": -0.023262,
+          "engine_usdt": -0.023262,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "NEAR/USDT:USDT",
+          "open_date": "2026-10-07 16:30:00+00:00",
+          "close_date": "2026-10-07 19:00:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "DOGE/USDT:USDT",
+          "open_date": "2026-10-07 19:05:00+00:00",
+          "close_date": "2026-10-07 19:45:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "TRX/USDT:USDT",
+          "open_date": "2026-10-07 19:45:00+00:00",
+          "close_date": "2026-10-07 21:50:00+00:00",
+          "event_count": 0,
+          "calculated_usdt": 0,
+          "engine_usdt": 0,
+          "delta_usdt": 0
+        },
+        {
+          "pair": "TRX/USDT:USDT",
+          "open_date": "2026-10-07 21:50:00+00:00",
+          "close_date": "2026-10-08 00:00:00+00:00",
+          "event_count": 1,
+          "calculated_usdt": -0.090148,
+          "engine_usdt": -0.090148,
+          "delta_usdt": 0
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,381 @@
+{
+  "window": [
+    "2026-10-08",
+    "2026-10-16"
+  ],
+  "family": "pullback",
+  "pairs": 25,
+  "saved_asof_predictions": 57600,
+  "prediction_threshold_after_cost_fraction": 0.004,
+  "all_hypothetical_candidates": {
+    "count": 3437,
+    "winning_pct": 31.946,
+    "mean_hypothetical_net_pct": -0.1714
+  },
+  "selected_model_positive_candidates": {
+    "count": 154,
+    "winning_pct": 44.156,
+    "mean_hypothetical_net_pct": 0.0602
+  },
+  "selection_fraction_of_candidates": 0.04481,
+  "individual_pair_results": {
+    "BTC/USDT:USDT": {
+      "raw": {
+        "count": 146,
+        "winning_pct": 15.753,
+        "mean_hypothetical_net_pct": -0.2374
+      },
+      "model_ready": 143,
+      "model_predicted_good": {
+        "count": 0,
+        "winning_pct": null,
+        "mean_hypothetical_net_pct": null
+      },
+      "unmatched_prediction": 0
+    },
+    "ETH/USDT:USDT": {
+      "raw": {
+        "count": 151,
+        "winning_pct": 19.868,
+        "mean_hypothetical_net_pct": -0.1308
+      },
+      "model_ready": 149,
+      "model_predicted_good": {
+        "count": 0,
+        "winning_pct": null,
+        "mean_hypothetical_net_pct": null
+      },
+      "unmatched_prediction": 0
+    },
+    "SOL/USDT:USDT": {
+      "raw": {
+        "count": 131,
+        "winning_pct": 25.191,
+        "mean_hypothetical_net_pct": -0.1399
+      },
+      "model_ready": 128,
+      "model_predicted_good": {
+        "count": 0,
+        "winning_pct": null,
+        "mean_hypothetical_net_pct": null
+      },
+      "unmatched_prediction": 0
+    },
+    "BNB/USDT:USDT": {
+      "raw": {
+        "count": 141,
+        "winning_pct": 23.404,
+        "mean_hypothetical_net_pct": -0.2081
+      },
+      "model_ready": 138,
+      "model_predicted_good": {
+        "count": 0,
+        "winning_pct": null,
+        "mean_hypothetical_net_pct": null
+      },
+      "unmatched_prediction": 0
+    },
+    "XRP/USDT:USDT": {
+      "raw": {
+        "count": 137,
+        "winning_pct": 28.467,
+        "mean_hypothetical_net_pct": -0.2094
+      },
+      "model_ready": 131,
+      "model_predicted_good": {
+        "count": 0,
+        "winning_pct": null,
+        "mean_hypothetical_net_pct": null
+      },
+      "unmatched_prediction": 0
+    },
+    "ADA/USDT:USDT": {
+      "raw": {
+        "count": 140,
+        "winning_pct": 27.857,
+        "mean_hypothetical_net_pct": -0.287
+      },
+      "model_ready": 139,
+      "model_predicted_good": {
+        "count": 0,
+        "winning_pct": null,
+        "mean_hypothetical_net_pct": null
+      },
+      "unmatched_prediction": 0
+    },
+    "LINK/USDT:USDT": {
+      "raw": {
+        "count": 141,
+        "winning_pct": 31.206,
+        "mean_hypothetical_net_pct": -0.1587
+      },
+      "model_ready": 140,
+      "model_predicted_good": {
+        "count": 9,
+        "winning_pct": 44.444,
+        "mean_hypothetical_net_pct": -0.1581
+      },
+      "unmatched_prediction": 0
+    },
+    "DOGE/USDT:USDT": {
+      "raw": {
+        "count": 151,
+        "winning_pct": 27.815,
+        "mean_hypothetical_net_pct": -0.0962
+      },
+      "model_ready": 148,
+      "model_predicted_good": {
+        "count": 3,
+        "winning_pct": 66.667,
+        "mean_hypothetical_net_pct": 0.3153
+      },
+      "unmatched_prediction": 0
+    },
+    "AVAX/USDT:USDT": {
+      "raw": {
+        "count": 147,
+        "winning_pct": 34.694,
+        "mean_hypothetical_net_pct": -0.0611
+      },
+      "model_ready": 146,
+      "model_predicted_good": {
+        "count": 2,
+        "winning_pct": 0,
+        "mean_hypothetical_net_pct": -0.6823
+      },
+      "unmatched_prediction": 0
+    },
+    "DOT/USDT:USDT": {
+      "raw": {
+        "count": 144,
+        "winning_pct": 38.889,
+        "mean_hypothetical_net_pct": -0.1614
+      },
+      "model_ready": 144,
+      "model_predicted_good": {
+        "count": 7,
+        "winning_pct": 42.857,
+        "mean_hypothetical_net_pct": 0.5202
+      },
+      "unmatched_prediction": 0
+    },
+    "LTC/USDT:USDT": {
+      "raw": {
+        "count": 149,
+        "winning_pct": 31.544,
+        "mean_hypothetical_net_pct": -0.1576
+      },
+      "model_ready": 146,
+      "model_predicted_good": {
+        "count": 2,
+        "winning_pct": 0,
+        "mean_hypothetical_net_pct": -0.9285
+      },
+      "unmatched_prediction": 0
+    },
+    "BCH/USDT:USDT": {
+      "raw": {
+        "count": 127,
+        "winning_pct": 29.921,
+        "mean_hypothetical_net_pct": -0.222
+      },
+      "model_ready": 123,
+      "model_predicted_good": {
+        "count": 5,
+        "winning_pct": 20,
+        "mean_hypothetical_net_pct": -0.389
+      },
+      "unmatched_prediction": 0
+    },
+    "NEAR/USDT:USDT": {
+      "raw": {
+        "count": 144,
+        "winning_pct": 48.611,
+        "mean_hypothetical_net_pct": 0.0427
+      },
+      "model_ready": 141,
+      "model_predicted_good": {
+        "count": 16,
+        "winning_pct": 50,
+        "mean_hypothetical_net_pct": 0.1269
+      },
+      "unmatched_prediction": 0
+    },
+    "UNI/USDT:USDT": {
+      "raw": {
+        "count": 133,
+        "winning_pct": 39.85,
+        "mean_hypothetical_net_pct": -0.1459
+      },
+      "model_ready": 131,
+      "model_predicted_good": {
+        "count": 9,
+        "winning_pct": 55.556,
+        "mean_hypothetical_net_pct": 0.1155
+      },
+      "unmatched_prediction": 0
+    },
+    "APT/USDT:USDT": {
+      "raw": {
+        "count": 139,
+        "winning_pct": 38.129,
+        "mean_hypothetical_net_pct": -0.3699
+      },
+      "model_ready": 136,
+      "model_predicted_good": {
+        "count": 18,
+        "winning_pct": 38.889,
+        "mean_hypothetical_net_pct": -0.3074
+      },
+      "unmatched_prediction": 0
+    },
+    "ARB/USDT:USDT": {
+      "raw": {
+        "count": 125,
+        "winning_pct": 40,
+        "mean_hypothetical_net_pct": -0.0367
+      },
+      "model_ready": 123,
+      "model_predicted_good": {
+        "count": 10,
+        "winning_pct": 30,
+        "mean_hypothetical_net_pct": -0.3209
+      },
+      "unmatched_prediction": 0
+    },
+    "OP/USDT:USDT": {
+      "raw": {
+        "count": 128,
+        "winning_pct": 36.719,
+        "mean_hypothetical_net_pct": -0.3858
+      },
+      "model_ready": 123,
+      "model_predicted_good": {
+        "count": 5,
+        "winning_pct": 0,
+        "mean_hypothetical_net_pct": -1.3283
+      },
+      "unmatched_prediction": 0
+    },
+    "SUI/USDT:USDT": {
+      "raw": {
+        "count": 140,
+        "winning_pct": 33.571,
+        "mean_hypothetical_net_pct": -0.1616
+      },
+      "model_ready": 139,
+      "model_predicted_good": {
+        "count": 8,
+        "winning_pct": 87.5,
+        "mean_hypothetical_net_pct": 1.5908
+      },
+      "unmatched_prediction": 0
+    },
+    "TRX/USDT:USDT": {
+      "raw": {
+        "count": 124,
+        "winning_pct": 8.065,
+        "mean_hypothetical_net_pct": -0.1959
+      },
+      "model_ready": 124,
+      "model_predicted_good": {
+        "count": 0,
+        "winning_pct": null,
+        "mean_hypothetical_net_pct": null
+      },
+      "unmatched_prediction": 0
+    },
+    "ETC/USDT:USDT": {
+      "raw": {
+        "count": 132,
+        "winning_pct": 25.758,
+        "mean_hypothetical_net_pct": -0.2704
+      },
+      "model_ready": 129,
+      "model_predicted_good": {
+        "count": 15,
+        "winning_pct": 33.333,
+        "mean_hypothetical_net_pct": -0.152
+      },
+      "unmatched_prediction": 0
+    },
+    "ATOM/USDT:USDT": {
+      "raw": {
+        "count": 126,
+        "winning_pct": 40.476,
+        "mean_hypothetical_net_pct": -0.1387
+      },
+      "model_ready": 119,
+      "model_predicted_good": {
+        "count": 6,
+        "winning_pct": 33.333,
+        "mean_hypothetical_net_pct": -0.417
+      },
+      "unmatched_prediction": 0
+    },
+    "FIL/USDT:USDT": {
+      "raw": {
+        "count": 121,
+        "winning_pct": 42.149,
+        "mean_hypothetical_net_pct": -0.0538
+      },
+      "model_ready": 118,
+      "model_predicted_good": {
+        "count": 14,
+        "winning_pct": 50,
+        "mean_hypothetical_net_pct": 0.0495
+      },
+      "unmatched_prediction": 0
+    },
+    "INJ/USDT:USDT": {
+      "raw": {
+        "count": 141,
+        "winning_pct": 46.099,
+        "mean_hypothetical_net_pct": -0.0957
+      },
+      "model_ready": 138,
+      "model_predicted_good": {
+        "count": 14,
+        "winning_pct": 78.571,
+        "mean_hypothetical_net_pct": 1.0621
+      },
+      "unmatched_prediction": 0
+    },
+    "XLM/USDT:USDT": {
+      "raw": {
+        "count": 143,
+        "winning_pct": 34.965,
+        "mean_hypothetical_net_pct": -0.2074
+      },
+      "model_ready": 142,
+      "model_predicted_good": {
+        "count": 7,
+        "winning_pct": 28.571,
+        "mean_hypothetical_net_pct": -0.0453
+      },
+      "unmatched_prediction": 0
+    },
+    "HBAR/USDT:USDT": {
+      "raw": {
+        "count": 136,
+        "winning_pct": 30.882,
+        "mean_hypothetical_net_pct": -0.2121
+      },
+      "model_ready": 136,
+      "model_predicted_good": {
+        "count": 4,
+        "winning_pct": 25,
+        "mean_hypothetical_net_pct": 0.1011
+      },
+      "unmatched_prediction": 0
+    }
+  },
+  "notes": [
+    "All candidate outcomes are hindsight labels for evaluation only; the model did not see these labels at prediction time if training slices are causal.",
+    "These opportunities overlap; do NOT sum returns into portfolio PnL.",
+    "Official Freqtrade one-slot backtesting ZIP alone represents portfolio trade PnL.",
+    "The actual FreqAI train-cutoff label purging and prior has_bias=Yes are not independently resolved.",
+    "All costs are original research assumed 0.21% roundtrip reserve, not measured order book.",
+    "Future label must have twelve candles available; incomplete future bars are not fabricated."
+  ]
+}

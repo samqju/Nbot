@@ -1,0 +1,26 @@
+[Unit]
+Description=NBOT V6 finite 64 native Freqtrade A/B: remove 60-minute exit (research only)
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+ConditionPathExists=/root/nbot-v6-m1-20261016/global-next-source/scripts/m2r_v6_no_time_exit_batch.py
+
+[Service]
+Type=exec
+User=root
+Group=root
+WorkingDirectory=/root/nbot-v6-m1-20261016/global-next-source
+Environment=PYTHONUNBUFFERED=1
+Environment=NBOT_V6_NO_TIME_OFFLINE=OWNER_AUTHORIZED_BACKTEST_ONLY
+ExecStart=/usr/bin/python3 /root/nbot-v6-m1-20261016/global-next-source/scripts/m2r_v6_no_time_exit_batch.py --execute
+Restart=no
+TimeoutStartSec=0
+TimeoutStopSec=120
+KillMode=control-group
+UMask=0022
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

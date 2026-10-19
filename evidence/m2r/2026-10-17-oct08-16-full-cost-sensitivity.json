@@ -1,0 +1,151 @@
+{
+  "method": "Freeze official already-completed trade paths, then subtract assumed ADDITIONAL roundtrip execution costs from each actual trade's stake x leverage.",
+  "not_measured": true,
+  "engine_initial_fee_side": 0.0005,
+  "notes": [
+    "Never claim this estimates observed historical bid/ask or market impact.",
+    "Freqtrade base fee and engine funding already reflected in starting net.",
+    "A 10-basis-point EXTRA roundtrip haircut is about 1 USDT for a 1,000-USDT 1x trade.",
+    "The after-cost learning labels already reserved a hypothetical 10bps roundtrip slippage plus 1bp funding; this extra-cost evaluation is an independent stress on engine accounting, not an added second model target.",
+    "Fixed-trade stress does not replay exits, fill rejection, order timing or model switching.",
+    "NO TRADE returns exactly zero and involves no trades."
+  ],
+  "NO_TRADE_USDT": 0,
+  "results": {
+    "combined": {
+      "trades": 98,
+      "starting_net_usdt": 113.046,
+      "gross_stake_notional_sum_usdt": 97933.728,
+      "fixed_trade_scenario_adjusted_net_usdt": {
+        "0": 113.046,
+        "5": 64.079,
+        "10": 15.112,
+        "11": 5.319,
+        "15": -33.855,
+        "20": -82.822,
+        "25": -131.788,
+        "50": -376.623,
+        "100": -866.291
+      },
+      "extra_roundtrip_cost_bps": [
+        0,
+        5,
+        10,
+        11,
+        15,
+        20,
+        25,
+        50,
+        100
+      ]
+    },
+    "breakout": {
+      "trades": 83,
+      "starting_net_usdt": 62.552,
+      "gross_stake_notional_sum_usdt": 82919.065,
+      "fixed_trade_scenario_adjusted_net_usdt": {
+        "0": 62.552,
+        "5": 21.093,
+        "10": -20.367,
+        "11": -28.659,
+        "15": -61.826,
+        "20": -103.286,
+        "25": -144.745,
+        "50": -352.043,
+        "100": -766.638
+      },
+      "extra_roundtrip_cost_bps": [
+        0,
+        5,
+        10,
+        11,
+        15,
+        20,
+        25,
+        50,
+        100
+      ]
+    },
+    "pullback": {
+      "trades": 68,
+      "starting_net_usdt": 146.237,
+      "gross_stake_notional_sum_usdt": 67944.86,
+      "fixed_trade_scenario_adjusted_net_usdt": {
+        "0": 146.237,
+        "5": 112.265,
+        "10": 78.293,
+        "11": 71.498,
+        "15": 44.32,
+        "20": 10.348,
+        "25": -23.625,
+        "50": -193.487,
+        "100": -533.211
+      },
+      "extra_roundtrip_cost_bps": [
+        0,
+        5,
+        10,
+        11,
+        15,
+        20,
+        25,
+        50,
+        100
+      ]
+    },
+    "original": {
+      "trades": 45,
+      "starting_net_usdt": 205.976,
+      "gross_stake_notional_sum_usdt": 44973.506,
+      "fixed_trade_scenario_adjusted_net_usdt": {
+        "0": 205.976,
+        "5": 183.489,
+        "10": 161.003,
+        "11": 156.505,
+        "15": 138.516,
+        "20": 116.029,
+        "25": 93.542,
+        "50": -18.891,
+        "100": -243.759
+      },
+      "extra_roundtrip_cost_bps": [
+        0,
+        5,
+        10,
+        11,
+        15,
+        20,
+        25,
+        50,
+        100
+      ]
+    },
+    "baseline": {
+      "trades": 52,
+      "starting_net_usdt": 24.135,
+      "gross_stake_notional_sum_usdt": 51656.219,
+      "fixed_trade_scenario_adjusted_net_usdt": {
+        "0": 24.135,
+        "5": -1.693,
+        "10": -27.521,
+        "11": -32.686,
+        "15": -53.349,
+        "20": -79.177,
+        "25": -105.005,
+        "50": -234.146,
+        "100": -492.427
+      },
+      "extra_roundtrip_cost_bps": [
+        0,
+        5,
+        10,
+        11,
+        15,
+        20,
+        25,
+        50,
+        100
+      ]
+    }
+  }
+}

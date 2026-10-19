@@ -1,0 +1,395 @@
+{
+  "title": "NBOT V6 M2: September 2026 complete-month, 25-pair non-ML/AI vs NO TRADE comparison",
+  "window_utc": [
+    "2026-09-01T00:00:00Z",
+    "2026-10-01T00:00:00Z"
+  ],
+  "days": 30,
+  "futures_pairs": 25,
+  "initial_dry_wallet_usdt": 100000,
+  "stake_amount_usdt": 1000,
+  "max_global_open_positions": 1,
+  "leverage": 1,
+  "source": "Official Freqtrade 2026.9 / FreqAI LightGBMRegressor historical Docker backtests",
+  "data_audit": {
+    "passed_pairs": 25,
+    "failed_pairs": 0,
+    "required_warmup_start_utc": "2026-07-24T00:00:00+00:00"
+  },
+  "rolling_freqai_train_days": 30,
+  "rolling_freqai_test_days": 7,
+  "expected_models": 125,
+  "actual_fitted_models": 125,
+  "error_lines": 0,
+  "baseline_fee_per_side": 0.0005,
+  "first_week_october_reference": {
+    "AI_V6_net_usdt": -135.64,
+    "NO_ML_net_usdt": 169.849,
+    "note": "Oct 1-8 was trained on September. This fresh September test trains from earlier history instead."
+  },
+  "september_base_fee": {
+    "AI_V6": {
+      "trades": 137,
+      "winners": 43,
+      "losers": 94,
+      "win_rate_pct": 31.387,
+      "net_usdt": -444.98,
+      "engine_fee_open_close_rates": [
+        [
+          0.0005,
+          0.0005
+        ]
+      ],
+      "long_trades": 93,
+      "short_trades": 44,
+      "per_side": {
+        "long": {
+          "trades": 93,
+          "adjusted_usdt": -234.663,
+          "wins": 30
+        },
+        "short": {
+          "trades": 44,
+          "adjusted_usdt": -210.317,
+          "wins": 13
+        }
+      },
+      "per_coin": {
+        "ADA/USDT:USDT": {
+          "trades": 10,
+          "adjusted_usdt": -19.909,
+          "wins": 4
+        },
+        "APT/USDT:USDT": {
+          "trades": 6,
+          "adjusted_usdt": -38.141,
+          "wins": 2
+        },
+        "ARB/USDT:USDT": {
+          "trades": 24,
+          "adjusted_usdt": -27.632,
+          "wins": 8
+        },
+        "ATOM/USDT:USDT": {
+          "trades": 4,
+          "adjusted_usdt": -22.436,
+          "wins": 2
+        },
+        "AVAX/USDT:USDT": {
+          "trades": 4,
+          "adjusted_usdt": -23.491,
+          "wins": 0
+        },
+        "BCH/USDT:USDT": {
+          "trades": 2,
+          "adjusted_usdt": -18.345,
+          "wins": 0
+        },
+        "DOGE/USDT:USDT": {
+          "trades": 2,
+          "adjusted_usdt": -12.767,
+          "wins": 0
+        },
+        "DOT/USDT:USDT": {
+          "trades": 8,
+          "adjusted_usdt": 41.441,
+          "wins": 4
+        },
+        "ETC/USDT:USDT": {
+          "trades": 4,
+          "adjusted_usdt": 26.754,
+          "wins": 2
+        },
+        "ETH/USDT:USDT": {
+          "trades": 1,
+          "adjusted_usdt": 6.012,
+          "wins": 1
+        },
+        "FIL/USDT:USDT": {
+          "trades": 9,
+          "adjusted_usdt": -33.812,
+          "wins": 3
+        },
+        "HBAR/USDT:USDT": {
+          "trades": 2,
+          "adjusted_usdt": -4.368,
+          "wins": 1
+        },
+        "INJ/USDT:USDT": {
+          "trades": 8,
+          "adjusted_usdt": -39.243,
+          "wins": 3
+        },
+        "LINK/USDT:USDT": {
+          "trades": 5,
+          "adjusted_usdt": -18.465,
+          "wins": 2
+        },
+        "LTC/USDT:USDT": {
+          "trades": 3,
+          "adjusted_usdt": -8.869,
+          "wins": 1
+        },
+        "NEAR/USDT:USDT": {
+          "trades": 14,
+          "adjusted_usdt": -70.14,
+          "wins": 4
+        },
+        "OP/USDT:USDT": {
+          "trades": 9,
+          "adjusted_usdt": -78.756,
+          "wins": 1
+        },
+        "SOL/USDT:USDT": {
+          "trades": 8,
+          "adjusted_usdt": -9.063,
+          "wins": 2
+        },
+        "SUI/USDT:USDT": {
+          "trades": 3,
+          "adjusted_usdt": -26.249,
+          "wins": 0
+        },
+        "UNI/USDT:USDT": {
+          "trades": 7,
+          "adjusted_usdt": -81.916,
+          "wins": 1
+        },
+        "XLM/USDT:USDT": {
+          "trades": 1,
+          "adjusted_usdt": -12.181,
+          "wins": 0
+        },
+        "XRP/USDT:USDT": {
+          "trades": 3,
+          "adjusted_usdt": 26.596,
+          "wins": 2
+        }
+      },
+      "extra_fixed_roundtrip_cost_scenarios_usdt": {
+        "0": -444.98,
+        "10": -581.88,
+        "25": -787.229,
+        "50": -1129.477,
+        "100": -1813.974
+      }
+    },
+    "NO_ML": {
+      "trades": 163,
+      "winners": 42,
+      "losers": 121,
+      "win_rate_pct": 25.767,
+      "net_usdt": -242.894,
+      "engine_fee_open_close_rates": [
+        [
+          0.0005,
+          0.0005
+        ]
+      ],
+      "long_trades": 89,
+      "short_trades": 74,
+      "per_side": {
+        "long": {
+          "trades": 89,
+          "adjusted_usdt": -102.608,
+          "wins": 20
+        },
+        "short": {
+          "trades": 74,
+          "adjusted_usdt": -140.286,
+          "wins": 22
+        }
+      },
+      "per_coin": {
+        "ADA/USDT:USDT": {
+          "trades": 8,
+          "adjusted_usdt": 102.774,
+          "wins": 3
+        },
+        "ARB/USDT:USDT": {
+          "trades": 4,
+          "adjusted_usdt": 3.272,
+          "wins": 1
+        },
+        "ATOM/USDT:USDT": {
+          "trades": 2,
+          "adjusted_usdt": 9.964,
+          "wins": 1
+        },
+        "AVAX/USDT:USDT": {
+          "trades": 8,
+          "adjusted_usdt": -111.246,
+          "wins": 0
+        },
+        "BCH/USDT:USDT": {
+          "trades": 8,
+          "adjusted_usdt": -57.025,
+          "wins": 0
+        },
+        "BNB/USDT:USDT": {
+          "trades": 24,
+          "adjusted_usdt": -1.193,
+          "wins": 7
+        },
+        "BTC/USDT:USDT": {
+          "trades": 19,
+          "adjusted_usdt": -42.234,
+          "wins": 4
+        },
+        "DOGE/USDT:USDT": {
+          "trades": 8,
+          "adjusted_usdt": -33.301,
+          "wins": 3
+        },
+        "DOT/USDT:USDT": {
+          "trades": 9,
+          "adjusted_usdt": 117.745,
+          "wins": 5
+        },
+        "ETC/USDT:USDT": {
+          "trades": 1,
+          "adjusted_usdt": 3.312,
+          "wins": 1
+        },
+        "ETH/USDT:USDT": {
+          "trades": 13,
+          "adjusted_usdt": -41.799,
+          "wins": 2
+        },
+        "FIL/USDT:USDT": {
+          "trades": 1,
+          "adjusted_usdt": -21.046,
+          "wins": 0
+        },
+        "INJ/USDT:USDT": {
+          "trades": 3,
+          "adjusted_usdt": -18.875,
+          "wins": 1
+        },
+        "LINK/USDT:USDT": {
+          "trades": 8,
+          "adjusted_usdt": 38.808,
+          "wins": 4
+        },
+        "LTC/USDT:USDT": {
+          "trades": 5,
+          "adjusted_usdt": 44.409,
+          "wins": 3
+        },
+        "NEAR/USDT:USDT": {
+          "trades": 8,
+          "adjusted_usdt": -103.02,
+          "wins": 2
+        },
+        "OP/USDT:USDT": {
+          "trades": 4,
+          "adjusted_usdt": -22.245,
+          "wins": 1
+        },
+        "SOL/USDT:USDT": {
+          "trades": 6,
+          "adjusted_usdt": -60.59,
+          "wins": 0
+        },
+        "TRX/USDT:USDT": {
+          "trades": 2,
+          "adjusted_usdt": -3.549,
+          "wins": 0
+        },
+        "UNI/USDT:USDT": {
+          "trades": 3,
+          "adjusted_usdt": -18.818,
+          "wins": 1
+        },
+        "XLM/USDT:USDT": {
+          "trades": 2,
+          "adjusted_usdt": -25.803,
+          "wins": 0
+        },
+        "XRP/USDT:USDT": {
+          "trades": 17,
+          "adjusted_usdt": -2.436,
+          "wins": 3
+        }
+      },
+      "extra_fixed_roundtrip_cost_scenarios_usdt": {
+        "0": -242.894,
+        "10": -404.842,
+        "25": -647.764,
+        "50": -1052.633,
+        "100": -1862.372
+      }
+    },
+    "NO_TRADE": {
+      "trades": 0,
+      "net_usdt": 0
+    }
+  },
+  "september_doubled_fee_per_side": 0.001,
+  "september_doubled_fee_official_replays": {
+    "AI_V6": {
+      "trades": 137,
+      "net_usdt": -576.688
+    },
+    "NO_ML": {
+      "trades": 166,
+      "net_usdt": -388.318
+    }
+  },
+  "position_exposure": {
+    "AI_V6": {
+      "trades": 137,
+      "overlapping_global_positions": 0,
+      "position_hours": 292.583,
+      "one_global_slot_utilization_pct": 40.637,
+      "long_position_hours": 203.75,
+      "short_position_hours": 88.833,
+      "flat_hours": 427.417,
+      "max_individual_holding_hours": 12
+    },
+    "NO_ML": {
+      "trades": 163,
+      "overlapping_global_positions": 0,
+      "position_hours": 717.417,
+      "one_global_slot_utilization_pct": 99.641,
+      "long_position_hours": 377.25,
+      "short_position_hours": 340.167,
+      "flat_hours": 2.583,
+      "max_individual_holding_hours": 15.333
+    }
+  },
+  "funding_reconciliation": {
+    "AI_V6": {
+      "trades": 137,
+      "total_external_estimate_usdt": -0.103678,
+      "total_engine_funding_field_usdt": -0.172038,
+      "absolute_delta_sum_usdt": 0.132454,
+      "max_trade_abs_delta_usdt": 0.100345,
+      "trades_disagreeing_by_over_0_05_usdt": 1,
+      "settlement_events_in_trade_windows": 45
+    },
+    "NO_ML": {
+      "trades": 163,
+      "total_external_estimate_usdt": -1.101568,
+      "total_engine_funding_field_usdt": -1.202064,
+      "absolute_delta_sum_usdt": 0.100551,
+      "max_trade_abs_delta_usdt": 0.100433,
+      "trades_disagreeing_by_over_0_05_usdt": 1,
+      "settlement_events_in_trade_windows": 89
+    }
+  },
+  "comparison": {
+    "NO_ML_minus_AI_net_usdt": 202.086,
+    "NO_TRADE_minus_AI_net_usdt": 444.98,
+    "NO_TRADE_minus_NO_ML_net_usdt": 242.894
+  },
+  "limits": [
+    "One pre-chosen month plus one earlier October week is NOT sufficient evidence of permanent profitability or market-regime robustness.",
+    "Static 25-pair universe; owner-planned eight-hour dynamic selector and 20-position paper mode NOT used.",
+    "Broker fill prices, historical best bid/ask spreads, real slippage, stop gaps and queue positions are NOT independently verified.",
+    "Extra basis-point stresses are hypothetical cost deductions on unchanged fills, not market orders.",
+    "The previously flagged FreqAI lookahead indicator-difference warning remains unresolved; M2 release approval is NOT granted.",
+    "Using August/prior history for sequential training avoids simple in-sample September reuse, but is not a blanket certification against leakage."
+  ],
+  "decision": "Research study complete; M2 release remains NO-GO, no M3/paper/live authorization."
+}
