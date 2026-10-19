@@ -70,6 +70,16 @@ python3 "$SRC/scripts/m2r_v6_global_readiness.py" --strict || fatal GLOBAL_STATI
 (cd "$SRC" && python3 -m unittest tests.test_m2r_v6_global_batch_contract \
    tests.test_m2r_v6_global_opportunity_ranker) || fatal REQUIRED_UNIT_TEST_FAILURE
 [[ -z "$(docker ps -q)" ]] || fatal DOCKER_BECAME_BUSY
+# Official-image nonroot import smoke, ONLY after Stage2 finishes and Docker
+# is idle. Catches uid1000 source readability and FreqAI dependency failures
+# before any expensive model training or historical backtesting.
+docker run --rm --network none --memory 3g --cpus 1 \
+  --cap-drop ALL --security-opt no-new-privileges \
+  -v "$SRC:/research:ro" \
+  --entrypoint python freqtradeorg/freqtrade:stable_freqai -c \
+  'import sys,lightgbm,sklearn,pyarrow; sys.path.insert(0,"/research/scripts"); sys.path.insert(0,"/research/user_data/strategies"); import m2r_v6_global_dataset,m2r_v6_global_opportunity_ranker; from NbotV6GlobalOfflineResearch import NbotV6GlobalOfflineResearch,NbotV6GlobalTrailingOfflineResearch; assert len(m2r_v6_global_dataset.FAMILIES)==8; print("NBOT_V6_GLOBAL_NONROOT_DOCKER_DEPENDENCY_SMOKE_OK")' \
+  || fatal GLOBAL_NONROOT_DOCKER_RUNTIME_SMOKE_FAILED
+[[ -z "$(docker ps -q)" ]] || fatal DOCKER_SMOKE_LEFT_BUSY
 [[ ! -e "$ROOT/global-25x8-20261018/owner-comparison.json" ]] || fatal ALREADY_COMPLETED
 log "OWNER_AUTHORIZED_OFFLINE_ONLY_START; NO PAPER NO LIVE; source=$(git -C "$SRC" rev-parse HEAD)"
 export NBOT_V6_GLOBAL_RESEARCH=OWNER_AUTHORIZED_OFFLINE_GLOBAL_V6_RESEARCH_ONLY
