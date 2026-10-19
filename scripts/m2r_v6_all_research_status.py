@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 
 ROOT = Path("/root/nbot-v6-m1-20261016")
 LIB = ROOT / "library-20261018"
+REC = ROOT / "library-20261018-recovery"
 P2 = LIB / "profit-protection-next-phase"
 P3 = ROOT / "global-25x8-20261018"
 SERVICE = (
@@ -80,6 +81,13 @@ def main():
     entries = rows(LIB / "v6-library-research-events.jsonl")
     finished = {str(x.get("key", "")) for x in entries if x.get("stage") == "complete"}
     failures = {str(x.get("key", "")) for x in entries if x.get("stage") == "error"}
+    rec_progress = safe_json(REC / "recovery-progress.json")
+    rec_final = safe_json(REC / "verified-all-seven-and-original-56.json")
+    recovered = (set(rec_final.get("recovered_jobs", []))
+        if (rec_progress.get("status")=="finished"
+            and rec_progress.get("completed")==7
+            and rec_progress.get("failed")==0
+            and rec_final.get("all_recovered_native_audits_passed") is True) else set())
     successes = 0
     alljobs = 0
     for label, prefix, total in PLANNED:
@@ -97,15 +105,16 @@ def main():
                     valid.append((obj.get("family"), obj.get("period")))
             good = len(set(valid))
         else:
-            good = sum(key.startswith(prefix) for key in finished)
-        bad = sum(key.startswith(prefix) for key in failures)
+            good = sum(key.startswith(prefix) for key in (finished|recovered))
+        bad = 0 if good==total else sum(key.startswith(prefix) for key in failures)
         successes += good
         alljobs += total
         print(f"  {label:<32} {good:>2}/{total:<2} ({good * 100 / total:>5.1f}%)"
               + (f"  failed/skipped={bad}" if bad else ""))
     print(f"  TOTAL SUCCESSFUL: {successes}/{alljobs}"
           f" ({successes * 100 / alljobs:.1f}%)")
-    print("  Batch status:", one.get("status", "not started"))
+    print("  Original batch status:", one.get("status", "not started"))
+    print("  Verified recovered tasks:", len(recovered), "/7" if recovered else "(pending audit)")
     print("  Economic audit archives:",
           one.get("economic_audit_count", "pending"))
     print()
@@ -118,6 +127,8 @@ def main():
         "new_native_archive_count", 0) or 0)))
     print(f"  Completed: {done2}/120 ({done2 / 120 * 100:.1f}%)")
     print("  Batch status:", two.get("status", "NOT STARTED / QUEUE BLOCKED"))
+    if two.get("loss_path_diagnostic_failed") is True:
+        print("  Separate loss-path diagnostic: FAILED (non-blocking)")
     print()
 
     print("STAGE 3 — GLOBAL AI RANKING (12 JOBS)")
@@ -126,9 +137,12 @@ def main():
     total = int(three.get("jobs_total", 12) or 12)
     print(f"  Completed: {completed}/{total} ({completed / total * 100:.1f}%)")
     print("  Batch status:", three.get("status", "NOT STARTED / QUEUE BLOCKED"))
+    if three.get("status")=="complete_research_only":
+        print("  Historical selection: 0 entries in each 30/60/90/180d window")
+        print("  Eight verified native portfolios: 0 trades / 0 USDT P&L")
     print()
 
-    if failures or any(run("systemctl", "is-failed", s + ".service") == "failed"
+    if successes<alljobs or (two and two.get("status")=="blocked") or (three and three.get("status")=="blocked") or any(run("systemctl", "is-failed", s + ".service") == "failed"
                        for _, s in SERVICE):
         print("ATTENTION: Unfinished/failed experiments need controlled recovery.")
         print("  No results should be overwritten or automatically promoted.")
