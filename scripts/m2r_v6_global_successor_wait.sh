@@ -66,6 +66,7 @@ python3 -m py_compile \
   "$SRC/scripts/m2r_v6_global_dataset.py" \
   "$SRC/scripts/m2r_v6_global_batch.py" \
   "$SRC/user_data/strategies/NbotV6GlobalOfflineResearch.py" || fatal CODE_SYNTAX_FAILURE
+python3 "$SRC/scripts/m2r_v6_global_readiness.py" --strict || fatal GLOBAL_STATIC_READINESS_FAILED
 (cd "$SRC" && python3 -m unittest tests.test_m2r_v6_global_batch_contract \
    tests.test_m2r_v6_global_opportunity_ranker) || fatal REQUIRED_UNIT_TEST_FAILURE
 [[ -z "$(docker ps -q)" ]] || fatal DOCKER_BECAME_BUSY
