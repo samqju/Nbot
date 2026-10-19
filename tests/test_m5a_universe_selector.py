@@ -84,7 +84,7 @@ class M5ASelectorTests(unittest.TestCase):
         s=snapshot()
         s["contracts"][0]["book_at_ms"]=ASOF-4*m.MAX_SNAPSHOT_AGE_MS
         self.assertEqual(run(s=s)["status"],"HOLD")
-        self.assertIn("UNSAFE_INCUMBENT_REQUIRES_SEPARATE_REVIEW",run(s=s)["hold_reasons"])
+        self.assertIn("PINNED_COIN_UNSAFE_OR_UNREADY",run(s=s)["hold_reasons"])
         s=snapshot()
         s["contracts"][0]["funding_at_ms"]=ASOF+10
         self.assertEqual(run(s=s)["status"],"HOLD")
