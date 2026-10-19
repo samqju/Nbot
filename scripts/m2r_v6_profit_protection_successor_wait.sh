@@ -4,7 +4,7 @@
 # It NEVER runs another Docker or changes the Git checkout until predecessor
 # has FINISHED and vacated all containers. Does not restart a stopped study.
 set -euo pipefail
-umask 077
+umask 022
 
 ROOT=/root/nbot-v6-m1-20261016
 SOURCE="$ROOT/source"
@@ -64,6 +64,8 @@ say "PREVIOUS_FINISHED_SAFELY; NOW_AUTHORIZED_TO_DEPLOY_NEXT_STAGE_ONLY"
 [[ -z "$(docker ps -q)" ]] || fail "DOCKER_CONFLICT_BEFORE_FF_ONLY_PULL"
 git -C "$SOURCE" pull --ff-only origin "$BRANCH" ||
    fail "CANNOT_FETCH_PINNED_V6_FOLLOWUP_CODE"
+find "$SOURCE/scripts" "$SOURCE/user_data/strategies" "$SOURCE/user_data/freqaimodels" -type f -name "*.py" -exec chmod a+r {} + ||
+   fail "FAILED_TO_RESTORE_OFFLINE_DOCKER_READ_ACCESS"
 git -C "$SOURCE" merge-base --is-ancestor 06d89709b9245c16173bbd11bf208110dde8e85a HEAD ||
    fail "EXPECTED_PROFIT_PROTECTION_GITHUB_CODE_NOT_PRESENT"
 [[ -z "$(git -C "$SOURCE" status --porcelain=v1)" ]] ||
