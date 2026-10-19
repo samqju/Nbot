@@ -45,22 +45,27 @@ class NbotV6GlobalOfflineResearch(IStrategy):
         c=self.config
         mode=str(getattr(c.get("runmode"),"value",c.get("runmode"))).lower()
         exch=c.get("exchange",{})
-        allow=(
-            mode=="backtest"
-            and c.get("nbot_v6_global_research_only") is True
-            and c.get("nbot_live_mode") is False
-            and c.get("nbot_paper_research_mode") is False
-            and c.get("dry_run") is True
-            and c.get("max_open_trades")==1
-            and c.get("stake_amount")==1000
-            and c.get("trading_mode")=="futures"
-            and c.get("margin_mode")=="isolated"
-            and c.get("force_entry_enable") is False
-            and exch.get("key","")=="" and exch.get("secret","")==""
-            and not c.get("api_server",{}).get("enabled",False)
-            and not c.get("telegram",{}).get("enabled",False)
-            and c.get("freqai",{}).get("enabled") is False)
-        if not allow:raise RuntimeError("GLOBAL_V6_NATIVE_BACKTEST_ONLY_NO_ORDERS")
+        checks={
+            "native_backtest_mode": mode=="backtest",
+            "research_only_flag": c.get("nbot_v6_global_research_only") is True,
+            "live_off": c.get("nbot_live_mode") is False,
+            "paper_off": c.get("nbot_paper_research_mode") is False,
+            "dry_run_only": c.get("dry_run") is True,
+            "single_global_slot": c.get("max_open_trades")==1,
+            "fixed_stake_1000": c.get("stake_amount")==1000,
+            "futures_only": c.get("trading_mode")=="futures",
+            "isolated_margin": c.get("margin_mode")=="isolated",
+            "forced_entries_off": c.get("force_entry_enable") is False,
+            "exchange_secrets_empty": not exch.get("key") and not exch.get("secret"),
+            "api_server_off": c.get("api_server",{}).get("enabled") is False,
+            "telegram_off": c.get("telegram",{}).get("enabled") is False,
+            "freqai_live_features_off": c.get("freqai",{}).get("enabled") is False,
+        }
+        if not all(checks.values()):
+            failed=sorted(x for x,passed in checks.items() if not passed)
+            # Only output the NAMES of failed checks, never the values or keys.
+            raise RuntimeError("GLOBAL_V6_NATIVE_BACKTEST_ONLY_NO_ORDERS:"
+                               +",".join(failed))
 
     def bot_start(self, **kwargs):
         self._guard()
