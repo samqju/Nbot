@@ -25,6 +25,18 @@ The *research-only* thresholds for the first screen (not optimized for ROI): USD
 - Top 25 by observed market quality was different from the old 25, but **no after-cost trade P&L was calculated or implied**. The quality mean over only the 16 eligible old pairs is not directly comparable with the quality mean of a full 25 selected list; avoid denominator selection bias.
 - Full public snapshot was written only to the VPS under `/root/nbot-v6-m1-20261016/m5a-shadow-20261019/public-20261019-initial.json`. No private API keys or order request were used.
 
+## Engineering experiment: seven synthetic eight-hour reviews (NOT market performance)
+
+CI [run 39211348540](https://github.com/samqju/Nbot/actions/runs/39211348540) executed a reproducible **seven-review synthetic quality experiment**, with 25 deliberately low-quality incumbent fixtures and 25 deliberately better candidates, all given made-up *valid* historical/readiness records so the rotation algorithm could actually be stress-tested. A 300-review randomized hostile-input test also completed successfully. This does **not** mean current Binance markets have similar future quality or profitability.
+
+| Shadow policy | Total virtual replacements over 7 reviews | Reviews with changes | Mean eligible public-quality score |
+|---|---:|---:|---:|
+| Fixed original 25 | 0 | 0 | 0.375160 |
+| Liquidity-selected 25 | 24 | 3 | 0.872885 |
+| Multi-factor quality-selected 25 | 24 | 3 | 0.872885 |
+
+These results demonstrate only that the code rotates *boundedly* and improves its **own predetermined synthetic screen score** when higher-scored candidates are provided; the multi-factor and liquidity policies agreed because the fixture's high-quality coins had both better liquidity and better multi-factor values. It is **not** evidence of economic superiority between selector designs, strategy entry quality or trading P&L. BTC remained pinned, no review rotated more than ten coins, and original FreqAI configuration was never changed.
+
 ## Test scope and scientific limits
 
 The latest completed GitHub CI for this implementation confirmed **181 total repository unit tests**, including new M5A invariant/stale-market/unsafe-incumbent/atomic HOLD cases plus a randomized 300-cycle **synthetic** timeline and 7-review shadow comparison. These synthetic replays verify logic and low churn; they **are not economic performance measurements**. [GitHub V6 CI](https://github.com/samqju/Nbot/actions/runs/39211120234) completed successfully including official Freqtrade strategy discovery. Subsequent minor reporting changes have their own CI.
