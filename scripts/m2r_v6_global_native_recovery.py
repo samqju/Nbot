@@ -121,10 +121,17 @@ def verify_recovery_preconditions():
     return old,info,complete,broken,status
 
 def main():
-    if len(sys.argv)!=2 or sys.argv[1]!="--execute":
-        raise RuntimeError("EXPLICIT_EXECUTE_REQUIRED")
+    if len(sys.argv)!=2 or sys.argv[1] not in ("--check","--execute"):
+        raise RuntimeError("EXPLICIT_EXECUTE_OR_PREFLIGHT_CHECK_REQUIRED")
     old,info,completed,broken,status=verify_recovery_preconditions()
     new_sha=call(["git","-C",str(SRC),"rev-parse","HEAD"])
+    if sys.argv[1]=="--check":
+        print(json.dumps({"verified":True,"read_only":True,"source_sha":new_sha,
+                          "original_forecast_commit":OLD_COMMIT,
+                          "four_forecasts_hash_verified":len(completed),
+                          "reusable_existing_jobs":old["jobs_completed"],
+                          "failed_native_archivable":True,"no_trades_or_threshold_changes":True},sort_keys=True))
+        return
     record={
       "schema":"nbot-v6-stage3-native-guard-fix-recovery-v1",
       "when_utc":utc(),
