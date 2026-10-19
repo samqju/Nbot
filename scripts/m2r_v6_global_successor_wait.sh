@@ -2,7 +2,7 @@
 # Persistent fail-closed VPS-only third-stage queue. NO trading, no duplicate.
 # Does not compete with currently running library / profit protection.
 set -euo pipefail
-umask 077
+umask 022
 ROOT=/root/nbot-v6-m1-20261016
 SRC="$ROOT/global-next-source"
 OUT="$ROOT/library-20261018"
@@ -58,6 +58,7 @@ done
 [[ -z "$(git -C "$SRC" status --porcelain=v1)" ]] || fatal DIRTY_SOURCE
 git -C "$SRC" fetch origin "$BRANCH" || fatal SOURCE_FETCH_FAILED
 git -C "$SRC" merge --ff-only FETCH_HEAD || fatal NONFASTFORWARD_CODE_BLOCKED
+find "$SRC/scripts" "$SRC/user_data/strategies" "$SRC/user_data/freqaimodels" -type f -name "*.py" -exec chmod a+r {} + || fatal GLOBAL_CODE_UNREADABLE
 [[ -z "$(git -C "$SRC" status --porcelain=v1)" ]] || fatal SOURCE_DIRTY_AFTER_PULL
 [[ -f "$SRC/V6_GLOBAL_OPPORTUNITY_SELECTION_DESIGN.md" ]] || fatal MISSING_APPROVED_SPEC
 [[ -f "$SRC/scripts/m2r_v6_global_batch.py" ]] || fatal INCOMPLETE_RUNNER
