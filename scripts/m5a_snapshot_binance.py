@@ -83,7 +83,8 @@ def capture():
     payload={
         "schema":"m5a-snapshot-v1",
         "source":"binance_public_rest",
-        "asof_ms":review if eligible_window else end,
+        "asof_ms":end,
+        "review_start_ms":review,
         "captured_at_ms":end,
         "endpoint_captured_at_ms":times,
         "review_boundary_aligned":eligible_window,
