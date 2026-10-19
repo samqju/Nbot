@@ -121,6 +121,23 @@ def summarize(root):
             "sum_stressed_standalone_family_months":round(sum_stressed,2),
             "sum_trades_standalone_family_months":sum_trades,
             "NOT_a_realisable_combined_portfolio":True}
+    recovery_economics=[]
+    for key in done["recovered_jobs"]:
+        kind,family,period=key.split("/")
+        if kind not in ("lgbm","adaptive","rl"):
+            continue
+        saved=json_file(recovery/kind/family/period/"native-economic-audit.json")
+        verify_row(recovery,saved,kind)
+        recovery_economics.append({
+            "kind":kind,"family":family,"period":period,
+            "trades":saved["native_trade_count"],
+            "native_profit_usdt":round(saved["native_profit_usdt"],6),
+            "stressed_profit_usdt":round(saved["net_after_extra_25bps_usdt"],6),
+            "zip_verified":True
+        })
+    if len(recovery_economics)!=4:
+        raise RuntimeError("MISSING_RECOVERY_AI_RL_NATIVE_AUDITS")
+    summary["recovered_lgbm_adaptive_rl_economics"]=recovery_economics
     return summary
 
 def main():
