@@ -149,3 +149,18 @@ Before G7/G8 require preregistered objective thresholds (minimum observations/re
 - Changing V5/main or V6 branch deployments as a side effect of this roadmap.
 
 **Frozen success definition:** A separately versioned V7 universe-selector + comparative AI must make **better capital-constrained, after-cost choices** than preregistered simple alternatives and the V6 baseline on sufficiently broad **genuinely unseen** periods, with risk and execution fidelity verified. Until then this is a scientific roadmap, **not a profitable bot**.
+
+## 11. Mandatory new-chat continuity and per-step handover protocol (owner approved 2026-10-19)
+
+The canonical **living handover** is [V7_CHAT_HANDOVER.md](V7_CHAT_HANDOVER.md), stored and maintained on **this same V7 roadmap branch**. It contains the restart prompt, branch and gate status, full project decision history, prior V3–V6 lessons, current blockers, next actionable G0 work and an append-only chronology.
+
+**Mandatory Definition of Done:** After **every material NBOT V7 discussion/decision, research job, successful or failed test, implementation step, repository modification, change of approval, or handoff**, update the handover in GitHub before claiming the action is fully finished:
+1. Refresh the handover's current status, gate, blockers, last verified result and next concrete step.
+2. Append a dated journal entry with decision, actual action taken, results including negative/no-go outcomes, source files/artifact digests/commit links, open uncertainties and trading permission state.
+3. Commit to `roadmap/v7-comparative-learning-20261019` and verify branch/head/readback. Prefer recording the handover update with the task's artifact commit, otherwise link the two commits.
+4. If GitHub update fails, explicitly report it as **uncommitted continuity work** with the pending text. No new chat or assistant may imply auto-sync or successful saving without an actual commit.
+5. Preserve historic entries; append corrections instead of deleting earlier decisions. Do not put secrets or credentials into the GitHub handover.
+
+**New-chat initiation:** Read [V7_CHAT_HANDOVER.md](V7_CHAT_HANDOVER.md) FIRST, then this roadmap and [V7_LEGACY_EVIDENCE_LEDGER.md](V7_LEGACY_EVIDENCE_LEDGER.md); verify branch and latest commit and only then plan the next step. The handover protocol applies independently of how a chat ends (limit, deletion, handoff, new model or new contributor).
+
+This governance rule **does not change** the existing design freeze or authorize VPS operations, paper trading, or live trading.
