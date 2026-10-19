@@ -93,7 +93,11 @@ class M5ASelectorTests(unittest.TestCase):
         s["contracts"][0]["contractType"]="CURRENT_QUARTER"
         self.assertEqual(run(s=s)["status"],"HOLD")
         s=snapshot();s["contracts"][1]["status"]="BREAK"
-        self.assertEqual(run(s=s)["status"],"HOLD")
+        res=run(s=s)
+        self.assertEqual(res["status"],"PROPOSAL_ONLY")
+        self.assertNotIn("C001USDT",res["proposed_25"])
+        self.assertTrue(any(r["out"]=="C001USDT" and r["reason"]=="REPLACE_UNSAFE"
+                            for r in res["replacements"]))
     def test_8h_boundary_and_snapshot_source_must_be_authentic(self):
         s=snapshot();s["review_start_ms"]+=m.HOUR_MS
         with self.assertRaisesRegex(ValueError,"SNAPSHOT_OUTSIDE_EIGHT_HOUR_REVIEW_WINDOW"):
@@ -139,6 +143,29 @@ class M5ASelectorTests(unittest.TestCase):
         self.assertIn("EXCESS_FUNDING",reasons)
         self.assertIn("RANGE_OUTSIDE_EXPLORATORY_BOUNDS",reasons)
         self.assertIn("INSUFFICIENT_VERIFIED_AGE",reasons)
+    def test_more_than_ten_unsafe_incumbents_fails_closed(self):
+        s=snapshot()
+        for c in s["contracts"][1:13]:c["status"]="BREAK"
+        res=run(s=s)
+        self.assertEqual(res["status"],"HOLD")
+        self.assertIn("TOO_MANY_UNSAFE_INCUMBENTS_TO_ROTATE",res["hold_reasons"])
+        self.assertEqual(res["proposed_25"],INC)
+    def test_pinned_unsafe_coin_cannot_be_displaced(self):
+        s=snapshot()
+        s["contracts"][1]["status"]="BREAK"
+        res=run(s=s,pinned={"C001USDT"})
+        self.assertEqual(res["status"],"HOLD")
+        self.assertEqual(res["proposed_25"],INC)
+        self.assertIn("PINNED_COIN_UNSAFE_OR_UNREADY",res["hold_reasons"])
+    def test_missing_model_ready_alternative_holds_instead_of_incomplete_25(self):
+        s=snapshot()
+        s["contracts"][1]["quoteVolume"]=0
+        r=readiness()
+        for x in r["pairs"]:
+            if x["symbol"].startswith("N"):x["model_trained"]=False
+        res=run(s=s,r=r)
+        self.assertEqual(res["status"],"HOLD")
+        self.assertEqual(res["proposed_25"],INC)
     def test_liquidity_only_baseline_retains_25_pins(self):
         res=run(policy="liquidity")
         self.assertEqual(res["turnover"],10)
