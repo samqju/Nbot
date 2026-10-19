@@ -46,7 +46,7 @@ class ResearchNoTimeA_B(unittest.TestCase):
         self.assertEqual(body.count("v6_library_60m_exit"),0)
 
     def test_executor_requires_explicit_owner_optin(self):
-        with patch.dict("os.environ",{},clear=True):
+        with patch.dict("os.environ",{},clear=True), patch.object(batch.os,"geteuid",return_value=0):
             with self.assertRaisesRegex(RuntimeError,"EXPLICIT_OFFLINE_ONLY_AUTHORIZATION_REQUIRED"):
                 batch.preflight()
         # Passing the exact opt-in is not enough to permit work in wrong environment.
