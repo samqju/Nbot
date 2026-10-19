@@ -31,6 +31,28 @@ class TestGlobalOfflineResearchSafety(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,"CONSENT"):
                 batch.ensure_prerequisites()
 
+    def test_native_overlay_is_readable_by_nonroot_freqtrade_container(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            dest=Path(temporary)
+            with patch.object(batch,"OUTPUT",dest), \
+                 patch.object(batch.os,"chown",return_value=None), \
+                 patch.object(batch,"docker_run",side_effect=RuntimeError("INTENTIONAL_NO_DOCKER")):
+                with self.assertRaisesRegex(RuntimeError,"INTENTIONAL_NO_DOCKER"):
+                    batch.native_job(30,"fixed")
+                overlay=dest/"w30/native-fixed/exact-overlay.json"
+                self.assertTrue(overlay.is_file())
+                self.assertTrue(overlay.stat().st_mode & 0o004)
+                x=json.loads(overlay.read_text())
+                self.assertFalse(x["freqai"]["enabled"])
+                self.assertTrue(x["nbot_v6_global_research_only"])
+                self.assertFalse(x["nbot_live_mode"])
+                self.assertFalse(x["nbot_paper_research_mode"])
+                self.assertEqual(x["max_open_trades"],1)
+                self.assertEqual(x["stake_amount"],1000)
+                self.assertEqual(x["exchange"]["key"],"")
+                self.assertEqual(x["exchange"]["secret"],"")
+
     def test_native_zip_rejects_fake_strategy(self):
         with tempfile.TemporaryDirectory() as root:
             folder=Path(root)
