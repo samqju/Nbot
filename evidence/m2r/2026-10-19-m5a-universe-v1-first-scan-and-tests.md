@@ -9,7 +9,7 @@
 - [m5a_shadow_comparison.py](../../scripts/m5a_shadow_comparison.py): a read-only comparison of quality eligibility for 25 fixed pairs vs the *public-quality* top 25 for one genuine market observation. Scores **do not** estimate profitable expected trade returns.
 - [m5a_shadow_cycle.py](../../scripts/m5a_shadow_cycle.py): one-shot review, immutable files, fail-closed **HOLD without independent as-of history/model validation receipt**; does not touch a running FreqAI process.
 - [m5a_shadow_replay.py](../../scripts/m5a_shadow_replay.py): strictly chronological 8h **shadow-only**, deterministic separate fixed25/liquidity25/quality25 replay over future genuine point-in-time observations and verification receipts, with full churn, quality and hold metrics, and no trading P&L claims.
-- Optional [systemd one-shot](../../deploy/nbot-v6-m5a-shadow.service) and [8-hour UTC timer](../../deploy/nbot-v6-m5a-shadow.timer) definitions in GitHub. **NOT INSTALLED or ACTIVATED on the VPS.** The user's Desktop Commander relay became unavailable after the first public scan, so the VPS has **only** that saved one-time diagnostic snapshot, not a persistent shadow sampler. Avoid claiming the timer is running.
+- Optional [systemd one-shot](../../deploy/nbot-v6-m5a-shadow.service) and [8-hour UTC timer](../../deploy/nbot-v6-m5a-shadow.timer) definitions in GitHub. **Installed and enabled 2026-10-19 at 12:55 UTC** after a VPS relay reconnection. See the later actual VPS follow-up below; the initial record described the earlier state before installation. Avoid claiming the timer is running.
 - [Fail-closed unit tests](../../tests/test_m5a_universe_selector.py), [as-of replay and 300-cycle synthetic randomized stress](../../tests/test_m5a_shadow_replay.py) and [shadow-cycle contract tests](../../tests/test_m5a_shadow_cycle.py). CI also exercises the existing Nbot V6 tests and official Freqtrade strategy discovery. All coded selectors are inert without actual model readiness and operator-approved safe restart.
 
 ### Initial public market-quality filter
@@ -36,6 +36,42 @@ CI [run 39211348540](https://github.com/samqju/Nbot/actions/runs/39211348540) ex
 | Multi-factor quality-selected 25 | 24 | 3 | 0.872885 |
 
 These results demonstrate only that the code rotates *boundedly* and improves its **own predetermined synthetic screen score** when higher-scored candidates are provided; the multi-factor and liquidity policies agreed because the fixture's high-quality coins had both better liquidity and better multi-factor values. It is **not** evidence of economic superiority between selector designs, strategy entry quality or trading P&L. BTC remained pinned, no review rotated more than ten coins, and original FreqAI configuration was never changed.
+
+## Actual VPS follow-up — 2026-10-19 12:54–12:55 UTC
+
+The owner requested that the M5A program be **run on the VPS and the result compared**. Using the owner's authorized PuTTY relay, we fast-forwarded the clean isolated `global-next-source` checkout from `c8e2728` to `88f5719`, reran **30 M5A unit tests successfully**, checked Python compilation, and took a **second actual public Binance screen at 12:54:27 UTC** (6:24 PM IST) against 878 USDT-suffixed contract records. Both 06:22 and 12:54 scans found only **16 of the original 25** passed their **instantaneous** public-quality filters, but that count obscures changing eligibility:
+
+- **Regained screen eligibility between the two snapshots:** BCHUSDT, DOTUSDT, SUIUSDT, UNIUSDT (four original incumbent coins).
+- **Lost screen eligibility:** APTUSDT, ARBUSDT, FILUSDT, XLMUSDT (four original incumbent coins).
+- **Remained ineligible at both snapshots:** ATOMUSDT, ETCUSDT, HBARUSDT, INJUSDT, OPUSDT (five originals).
+- Morning reasons mostly included instantaneous bid/ask first-level depth; afternoon list had several different bid/ask first-level deficits. These are **not** confirmed historical cost/fill measurements and are an explicit demonstration why one observation cannot justify churning the coin universe.
+
+The second observation and comparison were preserved in:
+
+```text
+/root/nbot-v6-m1-20261016/m5a-shadow-20261019/public-20261019-second.json
+/root/nbot-v6-m1-20261016/m5a-shadow-20261019/second-summary.json
+/root/nbot-v6-m1-20261016/m5a-shadow-20261019/second-vs-old25.json
+```
+
+**Enabled and tested an actual public snapshot-only systemd scheduler on the VPS:**
+
+- Installed exact read-only `deploy/nbot-v6-m5a-shadow.service` and eight-hour `deploy/nbot-v6-m5a-shadow.timer` definitions; `systemd-analyze verify` succeeded; timer `ActiveState=active`, `enabled`; next automatic run **2026-10-19 16:00 UTC** (9:30 PM IST) as reported by `systemctl list-timers`.
+- Manually ran the **oneshot** `nbot-v6-m5a-shadow.service` at 12:55:40 UTC. It completed `Result=success, ExecMainStatus=0`, captured **878** current public contracts and wrote timestamped snapshot and decision under `/root/nbot-v6-m1-20261016/m5a-shadow-20261019/reviews/20261019T125543_426000Z/`.
+- The manual run returned **`DIAGNOSTIC_ONLY_OUTSIDE_REVIEW_WINDOW`**, proposed **zero replacements**, confirmed current watchlist unchanged, and no paper/live action. That is the **correct fail-closed result** when time is not near an 8-hour boundary and readiness attestations are absent. The installed timer only gathers public shadow evidence; it **cannot** activate coins or place orders. No async ChatGPT monitoring is claimed.
+- The next scheduled 16:00 UTC event was **not yet observed as successful in this session**. Do not claim it already ran. Check `journalctl -u nbot-v6-m5a-shadow.service -n 50 --no-pager` after its trigger.
+
+This follow-up **shows a genuine difference in public-market screening candidates**, not a difference in economic trading performance. No extra historical as-of coin universe and model history has been certified, and no native dynamic-universe portfolio A/B can currently make an unbiased profit claim. The existing original 25 native archives and V5/main were not changed.
+
+**Useful VPS commands:**
+
+```bash
+systemctl status nbot-v6-m5a-shadow.timer --no-pager
+systemctl list-timers nbot-v6-m5a-shadow.timer --no-pager
+journalctl -u nbot-v6-m5a-shadow.service -n 50 --no-pager
+find /root/nbot-v6-m1-20261016/m5a-shadow-20261019/reviews -maxdepth 2 -type f
+python3 /root/nbot-v6-m1-20261016/global-next-source/scripts/m5a_shadow_comparison.py --snapshot /root/nbot-v6-m1-20261016/m5a-shadow-20261019/public-20261019-second.json
+```
 
 ## Test scope and scientific limits
 
