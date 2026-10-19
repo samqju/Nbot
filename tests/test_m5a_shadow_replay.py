@@ -40,6 +40,7 @@ class M5AShadowReplayTests(unittest.TestCase):
         self.assertEqual(len(r["policies"]["quality25"]["end_shadow_25"]),25)
         self.assertTrue(r["no_trading_pnl_or_prediction_quality_evidence"])
         self.assertTrue(r["shadow_only_never_changes_actual_pairlist"])
+        print("M5A_SYNTHETIC_SEVEN_REVIEW_EXPERIMENT "+str(r["policies"]))
         for cycle in r["ledger"]:
             self.assertLessEqual(cycle["quality25"]["turnover"],10)
             self.assertEqual(len(set(cycle["quality25"]["proposed_25"])),25)
