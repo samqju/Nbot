@@ -201,42 +201,59 @@ def select(snapshot:dict, incumbents:list[str], readiness:dict|None=None,
                 "volume_usdt":round(r.quote_volume_usdt or 0,2)} for r in ranked[:50]]
     rejections={s:list(r.reasons) for s,r in values.items() if r.reasons}
     ready_symbols={s:r for s,r in eligible.items() if r.ready}
-    # BTC and incumbent readiness must remain safe: don't quietly drop
-    # untrained/unsafe incumbent, and don't activate unready alternatives.
+    # An unsafe incumbent may be replaced ONLY if an independently
+    # ready, eligible substitute exists. Never silently retain an unsafe
+    # trading candidate in a proposed new active universe.
     hold=[]
     if len(eligible)<CONTRACTS:hold.append("INSUFFICIENT_LIQUID_MARKETS")
     if len(ready_symbols)<CONTRACTS:hold.append("INSUFFICIENT_MODEL_READY_COINS")
-    if any(s not in ready_symbols for s in pinned):hold.append("PINNED_COIN_UNSAFE_OR_UNREADY")
-    if any(s not in eligible for s in incumbents):
-        hold.append("UNSAFE_INCUMBENT_REQUIRES_SEPARATE_REVIEW")
+    if any(s not in ready_symbols for s in pinned):
+        hold.append("PINNED_COIN_UNSAFE_OR_UNREADY")
+    unsafe=[s for s in incumbents if s not in ready_symbols]
+    if len(unsafe)>MAX_REPLACEMENTS:
+        hold.append("TOO_MANY_UNSAFE_INCUMBENTS_TO_ROTATE")
     proposal=list(incumbents)
     replacements=[]
     if not hold:
         newcomers=[r for r in ranked if r.symbol not in incumbents and r.symbol in ready_symbols]
-        # Weakest replaceable incumbent first, but every accepted new coin
-        # must exceed its actual incumbent by a strict material margin.
-        outgoing=sorted((ready_symbols[s] for s in incumbents if s not in pinned
-                         and s in ready_symbols
-                         and asof-since.get(s,asof)>=MIN_TENURE_HOURS*HOUR_MS),
-                        key=lambda r:(score(r),r.symbol))
-        used=set()
-        for newcomer in newcomers:
-            if len(replacements)>=MAX_REPLACEMENTS:break
-            for old in outgoing:
-                if old.symbol in used:continue
-                if score(newcomer) < score(old)+MIN_ADVANTAGE:continue
-                slot=proposal.index(old.symbol)
-                proposal[slot]=newcomer.symbol
-                used.add(old.symbol)
-                replacements.append({"out":old.symbol,"in":newcomer.symbol,
-                                     "old_score":score(old),"new_score":score(newcomer)})
-                break
-        # Nothing is changed unless every component is complete and safe.
-        require(len(proposal)==25 and len(set(proposal))==25
-                and len(replacements)<=10
-                and pinned.issubset(set(proposal))
-                and len(set(proposal)&set(incumbents))>=15,
-                "POST_SELECTION_CONTRACT_VIOLATED")
+        # Mandatory replacement of unsafe *unprotected* markets precedes
+        # opportunistic upgrades; both consume the same max-10 quota.
+        if len(newcomers)<len(unsafe):
+            hold.append("INSUFFICIENT_READY_ALTERNATIVES_FOR_UNSAFE_INCUMBENTS")
+        else:
+            for old,new in zip(sorted(unsafe),newcomers[:len(unsafe)]):
+                require(old not in pinned,"UNSAFE_PROTECTED_PAIR")
+                proposal[proposal.index(old)]=new.symbol
+                replacements.append({"out":old,"in":new.symbol,
+                                     "old_score":None,"new_score":score(new),
+                                     "reason":"REPLACE_UNSAFE"})
+            newcomers=newcomers[len(unsafe):]
+            outgoing=sorted((ready_symbols[s] for s in incumbents
+                             if s not in pinned and s not in unsafe
+                             and asof-since.get(s,asof)>=MIN_TENURE_HOURS*HOUR_MS),
+                            key=lambda r:(score(r),r.symbol))
+            used=set()
+            for newcomer in newcomers:
+                if len(replacements)>=MAX_REPLACEMENTS:break
+                for old in outgoing:
+                    if old.symbol in used:continue
+                    if score(newcomer)<score(old)+MIN_ADVANTAGE:continue
+                    proposal[proposal.index(old.symbol)]=newcomer.symbol
+                    used.add(old.symbol)
+                    replacements.append({"out":old.symbol,"in":newcomer.symbol,
+                                         "old_score":score(old),"new_score":score(newcomer),
+                                         "reason":"MATERIAL_QUALITY_UPGRADE"})
+                    break
+            require(len(proposal)==25 and len(set(proposal))==25
+                    and len(replacements)<=MAX_REPLACEMENTS
+                    and pinned.issubset(set(proposal))
+                    and len(set(proposal)&set(incumbents))>=15
+                    and all(s in ready_symbols for s in proposal),
+                    "POST_SELECTION_CONTRACT_VIOLATED")
+    if hold:
+        # Even partial replacement plans must be discarded on any block.
+        proposal=list(incumbents)
+        replacements=[]
     result={
         "schema":"m5a-proposal-v1","asof_ms":asof,"policy":policy,
         "snapshot_sha256":sha_obj(snapshot),
