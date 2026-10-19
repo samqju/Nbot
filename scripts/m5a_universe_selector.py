@@ -166,10 +166,15 @@ def select(snapshot:dict, incumbents:list[str], readiness:dict|None=None,
     require(snapshot.get("schema")=="m5a-snapshot-v1","BAD_SNAPSHOT_SCHEMA")
     asof=snapshot.get("asof_ms")
     require(isinstance(asof,int) and asof>0,"BAD_ASOF")
-    require(asof%(8*HOUR_MS)==0,"NOT_EIGHT_HOUR_UTC_BOUNDARY")
+    review=snapshot.get("review_start_ms")
+    require(isinstance(review,int) and review%(8*HOUR_MS)==0
+            and 0<=asof-review<=MAX_SNAPSHOT_AGE_MS,
+            "SNAPSHOT_OUTSIDE_EIGHT_HOUR_REVIEW_WINDOW")
     captured=snapshot.get("captured_at_ms")
-    require(isinstance(captured,int) and 0<=captured-asof<=MAX_SNAPSHOT_AGE_MS,
-            "SNAPSHOT_NOT_CAPTURED_AT_REVIEW_TIME")
+    require(isinstance(captured,int) and 0<=captured-asof<=1000,
+            "SNAPSHOT_CAPTURED_AFTER_DECISION")
+    require(snapshot.get("review_boundary_aligned") is True,
+            "NOT_VALID_REVIEW_BOUNDARY")
     require(snapshot.get("source") in ("binance_public_rest","historical_verified_asof"),
             "UNVERIFIED_SNAPSHOT_SOURCE")
     require(isinstance(incumbents,list) and len(incumbents)==CONTRACTS
@@ -212,7 +217,7 @@ def select(snapshot:dict, incumbents:list[str], readiness:dict|None=None,
         # must exceed its actual incumbent by a strict material margin.
         outgoing=sorted((ready_symbols[s] for s in incumbents if s not in pinned
                          and s in ready_symbols
-                         and asof-since.get(s,0)>=MIN_TENURE_HOURS*HOUR_MS),
+                         and asof-since.get(s,asof)>=MIN_TENURE_HOURS*HOUR_MS),
                         key=lambda r:(score(r),r.symbol))
         used=set()
         for newcomer in newcomers:
