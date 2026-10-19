@@ -30,7 +30,7 @@ def trades(kind,family,period):
 
 result={}
 for kind in ("native","trailing"):
-    total=0; reasons=collections.Counter(); samples=[]; profitable=0; loss=0
+    total=0; reasons=collections.Counter(); samples=[]; profitable=0; loss=0; pnl_by_reason=collections.defaultdict(list)
     max_favorable_measured=collections.Counter()
     for family in FAMILIES:
         exits=collections.Counter()
@@ -42,6 +42,7 @@ for kind in ("native","trailing"):
                 loss+=profit<0
                 reason=str(t.get("exit_reason","UNKNOWN"))
                 reasons[reason]+=1
+                pnl_by_reason[reason].append(profit)
                 exits[reason]+=1
                 if not samples:samples.append({k:t.get(k) for k in ("open_rate","max_rate","min_rate","close_rate","exit_reason","is_short","profit_ratio","profit_abs","open_date","close_date")})
                 if t.get("max_rate") is not None and t.get("min_rate") is not None:
@@ -57,6 +58,7 @@ for kind in ("native","trailing"):
         "winning_trades":profitable,
         "losing_trades":loss,
         "exit_reasons":dict(reasons),
+        "pnl_summary_by_exit_reason":{reason:{"trades":len(nums),"winning_exits":sum(n>0 for n in nums),"losing_exits":sum(n<0 for n in nums),"native_net_usdt":round(sum(nums),2)} for reason,nums in pnl_by_reason.items()},
         "recorded_max_favorable_gross_1_2_3_5pct_counts":dict(max_favorable_measured),
         "recorded_max_favorable_is_not_safe_intra_candle_order":True,
         "sample_trade":samples[0] if samples else None}
