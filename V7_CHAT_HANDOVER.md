@@ -7,7 +7,8 @@
 **Frozen roadmap:** [V7_ROADMAP.md](V7_ROADMAP.md)  
 **Archived discoveries:** [V7_LEGACY_EVIDENCE_LEDGER.md](V7_LEGACY_EVIDENCE_LEDGER.md)  
 **Legacy code parent:** [prototype/v6-freqtrade-freqai-20261016](https://github.com/samqju/Nbot/tree/prototype/v6-freqtrade-freqai-20261016)  
-**Current stage:** **G0 GitHub source-and-evidence audit COMPLETE** on 2026-10-20; **NEXT G1 point-in-time full-market data inventory/design** (not yet started). G0 did not access VPS or execute tests. Historical runtime/data ZIP reproduction remains a separately tracked prerequisite when required.  
+**Current stage:** **G0 GitHub source-and-evidence audit COMPLETE** on 2026-10-20; **NEXT G1 point-in-time full-market data inventory/design** (not yet started). G0 did not access VPS or execute tests. Historical runtime/data ZIP reproduction remains a separately tracked prerequisite when required.
+**Owner decision pending:** [V7_NUMERIC_GATE_PROPOSAL.md](V7_NUMERIC_GATE_PROPOSAL.md) proposes concrete G0–G8 thresholds; **NOT YET APPROVED/FROZEN**, and does not authorize G1 runtime or deployment.  
 **Current deployment state:** Roadmap documentation only. NO V7 learning job, paper trading, dry-run, exchange connection or live order has been started or approved. No V5/V6 service was changed when the V7 roadmap branch was created.
 
 ---
@@ -294,6 +295,20 @@ E. Produce G1 design and bounded download/verification authorization proposal; u
 - **Report updated:** [V7_G0_LEGACY_AUDIT_2026-10-20.md](V7_G0_LEGACY_AUDIT_2026-10-20.md) Section 12; supplementary audit commit `283e1ec428c74ca00c1830f339cc88de224c08b4`.
 - **G0 status:** GitHub source-and-reported-evidence inventory **COMPLETE**, extra branch lineage captured. Private historic ZIP re-verification, actual unit test execution and full market retrieval were **not** part of G0; no VPS accessed.
 - **Risk/authority/next:** G1 point-in-time historical full-market design still next; no VPS/data jobs, no paper/live, no model promotion.
+
+---
+
+### 2026-10-20 — GOVERNANCE — Simple reuse explanation and numerical G0–G8 thresholds PROPOSED
+
+- **Owner request:** Explain in simple language what is reused versus newly coded, and provide numeric tests, approval thresholds and operating limits. This follows the completed GitHub-only G0 code audit.
+- **Evidence synchronization:** The existing definitive G0 [legacy audit](V7_G0_LEGACY_AUDIT_2026-10-20.md) and this journal already documented G0 COMPLETE and V5.1 supplementary discoveries; their existing results were preserved. A separate supplemental [G0 code verdict](V7_G0_GITHUB_AUDIT.md) was committed under `1e8bca538b80790ed2e27f7092e80d1f3b260b6f`; it adds code/engineering detail, but does **not** represent a second independent VPS audit.
+- **New documentation:** [V7_NUMERIC_GATE_PROPOSAL.md](V7_NUMERIC_GATE_PROPOSAL.md), commit `09056ef21c98cc7d0725cc02e2fbdfe638ceeafb`, specifies proposed G1 data quality 99.9% coverage, complete label-source provenance, G3 500 matured candidates/100 multi-candidate decision timestamps, G5 90+ *truly unseen* days and 100+ one-slot trades, +0.25% extra notional roundtrip execution-cost stress, 95% time-block-bootstrap positive uplift, G6/G7 paper collection and G8 minimal-live safeguards.
+- **Reusability verdict:** Selectively port V3 replay/immutable ledger; V4 existing LightGBM LambdaRank and challenger governance; V5 paired-exit accounting; **V5.1 separate-package** source/label authority, purged dependence-aware science and challenger-lab HOLD rules; V6 data bootstrap/M5A candidate scanner/global ranker/Freqtrade backtest harness. V7's main new work is as-of complete market registry, 20-of-N eligibility, integrated high-integrity opportunity labels and one-slot economic selector plus evaluation gates.
+- **Critical port caveat:** The V7 roadmap branch descends from V6's isolated prototype and therefore **does not automatically contain the legacy `nbot/` package from main or `nbot_v5_1/` from nbot-v5.1**. Reuse requires explicit version-pinned selective porting and regression tests, not blanket copying.
+- **Numbers and approval:** Previously frozen founder parameters (3 months, 10–15 strategies, up to 20 pairs, one active position) remain binding. **New numeric cutoffs in this proposal have NOT been approved by the owner or preregistered as final gate policy.** V4's historical 50% positive rate/+0.10R rule is not automatically applicable to V7.
+- **Verification:** No source runtime test, VPS access, historical market download, model retrain, paper trade or live order occurred during this explanation/threshold design. No economic performance is newly proven.
+- **Current status:** G0 GitHub review COMPLETE; G1 design NOT started. Next: owner chooses whether to approve/amend numeric proposal, and only then preregister evaluation gates before viewing any target holdout.
+- **Permission:** GitHub documentation only; no V7 new runtime/trading authorization.
 
 ---
 
