@@ -129,3 +129,63 @@ def _parse(rows, start_ms: int, end_ms: int):
             raise ValueError("INVALID_OHLCV")
         ret.append(Bar(t,o,h,l,c,v))
     return ret
+
+
+# Funding archive files are separate from OHLCV, and must not be reconstructed
+# from price candles. Never silently treat unknown funding as 0.
+FUNDING_FILE=re.compile(r"(?P<symbol>[A-Z0-9]+USDT)-fundingRate-(?P<month>\d{4}-\d{2})\.(?:zip|csv)$")
+
+def discover_funding(root:Path,months:set[str])->dict[str,list[Path]]:
+    found={}
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        m=FUNDING_FILE.fullmatch(path.name)
+        if m and m["month"] in months:
+            found.setdefault(m["symbol"],[]).append(path)
+    for paths in found.values():
+        paths.sort(key=lambda p:p.name)
+        if len({FUNDING_FILE.fullmatch(p.name)["month"] for p in paths})!=len(paths):
+            raise ValueError("DUPLICATE_FUNDING_MONTH")
+    return found
+
+def load_funding(paths:list[Path],start_ms:int,end_ms:int)->tuple[list[tuple[int,float]],dict]:
+    import io
+    import math
+    out=[]
+    digests={}
+    for path in sorted(paths):
+        digests[str(path)]=sha256(path.read_bytes()).hexdigest()
+        if path.suffix==".zip":
+            with ZipFile(path) as z:
+                names=[n for n in z.namelist() if n.endswith(".csv") and not n.startswith("__MACOSX")]
+                if len(names)!=1:raise ValueError("INVALID_FUNDING_ZIP")
+                with z.open(names[0]) as stream:
+                    out.extend(_parse_funding(csv.reader(io.TextIOWrapper(stream,encoding="utf-8-sig")),start_ms,end_ms))
+        else:
+            with path.open(newline="",encoding="utf-8-sig") as stream:
+                out.extend(_parse_funding(csv.reader(stream),start_ms,end_ms))
+    out.sort()
+    if len({t for t,_ in out})!=len(out):
+        raise ValueError("DUPLICATE_FUNDING_SETTLEMENT_TIME")
+    return out,digests
+
+def _parse_funding(rows,start_ms:int,end_ms:int):
+    ret=[];head=None
+    for row in rows:
+        if not row:continue
+        if not row[0].strip().isdigit():
+            names=[x.strip().lower().replace("_","") for x in row]
+            if "calctime" not in names:raise ValueError("FUNDING_TIME_COLUMN_MISSING")
+            rateindex=next((i for i,k in enumerate(names) if k in ("lastfundingrate","fundingrate")),None)
+            if rateindex is None:raise ValueError("FUNDING_RATE_COLUMN_MISSING")
+            head=(names.index("calctime"),rateindex)
+            continue
+        ix,ir=head or (0,len(row)-1)
+        if max(ix,ir)>=len(row):raise ValueError("FUNDING_COLUMN_TRUNCATED")
+        t=_time(row[ix])
+        if not start_ms<=t<end_ms:continue
+        rate=float(row[ir])
+        if not math.isfinite(rate) or abs(rate)>.1:raise ValueError("INVALID_FUNDING_RATE")
+        ret.append((t,rate))
+    return ret
