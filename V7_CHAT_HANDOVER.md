@@ -3,15 +3,15 @@
 **Created:** 2026-10-19  
 **Authority:** Owner-approved continuity process. This document is the restart point for a new ChatGPT conversation if this chat is deleted, reaches context limits, or development changes hands.  
 **Canonical GitHub repository:** https://github.com/samqju/Nbot  
-**V7 working branch:** [roadmap/v7-comparative-learning-20261019](https://github.com/samqju/Nbot/tree/roadmap/v7-comparative-learning-20261019)  
+**V7 active implementation branch:** [V7](https://github.com/samqju/Nbot/tree/V7) — new implementation from the preserved planning branch. Historical roadmap remains on [roadmap/v7-comparative-learning-20261019](https://github.com/samqju/Nbot/tree/roadmap/v7-comparative-learning-20261019).  
 **Frozen roadmap:** [V7_ROADMAP.md](V7_ROADMAP.md)  
 **Archived discoveries:** [V7_LEGACY_EVIDENCE_LEDGER.md](V7_LEGACY_EVIDENCE_LEDGER.md)  
 **Legacy code parent:** [prototype/v6-freqtrade-freqai-20261016](https://github.com/samqju/Nbot/tree/prototype/v6-freqtrade-freqai-20261016)  
-**Current stage:** **G0 GitHub source-and-evidence audit COMPLETE** on 2026-10-20; **NEXT G1 point-in-time full-market data inventory/design** (not yet started). G0 did not access VPS or execute tests. Historical runtime/data ZIP reproduction remains a separately tracked prerequisite when required.
+**Current stage:** G0 legacy source audit complete. **V7 offline G1–G5 engineering implementation IN PROGRESS** (GitHub branch V7). Nine-month A/B1/B2 offline baseline implemented; first source-compile and 9 synthetic CI unit tests pass; historical full-market source and native-economic readiness NOT verified. No VPS or trading operation executed.
 **Owner's latest technical refinement (2026-10-20):** Strategy-aware **all-market** universe selection has priority: calculate strategy signals for every eligible coin, use a causal comparative LightGBM ranker to shortlist up to 20, and preserve labeled MFE/MAE/BTC-at-entry and future-path trade outcomes, including sampled outside-top20 controls. Recorded as a **design refinement proposal** in [V7_STRATEGY_AWARE_UNIVERSE_REFINEMENT_PROPOSAL.md](V7_STRATEGY_AWARE_UNIVERSE_REFINEMENT_PROPOSAL.md); existing frozen roadmap and numerical gates have not been silently changed or approved.
 
 **Owner decisions pending:** [V7_NUMERIC_GATE_PROPOSAL.md](V7_NUMERIC_GATE_PROPOSAL.md) proposes G0–G8 numerical gates; [V7_ADAPTIVE_TRADING_BRAIN_PROPOSAL.md](V7_ADAPTIVE_TRADING_BRAIN_PROPOSAL.md) proposes an adaptive/replacable brain replacing static strategy authority. **Neither proposal is finally frozen or deployment-authorized.**  
-**Current deployment state:** Roadmap documentation only. NO V7 learning job, paper trading, dry-run, exchange connection or live order has been started or approved. No V5/V6 service was changed when the V7 roadmap branch was created.
+**Current deployment state:** GitHub research code exists on branch V7 but **has NOT been deployed to VPS**. NO V7 market-data download, native historical backtest, paper trading, dry-run exchange connection or real order has started or been approved. V3–V6 original branches and deployments untouched.
 
 ---
 
@@ -338,6 +338,23 @@ E. Produce G1 design and bounded download/verification authorization proposal; u
 - **Execution:** GitHub documentation only. No VPS access, code port, new training, new tests, downloading data, paper/live order or old branch modifications.
 - **Project status:** G0 remains GitHub source-audit complete; G1 full-market historical data and causal label planning next. Existing G0–G8 numeric threshold proposal is still pending approval.
 - **Next:** Review this proposed amendment, choose appropriate model/challenger design and predeclare scored performance and anti-churn thresholds before test-period inspection. Then incorporate by a versioned approved roadmap amendment if adopted.
+
+---
+
+### 2026-10-20 — ENGINEERING — New V7 implementation branch, selectively ported components, offline A/B1/B2 baseline
+
+- **Owner request and authorization:** Create an actual **V7** GitHub branch, selectively copy useful V3, V4, V5, V5.1 and V6 components and code the adaptive research bot; after it is fully coded/tested, separately deploy to VPS to acquire nine months of Binance futures history. The owner offered authorized PuTTY access if future VPS access is needed; **NO VPS or laptop remote session accessed during this step, no private access details stored in repository**.
+- **Branch:** Created [V7](https://github.com/samqju/Nbot/tree/V7) starting from the frozen roadmap branch, keeping original project documents and preserving previous versions.
+- **Selective code copy commit:** `31d14d4301d90aba413f65c31267236754c712bd`, V3 immutable outcome/replay source, V5 paired-exit/accounting, and V5.1 learning science/source evidence modules, with package imports adapted without blanket merges. V4 LambdaRank group-scoring concepts were implemented as a new self-contained V7 component rather than copied with all transitive legacy dependencies.
+- **New package created:** `nbot_v7/{data,features,lab,brain,experiment,cli,archive}.py`, `__init__.py`, `__main__.py`; [V7_README.md](V7_README.md); `requirements-v7.txt`; `tests_v7/` and [V7 GitHub CI workflow](https://github.com/samqju/Nbot/blob/V7/.github/workflows/v7-offline-tests.yml). Branch commits include `eaf89a10`, `86da1675`, `f176f32a`, `9246a03c`, `1aa767ec`, `39d0f577`, `a57e4ed5`, `7b344a6a`, `725430fe`, and subsequent documentation commits.
+- **Research functionality:** Source/registry-gated 5m Binance monthly ZIP/CSV archive input, market-wide strategy and independent structure proposals, BTC regime features, SQLite shadow outcome/forecast ledger and MFE/MAE, 8h learned watchlist up to 20 pairs, 5m learned one-slot trading decision or abstention. LightGBM grouped LambdaRank + expected-net regression, optional regime experts; Brain A trained months1–3, frozen exam months4–6; B1 and B2 trained from matured months1–6; independent A/B1/B2 portfolio experiments on months7–9. Model SHA manifests and research report; no order authority.
+- **Public archive preparation:** `nbot_v7/archive.py` can inventory all archived Binance USD-M USDT-margined perpetual monthly ZIP candidates and explicitly download into bounded disk space with content SHA hashes. **Only code committed; no download or inventory actually executed.** Archive existence is NOT point-in-time exchange-tradeable listing proof.
+- **CI evidence:** Initial V7 workflow runs failed due invalid YAML quoting and then a Python package initializer syntax issue. Both defects were corrected, preserving failure evidence. **GitHub Actions run [39369375300](https://github.com/samqju/Nbot/actions/runs/39369375300) PASSED**, Python compile check and **9/9 offline tests**, including an end-to-end nine-month *synthetic* A/B1/B2 baseline. After adding public archive downloader, [run 39369631315](https://github.com/samqju/Nbot/actions/runs/39369631315) also PASSED.
+- **Spec/continuity:** [V7_NINE_MONTH_IMPLEMENTATION_SPEC.md](V7_NINE_MONTH_IMPLEMENTATION_SPEC.md) created to record 3+3+3 and actual code vs pending completeness. Frozen founder docs are preserved unchanged.
+- **Honest limitations:** This is **working engineering research code, not a fully complete/validated nine-month Binance trading system**. No real 9-month data or historical active-contract lifecycle verified; 5m stop-first trade outcomes are not native fills, true funding/orderbook/slippage unresolved; fixed proxy exits unproven economically; baseline statistical/no-trade comparisons incomplete; no proof B2 improves A/B1; no actual 200-300 coin disk/RAM benchmark or VPS integration. CI success does NOT authorize deployment/paper/live trades.
+- **Security/authority:** No VPS, exchange credentials, PuTTY connection, background jobs, paper or real orders. No existing V6/source deployments touched. Next require continued offline code-validation and archived source science controls before discussing VPS deployment.
+- **State:** G0 COMPLETE; offline V7 G1–G5 prototype ENGINEERING IN PROGRESS; numeric gates pending owner freeze; economic/paper/live GO = **NO**.
+- **Next bounded task:** Finish hardening source and outcome labeling and meaningful baselines, run a reproducible realistic offline nine-month fixture using verified historical data; record test and go/no-go. Do not call the implementation fully complete until those source and native-execution gaps are closed.
 
 ---
 
