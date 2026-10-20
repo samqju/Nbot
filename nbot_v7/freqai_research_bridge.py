@@ -53,7 +53,7 @@ class NetForecast:
     uncertainty_net: float
 
     @classmethod
-    def from_mapping(cls, d):
+    def from_mapping(cls, d, *, required_label_policy=LABEL_POLICY):
         if set(d) != RECORD_KEYS:
             raise ValueError("INVALID_PREDICTION_SCHEMA_OR_FUTURE_OUTCOME_COLUMN")
         row = cls(**d)
@@ -69,7 +69,7 @@ class NetForecast:
             or row.features_ready_ms != row.decision_ms + BAR_MS
             or row.training_labels_available_before_ms > row.decision_ms
             or row.target != TARGET
-            or row.label_policy != LABEL_POLICY
+            or row.label_policy != required_label_policy
             or not MODEL_SHA_RE.fullmatch(row.model_sha256)
             or not MODEL_SHA_RE.fullmatch(row.source_hash)
             or any(type(v) not in (int, float) or not math.isfinite(v)
@@ -94,12 +94,17 @@ class FreqAINetResearchBrain:
     """
 
     def __init__(self, rows, *, cutoff_ms: int, version="FREQAI_NET_RESEARCH_V1",
-                 uncertainty_weight: float=1.0, cost_stress: float=0.0):
+                 uncertainty_weight: float=1.0, cost_stress: float=0.0,
+                 label_policy: str=LABEL_POLICY):
         if not version or not isinstance(cutoff_ms, int):
             raise ValueError("INVALID_VERSION_OR_CUTOFF")
         if not all(math.isfinite(x) and x >= 0
                    for x in (uncertainty_weight, cost_stress)):
             raise ValueError("INVALID_ABSTENTION_MARGIN")
+        if label_policy not in (LABEL_POLICY,
+            'V7_5M_PAPER_BROKER_1STOP_3TAKE_60M_FEE10BP_SLIP2BP_PROXY_CF_V1'):
+            raise ValueError('UNAUTHORIZED_RESEARCH_LABEL_POLICY')
+        self.label_policy = label_policy
         self.version = version
         self.cutoff_ms = cutoff_ms
         self.uncertainty_weight = uncertainty_weight
@@ -107,7 +112,10 @@ class FreqAINetResearchBrain:
         self.forecasts = {}
         model_digests = set()
         for raw in rows:
-            p = raw if isinstance(raw, NetForecast) else NetForecast.from_mapping(raw)
+            p = raw if isinstance(raw, NetForecast) else NetForecast.from_mapping(
+                raw, required_label_policy=label_policy)
+            if p.label_policy != label_policy:
+                raise ValueError('MIXED_STOP_TARGET_POLICY')
             # A model fitted after examination begins must not retrospectively
             # score earlier bars. Rolling replacements need separate timestamps
             # and a prospective evaluation contract.
@@ -125,7 +133,8 @@ class FreqAINetResearchBrain:
         with Path(path).open(encoding="utf-8") as f:
             for line in f:
                 if line.strip():
-                    forecasts.append(NetForecast.from_mapping(json.loads(line)))
+                    forecasts.append(NetForecast.from_mapping(json.loads(line),
+                        required_label_policy=kwargs.get('label_policy', LABEL_POLICY)))
         if not forecasts:
             raise ValueError("NO_VERIFIED_FREQAI_NET_FORECASTS")
         return cls(forecasts, **kwargs)
