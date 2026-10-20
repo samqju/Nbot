@@ -67,7 +67,8 @@ class ModelHead:
 
     def predict(self, rows):
         if not rows:return []
-        x=[vector(row,self.kind) for row in rows]
+        import numpy as np
+        x=np.asarray([vector(row,self.kind) for row in rows],dtype='float32')
         mean=self.reg.predict(x)
         ranked=self.rank.predict(x) if self.rank is not None else mean
         return [(float(a),float(b)) for a,b in zip(mean,ranked)]
@@ -84,7 +85,8 @@ def fit_head(rows, kind: str, cutoff_ms: int, label_column: str):
     # Group strictly by decision instant; preserve entire comparisons.
     col="review_ms" if kind=="watch" else "decision_ms"
     indexed=sorted(rows,key=lambda r:(r[col],r["symbol"]))
-    x=[vector(r,kind) for r in indexed]
+    import numpy as np
+    x=np.asarray([vector(r,kind) for r in indexed],dtype='float32')
     y=[float(r[label_column]) for r in indexed]
     reg=LGBMRegressor(n_estimators=120,max_depth=5,num_leaves=15,
                       learning_rate=.04,min_child_samples=20,reg_lambda=2,

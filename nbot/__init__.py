@@ -1,1 +1,1 @@
-NBOT V7: selected read-only historical research primitives.
+"""Selected read-only NBOT legacy research modules for V7."""
