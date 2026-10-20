@@ -40,6 +40,38 @@ class LiveOneMinuteResearchContracts(unittest.TestCase):
         self.assertEqual(len(v.full_vector(x,"SOLUSDT","SHORT")),len(v.FEATURE_NAMES))
         self.assertEqual(v.full_vector(x,"SOLUSDT","SHORT")[-4:],[1.,0.,0.,1.])
 
+    def test_90_second_confirmed_decision_waits_to_third_candle_open(self):
+        class Stub:
+            def predict(self,features):
+                return np.asarray([0.002]+[-0.001]*(len(features)-1))
+        from numpy import ndarray
+        import numpy as np
+        start=12000000
+        for symbol in v.S:
+            data=[Bar(start+i*v.ONE,100.,100.15,99.85,100.,2.)
+                  for i in range(85)]
+            with self.c:v.add_bars(self.c,symbol,data)
+        t=start+75*v.ONE
+        with self.c:
+            v.meta_set(self.c,"last_processed_open_ms",t-v.ONE)
+            v.meta_set(self.c,"positions",{})
+            v.meta_set(self.c,"pending",None)
+            v.meta_set(self.c,"new_entry_count",0)
+            v.meta_set(self.c,"status","RUNNING")
+            v.meta_set(self.c,"last_new_entry_deadline_ms",t+100*v.ONE)
+        manifest={"model_sha256":"a"*64}
+        with self.c:v.handle_minute(self.c,self.root,t,Stub(),manifest)
+        pending=v.meta_get(self.c,"pending")
+        self.assertEqual(pending["entry_time_ms"],t+3*v.ONE)
+        self.assertEqual(v.meta_get(self.c,"new_entry_count"),0)
+        for dt in (1,2):
+            with self.c:v.handle_minute(self.c,self.root,t+dt*v.ONE,Stub(),manifest)
+            self.assertEqual(v.meta_get(self.c,"pending")["entry_time_ms"],t+3*v.ONE)
+            self.assertEqual(v.meta_get(self.c,"new_entry_count"),0)
+        with self.c:v.handle_minute(self.c,self.root,t+3*v.ONE,Stub(),manifest)
+        self.assertEqual(v.meta_get(self.c,"new_entry_count"),1)
+        self.assertIn("BTCUSDT",v.meta_get(self.c,"positions"))
+
     def test_entry_cap_zero_to_three_and_no_api_order_code(self):
         self.assertEqual(v.MAX_ENTRIES,3)
         self.assertEqual(v.S,("BTCUSDT","ETHUSDT","SOLUSDT"))
