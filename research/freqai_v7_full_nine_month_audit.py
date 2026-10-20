@@ -14,20 +14,24 @@ import json
 
 from scripts.v7_three_coin_learning_audit import events
 from research.freqai_v7_monthly_audit import digest,load_trades,paired_moving_7d_bootstrap
-from research.freqai_v7_full_nine_month_daily import START,END,DAY,EXPERIMENT,daystr,CUTS
+from research.freqai_v7_full_nine_month_daily import (
+    START,END,DAY,EXPERIMENT,STOP1_EXPERIMENT,STOP1_POLICY,daystr,CUTS)
+from nbot_v7.lab import LABEL_POLICY
 
 
 def load(path):
     return json.loads(Path(path).read_text())
 
 
-def audit(root):
+def audit(root,*,stop1=False):
     root=Path(root).resolve()
     obj=load(root/"summary.json")
-    if (obj.get("experiment")!=EXPERIMENT or
+    if (obj.get("experiment")!=(STOP1_EXPERIMENT if stop1 else EXPERIMENT) or
         obj["start_ms"]!=START or obj["end_ms"]!=END or obj["total_days"]!=273 or
         obj["daily_fresh_model_count"]!=273):
         raise ValueError("INVALID_NINE_MONTH_EXPERIMENT_SCOPE")
+    if obj.get("label_policy",LABEL_POLICY)!=(STOP1_POLICY if stop1 else LABEL_POLICY):
+        raise ValueError("WRONG_STOP_LOSS_TARGET_FITTED_TO_MODEL")
     if len(obj["model_manifests"])!=273:
         raise ValueError("MISSING_ONE_OR_MORE_DAILY_MODELS")
     for name,expected in obj["archive_receipts"].items():
@@ -47,6 +51,8 @@ def audit(root):
             or m["calibration_last_label_ms"]>=cutoff):
             raise ValueError("FUTURE_TRAIN_LABEL_OR_WINDOW_MISMATCH:"+day)
         modelfile=root/"models"/day/"actual_freqai_net_lgbm.joblib"
+        if m["source_policy"]!=(STOP1_POLICY if stop1 else LABEL_POLICY):
+            raise ValueError("MODEL_FIT_ON_WRONG_STOP_LOSS_TARGET:"+day)
         if digest(modelfile)!=m["model_sha256"]:
             raise ValueError("MODEL_SHA_MISMATCH:"+day)
         daily_prediction=root/"daily"/(day+".jsonl")
@@ -87,7 +93,8 @@ def audit(root):
                     expected=monthly_sources[daystr(asof)]
                 else:
                     expected=model_ids[0]
-                if (r["model_sha256"]!=expected or
+                if (r["label_policy"]!=(STOP1_POLICY if stop1 else LABEL_POLICY) or
+                    r["model_sha256"]!=expected or
                     r["training_labels_available_before_ms"]>t or
                     r["features_ready_ms"]!=t+300000):
                     raise ValueError("LEAKED_OR_WRONG_MODEL_FOR_CANDIDATE:"+strategy)
@@ -166,9 +173,10 @@ def main():
     p=argparse.ArgumentParser()
     p.add_argument("--run",required=True,type=Path)
     p.add_argument("--out",required=True,type=Path)
+    p.add_argument("--stop1",action="store_true",help="Require 1pct target and 1pct fitted models")
     a=p.parse_args()
     if a.out.exists():raise FileExistsError("DO_NOT_OVERWRITE_OLD_AUDIT")
-    report=audit(a.run)
+    report=audit(a.run,stop1=a.stop1)
     a.out.write_text(json.dumps(report,sort_keys=True,indent=2)+"\n")
     print(json.dumps({
         "status":report["audited_status"],
