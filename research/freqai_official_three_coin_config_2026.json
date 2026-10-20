@@ -38,12 +38,14 @@
   ],
   "entry_pricing": {
     "price_side": "same",
-    "use_order_book": false,
-    "price_last_balance": 0
+    "use_order_book": true,
+    "price_last_balance": 0,
+    "order_book_top": 1
   },
   "exit_pricing": {
     "price_side": "same",
-    "use_order_book": false
+    "use_order_book": true,
+    "order_book_top": 1
   },
   "freqai": {
     "enabled": true,
