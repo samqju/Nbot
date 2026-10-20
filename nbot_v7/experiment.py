@@ -16,6 +16,7 @@ from .brain import train,freeze_artifacts
 from .lab import con,REVIEW_MS,LABEL_POLICY
 from .science import RuleBrain,block_bootstrap_uplift
 from .artifacts import EventLog,dataset_hash,seal_run
+from .decision import watchlist,choose
 
 def month_start(s: str)->int:
     try:
@@ -80,12 +81,8 @@ def replay(c, brain, start_ms, end_ms, *, stake_usdt=1000.0, sleeve_usdt=10000.0
             review,watch_records=next_review
             watch_expires=review+REVIEW_MS
             # Model can select fewer than 20 and exclude all.
-            pred=brain.score(watch_records,"watch")
-            ranked=sorted(zip(watch_records,pred),key=lambda x:(-x[1][1],-x[1][0],x[0]["symbol"]))
-            selected_symbols={r["symbol"] for r,(net,_) in ranked if net>0} 
-            # Set cap only after prioritizing by learned ranking score.
-            selected_symbols=set(list(sorted(selected_symbols,
-                                  key=lambda s:next(i for i,(r,_) in enumerate(ranked) if r["symbol"]==s)))[:top_n])
+            symbols,pred=watchlist(brain,watch_records,top_n)
+            selected_symbols=set(symbols)
             stats["universe_reviews"]+=1
             stats["watch_symbols_total"]+=len(selected_symbols)
             emit({"event":"watch","time_ms":review,"brain":brain.version,
@@ -111,15 +108,14 @@ def replay(c, brain, start_ms, end_ms, *, stake_usdt=1000.0, sleeve_usdt=10000.0
             stats["insufficient_capital"]+=1
             emit({"event":"decision","time_ms":t,"reason":"INSUFFICIENT_CAPITAL"})
             continue
-        scored=brain.score(valid,"opportunity")
+        chosen,scored=choose(brain,valid)
         # LambdaRank determines preference *among* predictions with positive
         # expected after-cost return; regression calibrates abstention.
-        viable=[(r,p) for r,p in zip(valid,scored) if p[0]>0.0]
-        if not viable:
+        if chosen is None:
             stats["brain_abstentions"]+=1
             emit({"event":"decision","time_ms":t,"reason":"BRAIN_ABSTAIN"})
             continue
-        winner,(expected,rank_score)=max(viable,key=lambda x:(x[1][1],x[1][0],x[0]["symbol"]))
+        winner,(expected,rank_score)=chosen
         identity={k:winner[k] for k in ("decision_ms","symbol","side","family")}
         emit({"event":"decision","time_ms":t,"reason":"SELECTED",**identity,
               "predicted_net":expected,"rank_score":rank_score,

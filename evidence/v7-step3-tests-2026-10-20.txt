@@ -1,0 +1,29 @@
+test_future_ambiguity_never_removes_selected_candidate (test_causal_replay.CausalReplay.test_future_ambiguity_never_removes_selected_candidate) ... ok
+test_future_gap_keeps_causal_candidates (test_causal_replay.CausalReplay.test_future_gap_keeps_causal_candidates) ... ok
+test_gap_stop_fills_at_worse_open (test_causal_replay.CausalReplay.test_gap_stop_fills_at_worse_open) ... ok
+test_insolvency_prevents_new_entry (test_causal_replay.CausalReplay.test_insolvency_prevents_new_entry) ... ok
+test_missing_label_locks_capital_and_reports_incomplete (test_causal_replay.CausalReplay.test_missing_label_locks_capital_and_reports_incomplete) ... ok
+test_stale_watch_expires_without_a_future_review (test_causal_replay.CausalReplay.test_stale_watch_expires_without_a_future_review) ... ok
+test_future_labels_rejected (test_lightgbm_brain.LearningContract.test_future_labels_rejected) ... ok
+test_ranker_learns_grouped_without_future_fields (test_lightgbm_brain.LearningContract.test_ranker_learns_grouped_without_future_fields) ... ok
+test_frozen_a_retrain_b1_and_adaptive_b2_on_disjoint_months (test_nine_month_e2e.NineMonthResearchSmoke.test_frozen_a_retrain_b1_and_adaptive_b2_on_disjoint_months) ... ok
+test_5m_simulation_stop_first_when_target_and_stop_touch (test_offline_contracts.OfflineContracts.test_5m_simulation_stop_first_when_target_and_stop_touch) ... ok
+test_frozen_future_context_is_recorded_separately (test_offline_contracts.OfflineContracts.test_frozen_future_context_is_recorded_separately) ... ok
+test_funding_rate_archive_column_parsing (test_offline_contracts.OfflineContracts.test_funding_rate_archive_column_parsing) ... ok
+test_legacy_modules_import_without_orders (test_offline_contracts.OfflineContracts.test_legacy_modules_import_without_orders) ... ok
+test_nine_month_periods_are_disjoint (test_offline_contracts.OfflineContracts.test_nine_month_periods_are_disjoint) ... ok
+test_one_slot_replay_never_double_books (test_offline_contracts.OfflineContracts.test_one_slot_replay_never_double_books) ... ok
+test_source_gated_registry_rejects_unattested_contract (test_offline_contracts.OfflineContracts.test_source_gated_registry_rejects_unattested_contract) ... ok
+test_train_features_only_past_btc (test_offline_contracts.OfflineContracts.test_train_features_only_past_btc) ... ok
+test_journal_corruption_fails_closed (test_runtime.RuntimeContracts.test_journal_corruption_fails_closed) ... ok
+test_live_adapter_disabled_and_unresolved_intent_blocks_recovery (test_runtime.RuntimeContracts.test_live_adapter_disabled_and_unresolved_intent_blocks_recovery) ... ok
+test_outcome_conflict_does_not_mutate_account (test_runtime.RuntimeContracts.test_outcome_conflict_does_not_mutate_account) ... ok
+test_paper_one_slot_persistent_exit_and_matured_memory (test_runtime.RuntimeContracts.test_paper_one_slot_persistent_exit_and_matured_memory) ... ok
+test_restart_preserves_open_position_and_duplicate_bar_is_idempotent (test_runtime.RuntimeContracts.test_restart_preserves_open_position_and_duplicate_bar_is_idempotent) ... ok
+test_risk_change_on_restart_rejected (test_runtime.RuntimeContracts.test_risk_change_on_restart_rejected) ... ok
+test_stale_source_and_kill_switch_abstain (test_runtime.RuntimeContracts.test_stale_source_and_kill_switch_abstain) ... ok
+
+----------------------------------------------------------------------
+Ran 24 tests in 6.663s
+
+OK
