@@ -28,6 +28,7 @@ from freqtrade.freqai.prediction_models.LightGBMRegressor import LightGBMRegress
 from nbot_v7.brain import vector
 from nbot_v7.experiment import month_start, replay
 from nbot_v7.lab import LABEL_POLICY
+from nbot_v7.artifacts import EventLog
 from nbot_v7.data import BAR_MS
 from nbot_v7.freqai_research_bridge import (
     TARGET, KNOWN_SYMBOLS, FreqAINetResearchBrain, NetForecast
@@ -197,14 +198,21 @@ def prediction_export(conn,model_path,manifest,start_ms,end_ms,path):
     return {"records":total,"sha256":digest(path)}
 
 
-def evaluate(conn,forecast_file,start,end,cutoff,scenario):
+def evaluate(conn,forecast_file,start,end,cutoff,scenario,event_path):
     model=FreqAINetResearchBrain.from_jsonl(
         forecast_file,cutoff_ms=cutoff,
         version=scenario,
         uncertainty_weight=0 if scenario.endswith("RAW") else 1,
         cost_stress=STRESS if scenario.endswith("STRESS") else 0,
     )
-    return replay(conn,model,start,end)
+    log=EventLog(event_path)
+    try:
+        report=replay(conn,model,start,end,event_sink=log.write)
+    finally:
+        log.close()
+    if not report["account_complete"]:
+        raise ValueError("INCOMPLETE_EXAMINATION_ACCOUNT_NO_ECONOMIC_INFERENCE")
+    return report
 
 
 def slim(report):
@@ -242,8 +250,21 @@ def run(db,output):
                 for policy,suffix in (("RAW","RAW"),("UNCERTAINTY","UNCERTAINTY"),
                                       ("UNCERTAINTY_STRESS","STRESS")):
                     brain_name=f"{period}_{model_key}_{suffix}"
-                    reports[brain_name]=slim(evaluate(c,path,start,stop,cutoff,brain_name))
+                    actual=evaluate(c,path,start,stop,cutoff,brain_name,
+                                    output/(brain_name+"_decisions.jsonl"))
+                    # Retain every selected real research trade, not just PnL.
+                    with (output/(brain_name+"_trades.jsonl")).open("x",encoding="utf-8") as stream:
+                        for trade in actual["trades"]:
+                            stream.write(json.dumps(trade,sort_keys=True,allow_nan=False)+"\n")
+                    reports[brain_name]=slim(actual)
+        evidence_files=sorted(
+            list(output.glob("*_net_forecasts.jsonl"))+
+            list(output.glob("*_decisions.jsonl"))+
+            list(output.glob("*_trades.jsonl"))
+        )
         report={
+            "source_dataset_file_sha256":digest(db),
+            "artifact_sha256":{f.name:digest(f) for f in evidence_files},
             "experiment":"REAL_FREQAI_FIT_AFTERCOST_MULTISTRATEGY_3COIN_EXPLORATORY_V1",
             "original_v7_champion_untouched":True,
             "native_freqai_whole_trade_backtest":False,
