@@ -58,3 +58,41 @@ The trailing system stopped out **391/574 ≈ 68.1%** of positions and achieved 
 **The saved RAW daily FreqAI learner continues to make economically weak entries** when exited by either fixed or trailing risk rules. A 1% trailing stop tested under conservative candle causality did **not** rescue it. The better historical evidence remains **daily FreqAI + calibrated NO TRADE/uncertainty gate**, but that too is limited by small selected-trade count, inspected research periods and non-native exit fill fidelity. Before trusting an exchange-continuous trailing stop, evaluate tick/at-least-1m paths with trustworthy execution costs; do not infer intrabar chronology from 5m candles.
 
 **LEARN-3C HOLD**, no automated champion promotion, no live/paper orders, no expansion to broader Binance universe. VPS cleanup is a separate explicitly requested action: remove only known disposable caches and temporary compiler artifacts, never protected source, models, audited evidence, archived input data or active processes.
+
+
+## Additional fixed-1%-target model test — completed and independently audited
+
+The prior owner-requested **273 daily FreqAI LightGBM model fits trained on fixed-1%-stop labels**, rather than the original 2%-stop labels, also finished across all Jan–Sep 2026 calendar days. Full [nine-month 1%-target model audit](research/freqai_v7_full_nine_month_audit.py) `--stop1` **PASSED** with the same as-of model cutoff, source SHA, original feature timeline and nine full portfolio ledgers. Its DAILY RAW result: **507 trades/−804.2296 USDT**, extra25bp execution stress **−2071.7296 USDT**; DAILY UNCERTAINTY 30 trades/**+21.3727** after base costs, but **−53.6273** extra-cost-stressed. Neither demonstrates a trustworthy new edge.
+
+To recheck the exit-only effect with these better target-aligned saved predictions, [research/v7_stop1trained_trailing_eval.py](research/v7_stop1trained_trailing_eval.py) replayed the identical 273 freshly trained 1%-target model forecasts on the two distinct exit datasets. The independently [audited](research/v7_stop1trained_trailing_audit.py) continuous nine-month results were:
+
+| Exactly same fixed-1%-target-trained daily RAW forecasts | Trades | Net after base proxy trading costs | Net after extra 25bp realized per roundtrip | Maximum simulated drawdown |
+|---|---:|---:|---:|---:|
+| Fixed 1% stop | **507** | **−804.2296 USDT** | −2071.7296 | 8.1624% |
+| **1% previous-bar trailing stop** | **587** | **−1060.9423 USDT** | **−2528.4423** | **10.6396%** |
+
+**Trailing harmed this retrained account by −256.7127 USDT**, too. Stop exits **166 vs 376**; time-limit exits **322 vs 196**; 3% targets **19 vs 15**. The trailing research account again crosses the runtime nominal 10% drawdown envelope, which the offline experiment does NOT automatically enforce.
+
+**Provenance:** Fully trained 1%-target 273-head run `runs/freqai-nine-month-180d-2026/ninemonth-daily-stop1-trained-v1/summary.json` SHA256 `e60d6bb593945d4de1cdf0ba4f76d81821f04a3e1bd79ed92a4bb588928bc5b8`, model's forecast stream `43d12cde4ca17ff6caae70fc15ba5790c3a632f3e10956482d26ea5368fbc38b`. Fixed-1%-trained vs trailing comparison `runs/freqai-nine-month-180d-2026/stop1trained-fixed-vs-trailing1-v1/summary.json` SHA256 `2de6b1aa44dc290810e32dfe7c3d29d5231a2b55ec228419e477559d95b9006d`; read-only independent audit `runs/freqai-nine-month-180d-2026/stop1trained-trailing-audit-v1.json` SHA256 `353fcbdd2d276079352451c0432b6f9e963858dbf7025e1f6420db15dc2b1d0b`, status `SAVED_273_ONE_PERCENT_TRAINED_MODELS_FIXED_VS_TRAILING_EXIT_VERIFIED`.
+
+**Scientific boundary:** This second comparison reuses models fitted on **FIXED 1% targets**; it does not train a separate 273-head model on trailing-specific targets. Both sets of saved model forecasts were frozen when the fixed-versus-trailing result was compared. This is an honest *execution-policy* experiment, not proof a trailing-specific learner couldn't perform differently.
+
+### Deeper entry/exit attribution, independently audited
+
+The [expanded exit ledger audit](research/v7_trailing1_threeway_audit.py), result `runs/freqai-nine-month-180d-2026/trailing1-threeway-audit-v2.json` SHA256 `710a321b463161c589dd41de964ebfdc088495d4cead623787056c5f83904d9b`, verifies original aftercost source labels, same FreqAI predictions, full decision hash chains and these trailing1 RAW **2%-target-model** exit economies:
+
+- **391 STOP exits:** −1741.3972 USDT combined; **86** still had *positive net* because the trailing stop locked some profits. Average −4.4537 USDT per stop.
+- **165 HORIZON exits:** +255.3064 combined; 91 positive net.
+- **18 TARGET exits:** +520.3442 combined; all 18 positive net.
+- The average selected expected aftercost net was **+12.9571bp**, while selected realized net was **−16.8249bp**, ~29.782bp overprediction. This is compatible with a weak raw model-selection edge; exact live generalization cannot be inferred.
+
+### Authorized VPS cleanup — complete, non-destructive, source-hash-checked
+
+After all studies and audits completed, cleared only:
+- Existing **81 MiB** `/root/.cache/pip` wheel/download cache (installed FreqAI runtime left intact).
+- Generated Python `__pycache__` folders within the isolated V7 `code` checkout; not the installed venv or other bot code.
+- The single temporary diagnostic `/tmp/v7-q75-nine-month-2026.txt`.
+
+VPS 96 GiB root filesystem use reduced from **8.7 GiB (~10%) to 8.6 GiB (~9%)**; **~88 GiB free**. All original 2025/2026 Binance checksum-verified archives, original 2%-stop models, 1%-stop daily models, trailing outcomes, model forecasts, all nine-month logs/reports, isolated FreqAI 2026.9 virtualenv and legacy deployments retained because they are research evidence or dependencies, **not disposable junk**. The four saved key report SHA256 receipts (old 2%-stop summary, fresh 1%-stop summary, updated trailing audit and retrained trailing audit) matched exactly **before and after cleanup**. V7 git checkout remains clean at cleanup. No real/paper orders or old bot service changes.
+
+**Final verdict remains LEARN-3C HOLD.** Trailing stop cannot fix this RAW learner's poor entry quality in these matched 2026 historical 5m proxies. A genuinely exchange-continuous 1% trailing stop requires tick or at least 1-minute exit-path evidence, real fill/funding tests and an independent unseen evaluation period.
