@@ -18,9 +18,19 @@ STOP_FRACTION = .02
 TAKE_FRACTION = .03
 HORIZON_BARS = 12
 REVIEW_MS = 8 * 60 * 60 * 1000
-LABEL_POLICY = "V7_5M_STOP_FIRST_2STOP_3TAKE_60M_FEE10BP_SLIP2BP_PROXY_V1"
+LABEL_POLICY = "V7_5M_STOP_FIRST_2STOP_3TAKE_60M_FEE10BP_SLIP2BP_PROXY_V2"
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS candidate(
+ decision_ms INTEGER NOT NULL, symbol TEXT NOT NULL, side TEXT NOT NULL,
+ family TEXT NOT NULL, regime TEXT NOT NULL, features TEXT NOT NULL,
+ source_hash TEXT NOT NULL, PRIMARY KEY(decision_ms,symbol,side,family)
+);
+CREATE TABLE IF NOT EXISTS watch_candidate(
+ review_ms INTEGER NOT NULL, symbol TEXT NOT NULL, regime TEXT NOT NULL,
+ features TEXT NOT NULL, source_hash TEXT NOT NULL,
+ PRIMARY KEY(review_ms,symbol)
+);
 CREATE TABLE IF NOT EXISTS opportunity(
  decision_ms INTEGER NOT NULL,
  label_available_ms INTEGER NOT NULL,
@@ -106,7 +116,8 @@ def outcome(bars: list[Bar], i: int, side: str):
             mfe=max(mfe,favorable)
             mae=min(mae,adverse)
         if stop_hit or target_hit:
-            exit_price=stop if stop_hit else target
+            # A gap through a protective stop cannot fill at the better stop.
+            exit_price=(min(stop,b.o) if polarity==1 else max(stop,b.o)) if stop_hit else target
             exit_ms=b.t+BAR_MS  # Conservative label availability, not a fill time.
             reason="STOP" if stop_hit else "TARGET"
             break
@@ -143,19 +154,19 @@ def generate_symbol(
 ):
     times=[x.t for x in btc]
     watch_data=[]
+    bar_times=[b.t for b in bars]
     opportunities=[]
     funding=funding or []
     funding_times=[event[0] for event in funding]
     contexts=[]
     # Only signals and features that were known when the completed candle closed.
-    for i in range(HISTORY,len(bars)-HORIZON_BARS):
+    candidates=[]
+    for i in range(HISTORY,len(bars)):
         b=bars[i]
         decision=b.t+BAR_MS
         if decision<start_ms or decision>=end_ms or not contract.eligible(decision):
             continue
         if bars[i-HISTORY].t!=b.t-HISTORY*BAR_MS:
-            continue
-        if bars[i+HORIZON_BARS].t!=b.t+HORIZON_BARS*BAR_MS:
             continue
         try:
             feats=market_features(bars,i,btc,times)
@@ -163,9 +174,17 @@ def generate_symbol(
             continue
         f=json.dumps(feats,sort_keys=True,separators=(",",":"))
         regime=btc_regime(feats)
-        if decision%REVIEW_MS==0 and decision+REVIEW_MS+HORIZON_BARS*BAR_MS<=end_ms:
+        if decision%REVIEW_MS==0:
             watch_data.append((decision,regime,f,feats))
+            c.execute("INSERT INTO watch_candidate VALUES(?,?,?,?,?)",
+                      (decision,symbol,regime,f,source_hash))
         for fam,side in proposals(bars,i,feats):
+            candidates.append((decision,symbol,side,fam,regime,f,source_hash))
+            # Future path completeness affects the outcome, never candidacy.
+            if (i+HORIZON_BARS>=len(bars)
+                or bars[i+HORIZON_BARS].t!=b.t+HORIZON_BARS*BAR_MS
+                or not contract.eligible(bars[i+HORIZON_BARS].t+BAR_MS-1)):
+                continue
             n,mfe,mae,ex,why,q=outcome(bars,i,side)
             sign=1 if side=="LONG" else -1
             start_funding=bisect_left(funding_times,bars[i+1].t)
@@ -183,8 +202,17 @@ def generate_symbol(
     if opportunities:
         c.executemany("INSERT INTO opportunity VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",opportunities)
         c.executemany("INSERT INTO outcome_context VALUES(?,?,?,?,?,?,?,?,?,?,?)",contexts)
+    c.executemany("INSERT INTO candidate VALUES(?,?,?,?,?,?,?)",candidates)
     times=[r[0] for r in opportunities]
     for review,regime,f,_ in watch_data:
+        # Watch labels need the entire future horizon. Missing future records
+        # cannot be interpreted as zero opportunities or an ex-ante exclusion.
+        begin=bisect_left(bar_times,review)
+        required=REVIEW_MS//BAR_MS+HORIZON_BARS
+        if (begin+required>len(bars)
+            or bars[begin+required-1].t!=review+(required-1)*BAR_MS
+            or not contract.eligible(review+required*BAR_MS-1)):
+            continue
         j=bisect_left(times,review)
         k=bisect_left(times,review+REVIEW_MS)
         group=opportunities[j:k]

@@ -7,7 +7,7 @@ from .data import Bar, BAR_MS
 FAMILIES = (
     "momentum_3", "momentum_12", "breakout_12", "breakout_48",
     "reversal_3", "reversal_12", "volume_surge", "range_reject",
-    "pullback", "trend_accel", "structure_generic",
+    "pullback", "trend_accel", "structure_generic", "neutral_grid",
 )
 HISTORY = 50
 
@@ -76,4 +76,8 @@ def proposals(bars: list[Bar],i:int,x:dict) -> list[tuple[str,str]]:
     # Independent broad structure/discovery head: not gated on legacy strategy names.
     add("structure_generic","LONG",x["body"]>.002 and x["volume_ratio"]>1.05)
     add("structure_generic","SHORT",x["body"]<-.002 and x["volume_ratio"]>1.05)
+    # Frozen hourly long/short exploration, independent of family signal rules.
+    # Shadow hypotheses only; ranking and abstention retain decision authority.
+    if (bars[i].t + BAR_MS) % 3_600_000 == 0:
+        s.extend((("neutral_grid", "LONG"), ("neutral_grid", "SHORT")))
     return s

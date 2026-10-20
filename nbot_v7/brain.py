@@ -9,16 +9,18 @@ from hashlib import sha256
 from pathlib import Path
 from math import ceil
 import json
+import math
 
 from .features import FAMILIES, btc_regime
 
 BASE_KEYS = ("r3","r12","r48","atr","volume_ratio","range_12","body",
              "btc_r3","btc_r12","btc_r48","btc_atr","vs_btc","utc_hour")
-MODEL_SCHEMA = "NBOT_V7_BRAIN_V1_CONTEXTUAL_5M_PROXY"
+MODEL_SCHEMA = "NBOT_V7_BRAIN_V2_CAUSAL_CANDIDATES_CONTEXTUAL_5M_PROXY"
 
 def vector(row, kind: str) -> list[float]:
     features = json.loads(row["features"])
-    if not all(k in features and isinstance(features[k],(float,int)) for k in BASE_KEYS):
+    if not all(k in features and isinstance(features[k],(float,int))
+               and math.isfinite(features[k]) for k in BASE_KEYS):
         raise ValueError("MISSING_OR_INVALID_PAST_ONLY_FEATURE")
     v=[float(features[k]) for k in BASE_KEYS]
     if kind == "opportunity":
@@ -36,8 +38,9 @@ def rows_before(conn, kind:str, cutoff_ms:int, *, max_groups:int=4000, max_rows:
         raise ValueError("UNKNOWN_BRAIN_TASK")
     col="review_ms" if kind=="watch" else "decision_ms"
     table=kind
-    # Ambiguous stop-first OHLC labels are diagnostics, not supervised truth.
-    admissible = " AND quality='COARSE_5M_OHLC_PATH_PROXY'" if kind=="opportunity" else ""
+    # Both deterministic stop-first and ordinary proxy labels are admitted.
+    # Excluding ambiguity would condition the learning cohort on future paths.
+    admissible = ""
     times=[int(t[0]) for t in conn.execute(
         f"SELECT DISTINCT {col} FROM {table} WHERE {col}<? AND label_available_ms<?{admissible} ORDER BY {col}",
         (cutoff_ms,cutoff_ms))]
@@ -71,13 +74,16 @@ class ModelHead:
         if not rows:return []
         import numpy as np
         x=np.asarray([vector(row,self.kind) for row in rows],dtype='float32')
-        mean=self.reg.predict(x)
-        ranked=self.rank.predict(x) if self.rank is not None else mean
+        mean=self.reg.booster_.predict(x,num_threads=1)
+        ranked=self.rank.booster_.predict(x,num_threads=1) if self.rank is not None else mean
         return [(float(a),float(b)) for a,b in zip(mean,ranked)]
 
 def fit_head(rows, kind: str, cutoff_ms: int, label_column: str):
     if len(rows)<40:
         raise ValueError(f"INSUFFICIENT_{kind.upper()}_TRAINING_ROWS")
+    if any(int(row["label_available_ms"])>=cutoff_ms or
+           int(row["review_ms" if kind=="watch" else "decision_ms"])>=cutoff_ms for row in rows):
+        raise RuntimeError("FUTURE_LABEL_LEAKAGE")
     try:
         from lightgbm import LGBMRegressor, LGBMRanker
     except ImportError as exc:

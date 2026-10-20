@@ -50,6 +50,8 @@ class NineMonthResearchSmoke(unittest.TestCase):
                 counter+=1
             conn.executemany("INSERT INTO watch VALUES(?,?,?,?,?,?,?,?)",records_w)
             conn.executemany("INSERT INTO opportunity VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",records_o)
+            conn.execute("INSERT INTO candidate SELECT decision_ms,symbol,side,family,regime,features,source_hash FROM opportunity")
+            conn.execute("INSERT INTO watch_candidate SELECT review_ms,symbol,regime,features,source_hash FROM watch")
             conn.commit();conn.close()
             result=experiment(db,"2026-01",out)
             self.assertEqual(len(result["stage_c"]),3)

@@ -361,3 +361,11 @@ E. Produce G1 design and bounded download/verification authorization proposal; u
 ## 10. Final handover warning
 
 NBOT V7 is an **unproven research program**. It should never be described as a profitable bot, a deployed AI, or a live-capable trading system at this stage. The purpose of this journal is to stop repeating V3–V6 mistakes, prevent stale chat assumptions from replacing evidence, and make every decision, negative result and future milestone reconstructible from GitHub.
+
+## 2026-10-20 IST — Desktop continuation: causal decision/outcome boundary (step 1)
+
+- Verified existing `V7` head `69d900d`, based on the preserved roadmap implementation; continued it without resetting or duplicating branches. Read roadmap, handover, G0 audit, adaptive proposal and nine-month agreement; retrieved the referenced user agreement. No VPS connection or deployment.
+- Found material future-information selection defects: replay excluded future ambiguous paths, and labeling removed candidates whose future data was missing. Replaced decision inputs with separate `candidate` and `watch_candidate` tables containing no outcome fields. Outcomes are looked up only after selection. Missing selected paths lock the slot and flag the account incomplete; ambiguous stop-first paths are retained.
+- Added hourly family-neutral LONG/SHORT shadow grid, stale-watch expiry, insolvency prevention, worse-open gap-stop fills, model-cutoff and finite-feature guards. V2 label/model schema requires rebuilding old V1 datasets.
+- Initial local baseline: dependency unavailable and sandbox temporary-directory errors; no claim that baseline passed. Created project-local research environment, installed requirements, used workspace temporary directory. Final step-1 verification: **17/17 tests pass**, including LightGBM and synthetic 3+3+3 comparison, six adversarial causality/account tests. Test transcript: `.test-tmp/step1-tests.txt` (local ignored runtime evidence).
+- Remaining: persist full decision audit/artifact manifests, source coverage report/build completion gate, archive-through-model integration, governed offline replacement and native execution fidelity. Synthetic success is not source completeness or economic validation. Research implementation remains IN PROGRESS.

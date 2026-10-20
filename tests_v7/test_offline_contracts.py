@@ -105,6 +105,8 @@ class OfflineContracts(unittest.TestCase):
                     (decision,exit_ms,symbol,"LONG","structure_generic","up",f,.02,.03,-.01,
                      exit_ms,"HORIZON","COARSE_5M_OHLC_PATH_PROXY","0"*64))
             c.commit()
+            c.execute("INSERT INTO candidate SELECT decision_ms,symbol,side,family,regime,features,source_hash FROM opportunity")
+            c.execute("INSERT INTO watch_candidate SELECT review_ms,symbol,regime,features,source_hash FROM watch")
             s=replay(c,YesBrain(),t,t+6*BAR_MS)
             self.assertEqual(s["selected_trades"],2)
             self.assertGreater(s["stats"]["occupied_slot_decisions"],0)

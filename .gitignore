@@ -9,3 +9,6 @@ __pycache__/
 .pytest_cache/
 user_data/bootstrap_records/
 live_private/
+.venv/
+.test-tmp/
+research_runs/
