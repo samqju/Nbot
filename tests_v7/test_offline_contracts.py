@@ -8,7 +8,7 @@ import math
 from pathlib import Path
 from datetime import datetime,timezone
 from nbot_v7.data import Bar,contract_registry,load_bars,BAR_MS
-from nbot_v7.features import market_features,proposals,btc_regime,BASE_KEYS if False else HISTORY
+from nbot_v7.features import market_features,proposals,btc_regime
 from nbot_v7.lab import con,outcome,generate_symbol
 from nbot_v7.experiment import nine_month_bounds,month_start,replay
 from nbot.observation import decision_ledger, research_replay, v5_paired_exits

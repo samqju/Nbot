@@ -136,7 +136,7 @@ def experiment(db:Path,start_month:str,output:Path)->dict:
         first=replay(c,brain_a,b,d)
         b1=train(c,"B1_SAME_ARCH_MORE_DATA",d)
         b2=train(c,"B2_CONTEXTUAL_CHALLENGER",d,adaptive=True)
-        final=[replay(c,brain,a_end:=d,e) for brain in (brain_a,b1,b2)]
+        final=[replay(c,brain,d,e) for brain in (brain_a,b1,b2)]
         artifacts={}
         for brain in (brain_a,b1,b2):
             artifacts[brain.version]=freeze_artifacts(brain,output/brain.version)

@@ -24,7 +24,7 @@ def market_features(bars: list[Bar], i: int, btc: list[Bar], btc_times: list[int
     volbase=fmean(v[j].v for j in range(i-20,i))
     # BTC bar whose CLOSE is known at this candle's closing decision instant.
     bidx=bisect_right(btc_times, v[i].t)-1
-    if bidx < 48 or btc[bidx].t > v[i].t:
+    if bidx < 48 or btc[bidx].t != v[i].t:
         raise ValueError("BTC_CONTEXT_NOT_READY")
     b=btc
     btc_r3=b[bidx].c/b[bidx-3].c-1
