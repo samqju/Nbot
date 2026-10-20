@@ -107,7 +107,8 @@ class OfflineContracts(unittest.TestCase):
             c.commit()
             c.execute("INSERT INTO candidate SELECT decision_ms,symbol,side,family,regime,features,source_hash FROM opportunity")
             c.execute("INSERT INTO watch_candidate SELECT review_ms,symbol,regime,features,source_hash FROM watch")
-            s=replay(c,YesBrain(),t,t+6*BAR_MS)
+            from nbot_v7.lab import HORIZON_BARS
+            s=replay(c,YesBrain(),t,t+(HORIZON_BARS+6)*BAR_MS)
             self.assertEqual(s["selected_trades"],2)
             self.assertGreater(s["stats"]["occupied_slot_decisions"],0)
             self.assertEqual(s["stats"]["universe_excluded"],0)
