@@ -89,7 +89,17 @@ def audit(db:Path, run:Path, *,max_abstain_sample=300):
     if not db.is_file() or not run.is_dir():
         raise FileNotFoundError("REQUIRED_EXISTING_DATASET_AND_RUN")
     summary_path=run/"summary.json"
+    manifest_path=run/"run_manifest.json"
+    manifest=json.loads(manifest_path.read_text())
+    for relative, expected in manifest.get("files_sha256",{}).items():
+        resolved=(run/relative).resolve()
+        if not resolved.is_relative_to(run.resolve()) or not resolved.is_file():
+            raise ValueError("INVALID_OR_MISSING_RUN_FILE:"+relative)
+        if file_sha(resolved)!=expected:
+            raise ValueError("RUN_ARTIFACT_HASH_MISMATCH:"+relative)
     summary=json.loads(summary_path.read_text())
+    if manifest.get("dataset_sha256")!=summary.get("dataset_sha256"):
+        raise ValueError("RUN_AND_SUMMARY_DATASET_IDENTITY_MISMATCH")
     if summary.get("experiment")!="NBOT_V7_NINE_MONTH_BRAIN_LEARNING_V1":
         raise ValueError("WRONG_EXPERIMENT")
     conn=sqlite3.connect(db.resolve().as_uri()+"?mode=ro",uri=True)
@@ -122,8 +132,22 @@ def audit(db:Path, run:Path, *,max_abstain_sample=300):
             "symbol_count":len(json.loads(meta["coverage"]).get("symbols",{})),
             "candidate_total":conn.execute("SELECT COUNT(*) FROM candidate").fetchone()[0],
             "matured_outcomes_total":conn.execute("SELECT COUNT(*) FROM opportunity").fetchone()[0],
+            "decision_rows_without_matured_label":conn.execute(
+                "SELECT COUNT(*) FROM candidate c LEFT JOIN opportunity o ON c.decision_ms=o.decision_ms "
+                "AND c.symbol=o.symbol AND c.side=o.side AND c.family=o.family "
+                "WHERE o.decision_ms IS NULL").fetchone()[0],
+            "invalid_early_label_availability":conn.execute(
+                "SELECT COUNT(*) FROM opportunity WHERE label_available_ms<=decision_ms").fetchone()[0],
+            "incomplete_context_rows":conn.execute(
+                "SELECT COUNT(*) FROM opportunity o LEFT JOIN outcome_context c ON "
+                "o.decision_ms=c.decision_ms AND o.symbol=c.symbol AND o.side=c.side "
+                "AND o.family=c.family WHERE c.decision_ms IS NULL").fetchone()[0],
+            "label_quality_counts":{r[0]:r[1] for r in conn.execute(
+                "SELECT quality,COUNT(*) FROM opportunity GROUP BY quality")},
             "training_counts_by_cutoff":{}
         }
+        if report["dataset_metadata"]["invalid_early_label_availability"] or report["dataset_metadata"]["incomplete_context_rows"]:
+            raise ValueError("SOURCE_LABEL_CAUSALITY_OR_CONTEXT_INCOMPLETE")
         for name, m in summary["model_manifests"].items():
             cutoff=m["training_cutoff_ms"]
             eligible=conn.execute(
