@@ -2,7 +2,7 @@
 
 **Recorded:** 2026-10-20 IST  
 **Owner direction:** Proceed with one research-only multi-strategy FreqAI + V7 Trading Brain system that compares BTC, ETH and SOL opportunities at the same time and may select **NO TRADE**. Owner specifically asks what its deployment will test/teach.  
-**Current status:** Design and strict **FROZEN PREDICTION → V7 RANKER BRIDGE IMPLEMENTED**, GitHub CI tests pending at initial documentation; **native FreqAI after-cost predictor/trainer, integrated model forecasts, final comparison and isolated VPS deployment NOT YET COMPLETED**. Local laptop/PuTTY connector went offline during this turn; no VPS access or experiment results from this new challenger are claimed. Previous unmodified official FreqAI example remains preserved and separately documented.  
+**Current status update:** This initial status was recorded while the laptop/PuTTY connector was temporarily OFFLINE. **Subsequent same-day implementation resumed on VPS and the FreqAI LightGBMRegressor.fit API was actually used for three-coin net-after-cost candidate models and one-slot 3+3+3 replay.** See [V7_FREQAI_V7_MULTISTRATEGY_AFTERCOST_INITIAL_RESULTS_2026-10-20.md](V7_FREQAI_V7_MULTISTRATEGY_AFTERCOST_INITIAL_RESULTS_2026-10-20.md) and Roadmap §20 for actual audited results. **Learning gate remains HOLD; no native FreqAI rolling orchestration, paper/live deployment, or proven profitable AI.** Prior offline note is retained in the chronological handover.  
 **Permission:** Offline historical research only; no perpetual paper/live service, private API keys, orders, automated model promotion or whole-universe download.
 
 ## 1. What makes this different from the tested FreqaiExampleStrategy?
