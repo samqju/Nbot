@@ -1,0 +1,14 @@
+{
+  "source_path": "user_data/strategies/NbotV6LibraryResearch.py",
+  "source_commit": "e1fe1a50fd9f346021d0ddf56b58a20191b001c7",
+  "source_blob": "b7028c54e11c5cefd51ab987f490b8d09de5d6d2",
+  "extracted_functions": [
+    "_safe_div",
+    "_rsi",
+    "library_indicators",
+    "_cross_above",
+    "_cross_below",
+    "library_signals"
+  ],
+  "purpose": "Frozen negative-control proposals, not native V6 ranker reproduction"
+}

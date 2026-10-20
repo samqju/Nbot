@@ -15,7 +15,7 @@ from .features import FAMILIES, btc_regime
 
 BASE_KEYS = ("r3","r12","r48","atr","volume_ratio","range_12","body",
              "btc_r3","btc_r12","btc_r48","btc_atr","vs_btc","utc_hour")
-MODEL_SCHEMA = "NBOT_V7_BRAIN_V2_CAUSAL_CANDIDATES_CONTEXTUAL_5M_PROXY"
+MODEL_SCHEMA = "NBOT_V7_BRAIN_V3_CAUSAL_V6_CONTROLS_CONTEXTUAL_5M_PROXY"
 
 def vector(row, kind: str) -> list[float]:
     features = json.loads(row["features"])

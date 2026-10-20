@@ -14,7 +14,7 @@ import sqlite3
 
 from .brain import train,freeze_artifacts
 from .lab import con,REVIEW_MS,LABEL_POLICY
-from .science import RuleBrain,block_bootstrap_uplift
+from .science import RuleBrain,block_bootstrap_uplift,ranking_diagnostics
 from .artifacts import EventLog,dataset_hash,seal_run
 from .decision import watchlist,choose
 
@@ -189,7 +189,7 @@ def experiment(db:Path,start_month:str,output:Path)->dict:
         b1=train(c,"B1_SAME_ARCH_MORE_DATA",d)
         b2=train(c,"B_ADAPTIVE_6MONTH_FROZEN",d,adaptive=True)
         final=[audited_replay(key,brain,d,e) for key,brain in zip(("C_A","C_B1","C_B"),(brain_a,b1,b2))]
-        baselines=[audited_replay("BASELINE_"+mode,RuleBrain(mode),d,e) for mode in ("momentum","liquidity","deterministic_random")]
+        baselines=[audited_replay("BASELINE_"+mode,RuleBrain(mode),d,e) for mode in ("momentum","liquidity","deterministic_random","v6_signal_control")]
         pairwise={
           "B2_minus_A":block_bootstrap_uplift(final[2],final[0]),
           "B2_minus_B1":block_bootstrap_uplift(final[2],final[1]),
@@ -206,7 +206,9 @@ def experiment(db:Path,start_month:str,output:Path)->dict:
             "stage_b":{k:v for k,v in first.items() if k!="trades"},
             "stage_c":[{k:v for k,v in x.items() if k!="trades"} for x in final],
             "stage_c_simple_baselines":[{k:v for k,v in x.items() if k!="trades"} for x in baselines],
+            "v6_control_scope":"EXACT_V6_SIGNAL_FUNCTIONS_WITH_COMMON_V7_FILLS_NOT_ORIGINAL_V6_NATIVE_RANKER",
             "stage_c_pairwise_diagnostics":pairwise,
+            "stage_c_ranking_diagnostics":{brain.version:ranking_diagnostics(c,brain,d,e) for brain in (brain_a,b1,b2)},
             "model_manifests":artifacts,
             "source_registry_sha256":meta["registry_sha256"],
             "dataset_sha256":dataset_hash(c),

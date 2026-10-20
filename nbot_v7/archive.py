@@ -21,7 +21,7 @@ from .experiment import month_start,add_months
 
 ROOT="https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
 BASE="data/futures/um/monthly/klines/"
-_SYMBOL=re.compile(r"^[A-Z0-9]+USDT$")
+_SYMBOL=re.compile(r"^[^\W_]+USDT$")
 MAX_PUBLIC_KEYS=500_000
 
 def keys(prefix: str, *, directories: bool=False):
@@ -74,47 +74,53 @@ def months_after(start_month:str,n:int=9)->list[str]:
     a=month_start(start_month)
     return [datetime.fromtimestamp(add_months(a,i)/1000,timezone.utc).strftime("%Y-%m") for i in range(n)]
 
-def inventory(start_month:str)->dict:
+def inventory(start_month:str, *, cache_root:Path|None=None, workers:int=3)->dict:
+    from concurrent.futures import ThreadPoolExecutor,as_completed
+    if not 1<=workers<=4:raise ValueError("INVENTORY_WORKER_LIMIT")
     months=months_after(start_month)
-    symbols=[]
-    rows=[]
-    for prefix,_ in keys(BASE,directories=True):
-        symbol=prefix[len(BASE):].strip("/")
-        if not _SYMBOL.fullmatch(symbol):
-            continue
-        symbols.append(symbol)
-        for interval in ("5m",):
-            base=f"{prefix}{interval}/"
-            for k,size in keys(base):
-                name=k.rsplit("/",1)[-1]
-                found=re.fullmatch(rf"{re.escape(symbol)}-{interval}-(\d{{4}}-\d{{2}})\.zip",name)
+    directories=list(keys(BASE,directories=True))
+    symbols=sorted(prefix[len(BASE):].strip("/") for prefix,_ in directories
+                   if _SYMBOL.fullmatch(prefix[len(BASE):].strip("/")))
+    if cache_root:cache_root.mkdir(parents=True,exist_ok=True)
+    def scan(symbol):
+        cached=cache_root/(symbol+".json") if cache_root else None
+        if cached and cached.exists():
+            result=json.loads(cached.read_text(encoding="utf-8"))
+            if result["symbol"]!=symbol or result["months"]!=months:
+                raise ValueError("INVENTORY_CACHE_SCOPE_MISMATCH")
+            return result["objects"]
+        records=[]
+        for kind,prefix in (("5m",f"{BASE}{symbol}/5m/"),
+                            ("fundingRate",f"data/futures/um/monthly/fundingRate/{symbol}/")):
+            for key,size in keys(prefix):
+                name=key.rsplit("/",1)[-1]
+                found=re.fullmatch(rf"{re.escape(symbol)}-{kind}-(\d{{4}}-\d{{2}})\.zip",name)
                 if found and found.group(1) in months:
-                    rows.append({"symbol":symbol,"month":found.group(1),
-                                 "key":k,"bytes":size,"timeframe":interval})
-    # Enumerate exchange funding settlement archives alongside candles.
-    for symbol in symbols:
-        funding_prefix=f"data/futures/um/monthly/fundingRate/{symbol}/"
-        for k,size in keys(funding_prefix):
-            name=k.rsplit("/",1)[-1]
-            found=re.fullmatch(rf"{re.escape(symbol)}-fundingRate-(\d{{4}}-\d{{2}})\.zip",name)
-            if found and found.group(1) in months:
-                rows.append({"symbol":symbol,"month":found.group(1),
-                             "key":k,"bytes":size,"timeframe":"fundingRate"})
+                    records.append({"symbol":symbol,"month":found.group(1),"key":key,"bytes":size,"timeframe":kind})
+        if cached:
+            temporary=cached.with_suffix(".partial")
+            temporary.write_text(json.dumps({"symbol":symbol,"months":months,"objects":records},sort_keys=True)+"\n",encoding="utf-8")
+            temporary.replace(cached)
+        return records
+    rows=[]
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        pending={pool.submit(scan,symbol):symbol for symbol in symbols}
+        for count,job in enumerate(as_completed(pending),1):
+            rows.extend(job.result())
+            if count%25==0 or count==len(symbols):
+                print(json.dumps({"inventory_symbols_completed":count,"inventory_symbols_total":len(symbols),"objects_found":len(rows)}),flush=True)
     rows.sort(key=lambda x:(x["symbol"],x["month"],x["timeframe"]))
     return {
-        "schema":"v7-public-archive-inventory-v1",
-        "captured_utc":datetime.now(timezone.utc).isoformat(),
-        "months":months,
-        "symbol_directories_found":len(symbols),
-        "available_zip_objects":len(rows),
+        "schema":"v7-public-archive-inventory-v2-unicode-checkpointed",
+        "captured_utc":datetime.now(timezone.utc).isoformat(),"months":months,
+        "symbol_directories_found":len(symbols),"all_directory_count":len(directories),
+        "available_zip_objects":len(rows),"symbols_with_period_objects":len({r["symbol"] for r in rows}),
         "klines_zip_objects":sum(r["timeframe"]=="5m" for r in rows),
         "funding_zip_objects":sum(r["timeframe"]=="fundingRate" for r in rows),
-        "observed_zip_bytes":sum(r["bytes"] for r in rows),
-        "source":ROOT,
-        "historical_contract_active_status_verified":False,
-        "no_trading_authority":True,
-        "objects":rows,
+        "observed_zip_bytes":sum(r["bytes"] for r in rows),"source":ROOT,
+        "historical_contract_active_status_verified":False,"no_trading_authority":True,"objects":rows,
     }
+
 
 def download_inventory(manifest:dict, destination:Path, max_gib:float,*,resume:bool=True)->dict:
     budget=int(max_gib*1024**3)
@@ -180,6 +186,8 @@ def main(argv=None):
     p.add_argument("--start-month")
     p.add_argument("--existing-manifest",type=Path,help="Download from an already saved immutable inventory")
     p.add_argument("--manifest",type=Path,required=True)
+    p.add_argument("--cache",type=Path)
+    p.add_argument("--workers",type=int,default=3)
     p.add_argument("--download",action="store_true",help="Explicitly download public ZIPs")
     p.add_argument("--archive",type=Path)
     p.add_argument("--max-gib",type=float,default=20)
@@ -190,7 +198,7 @@ def main(argv=None):
         if not a.start_month:raise ValueError("START_MONTH_REQUIRED")
         if a.manifest.exists():
             raise FileExistsError("REFUSE_OVERWRITE_SOURCE_MANIFEST")
-        data=inventory(a.start_month)
+        data=inventory(a.start_month,cache_root=a.cache or a.manifest.with_suffix(".cache"),workers=a.workers)
         a.manifest.parent.mkdir(parents=True,exist_ok=True)
         a.manifest.write_text(json.dumps(data,indent=2,sort_keys=True)+"\n")
     if a.download:

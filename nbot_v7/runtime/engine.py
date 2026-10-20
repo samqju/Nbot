@@ -111,3 +111,42 @@ class TradingEngine:
 
     def kill(self,reason):
         self.memory.transition("KILL_SWITCH",lambda s:s.update(kill=True),{"reason":reason})
+
+    def reconcile_venue(self):
+        if self.broker.mode!="LIVE":raise ValueError("VENUE_BROKER_REQUIRED")
+        report=self.broker.poll()
+        for pending in report["pending_outcomes"]:
+            payload=pending["payload"]
+            identity=payload["proposal_id"]
+            existing=self.memory.conn.execute("SELECT 1 FROM outcome WHERE id=?",("venue:"+pending["record_id"],)).fetchone()
+            if not existing:
+                state=self.memory.read()
+                local=state["position"] or state["pending"]
+                if local is None or local["id"]!=identity:
+                    self.kill("UNMATCHED_VENUE_CLOSE_REQUIRES_OPERATOR_RECONCILIATION")
+                    raise ValueError("VENUE_CLOSE_IDENTITY_MISMATCH")
+                def settle(s):
+                    day=payload["closed_timestamp_ms"]//86400000
+                    if s["day"]!=day:s.update(day=day,daily_net=0)
+                    s["equity"]+=payload["realized_pnl_usd"]
+                    s["peak"]=max(s["peak"],s["equity"])
+                    s["daily_net"]+=payload["realized_pnl_usd"]
+                    s.update(position=None,pending=None)
+                self.memory.transition("VENUE_CLOSE_ACK",settle,payload,
+                    outcome=("venue:"+pending["record_id"],payload["closed_timestamp_ms"],payload))
+            self.broker.transport.acknowledge(pending["record_id"])
+        native=report["position"]
+        state=self.memory.read()
+        if native is not None:
+            local=state["position"] or state["pending"]
+            if local is None or local["id"]!=native.proposal_id:
+                self.kill("UNMANAGED_OR_MISMATCHED_VENUE_POSITION")
+                raise ValueError("VENUE_POSITION_IDENTITY_MISMATCH")
+            recovered={**local,"entry_price":native.entry_price,"quantity":native.quantity,
+                       "stop":native.stop_price,"target":native.entry_price*(1+(1 if native.side=="LONG" else -1)*self.policy.take_fraction),
+                       "deadline_ms":native.entry_timestamp_ms+self.policy.max_hold_ms,"broker_mode":"VENUE"}
+            self.memory.transition("VENUE_POSITION_RECONCILED",lambda s:s.update(position=recovered,pending=None))
+        elif state["position"] is not None or state["pending"] is not None:
+            self.kill("MISSING_AUTHORITATIVE_VENUE_ACCOUNTING")
+            raise ValueError("UNRESOLVED_VENUE_ACCOUNTING")
+        return report["status"]

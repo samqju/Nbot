@@ -10,7 +10,7 @@ from pathlib import Path
 import json
 import sqlite3
 from .data import BAR_MS, Bar, contract_registry, discover, load_bars, discover_funding, load_funding
-from .features import HISTORY, market_features, proposals, btc_regime
+from .features import HISTORY, market_features, proposals, btc_regime, legacy_proposals
 from .runtime.broker import PaperBroker
 from .runtime.risk import RiskPolicy
 
@@ -20,7 +20,7 @@ STOP_FRACTION = .02
 TAKE_FRACTION = .03
 HORIZON_BARS = 12
 REVIEW_MS = 8 * 60 * 60 * 1000
-LABEL_POLICY = "V7_5M_PAPER_BROKER_2STOP_3TAKE_60M_FEE10BP_SLIP2BP_PROXY_V3"
+LABEL_POLICY = "V7_5M_PAPER_BROKER_V6CONTROLS_2STOP_3TAKE_60M_FEE10BP_SLIP2BP_PROXY_V4"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS candidate(
@@ -170,6 +170,7 @@ def generate_symbol(
     funding=funding or []
     funding_times=[event[0] for event in funding]
     contexts=[]
+    legacy=legacy_proposals(bars)
     # Only signals and features that were known when the completed candle closed.
     candidates=[]
     for i in range(HISTORY,len(bars)):
@@ -189,7 +190,7 @@ def generate_symbol(
             watch_data.append((decision,regime,f,feats))
             c.execute("INSERT INTO watch_candidate VALUES(?,?,?,?,?)",
                       (decision,symbol,regime,f,source_hash))
-        for fam,side in proposals(bars,i,feats):
+        for fam,side in proposals(bars,i,feats)+legacy.get(i,[]):
             candidates.append((decision,symbol,side,fam,regime,f,source_hash))
             # Future path completeness affects the outcome, never candidacy.
             if (i+HORIZON_BARS>=len(bars)
@@ -233,6 +234,9 @@ def generate_symbol(
         c.execute("INSERT INTO watch VALUES(?,?,?,?,?,?,?,?)",
                   (review,avail,symbol,regime,f,v,len(group),source_hash))
     return len(opportunities),len(watch_data)
+
+
+
 
 def build_archive_database(
     archive_root: Path, registry_path: Path, db_path: Path,

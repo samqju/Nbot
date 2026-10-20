@@ -48,11 +48,11 @@ class EventLog:
 
 def seal_run(folder, dataset_digest, config):
     folder=Path(folder)
-    packages={p:importlib.metadata.version(p) for p in ("lightgbm","numpy","scikit-learn","joblib")}
+    packages={dist.metadata["Name"]:dist.version for dist in importlib.metadata.distributions()}
     root=Path(__file__).parent
     manifest={"schema":"NBOT_V7_REPRODUCIBLE_RUN_V1","dataset_sha256":dataset_digest,
               "config":config,"python":platform.python_version(),"dependencies":packages,
-              "source_sha256":{p.name:file_hash(p) for p in sorted(root.glob("*.py"))},
+              "source_sha256":{p.relative_to(root).as_posix():file_hash(p) for p in sorted(root.rglob("*.py"))},
               "files_sha256":{p.relative_to(folder).as_posix():file_hash(p)
                               for p in sorted(folder.rglob("*")) if p.is_file()},
               "authority":"OFFLINE_RESEARCH_ONLY"}

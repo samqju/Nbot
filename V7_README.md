@@ -52,3 +52,9 @@ Simple comparators share calendar/capacity/cost/slot conventions, but entry freq
 ## Legacy reuse and continuity
 
 Audited V3 ledger/replay, V5 accounting/exit and V5.1 governance modules are selectively preserved. V4 groupwise ranking is adapted in `brain.py`; V6 source/evidence remains intact. No blanket legacy merge. See `V7_G0_LEGACY_AUDIT_2026-10-20.md` for provenance and `V7_CHAT_HANDOVER.md` for every implementation step and verified result.
+
+## Audited production execution reuse (2026-10-20)
+
+`V7_EXECUTION_PORT_MANIFEST.json` pins the selective legacy execution and guarded public/paper/live transport dependency closure. `runtime/venue.py` integrates it with V7 intents and fixed exits; the mainnet transport is code only and retains independent arm/account/reconciliation controls. No real account has been connected. Linux verification: 530 original execution fault tests and 32 V7 tests pass. Windows POSIX execution-port compatibility is not established.
+
+Exact V6 signal functions are now additional frozen negative-control proposal advisors (`V7_V6_SIGNAL_PORT.json`). The V6-signal benchmark shares V7 fills; it is not a reproduction of the old V6 trained/native policy. Current label policy is V4 and feature/model schema V3; rebuild older datasets/models.

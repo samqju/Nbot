@@ -5,8 +5,13 @@ on:
     paths:
       - 'nbot_v7/**'
       - 'nbot/observation/**'
+      - 'nbot/execution/**'
+      - 'nbot/exchange/**'
+      - 'nbot/common/**'
+      - 'nbot/config/**'
       - 'nbot_v5_1/**'
       - 'tests_v7/**'
+      - 'tests_v7_legacy/**'
       - 'requirements-v7.txt'
       - '.github/workflows/v7-offline-tests.yml'
   workflow_dispatch:
@@ -26,3 +31,5 @@ jobs:
         run: python -m compileall -q nbot_v7 nbot/observation nbot_v5_1 tests_v7
       - name: Run offline-only tests
         run: python -m unittest discover -s tests_v7 -v
+      - name: Run audited legacy execution fault and recovery contracts
+        run: python -m unittest discover -s tests_v7_legacy -v

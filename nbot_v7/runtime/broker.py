@@ -90,3 +90,8 @@ class GuardedLiveBroker:
         if not self.permit.authorized or self.transport is None:
             raise PermissionError("LIVE_RECONCILIATION_AUTHORITY_DISABLED")
         return self.transport.reconcile(client_id)
+
+    def poll(self):
+        if not self.permit.authorized or self.transport is None:
+            raise PermissionError("LIVE_RECONCILIATION_AUTHORITY_DISABLED")
+        return self.transport.poll()

@@ -10,7 +10,7 @@ import time
 import urllib.parse
 import urllib.request
 from ..data import Bar,BAR_MS
-from ..features import market_features,proposals,btc_regime
+from ..features import market_features,proposals,btc_regime,legacy_proposals
 
 
 class PublicFeed:
@@ -38,7 +38,7 @@ class PublicFeed:
         bars={};holds={}
         def fetch(symbol):
             raw=self.get("/fapi/v1/klines",{"symbol":symbol,"interval":"5m",
-                "startTime":decision-51*BAR_MS,"endTime":decision-1,"limit":60})
+                "startTime":decision-151*BAR_MS,"endTime":decision-1,"limit":200})
             series=[Bar(int(r[0]),*(float(v) for v in r[1:6])) for r in raw if int(r[0])+BAR_MS<=decision]
             if len(series)<51 or series[-1].t!=decision-BAR_MS:
                 raise ValueError("CAUSAL_HISTORY_NOT_READY")
@@ -64,7 +64,7 @@ class PublicFeed:
             x=market_features(series,len(series)-1,btc,bt)
             base={"symbol":symbol,"regime":btc_regime(x),"features":json.dumps(x,sort_keys=True),"source_hash":digest}
             watch.append({**base,"review_ms":decision})
-            for family,side in proposals(series,len(series)-1,x):
+            for family,side in proposals(series,len(series)-1,x)+legacy_proposals(series).get(len(series)-1,[]):
                 candidates.append({**base,"decision_ms":decision,"family":family,"side":side})
         return {"decision_ms":decision,"now_ms":now,"candidates":candidates,"watch":watch,
                 "quotes":quotes,"bars":bars,"observed_symbols":symbols,"source_holds":holds,

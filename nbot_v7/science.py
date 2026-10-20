@@ -10,10 +10,12 @@ from hashlib import sha256
 import json
 import math
 import random
+from math import ceil
+from .decision import choose
 
 class RuleBrain:
     def __init__(self, mode:str):
-        if mode not in ("momentum","liquidity","deterministic_random"):
+        if mode not in ("momentum","liquidity","deterministic_random","v6_signal_control"):
             raise ValueError("INVALID_SIMPLE_COMPARATOR")
         self.mode=mode
         self.version="BASELINE_"+mode.upper()
@@ -23,7 +25,10 @@ class RuleBrain:
         for r in rows:
             x=json.loads(r["features"])
             side=1 if kind=="watch" or r["side"]=="LONG" else -1
-            if self.mode=="momentum":
+            if self.mode=="v6_signal_control":
+                expected=.001 if kind=="watch" or r["family"].startswith("V6_") else -.001
+                rank=abs(x["r12"])
+            elif self.mode=="momentum":
                 strength=side*x["r12"]
                 # Trade when momentum and current volume quality clear simple bars.
                 expected=.001 if strength>.003 and x["volume_ratio"]>.75 else -.001
@@ -82,3 +87,40 @@ def block_bootstrap_uplift(challenger:dict,incumbent:dict,*,blocks_days:int=7,
         "matched_evaluation_days":n,
         "warning":"5m proxy and non-independent market days; bootstrap does not certify edge",
     }
+
+
+def ranking_diagnostics(conn,brain,start_ms,end_ms,max_groups=1000):
+    """Time-thinned full cohorts; hindsight only scores forecasts after selection."""
+    times=[r[0] for r in conn.execute("SELECT DISTINCT decision_ms FROM candidate WHERE decision_ms>=? AND decision_ms<? ORDER BY decision_ms",(start_ms,end_ms))]
+    stride=max(1,ceil(len(times)/max_groups))
+    count=groups=0
+    squared=absolute=regret=selected_net=best_net=0.0
+    families=defaultdict(int)
+    for t in times[::stride]:
+        rows=conn.execute("SELECT * FROM candidate WHERE decision_ms=? ORDER BY symbol,side,family",(t,)).fetchall()
+        choice,predictions=choose(brain,rows)
+        labels={(r[0],r[1],r[2]):r[3] for r in conn.execute("SELECT symbol,side,family,net FROM opportunity WHERE decision_ms=?",(t,))}
+        actual=[]
+        for row,prediction in zip(rows,predictions):
+            key=(row["symbol"],row["side"],row["family"])
+            if key not in labels:continue
+            error=prediction[0]-labels[key]
+            squared+=error*error;absolute+=abs(error);count+=1
+            actual.append(labels[key])
+        if not actual:continue
+        best=max(0,max(actual))
+        got=0.0
+        if choice is not None:
+            row,_=choice
+            key=(row["symbol"],row["side"],row["family"])
+            if key not in labels:continue
+            got=labels[key];families[row["family"]]+=1
+        groups+=1;regret+=best-got;selected_net+=got;best_net+=best
+    return {"authority":"SAMPLED_RANKING_DIAGNOSTIC_NOT_WALLET_PNL","sample_stride_events":stride,
+            "labeled_predictions":count,"evaluated_groups":groups,
+            "net_prediction_rmse":math.sqrt(squared/count) if count else None,
+            "net_prediction_mae":absolute/count if count else None,
+            "mean_top1_conditional_net":selected_net/groups if groups else None,
+            "mean_hindsight_regret":regret/groups if groups else None,
+            "selected_family_counts":dict(sorted(families.items())),
+            "warning":"Cross-sectional conditional outcomes are not jointly executable portfolio returns."}

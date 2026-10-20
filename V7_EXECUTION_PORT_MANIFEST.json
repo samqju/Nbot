@@ -1,0 +1,254 @@
+{
+  "excluded_test_note": "Observation public-market suite requires separate observation stack; dedicated Exchange public adapter retained, not whole Observation runtime.",
+  "modules": {
+    "nbot.common.atomic_io": {
+      "blob_sha": "ce239a82a273d9ae19c79ddca7f9fe4fd12f9712",
+      "bytes": 1545,
+      "dependencies": [],
+      "path": "nbot/common/atomic_io.py"
+    },
+    "nbot.common.binance_limits": {
+      "blob_sha": "32fce8ed35c8113cae2167dce531b703c30d4151",
+      "bytes": 6288,
+      "dependencies": [],
+      "path": "nbot/common/binance_limits.py"
+    },
+    "nbot.common.synchronization": {
+      "blob_sha": "8fbb1ac7f82bdec5ebdef617ad92a264552277d7",
+      "bytes": 348,
+      "dependencies": [],
+      "path": "nbot/common/synchronization.py"
+    },
+    "nbot.config.profiles": {
+      "blob_sha": "0d4b6133ec1f9b8a06d6a4ecb9b540adec8da9c2",
+      "bytes": 3105,
+      "dependencies": [],
+      "path": "nbot/config/profiles.py"
+    },
+    "nbot.exchange.binance_live": {
+      "blob_sha": "2b27773fd611704e7ec8765f31900f9da4906abd",
+      "bytes": 7727,
+      "dependencies": [
+        "nbot.exchange.binance_testnet"
+      ],
+      "path": "nbot/exchange/binance_live.py"
+    },
+    "nbot.exchange.binance_public": {
+      "blob_sha": "918f9eb80e2c72a64c210fcf6cf52f89692e3460",
+      "bytes": 7533,
+      "dependencies": [
+        "nbot.common.binance_limits",
+        "nbot.exchange.contracts"
+      ],
+      "path": "nbot/exchange/binance_public.py"
+    },
+    "nbot.exchange.binance_testnet": {
+      "blob_sha": "cd01005e2ba6051aba9f72d1daf133da7e99d253",
+      "bytes": 72785,
+      "dependencies": [
+        "nbot.common.atomic_io",
+        "nbot.common.binance_limits",
+        "nbot.exchange.contracts",
+        "nbot.execution.models"
+      ],
+      "path": "nbot/exchange/binance_testnet.py"
+    },
+    "nbot.exchange.contracts": {
+      "blob_sha": "d5b9cccb5bc0208b6d844422599a86ea52e979c3",
+      "bytes": 10844,
+      "dependencies": [
+        "nbot.execution.models"
+      ],
+      "path": "nbot/exchange/contracts.py"
+    },
+    "nbot.exchange.limits": {
+      "blob_sha": "7db7c6b445c926604ea1356e4929f0b8e2f59d52",
+      "bytes": 173,
+      "dependencies": [
+        "nbot.common.binance_limits"
+      ],
+      "path": "nbot/exchange/limits.py",
+      "reason": "Legacy adapter fault-suite request budget dependency"
+    },
+    "nbot.exchange.paper": {
+      "blob_sha": "cc7384492f076078ed8eb405adc53eac5dc3aff6",
+      "bytes": 34794,
+      "dependencies": [
+        "nbot.common.atomic_io",
+        "nbot.config.profiles",
+        "nbot.exchange.contracts",
+        "nbot.execution.models"
+      ],
+      "path": "nbot/exchange/paper.py"
+    },
+    "nbot.execution.emergency": {
+      "blob_sha": "761ca32088992e5d66166fe5b8702c005fe6d289",
+      "bytes": 7070,
+      "dependencies": [
+        "nbot.exchange.contracts"
+      ],
+      "path": "nbot/execution/emergency.py"
+    },
+    "nbot.execution.entry": {
+      "blob_sha": "b8f745df21cd4a8c57a3194957d82da45b413f36",
+      "bytes": 20938,
+      "dependencies": [
+        "nbot.common.synchronization",
+        "nbot.exchange.contracts",
+        "nbot.execution.models",
+        "nbot.execution.risk",
+        "nbot.execution.state"
+      ],
+      "path": "nbot/execution/entry.py"
+    },
+    "nbot.execution.execution": {
+      "blob_sha": "5ad25bb29771aa69d4d4f86db3d5e08367096e6e",
+      "bytes": 15545,
+      "dependencies": [
+        "nbot.common.synchronization",
+        "nbot.exchange.contracts",
+        "nbot.execution.entry",
+        "nbot.execution.outcomes",
+        "nbot.execution.position",
+        "nbot.execution.reconciliation",
+        "nbot.execution.risk"
+      ],
+      "path": "nbot/execution/execution.py"
+    },
+    "nbot.execution.models": {
+      "blob_sha": "9faad595ab501e53982f5a0167f8cf727d87da53",
+      "bytes": 10678,
+      "dependencies": [
+        "nbot.exchange.contracts"
+      ],
+      "path": "nbot/execution/models.py"
+    },
+    "nbot.execution.outcomes": {
+      "blob_sha": "aa41c905263a2be525274349818aa899950d148c",
+      "bytes": 12746,
+      "dependencies": [
+        "nbot.common.synchronization",
+        "nbot.execution.models",
+        "nbot.execution.state"
+      ],
+      "path": "nbot/execution/outcomes.py"
+    },
+    "nbot.execution.position": {
+      "blob_sha": "2497a545de54fe0a643fc408c70174522ac93d5d",
+      "bytes": 18863,
+      "dependencies": [
+        "nbot.common.synchronization",
+        "nbot.exchange.contracts",
+        "nbot.execution.models",
+        "nbot.execution.risk",
+        "nbot.execution.state"
+      ],
+      "path": "nbot/execution/position.py"
+    },
+    "nbot.execution.reconciliation": {
+      "blob_sha": "64b5cc4fc41a22111bc3378fe169a5d066ecb9b6",
+      "bytes": 40438,
+      "dependencies": [
+        "nbot.common.synchronization",
+        "nbot.exchange.contracts",
+        "nbot.execution.models",
+        "nbot.execution.outcomes",
+        "nbot.execution.risk",
+        "nbot.execution.state"
+      ],
+      "path": "nbot/execution/reconciliation.py"
+    },
+    "nbot.execution.risk": {
+      "blob_sha": "b1991b19ac03027a5aeb31a2e2dfc0a64e0377a0",
+      "bytes": 13431,
+      "dependencies": [
+        "nbot.exchange.contracts",
+        "nbot.execution.models"
+      ],
+      "path": "nbot/execution/risk.py"
+    },
+    "nbot.execution.state": {
+      "blob_sha": "d36994c8e9445f30600a86c86c17d5c95e11469b",
+      "bytes": 25518,
+      "dependencies": [
+        "nbot.common.synchronization",
+        "nbot.exchange.contracts",
+        "nbot.execution.models"
+      ],
+      "path": "nbot/execution/state.py"
+    }
+  },
+  "purpose": "Selective execution dependency closure; no account connection, credentials or orders authorized",
+  "seeds": [
+    "nbot.execution.execution",
+    "nbot.execution.emergency",
+    "nbot.exchange.binance_live",
+    "nbot.exchange.paper",
+    "nbot.exchange.binance_public"
+  ],
+  "source_commit": "d497e961e2891c43669d64f2a16d210011d703a4",
+  "source_ref": "origin/main",
+  "status": "SOURCE_PINNED_LINUX_530_LEGACY_AND_32_V7_TESTS_PASS_PAPER_BRIDGE_ONLY_NO_LIVE_CONNECTION",
+  "tests": [
+    {
+      "blob_sha": "c700c18b969f0f588b9983917f03ceddb94ba51e",
+      "path": "tests_v7_legacy/test_v311_exchange_port.py",
+      "source": "tests/test_v311_exchange_port.py"
+    },
+    {
+      "blob_sha": "9af7621cf0ab09fd7c7770c2a4244b2ccd2021ea",
+      "path": "tests_v7_legacy/test_v311_execution_models.py",
+      "source": "tests/test_v311_execution_models.py"
+    },
+    {
+      "blob_sha": "f1c51f579ff6d04e8961e0ed3d2ed4df20734ed5",
+      "path": "tests_v7_legacy/test_v312_execution_durability.py",
+      "source": "tests/test_v312_execution_durability.py"
+    },
+    {
+      "blob_sha": "424abdfee95c68cc43f3d2a8773740755194b429",
+      "path": "tests_v7_legacy/test_v312_execution_state.py",
+      "source": "tests/test_v312_execution_state.py"
+    },
+    {
+      "blob_sha": "f9f94bf8cbcb8784194cbbf5e0343249913607cc",
+      "path": "tests_v7_legacy/test_v313_risk.py",
+      "source": "tests/test_v313_risk.py"
+    },
+    {
+      "blob_sha": "fa692b6f83bb3f64c0ce15a563883942d06fb759",
+      "path": "tests_v7_legacy/test_v314_entry.py",
+      "source": "tests/test_v314_entry.py"
+    },
+    {
+      "blob_sha": "6c169139153a6f24c9f5974e500473ba7232840e",
+      "path": "tests_v7_legacy/test_v315_position.py",
+      "source": "tests/test_v315_position.py"
+    },
+    {
+      "blob_sha": "99758700f3db34ac5857bae399d3ec0f80b5b722",
+      "path": "tests_v7_legacy/test_v316_reconciliation.py",
+      "source": "tests/test_v316_reconciliation.py"
+    },
+    {
+      "blob_sha": "28b08963b4a6cfc1cf08b69b377636ccd51cb1ab",
+      "path": "tests_v7_legacy/test_v317_emergency.py",
+      "source": "tests/test_v317_emergency.py"
+    },
+    {
+      "blob_sha": "6b68981452e406bff79f83f773ac9d61cd32cca1",
+      "path": "tests_v7_legacy/test_v318_paper.py",
+      "source": "tests/test_v318_paper.py"
+    },
+    {
+      "blob_sha": "da5ece75f96d0eddac7d3dde2ffc2dbeca317d73",
+      "path": "tests_v7_legacy/test_v319_testnet.py",
+      "source": "tests/test_v319_testnet.py"
+    },
+    {
+      "blob_sha": "e2bdee177c132146838e3ec9f38196293728e5c1",
+      "path": "tests_v7_legacy/test_v3110_execution_worker.py",
+      "source": "tests/test_v3110_execution_worker.py"
+    }
+  ]
+}

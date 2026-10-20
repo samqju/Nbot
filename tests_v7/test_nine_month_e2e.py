@@ -56,7 +56,7 @@ class NineMonthResearchSmoke(unittest.TestCase):
             conn.commit();conn.close()
             result=experiment(db,"2026-01",out)
             self.assertEqual(len(result["stage_c"]),3)
-            self.assertEqual(len(result["stage_c_simple_baselines"]),3)
+            self.assertEqual(len(result["stage_c_simple_baselines"]),4)
             self.assertIn("B2_minus_A",result["stage_c_pairwise_diagnostics"])
             self.assertEqual(result["train_cutoffs"]["A_3MONTH_FROZEN"],b)
             self.assertEqual(result["train_cutoffs"]["B1_SAME_ARCH_MORE_DATA"],c)

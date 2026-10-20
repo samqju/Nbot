@@ -8,6 +8,8 @@ FAMILIES = (
     "momentum_3", "momentum_12", "breakout_12", "breakout_48",
     "reversal_3", "reversal_12", "volume_surge", "range_reject",
     "pullback", "trend_accel", "structure_generic", "neutral_grid",
+    "V6_ema_cross","V6_donchian_breakout","V6_bollinger_reversion","V6_rsi_reversion",
+    "V6_macd_momentum","V6_stochastic_reversal","V6_atr_breakout","V6_volume_trend",
 )
 HISTORY = 50
 
@@ -81,3 +83,26 @@ def proposals(bars: list[Bar],i:int,x:dict) -> list[tuple[str,str]]:
     if (bars[i].t + BAR_MS) % 3_600_000 == 0:
         s.extend((("neutral_grid", "LONG"), ("neutral_grid", "SHORT")))
     return s
+
+
+def legacy_proposals(bars):
+    """Exact V6 pure functions, reset on every gap, no framework/order imports."""
+    import pandas as pd
+    import numpy as np
+    from .legacy_v6_signals import FAMILIES,library_indicators,library_signals
+    result={}
+    start=0
+    for end in range(1,len(bars)+1):
+        if end<len(bars) and bars[end].t==bars[end-1].t+BAR_MS:continue
+        if end-start>=101:
+            segment=bars[start:end]
+            frame=pd.DataFrame({"open":[b.o for b in segment],"high":[b.h for b in segment],
+                "low":[b.l for b in segment],"close":[b.c for b in segment],"volume":[b.v for b in segment]})
+            indicators=library_indicators(frame)
+            for family in FAMILIES:
+                signals=library_signals(indicators,family)
+                for side in ("long","short"):
+                    for index in np.flatnonzero(signals[side].to_numpy(dtype=bool)):
+                        result.setdefault(start+int(index),[]).append(("V6_"+family,side.upper()))
+        start=end
+    return result

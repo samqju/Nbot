@@ -13,7 +13,8 @@ import re
 import math
 
 BAR_MS = 300_000
-FILE = re.compile(r"(?P<symbol>[A-Z0-9]+USDT)-5m-(?P<month>\d{4}-\d{2})\.(?:zip|csv)$")
+SYMBOL_PATTERN=r"[^\W_]+USDT"  # Unicode exchange symbols, no path separators.
+FILE = re.compile(rf"(?P<symbol>{SYMBOL_PATTERN})-5m-(?P<month>\d{{4}}-\d{{2}})\.(?:zip|csv)$")
 
 @dataclass(frozen=True)
 class Bar:
@@ -51,7 +52,7 @@ def contract_registry(path: Path, *, allow_archive_observed: bool=False) -> dict
     for row in rows:
         symbol = row["symbol"].strip().upper()
         evidence = row["evidence_sha256"].strip().lower()
-        if (not re.fullmatch(r"[A-Z0-9]+USDT", symbol)
+        if (not re.fullmatch(SYMBOL_PATTERN, symbol)
             or not re.fullmatch(r"[a-f0-9]{64}", evidence)):
             raise ValueError("INVALID_REGISTRY_ID_OR_SOURCE_DIGEST")
         a, b = int(row["from_ms"]), int(row["to_ms"])
@@ -136,7 +137,7 @@ def _parse(rows, start_ms: int, end_ms: int):
 
 # Funding archive files are separate from OHLCV, and must not be reconstructed
 # from price candles. Never silently treat unknown funding as 0.
-FUNDING_FILE=re.compile(r"(?P<symbol>[A-Z0-9]+USDT)-fundingRate-(?P<month>\d{4}-\d{2})\.(?:zip|csv)$")
+FUNDING_FILE=re.compile(rf"(?P<symbol>{SYMBOL_PATTERN})-fundingRate-(?P<month>\d{{4}}-\d{{2}})\.(?:zip|csv)$")
 
 def discover_funding(root:Path,months:set[str])->dict[str,list[Path]]:
     found={}
