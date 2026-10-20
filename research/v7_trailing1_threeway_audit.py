@@ -69,6 +69,7 @@ def audit(root,db2,db1,dbtrail,forecasts):
         if abs(save["stressed_pnl_usdt"]-(save["net_pnl_usdt"]-2.5*len(ts)))>1e-3:
             raise ValueError("STRESS_ACCOUNTING_INCONSISTENT")
         reasons=Counter()
+        reasons_econ=defaultdict(lambda:{"count":0,"net_usdt":0.0,"positive_net":0})
         months=defaultdict(lambda:{"count":0,"net":0.0})
         c=sqlite3.connect(source.resolve().as_uri()+"?mode=ro",uri=True)
         try:
@@ -79,6 +80,9 @@ def audit(root,db2,db1,dbtrail,forecasts):
                 if r is None or abs(t["net_after_cost"]-r[1])>1e-10 or int(t["exit_ms"])!=r[2]:
                     raise ValueError("LEDGER_NOT_MATCHING_PREDECLARED_SOURCE_OUTCOME")
                 reasons[r[0]]+=1
+                reasons_econ[r[0]]["count"]+=1
+                reasons_econ[r[0]]["net_usdt"]+=t["net_after_cost"]*1000
+                reasons_econ[r[0]]["positive_net"]+=int(t["net_after_cost"]>0)
                 mo=datetime.fromtimestamp(t["exit_ms"]/1000,timezone.utc).strftime("%Y-%m")
                 months[mo]["count"]+=1
                 months[mo]["net"]+=t["net_after_cost"]*1000
@@ -93,6 +97,13 @@ def audit(root,db2,db1,dbtrail,forecasts):
             "extra25bp_cost_net_usdt":save["stressed_pnl_usdt"],
             "max_drawdown_pct":save["max_drawdown_pct_of_sleeve"],
             "exit_reasons":dict(reasons),
+            "exit_reason_economics":{k:{"trades":v["count"],
+                    "net_usdt":round(v["net_usdt"],4),
+                    "positive_net":v["positive_net"],
+                    "mean_net_usdt":round(v["net_usdt"]/v["count"],4)}
+                    for k,v in sorted(reasons_econ.items())},
+            "mean_selected_predicted_bp":round(sum(t["predicted_net"] for t in ts)/len(ts)*10000,4),
+            "mean_selected_actual_bp":round(sum(t["net_after_cost"] for t in ts)/len(ts)*10000,4),
             "monthly":{k:{"count":v["count"],"net_usdt":round(v["net"],4)}
                        for k,v in sorted(months.items())},
         }
