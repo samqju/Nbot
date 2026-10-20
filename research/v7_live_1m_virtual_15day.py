@@ -49,6 +49,11 @@ from research.freqai_v7_net_fit_and_replay import actual_freqai_fit
 
 S=("BTCUSDT","ETHUSDT","SOLUSDT")
 ONE=60000
+# REST source may revise recently completed 1m OHLCV. To avoid trading
+# on provisional prices, wait 90 seconds AFTER the bar closes.
+CONFIRM_DELAY_MS=90000
+# Score after delay, then enter only at later 3rd candle OPEN.
+ENTRY_LAG_BARS=3
 DAY=86400000
 DAYS=15
 HORIZON=60
@@ -184,7 +189,7 @@ def event(c,kind,**data):
 def add_bars(c,symbol,bars):
     count=0
     for b in bars:
-        if b.t+ONE>now_ms()-2000:continue
+        if b.t+ONE>now_ms()-CONFIRM_DELAY_MS:continue
         x=c.execute("SELECT o,h,l,c,v FROM bars WHERE symbol=? AND t=?",(symbol,b.t)).fetchone()
         if x:
             if any(abs(float(x[k])-getattr(b,k))>max(1e-6,abs(getattr(b,k))*1e-10)
@@ -224,7 +229,7 @@ def bootstrap(root):
         if candles:
             with c:add_bars(c,symbol,candles)
     common=min(c.execute("SELECT max(t) FROM bars WHERE symbol=?",(s,)).fetchone()[0] for s in S)
-    if common is None or now_ms()-(common+ONE)>180000:
+    if common is None or now_ms()-(common+ONE)>300000:
         raise RuntimeError("PUBLIC_1M_FEED_NOT_FRESH_AT_BOOTSTRAP")
     c.executescript("PRAGMA wal_checkpoint(TRUNCATE)")
     meta_set(c,"source_receipts",evidence)
@@ -243,7 +248,7 @@ def bootstrap(root):
     meta_set(c,"experiment",EXPERIMENT)
     meta_set(c,"source_candle_ms",ONE)
     meta_set(c,"training_days",DAYS)
-    meta_set(c,"exit_policy",{"stop":.02,"target":.03,"max_hold_minutes":60,"fee_each":.0005,"slippage_each":.0001,"funding":"NOT_MODELED"})
+    meta_set(c,"exit_policy",{"stop":.02,"target":.03,"max_hold_minutes":60,"fee_each":.0005,"slippage_each":.0001,"funding":"NOT_MODELED","confirmed_candle_age_ms":CONFIRM_DELAY_MS,"entry_lag_candles":ENTRY_LAG_BARS})
     event(c,"SOURCE_BOOTSTRAPPED",last_common_candle=common,archives=len(evidence),
           min_symbol_bars=min(c.execute("SELECT count(*) FROM bars WHERE symbol=?",(s,)).fetchone()[0] for s in S))
     c.commit()
@@ -318,16 +323,16 @@ def train(c,root,*,cutoff_ms):
         v=bars[s]
         first=max(50,(first_asof-v[0].t)//ONE)
         count=0
-        for i in range(first,n-HORIZON-1,5):
+        for i in range(first,n-HORIZON-ENTRY_LAG_BARS,5):
             # decision is close of i; virtual entry only at next candle open.
             if v[i].t+ONE>=cutoff_ms:break
             ag=feat(v,bars["BTCUSDT"],i)
             for side in ("LONG","SHORT"):
                 pos=broker.submit({"id":"OFFLINE_SUPERVISED_TRAINING_ONLY",
-                   "symbol":s,"side":side,"time_ms":v[i+1].t,
-                   "quote":v[i+1].o},STOP_POLICY)
+                   "symbol":s,"side":side,"time_ms":v[i+ENTRY_LAG_BARS].t,
+                   "quote":v[i+ENTRY_LAG_BARS].o},STOP_POLICY)
                 fill=None
-                for j in range(i+1,i+HORIZON+1):
+                for j in range(i+ENTRY_LAG_BARS,i+ENTRY_LAG_BARS+HORIZON):
                     fill,pos=broker.on_bar(pos,v[j],v[j].t+ONE,STOP_POLICY)
                     if fill is not None:break
                 if fill is None or fill["available_ms"]>cutoff_ms:
@@ -462,7 +467,7 @@ def handle_minute(c,root,t,model,manifest):
     # pending until next bar opens; never trade on the same closed candle.
     candidates=[]
     if (meta_get(c,"new_entry_count",0)<MAX_ENTRIES
-            and t+ONE<meta_get(c,"last_new_entry_deadline_ms",0)
+            and t+ENTRY_LAG_BARS*ONE<meta_get(c,"last_new_entry_deadline_ms",0)
             and meta_get(c,"status")=="RUNNING"):
         for sym in S:
             if sym in pos:continue
@@ -481,11 +486,13 @@ def handle_minute(c,root,t,model,manifest):
                  key=lambda x:(-x["predicted_net"],x["symbol"],x["side"]))
             chosen=ranked[0] if ranked and ranked[0]["predicted_net"]>0 else None
             event(c,"RAW_DECISION",decision_candle_open_ms=t,
-                  available_at_ms=t+ONE,model_sha256=manifest["model_sha256"],
+                  available_at_ms=t+ONE+CONFIRM_DELAY_MS,
+                  model_sha256=manifest["model_sha256"],
                   ranks=ranked,chosen=chosen,
                   reason="BEST_PREDICTED_AFTERCOST_POSITIVE" if chosen else "NO_TRADE_RAW_SCORE_NOT_POSITIVE")
             if chosen:
-                pending={**chosen,"decision_ms":t+ONE,"entry_time_ms":t+ONE}
+                pending={**chosen,"decision_ms":t+ONE+CONFIRM_DELAY_MS,
+                         "entry_time_ms":t+ENTRY_LAG_BARS*ONE}
     else:
         event(c,"RAW_DECISION",decision_candle_open_ms=t,chosen=None,
               reason="CAP_REACHED_OR_FINAL_HOUR_OR_STOPPED")
@@ -503,7 +510,7 @@ def poll_new(c):
         if len(p)<2:raise ValueError("PUBLIC_PRICE_DATA_MISSING")
         if p[-1].t>n+ONE:raise ValueError("EXCHANGE_TIME_AHEAD_OF_LOCAL_CLOCK")
         with c:add_bars(c,s,p)
-    common=min(max(x.t for x in p if x.t+ONE<n-2500) for p in pages.values())
+    common=min(max(x.t for x in p if x.t+ONE<n-CONFIRM_DELAY_MS) for p in pages.values())
     return common
 
 
@@ -527,7 +534,7 @@ def service(root,*,hours=15):
     while now_ms()<meta_get(c,"end_ms"):
         try:
             latest=poll_new(c)
-            if now_ms()-(latest+ONE)>180000:
+            if now_ms()-(latest+ONE)>300000:
                 raise RuntimeError("CANDLE_FEED_STALE_FAIL_CLOSED")
             train_asof=meta_get(c,"last_model_train_ms",0)
             today=datetime.now(timezone.utc).date()
