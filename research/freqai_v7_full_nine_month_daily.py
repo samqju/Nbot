@@ -22,6 +22,7 @@ from collections import Counter
 from hashlib import sha256
 
 from nbot_v7.experiment import month_start, add_months
+from nbot_v7.lab import LABEL_POLICY
 from research.freqai_v7_monthly_180d import fit_window, concat_month_files, evaluate, DAY
 from research.freqai_v7_net_fit_and_replay import existing_source,prediction_export,digest
 
@@ -29,6 +30,8 @@ START=month_start("2026-01")
 END=month_start("2026-10")
 DAY_COUNT=(END-START)//DAY
 EXPERIMENT="V7_FULL_2026_NINEMONTH_REAL_FREQAI_DAILY_180D_AFTERCOST_V1"
+STOP1_POLICY="V7_5M_PAPER_BROKER_1STOP_3TAKE_60M_FEE10BP_SLIP2BP_PROXY_CF_V1"
+STOP1_EXPERIMENT="V7_FULL_2026_NINEMONTH_REAL_FREQAI_DAILY_180D_AFTERCOST_1STOP_V1"
 CUTS=[add_months(START,n) for n in range(9)]
 
 
@@ -44,7 +47,7 @@ def first_day_model_key(ms):
     return daystr(max(t for t in CUTS if t<=ms))
 
 
-def fit_and_export_day(conn,output,cutoff,*,resume):
+def fit_and_export_day(conn,output,cutoff,*,resume,label_policy=LABEL_POLICY):
     key=daystr(cutoff)
     modeldir=output/"models"/key
     forecast=output/"daily"/(key+".jsonl")
@@ -58,23 +61,25 @@ def fit_and_export_day(conn,output,cutoff,*,resume):
                 m.get("forecast_sha256")!=digest(forecast)):
             raise ValueError("CHECKPOINT_MODEL_OR_FORECAST_TAMPERED:"+key)
     else:
-        m=fit_window(conn,cutoff,modeldir)
+        m=fit_window(conn,cutoff,modeldir,label_policy=label_policy)
         source=prediction_export(conn,modeldir/"actual_freqai_net_lgbm.joblib",
-                                 m,cutoff,cutoff+DAY,forecast)
+                                 m,cutoff,cutoff+DAY,forecast,label_policy=label_policy)
         m["forecast_rows"]=source["records"]
         m["forecast_sha256"]=source["sha256"]
         (modeldir/"manifest.json").write_text(json.dumps(m,indent=2,sort_keys=True)+"\n")
     return m,forecast
 
 
-def research(db,output,*,resume=False):
+def research(db,output,*,resume=False,label_policy=LABEL_POLICY):
     if output.exists() and not resume:
         raise FileExistsError("REFUSE_OVERWRITE_NINEMONTH_RESEARCH")
     output.mkdir(parents=True,exist_ok=True)
     (output/"models").mkdir(exist_ok=True)
     (output/"daily").mkdir(exist_ok=True)
     (output/"monthly").mkdir(exist_ok=True)
-    conn=existing_source(db)
+    if label_policy not in (LABEL_POLICY,STOP1_POLICY):
+        raise ValueError('UNSUPPORTED_HISTORICAL_STOP_LOSS_TARGET')
+    conn=existing_source(db,label_policy=label_policy)
     try:
         scope=dict(conn.execute("SELECT k,v FROM meta"))
         if int(scope["start_ms"])>month_start("2025-07") or int(scope["end_ms"])<END:
@@ -82,7 +87,8 @@ def research(db,output,*,resume=False):
         model_m={}
         daily_paths=[]
         for i,cutoff in enumerate(daily_cutoffs()):
-            m,forecast=fit_and_export_day(conn,output,cutoff,resume=resume)
+            m,forecast=fit_and_export_day(conn,output,cutoff,resume=resume,
+                                          label_policy=label_policy)
             model_m[daystr(cutoff)]=m
             daily_paths.append(forecast)
             if (i+1)%14==0 or cutoff+DAY==END:
@@ -106,7 +112,7 @@ def research(db,output,*,resume=False):
             part=output/"monthly"/(name+".jsonl")
             if not part.exists():
                 prediction_export(conn,output/"models"/name/"actual_freqai_net_lgbm.joblib",
-                                  m,t,nxt,part)
+                                  m,t,nxt,part,label_policy=label_policy)
             elif not resume:
                 raise ValueError("PREEXISTING_MONTHLY_PREDICTIONS")
             monthly_parts.append(part)
@@ -118,7 +124,8 @@ def research(db,output,*,resume=False):
         if not frozen.exists():
             prediction_export(
                 conn,output/"models"/daystr(START)/"actual_freqai_net_lgbm.joblib",
-                model_m[daystr(START)],START,END,frozen)
+                model_m[daystr(START)],START,END,frozen,
+                label_policy=label_policy)
         (output/"concat_digests.json").write_text(json.dumps({
             "daily":digest(daily_file),"monthly":digest(monthly_file),
             "frozen":digest(frozen)},indent=2,sort_keys=True)+"\n")
@@ -127,7 +134,8 @@ def research(db,output,*,resume=False):
                               ("FROZEN_JAN1",frozen)):
             for mode in ("RAW","UNCERTAINTY","STRESS"):
                 label=approach+"_"+mode
-                report=evaluate(conn,file,START,END,name=label,output_dir=output,mode=mode)
+                report=evaluate(conn,file,START,END,name=label,output_dir=output,
+                                mode=mode,label_policy=label_policy)
                 account_reports[label]=report
                 print(json.dumps({"progress":"COMPLETE_ONE_SLOT_ACCOUNT",
                                   "account":label,"trades":report["trades"],
@@ -139,7 +147,8 @@ def research(db,output,*,resume=False):
             if p.is_file() and p.name!="summary.json":
                 archive_receipts[str(p.relative_to(output))]=digest(p)
         summary={
-            "experiment":EXPERIMENT,
+            "experiment":STOP1_EXPERIMENT if label_policy==STOP1_POLICY else EXPERIMENT,
+            "label_policy":label_policy,
             "source_dataset_sha256":digest(db),
             "start_ms":START,"end_ms":END,"total_days":DAY_COUNT,
             "daily_fresh_model_count":len(model_m),
@@ -173,8 +182,11 @@ def main():
     p.add_argument("--db",required=True,type=Path)
     p.add_argument("--out",required=True,type=Path)
     p.add_argument("--resume",action="store_true")
+    p.add_argument("--stop1",action="store_true",
+                   help="Use independently rebuilt 1pct stop target corpus; original default unchanged")
     a=p.parse_args()
-    research(a.db,a.out,resume=a.resume)
+    research(a.db,a.out,resume=a.resume,
+             label_policy=STOP1_POLICY if a.stop1 else LABEL_POLICY)
 
 if __name__=="__main__":
     main()
