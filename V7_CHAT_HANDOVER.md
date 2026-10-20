@@ -545,3 +545,11 @@ NBOT V7 is an **unproven research program**. It should never be described as a p
 - **Reports committed:** [V7_FREQAI_MONTHLY_180D_RETRAIN_VS_FROZEN_2026-10-20.md](V7_FREQAI_MONTHLY_180D_RETRAIN_VS_FROZEN_2026-10-20.md) commit `f4eabb08a2a84de3cd853f8fc283ebe9e73789b1`; [V7_FREQAI_DAILY_180D_VS_MONTHLY_2026-10-20.md](V7_FREQAI_DAILY_180D_VS_MONTHLY_2026-10-20.md) commit `33922bc2cd2611d602eeaf5b76f10eeb8b1f50f1`; roadmap Section 21 commit `535c56c918dfcddacc2d59f245884225fa188be9`.
 - **Operational quirks and hard bounds:** Initial daily read-only audit call with earlier V7 venv failed module import because freqtrade was installed in dedicated FreqAI venv; reran using correct isolated FreqAI venv, audit PASSED without refit. No exchange keys, no live trade process, no global package resets, no wholesale VPS wipe. FreqAI actual .fit is used in a custom scheduled V7 researcher, NOT native FreqAI start_backtesting scheduler. Original source lifecycle unverified; all trade outcomes remain 5m proxy.
 - **Next REQUIRED gate:** DO NOT implement online after-each-wallet-trade learning, paper/live, 20–50 coin expansion or champion promotion. Get genuinely new post-Sep dates, audit native Freqtrade fills/mark/funding, quantify model selection-conditioned calibration and uncertainty, demonstrate robust after-cost+stress profit with enough independent trades and owner approval. **LEARN-3C stays HOLD** despite positive daily uncertainty subset.
+
+
+## Final post-research VPS regression checkpoint
+
+- After daily model fitting, independent ledger audit, and GitHub source sync, full **48/48 V7 tests passed** on Linux VPS, log SHA256 `37ee53ad5c4a5c88d65595a05e7e9ad4b85a713f98746c76ccf4e5472ac46e0f`.
+- Full **530/530 audited legacy execution/recovery tests passed** on the same Linux VPS, log SHA256 `d675298df41dc330a16fc69b0d07b08eaf340594039f1eaf648fbda8a4b6bd0b`.
+- Five isolated native-FreqAI research schedule tests passed, log SHA256 `3da0bdf059a237b1a5c34d49029be9cb5a1460ebe9618e126345768d68e7f2b4`. Thus 583 checked test cases passed, with native economic proof **still not established**.
+- GitHub and VPS source were synchronized to the test checkpoint `513f1c757a97eccecdf8e74817ab9877eb77bca8`; research disk has 91 GiB free and no legacy service changes were performed.
