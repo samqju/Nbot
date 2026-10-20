@@ -2,7 +2,7 @@
 import json
 import sqlite3
 import unittest
-from nbot_v7.lab import SCHEMA, generate_symbol, outcome
+from nbot_v7.lab import SCHEMA, generate_symbol, outcome, HORIZON_BARS
 from nbot_v7.data import Bar, Contract, BAR_MS
 from nbot_v7.experiment import replay, month_start
 from nbot_v7.features import proposals, market_features
@@ -38,18 +38,31 @@ class CausalReplay(unittest.TestCase):
     def test_future_ambiguity_never_removes_selected_candidate(self):
         c,t = self.fixture()
         events=[]
-        report=replay(c,PositiveBrain(),t,t+3*BAR_MS,event_sink=events.append)
+        report=replay(c,PositiveBrain(),t,t+(HORIZON_BARS+2)*BAR_MS,event_sink=events.append)
         self.assertEqual(report["trades"][0]["symbol"],"ZZZUSDT")
         c.execute("UPDATE opportunity SET quality='COARSE_5M_OHLC_PATH_PROXY',net=.03")
-        changed=replay(c,PositiveBrain(),t,t+3*BAR_MS)
+        changed=replay(c,PositiveBrain(),t,t+(HORIZON_BARS+2)*BAR_MS)
         self.assertEqual(changed["trades"][0]["symbol"],report["trades"][0]["symbol"])
         self.assertNotEqual(changed["net_pnl_usdt"],report["net_pnl_usdt"])
         self.assertTrue(any(e.get("reason")=="SELECTED" for e in events))
 
+    def test_known_evaluation_boundary_blocks_new_trade_without_future_outcomes(self):
+        c,t=self.fixture()
+        events=[]
+        report=replay(c,PositiveBrain(),t,t+(HORIZON_BARS-1)*BAR_MS,event_sink=events.append)
+        self.assertEqual(report["selected_trades"],0)
+        self.assertEqual(report["unresolved_selected_paths"],0)
+        self.assertTrue(report["account_complete"])
+        self.assertEqual(report["stats"]["entry_horizon_exceeds_period"],1)
+        self.assertTrue(any(e.get("reason")=="EVALUATION_END_ENTRY_HORIZON" for e in events))
+        # Entry exactly one full maximum policy horizon before the end is allowed.
+        enough=replay(c,PositiveBrain(),t,t+HORIZON_BARS*BAR_MS)
+        self.assertEqual(enough["selected_trades"],1)
+
     def test_missing_label_locks_capital_and_reports_incomplete(self):
         c,t=self.fixture()
         c.execute("DELETE FROM opportunity WHERE symbol='ZZZUSDT'")
-        report=replay(c,PositiveBrain(),t,t+3*BAR_MS)
+        report=replay(c,PositiveBrain(),t,t+(HORIZON_BARS+2)*BAR_MS)
         self.assertEqual(report["unresolved_selected_paths"],1)
         self.assertFalse(report["account_complete"])
         self.assertEqual(report["selected_trades"],0)
@@ -85,7 +98,7 @@ class CausalReplay(unittest.TestCase):
         c,t=self.fixture()
         c.execute("UPDATE opportunity SET net=-1")
         c.execute("INSERT INTO candidate VALUES(?,?,?,?,?,?,?)",(t+BAR_MS,"ZZZUSDT","LONG","neutral_grid","up","{}","f"*64))
-        report=replay(c,PositiveBrain(),t,t+3*BAR_MS,stake_usdt=1000,sleeve_usdt=1000)
+        report=replay(c,PositiveBrain(),t,t+(HORIZON_BARS+2)*BAR_MS,stake_usdt=1000,sleeve_usdt=1000)
         self.assertEqual(report["stats"]["insufficient_capital"],1)
 
 if __name__ == "__main__":
