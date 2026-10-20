@@ -10,10 +10,12 @@ from math import sqrt
 from pathlib import Path
 import calendar
 import json
+import sqlite3
 
 from .brain import train,freeze_artifacts
 from .lab import con,REVIEW_MS,LABEL_POLICY
 from .science import RuleBrain,block_bootstrap_uplift
+from .artifacts import EventLog,dataset_hash,seal_run
 
 def month_start(s: str)->int:
     try:
@@ -169,18 +171,29 @@ def replay(c, brain, start_ms, end_ms, *, stake_usdt=1000.0, sleeve_usdt=10000.0
 def experiment(db:Path,start_month:str,output:Path)->dict:
     a,b,d,e=nine_month_bounds(start_month)
     output.mkdir(parents=True,exist_ok=False)
-    c=con(db)
+    if not db.is_file():
+        raise FileNotFoundError(db)
+    c=sqlite3.connect(db.resolve().as_uri()+"?mode=ro",uri=True)
+    c.row_factory=sqlite3.Row
     try:
         meta=dict(c.execute("SELECT k,v FROM meta").fetchall())
+        if meta.get("build_complete")!="true":
+            raise ValueError("INCOMPLETE_DATASET_BUILD")
         if (meta.get("policy")!=LABEL_POLICY or int(meta["start_ms"])!=a or int(meta["end_ms"])!=e):
             raise ValueError("MISMATCHED_NINE_MONTH_DATASET_OR_POLICY")
         brain_a=train(c,"A_3MONTH_FROZEN",b)
+        def audited_replay(key,brain,start,end):
+            log=EventLog(output/(key+"_decisions.jsonl"))
+            try:
+                return replay(c,brain,start,end,event_sink=log.write)
+            finally:
+                log.close()
         # B is evaluated with frozen A BEFORE fitting challenger on B outcomes.
-        first=replay(c,brain_a,b,d)
+        first=audited_replay("B_A",brain_a,b,d)
         b1=train(c,"B1_SAME_ARCH_MORE_DATA",d)
-        b2=train(c,"B2_CONTEXTUAL_CHALLENGER",d,adaptive=True)
-        final=[replay(c,brain,d,e) for brain in (brain_a,b1,b2)]
-        baselines=[replay(c,RuleBrain(mode),d,e) for mode in ("momentum","liquidity","deterministic_random")]
+        b2=train(c,"B_ADAPTIVE_6MONTH_FROZEN",d,adaptive=True)
+        final=[audited_replay(key,brain,d,e) for key,brain in zip(("C_A","C_B1","C_B"),(brain_a,b1,b2))]
+        baselines=[audited_replay("BASELINE_"+mode,RuleBrain(mode),d,e) for mode in ("momentum","liquidity","deterministic_random")]
         pairwise={
           "B2_minus_A":block_bootstrap_uplift(final[2],final[0]),
           "B2_minus_B1":block_bootstrap_uplift(final[2],final[1]),
@@ -192,7 +205,7 @@ def experiment(db:Path,start_month:str,output:Path)->dict:
         summary={
             "experiment":"NBOT_V7_NINE_MONTH_BRAIN_LEARNING_V1",
             "periods":{"A_train":[a,b],"B_frozen_A_exam":[b,d],
-                       "B1_B2_train_cutoff":d,"C_unseen_exam":[d,e]},
+                       "B1_B_train_cutoff":d,"C_exploratory_exam":[d,e]},
             "train_cutoffs":{x.version:x.cutoff_ms for x in (brain_a,b1,b2)},
             "stage_b":{k:v for k,v in first.items() if k!="trades"},
             "stage_c":[{k:v for k,v in x.items() if k!="trades"} for x in final],
@@ -200,6 +213,9 @@ def experiment(db:Path,start_month:str,output:Path)->dict:
             "stage_c_pairwise_diagnostics":pairwise,
             "model_manifests":artifacts,
             "source_registry_sha256":meta["registry_sha256"],
+            "dataset_sha256":dataset_hash(c),
+            "coverage":json.loads(meta.get("coverage","{}")),
+            "holdout_status":"EXPLORATORY_PREVIOUSLY_INSPECTED_2026_BASELINE",
             "confidence":"ENGINEERING_PROXY_ONLY_NO_NATIVE_FILL_OR_UNTOUCHED_PROOF",
             "economic_approval":"NOT_EVALUATED",
             "no_trade_baseline_usdt":0,
@@ -207,10 +223,12 @@ def experiment(db:Path,start_month:str,output:Path)->dict:
             "caveat":"Replaying inspected months repeatedly is development, not fresh independent evidence.",
         }
         (output/"summary.json").write_text(json.dumps(summary,indent=2,sort_keys=True)+"\n")
-        for key,obj in [("B_A",first),("C_A",final[0]),("C_B1",final[1]),("C_B2",final[2])]+[(x["brain"],x) for x in baselines]:
+        for key,obj in [("B_A",first),("C_A",final[0]),("C_B1",final[1]),("C_B",final[2])]+[(x["brain"],x) for x in baselines]:
             with (output/(key+"_trades.jsonl")).open("w") as f:
                 for row in obj["trades"]:
                     f.write(json.dumps(row,sort_keys=True)+"\n")
+        seal_run(output,summary["dataset_sha256"],{"start_month":start_month,"label_policy":LABEL_POLICY,
+                 "one_slot":True,"seed":72026,"holdout_status":summary["holdout_status"]})
         return summary
     finally:
         c.close()

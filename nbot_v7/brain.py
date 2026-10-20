@@ -46,7 +46,13 @@ def rows_before(conn, kind:str, cutoff_ms:int, *, max_groups:int=4000, max_rows:
         (cutoff_ms,cutoff_ms))]
     if not times:
         return []
-    stride=max(1,ceil(len(times)/max_groups))
+    # Bound memory without breaking simultaneous cross-sectional groups.
+    largest=conn.execute(f"SELECT MAX(n) FROM (SELECT COUNT(*) n FROM {table} WHERE {col}<? AND label_available_ms<? GROUP BY {col})",
+                         (cutoff_ms,cutoff_ms)).fetchone()[0]
+    if largest>max_rows:
+        raise RuntimeError("ONE_COMPARISON_GROUP_EXCEEDS_ROW_BUDGET")
+    group_budget=min(max_groups,max(1,max_rows//largest))
+    stride=max(1,ceil(len(times)/group_budget))
     selected=times[::stride]
     rows=[]
     for x in range(0,len(selected),450):

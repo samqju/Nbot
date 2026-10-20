@@ -238,9 +238,13 @@ def build_archive_database(
     if len(btc)<HISTORY+HORIZON_BARS:
         raise ValueError("INSUFFICIENT_BTC_BARS")
     counts={}
+    coverage={"missing_registry_symbols":sorted(set(files)-set(registry)),
+              "registry_symbols_without_archives":sorted(set(registry)-set(files)),
+              "historical_exchange_universe_verified":False}
     c=con(db_path)
     try:
         c.execute("INSERT INTO meta VALUES(?,?)",("policy",LABEL_POLICY))
+        c.execute("INSERT INTO meta VALUES(?,?)",("build_complete","false"))
         c.execute("INSERT INTO meta VALUES(?,?)",("registry_sha256",sha256(registry_path.read_bytes()).hexdigest()))
         c.execute("INSERT INTO meta VALUES(?,?)",("start_ms",str(start_ms)))
         c.execute("INSERT INTO meta VALUES(?,?)",("end_ms",str(end_ms)))
@@ -253,15 +257,30 @@ def build_archive_database(
             kline_months={p.name[-11:-4] for p in files[symbol]}
             funding_months={p.name[-11:-4] for p in funding_files.get(symbol,[])}
             funding_covered=(bool(funding_rows) and kline_months==funding_months)
-            bundle={"klines":digests,"funding":funding_hashes}
+            bundle={"klines":{Path(k).name:v for k,v in digests.items()},
+                    "funding":{Path(k).name:v for k,v in funding_hashes.items()},
+                    "btc":{Path(k).name:v for k,v in btc_digest.items()},
+                    "contract":asdict(registry[symbol]),"label_policy":LABEL_POLICY}
             src=sha256(json.dumps(bundle,sort_keys=True).encode()).hexdigest()
             with c:
                 n,w=generate_symbol(c,symbol,bars,btc,registry[symbol],src,start_ms,end_ms,
                                     funding=funding_rows,funding_coverage=funding_covered)
             counts[symbol]={"candidate_labels":n,"universe_reviews":w,
-                            "source_sha256":src,"funding_source_complete":funding_covered}
+                            "source_sha256":src,"source_bundle":bundle,
+                            "funding_source_complete":funding_covered}
+            contract=registry[symbol]
+            lo=max(start_ms,contract.from_ms)
+            hi=min(end_ms,contract.to_ms)
+            expected=max(0,(hi+BAR_MS-1)//BAR_MS-(lo+BAR_MS-1)//BAR_MS)
+            actual=sum(lo<=bar.t<hi for bar in bars)
+            counts[symbol].update(expected_eligible_bars=expected,observed_eligible_bars=actual,
+                                  missing_eligible_bars=max(0,expected-actual))
         with c:
             c.execute("INSERT INTO meta VALUES(?,?)",("symbol_manifest",json.dumps(counts,sort_keys=True)))
+            coverage["symbols"]=counts
+            c.execute("INSERT INTO meta VALUES(?,?)",("coverage",json.dumps(coverage,sort_keys=True)))
+            c.execute("UPDATE meta SET v='true' WHERE k='build_complete'")
+        db_path.with_suffix(".coverage.json").write_text(json.dumps(coverage,sort_keys=True,indent=2)+"\n",encoding="utf-8")
         return {"symbols_scanned":len(counts),"candidate_labels":sum(x["candidate_labels"] for x in counts.values()),
                 "universe_reviews":sum(x["universe_reviews"] for x in counts.values()),
                 "source_authority":"OFFLINE_5M_PROXY_NOT_NATIVE_FILLS","label_policy":LABEL_POLICY,

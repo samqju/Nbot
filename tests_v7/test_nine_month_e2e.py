@@ -23,6 +23,7 @@ class NineMonthResearchSmoke(unittest.TestCase):
             out=Path(tmp)/"artifacts"
             conn=con(db)
             for key,val in (("policy",LABEL_POLICY),("registry_sha256","f"*64),
+                            ("build_complete","true"),
                             ("start_ms",str(a)),("end_ms",str(d))):
                 conn.execute("INSERT INTO meta VALUES(?,?)",(key,val))
             symbols=("BTCUSDT","ETHUSDT","SOLUSDT")
@@ -59,11 +60,15 @@ class NineMonthResearchSmoke(unittest.TestCase):
             self.assertIn("B2_minus_A",result["stage_c_pairwise_diagnostics"])
             self.assertEqual(result["train_cutoffs"]["A_3MONTH_FROZEN"],b)
             self.assertEqual(result["train_cutoffs"]["B1_SAME_ARCH_MORE_DATA"],c)
-            self.assertEqual(result["train_cutoffs"]["B2_CONTEXTUAL_CHALLENGER"],c)
+            self.assertEqual(result["train_cutoffs"]["B_ADAPTIVE_6MONTH_FROZEN"],c)
             self.assertEqual(result["economic_approval"],"NOT_EVALUATED")
             self.assertTrue((out/"summary.json").exists())
-            for model in ("A_3MONTH_FROZEN","B1_SAME_ARCH_MORE_DATA","B2_CONTEXTUAL_CHALLENGER"):
+            for model in ("A_3MONTH_FROZEN","B1_SAME_ARCH_MORE_DATA","B_ADAPTIVE_6MONTH_FROZEN"):
                 self.assertTrue((out/model/"manifest.json").exists())
+            from nbot_v7.artifacts import verify_run
+            manifest=verify_run(out)
+            self.assertEqual(manifest["dataset_sha256"],result["dataset_sha256"])
+            self.assertTrue((out/"C_B_decisions.jsonl").exists())
             self.assertTrue(len(records_o)>1000)
 
 if __name__=="__main__":

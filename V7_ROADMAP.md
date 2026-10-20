@@ -164,3 +164,9 @@ The canonical **living handover** is [V7_CHAT_HANDOVER.md](V7_CHAT_HANDOVER.md),
 **New-chat initiation:** Read [V7_CHAT_HANDOVER.md](V7_CHAT_HANDOVER.md) FIRST, then this roadmap and [V7_LEGACY_EVIDENCE_LEDGER.md](V7_LEGACY_EVIDENCE_LEDGER.md); verify branch and latest commit and only then plan the next step. The handover protocol applies independently of how a chat ends (limit, deletion, handoff, new model or new contributor).
 
 This governance rule **does not change** the existing design freeze or authorize VPS operations, paper trading, or live trading.
+
+## 12. Owner scope update — 2026-10-20 IST (takes precedence over founding freeze)
+
+The exact owner instruction is preserved in `V7_OWNER_AUTHORIZATION_2026-10-20.md`. Implement a complete auto-learning/auto-trading architecture, keeping historical research removable. Paper/live interfaces must exist but real credentials/orders remain separately unauthorized. Controlled isolated V7 VPS development, public data acquisition, training and historical evaluation are now authorized via saved PuTTY session `8GB-Observation`; prior no-VPS statements above describe earlier scope.
+
+Fixed experiment: January–March 2026 train/freeze A; April–June evaluate frozen A then train/freeze adaptive B and same-architecture B1 control on matured January–June evidence; July–September independently compare A/B/B1. A later B2/C trained on July–September may only be assessed on subsequent data. All January–September results are an exploratory engineering baseline because of prior V6 inspection. Production readiness and economic acceptance require evidence, not implementation labels.
