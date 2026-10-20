@@ -13,7 +13,8 @@ import json
 import sqlite3
 
 from .brain import train,freeze_artifacts
-from .lab import con,REVIEW_MS,LABEL_POLICY
+from .lab import con,REVIEW_MS,LABEL_POLICY,HORIZON_BARS
+from .data import BAR_MS
 from .science import RuleBrain,block_bootstrap_uplift,ranking_diagnostics
 from .artifacts import EventLog,dataset_hash,seal_run
 from .decision import watchlist,choose
@@ -100,6 +101,13 @@ def replay(c, brain, start_ms, end_ms, *, stake_usdt=1000.0, sleeve_usdt=10000.0
             stats["no_candidate_at_decision"]+=1
             emit({"event":"decision","time_ms":t,"reason":"NO_WATCH_CANDIDATE"})
             continue
+        # The predeclared maximum holding horizon must fit within the
+        # examination period. This decision never inspects future outcomes.
+        if t+HORIZON_BARS*BAR_MS>end_ms:
+            stats["entry_horizon_exceeds_period"]+=1
+            emit({"event":"decision","time_ms":t,
+                  "reason":"EVALUATION_END_ENTRY_HORIZON"})
+            continue
         if t<locked_until:
             stats["occupied_slot_decisions"]+=1
             emit({"event":"decision","time_ms":t,"reason":"SLOT_OCCUPIED"})
@@ -150,6 +158,7 @@ def replay(c, brain, start_ms, end_ms, *, stake_usdt=1000.0, sleeve_usdt=10000.0
     return {
       "brain":brain.version,
       "period_start_ms":start_ms,"period_end_ms":end_ms,
+      "entry_max_horizon_ms":HORIZON_BARS*BAR_MS,
       "trading_sleeve_usdt":sleeve_usdt,"notional_each_usdt":stake_usdt,
       "selected_trades":len(closed),"unfinished_at_boundary":len(results)-len(closed),
       "net_pnl_usdt":round(net,4),"return_pct_of_sleeve":round(100*net/sleeve_usdt,4),
