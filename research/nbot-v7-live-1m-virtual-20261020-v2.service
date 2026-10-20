@@ -1,0 +1,29 @@
+[Unit]
+Description=NBOT V7 PUBLIC BTC ETH SOL 1-minute virtual only 15h FreqAI research v2 finalized candles
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/opt/nbot-v7-20261020/code/research/v7_live_1m_virtual_15day.py
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/nbot-v7-20261020/code
+Environment=PYTHONPATH=/opt/nbot-v7-20261020/code
+Environment=OMP_NUM_THREADS=1
+Environment=OPENBLAS_NUM_THREADS=1
+Environment=MKL_NUM_THREADS=1
+Environment=NUMEXPR_MAX_THREADS=2
+ExecStartPre=/opt/nbot-v7-20261020/freqai-standalone-20261020/venv/bin/python -u -m research.v7_live_1m_virtual_15day --bootstrap --run /opt/nbot-v7-20261020/runs/live-1m-15days-20261020-v2
+ExecStart=/opt/nbot-v7-20261020/freqai-standalone-20261020/venv/bin/python -u -m research.v7_live_1m_virtual_15day --serve --hours 15 --run /opt/nbot-v7-20261020/runs/live-1m-15days-20261020-v2
+TimeoutStartSec=600
+RuntimeMaxSec=16h
+Restart=no
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/nbot-v7-20261020/runs/live-1m-15days-20261020-v2
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
