@@ -8,6 +8,8 @@
 **Archived discoveries:** [V7_LEGACY_EVIDENCE_LEDGER.md](V7_LEGACY_EVIDENCE_LEDGER.md)  
 **Legacy code parent:** [prototype/v6-freqtrade-freqai-20261016](https://github.com/samqju/Nbot/tree/prototype/v6-freqtrade-freqai-20261016)  
 **Current stage:** **G0 GitHub source-and-evidence audit COMPLETE** on 2026-10-20; **NEXT G1 point-in-time full-market data inventory/design** (not yet started). G0 did not access VPS or execute tests. Historical runtime/data ZIP reproduction remains a separately tracked prerequisite when required.
+**Owner's latest technical refinement (2026-10-20):** Strategy-aware **all-market** universe selection has priority: calculate strategy signals for every eligible coin, use a causal comparative LightGBM ranker to shortlist up to 20, and preserve labeled MFE/MAE/BTC-at-entry and future-path trade outcomes, including sampled outside-top20 controls. Recorded as a **design refinement proposal** in [V7_STRATEGY_AWARE_UNIVERSE_REFINEMENT_PROPOSAL.md](V7_STRATEGY_AWARE_UNIVERSE_REFINEMENT_PROPOSAL.md); existing frozen roadmap and numerical gates have not been silently changed or approved.
+
 **Owner decision pending:** [V7_NUMERIC_GATE_PROPOSAL.md](V7_NUMERIC_GATE_PROPOSAL.md) proposes concrete G0–G8 thresholds; **NOT YET APPROVED/FROZEN**, and does not authorize G1 runtime or deployment.  
 **Current deployment state:** Roadmap documentation only. NO V7 learning job, paper trading, dry-run, exchange connection or live order has been started or approved. No V5/V6 service was changed when the V7 roadmap branch was created.
 
@@ -309,6 +311,19 @@ E. Produce G1 design and bounded download/verification authorization proposal; u
 - **Verification:** No source runtime test, VPS access, historical market download, model retrain, paper trade or live order occurred during this explanation/threshold design. No economic performance is newly proven.
 - **Current status:** G0 GitHub review COMPLETE; G1 design NOT started. Next: owner chooses whether to approve/amend numeric proposal, and only then preregister evaluation gates before viewing any target holdout.
 - **Permission:** GitHub documentation only; no V7 new runtime/trading authorization.
+
+---
+
+### 2026-10-20 — DESIGN REFINEMENT PROPOSED — Whole-market strategy-based top-20 ranker and high-information labels
+
+- **Owner clarification:** Raw Binance OHLC candles must not become another expensive useless disk collection. Reused V3 simulator/outcome database must carry explicit MFE, MAE and BTC market/price-state labels and meaningful contextual/after-cost evidence. V4 LightGBM groupwise ranker is highest-priority component, trained to evaluate opportunity quality across the **entire eligible Binance futures market**, not just downstream of a volume/volatility shortlist. Overlay existing V6 8 strategy families plus distinct other strategies over illustrative ~150 eligible coins, then select 20 with highest predicted economically viable trade setups.
+- **Important design interpretation:** There are two distinct predictions: (a) at the universe review, predict *future availability/quality of setups per coin* and choose top-20 monitor candidates from all eligible coins; (b) at entry time, rank currently valid signals for one capital slot or NO TRADE. Future trade outcomes, MFE/MAE and post-entry BTC regimes may train the ranker only after maturity, and must never enter entry-time feature vectors.
+- **Technical safeguards added:** Include at least coarse timestamped, source-attested labels for eligible signals outside top20 plus a sampled higher-resolution excluded-coin control. Otherwise the model cannot learn how often it wrongly excludes better markets. Raw source data must remain reproducible, compressed, partitioned, hashed, bounded in retention, and connected to labeled feature/outcome ledgers. Keep cost/fill and data authority tiers separate, not OHLC proxies misrepresented as real fills.
+- **Documentation action:** Created [V7_STRATEGY_AWARE_UNIVERSE_REFINEMENT_PROPOSAL.md](V7_STRATEGY_AWARE_UNIVERSE_REFINEMENT_PROPOSAL.md), commit `f88e5833428eaa03d4794a7754039e73b55b3a78`. This file is a proposed versioned architecture amendment to be reviewed with the owner, not a rewrite of the frozen roadmap and not new implementation authorization.
+- **Source reuse:** V4 code already has LightGBM `lambdarank` with event grouping; V6's original eight trading families proved economically weak in tested conditions. They should be retained as negative research controls rather than assumed to have edge merely when scanned over more markets.
+- **Open questions/numbers:** Need establish adequate whole-market learning sample, excluded universe control size, precise MFE/MAE label timing/costs, BTC at-entry regime features, review cadence and sufficient alpha significance. Previous proposed 500 labels/100 times are prototype minima, not robust 150×10 ranker proof. G1 storage/label feasibility precedes large full-market downloads.
+- **Result:** Design discussion captured and committed. No new bot source code, tests, VPS data jobs or real/paper trades run. G0 remains complete, G1 next, numeric thresholds pending approval. 
+- **Next:** Owner reviews the refinement and numerical gates; if adopted, create a versioned frozen roadmap amendment before G1/G2 integration; G1 begins with point-in-time full market registry, schema and storage feasibility.
 
 ---
 
