@@ -189,3 +189,28 @@ GitHub blob SHA validates the static Git object **content at this source ref**, 
 - Establish all 10–15 strategies only if independent and measurably promising; initial eight V6 families are **negative controls**.
 - Continue every material step/decision with an update to [V7_CHAT_HANDOVER.md](V7_CHAT_HANDOVER.md). Failure to commit the journal means the step is incomplete for project continuity.
 - **G0 did not require or use VPS access.**
+
+## 12. Supplemental branch-lineage and V5.1 clean-restart audit (same G0, 2026-10-20)
+
+**Why this matters:** A second, explicit GitHub branch inventory located **`nbot-v5.1`**, a genuinely separate `nbot_v5_1/` package with its own tests, documentation and evidence register. The V6 prototype branch root **has no `nbot/` directory**. Therefore V3/V4/V5 code present on `main` and V5.1 code on `nbot-v5.1` are **not importable automatically from the current V7 branch**, which descends from the V6 prototype. Any reuse must be a selective, documented port/cherry-pick into V7 with provenance and regression tests. Blind merge/copying entire legacy branches is prohibited.
+
+**New source inspected from `nbot-v5.1` (read-only):**
+
+| Historical branch module | Audited source behavior | V7 disposition | Git blob SHA |
+|---|---|---|---|
+| `nbot_v5_1/deep_selection.py` | Stratified, source-attested bounded detailed-market sampling. Source says selection is **not profitable-trade probability**, and new markets remain warmup/hold until independent source checks | **REUSE selection-diversity/eligibility pattern** only; not predictive-alpha proof | `a4c1eed365f1169909d51d8ebad667dc1edbd50c` |
+| `nbot_v5_1/research_book.py` | Research-only synthetic virtual paths, append-only journal/restart holds, uncertain paths not silently scored as winning | **REUSE fail-closed recovery/censorship concepts**; no fake original-source outcomes | `0eb271e150e165cf38adc72f6490806182744a4b` |
+| `nbot_v5_1/learning_contract.py` | Strong source/label authority boundary; distinguish COST_PENDING, CENSORED, SOURCE_HOLD, SYNTHETIC_MODELED and original-claim unverified; disallows promoting lab-only synthetic data | **HIGH-VALUE REUSE provenance and promotion boundary** | `5afbafb7125a0df7df3363fe736cc2f33e21cb94` |
+| `nbot_v5_1/learning_science.py` | Chronological purge/embargo, dependence blocks (shared BTC clock), stratified outcome quality; explicitly returns **NO_MODEL** for synthetic-only lab samples | **HIGH-VALUE REUSE scientific validity and correlation controls** | `83f3dfa01d6be86fbb2d87fcbee96ff46e93741f` |
+| `nbot_v5_1/economic_audit.py` | Explicit economic `HOLD`, signed funding and expense/credit checks, refuses to count provisional synthetic data as scientific proof | **REUSE provenance/economic-hold semantics** | `7c51a65a2db76468250e4224614356e6536ef2fa` |
+| `nbot_v5_1/challenger_lab.py` | Frozen cohort and two independent LAB paper books with shared events, separate ledgers, no automatic actual paper/model promotion | **REUSE common-event comparison/governance** not a source-qualified live challenger | `548145ab91904e580d873e48a231483daf4f8a2e` |
+
+**Archived V5.1 branch results, not rerun:**
+- [G10 offline challenger milestone](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G10_OFFLINE_CHALLENGER_PROMOTER_ACCEPTANCE_AND_GENUINE_PAPER_HOLD_20261015.md): reported 400/400 prior offline regression tests on each host and synthetic LAB competition, but genuine additional qualified original outcomes and paper promotion remained **HOLD**.
+- [G11 full synthetic integration](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_G11_OFFLINE_WHOLE_LOOP_ACCEPTANCE_AND_LIVE_SOURCE_HOLD_20261015.md): documented **offline engineering acceptance** and separate **HOLD** on true source-dependent paper operation. Synthetic 100-broad/20-deep/40-virtual integration is not proof those active capacities are economically feasible on V7's target VPS.
+- [V5.1 legacy component reuse register](https://github.com/samqju/Nbot/blob/nbot-v5.1/docs/NBOT_V5_1_LEGACY_COMPONENT_REUSE_REGISTER_V1_0.md): pre-existing audited archive with pinned legacy V3–V5 source commits, defects and selective-reuse rules. **Use it as a seed for V7 code-port vetting; it is not a substitute for fresh causal integration tests.**
+- Also identified V5 engineering branch `engineering/v5-g1-g7-final-closeout-20261015` with substantial prior recovery/evidence docs. Source root includes original `nbot/`; distinguish from separate V5.1 package.
+
+**Update to G0 integration decision:** The most economical V7 blueprint is **selectively port V4 groupwise LambdaRank + V3 immutable decision/replay + V5/V5.1 verified label/science governance + V6 data/Ranker/Freqtrade adapters**. Keep originals untouched, use an explicit compatibility map, and run tests after each port. These are **not yet V7 code in this branch**.
+
+**Scope unchanged:** This addendum was produced by additional GitHub-only inspection: **no VPS, no tests newly executed, no data jobs, and no trading**. It strengthens the G0 source inventory, not V7's economic validation.
