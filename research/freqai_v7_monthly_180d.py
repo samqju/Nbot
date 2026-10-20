@@ -21,6 +21,7 @@ import math
 import sqlite3
 
 from nbot_v7.experiment import month_start, replay
+from nbot_v7.lab import LABEL_POLICY
 from nbot_v7.artifacts import EventLog
 from nbot_v7.freqai_research_bridge import FreqAINetResearchBrain
 from research.freqai_v7_net_fit_and_replay import (
@@ -46,7 +47,8 @@ def training_bounds(cutoff_ms: int, *, expanding: bool=False):
     return first, calibration_begin, cutoff_ms
 
 
-def fit_window(conn, cutoff_ms, output_dir, *, expanding=False):
+def fit_window(conn, cutoff_ms, output_dir, *, expanding=False,
+               label_policy=LABEL_POLICY):
     first,cal_begin,cutoff = training_bounds(cutoff_ms,expanding=expanding)
     # Do not use the old group stride that accidentally made Brain A/B sample
     # approximately the same count after adding 3 months of historical data.
@@ -91,7 +93,7 @@ def fit_window(conn, cutoff_ms, output_dir, *, expanding=False):
         "uncertainty_net":q75,
         "cutoff_ms":cutoff,
         "model_sha256":digest(path),
-        "source_policy":"FIXED_V7_AFTERCOST_2STOP_3TAKE_60M_FEES_SLIPPAGE_PROXY",
+        "source_policy":label_policy,
     }
     (output_dir/"manifest.json").write_text(json.dumps(manifest,indent=2,sort_keys=True)+"\n")
     return manifest
@@ -116,9 +118,11 @@ def concat_month_files(paths, destination):
     return {"rows":count,"sha256":digest(destination)}
 
 
-def evaluate(conn,forecast_file,start,end,*,name,output_dir,mode):
+def evaluate(conn,forecast_file,start,end,*,name,output_dir,mode,
+             label_policy=LABEL_POLICY):
     brain=FreqAINetResearchBrain.from_jsonl(
         forecast_file,cutoff_ms=start,version=name,
+        label_policy=label_policy,
         uncertainty_weight=0 if mode=="RAW" else 1.0,
         cost_stress=STRESS if mode=="STRESS" else 0,
     )
