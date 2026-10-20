@@ -9,7 +9,7 @@ from pathlib import Path
 from datetime import datetime,timezone
 from nbot_v7.data import Bar,contract_registry,load_bars,BAR_MS
 from nbot_v7.features import market_features,proposals,btc_regime
-from nbot_v7.lab import con,outcome,generate_symbol
+from nbot_v7.lab import con,outcome,generate_symbol,path_outcome_context
 from nbot_v7.experiment import nine_month_bounds,month_start,replay
 from nbot.observation import decision_ledger, research_replay, v5_paired_exits
 from nbot_v5_1 import learning_science
@@ -56,6 +56,16 @@ class OfflineContracts(unittest.TestCase):
         self.assertEqual(btc_regime(x),"up")
         found=proposals(bars,100,x)
         self.assertTrue(isinstance(found,list))
+
+    def test_frozen_future_context_is_recorded_separately(self):
+        bars=self._bars()
+        i=100
+        _,_,_,exit_ms,_,_=outcome(bars,i,"LONG")
+        details=path_outcome_context(bars,i,"LONG",exit_ms,bars,[x.t for x in bars],bars[i].t+BAR_MS)
+        self.assertEqual(details[4],"FUNDING_UNVERIFIED_NOT_COUNTED")
+        self.assertIsNotNone(details[2])
+        self.assertGreaterEqual(details[0],bars[i+1].t)
+        self.assertIn(details[3],("BTC_UP","BTC_RANGE","BTC_DOWN"))
 
     def test_nine_month_periods_are_disjoint(self):
         a,b,c,d=nine_month_bounds("2026-01")

@@ -52,6 +52,19 @@ CREATE TABLE IF NOT EXISTS watch(
  PRIMARY KEY(review_ms,symbol)
 );
 CREATE INDEX IF NOT EXISTS watch_by_time ON watch(review_ms);
+CREATE TABLE IF NOT EXISTS outcome_context(
+ decision_ms INTEGER NOT NULL,
+ symbol TEXT NOT NULL,
+ side TEXT NOT NULL,
+ family TEXT NOT NULL,
+ mfe_bar_close_ms INTEGER,
+ mae_bar_close_ms INTEGER,
+ btc_return_to_exit REAL,
+ future_btc_status TEXT NOT NULL,
+ funding_status TEXT NOT NULL,
+ mfe_mae_time_quality TEXT NOT NULL,
+ PRIMARY KEY(decision_ms,symbol,side,family)
+);
 CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 """
 
@@ -99,6 +112,29 @@ def outcome(bars: list[Bar], i: int, side: str):
     net=polarity*(exit_price/entry-1)-2*(FEE_EACH+SLIPPAGE_EACH)
     return (net,mfe,mae,exit_ms,reason,quality)
 
+def path_outcome_context(bars, i, side, exit_ms, btc, btc_times, decision):
+    """Future-only outcome diagnostics. Extremum timing is 5m bar-close, NOT tick time."""
+    direction=1 if side=="LONG" else -1
+    entry=bars[i+1].o
+    path=[bar for bar in bars[i+1:i+1+HORIZON_BARS] if bar.t+BAR_MS<=exit_ms]
+    if not path:
+        return None,None,None,"UNKNOWN","NO_SOURCE","NO_PATH"
+    fav=lambda bar:direction*(bar.h/entry-1) if direction==1 else 1-bar.l/entry
+    adv=lambda bar:direction*(bar.l/entry-1) if direction==1 else 1-bar.h/entry
+    maxbar=max(path,key=fav)
+    minbar=min(path,key=lambda bar:adv(bar))
+    ix0=bisect_left(btc_times,decision-BAR_MS)
+    ix1=bisect_left(btc_times,exit_ms-BAR_MS)
+    btc_change=None
+    status="BTC_FUTURE_COVERAGE_UNKNOWN"
+    if (ix0<len(btc_times) and ix1<len(btc_times)
+        and btc_times[ix0]==decision-BAR_MS and btc_times[ix1]==exit_ms-BAR_MS
+        and (btc_times[ix1]-btc_times[ix0])==(ix1-ix0)*BAR_MS):
+        btc_change=btc[ix1].c/btc[ix0].c-1
+        status="BTC_UP" if btc_change>.005 else "BTC_DOWN" if btc_change<-.005 else "BTC_RANGE"
+    return (maxbar.t+BAR_MS,minbar.t+BAR_MS,btc_change,status,
+            "FUNDING_UNVERIFIED_NOT_COUNTED","5M_BAR_CLOSE_BOUNDS_NOT_INTRABAR")
+
 def generate_symbol(
     c: sqlite3.Connection, symbol: str, bars: list[Bar], btc: list[Bar],
     contract, source_hash: str, start_ms: int, end_ms: int,
@@ -106,6 +142,7 @@ def generate_symbol(
     times=[x.t for x in btc]
     watch_data=[]
     opportunities=[]
+    contexts=[]
     # Only signals and features that were known when the completed candle closed.
     for i in range(HISTORY,len(bars)-HORIZON_BARS):
         b=bars[i]
@@ -128,8 +165,11 @@ def generate_symbol(
             n,mfe,mae,ex,why,q=outcome(bars,i,side)
             opportunities.append((decision,ex,symbol,side,fam,regime,f,
                                   n,mfe,mae,ex,why,q,source_hash))
+            extra=path_outcome_context(bars,i,side,ex,btc,times,decision)
+            contexts.append((decision,symbol,side,fam,*extra))
     if opportunities:
         c.executemany("INSERT INTO opportunity VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",opportunities)
+        c.executemany("INSERT INTO outcome_context VALUES(?,?,?,?,?,?,?,?,?,?)",contexts)
     times=[r[0] for r in opportunities]
     for review,regime,f,_ in watch_data:
         j=bisect_left(times,review)
