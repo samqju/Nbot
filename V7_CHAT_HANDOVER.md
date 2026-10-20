@@ -7,7 +7,7 @@
 **Frozen roadmap:** [V7_ROADMAP.md](V7_ROADMAP.md)  
 **Archived discoveries:** [V7_LEGACY_EVIDENCE_LEDGER.md](V7_LEGACY_EVIDENCE_LEDGER.md)  
 **Legacy code parent:** [prototype/v6-freqtrade-freqai-20261016](https://github.com/samqju/Nbot/tree/prototype/v6-freqtrade-freqai-20261016)  
-**Current stage:** G0 — read-only V3–V6 source/evidence inventory; **not started as a new V7 implementation**  
+**Current stage:** **G0 GitHub source-and-evidence audit COMPLETE** on 2026-10-20; **NEXT G1 point-in-time full-market data inventory/design** (not yet started). G0 did not access VPS or execute tests. Historical runtime/data ZIP reproduction remains a separately tracked prerequisite when required.  
 **Current deployment state:** Roadmap documentation only. NO V7 learning job, paper trading, dry-run, exchange connection or live order has been started or approved. No V5/V6 service was changed when the V7 roadmap branch was created.
 
 ---
@@ -42,11 +42,11 @@
 | V7 executable research pipeline | NOT BUILT / NOT RUN for V7 |
 | Three-month entire Binance USDT-perpetual historical download | PROPOSED; NOT YET RUN FOR V7 |
 | 10–15 independent strategy family universe candidate generator | PROPOSED; V6 has eight older strategy families as documented negative controls |
-| 20-candidate synchronized shadow simulation | PROPOSED for V7; V3/V6 earlier counterfactual implementations need source audit before reuse |
+| 20-candidate synchronized shadow simulation | PROPOSED for V7; G0 reviewed V3 capital-uncapped replay/V6 25×8 candidate generation; integration not built or tested |
 | V7 model trained or validated | NO |
 | V7 forward paper or real trading | NO — expressly unapproved |
 | Other branches and deployed systems | Preserved; **not** modified as a side-effect of V7 planning |
-| Decision currently open | G0 legacy reuse inventory and executable evidence inspection, before any new model or runtime |
+| Decision currently open | G1 historical all-USDT-M perpetual registry, completeness/survivorship and three-month storage/data source design; no downloading/ML/VPS work authorized yet |
 
 **Important precision:** 'No V7 training' does not mean no historical machine-learning research existed. Extensive older V6 25×8 candidate training, official native research and counterfactual labeling already exist; V7 starts by auditing/reusing them.
 
@@ -144,8 +144,8 @@ Direct sources:
 
 | Gate | Work | Current status | Approval rule |
 |---|---|---|---|
-| G0 | Audit V3–V6 implementations, hashes, negative evidence and safe reuse | **NEXT — NOT RUN UNDER V7** | Read-only repository and reproducibility inspection |
-| G1 | Point-in-time entire USD-M USDT perpetual three-month history | Not started | Data-quality and survivorship controls |
+| G0 | Audit V3–V6 source, hashes, tests, negative evidence and safe reuse | **COMPLETE — GITHUB READ-ONLY PASS, 2026-10-20; VPS-only archived result reproduction deferred** | [V7 G0 audit](V7_G0_LEGACY_AUDIT_2026-10-20.md); no fresh executions |
+| G1 | Point-in-time entire USD-M USDT perpetual three-month history | **NEXT — design/inventory only, not started** | Data-quality, survivorship and storage controls; permission before any VPS/data jobs |
 | G2 | 10–15 genuinely distinct strategy families + entry baselines | Not started | Causality/negative-controls before promotion |
 | G3 | 20-pair independent parallel shadow trade paths and excluded-pair controls | Not started | Comparable matured labels, audit fill uncertainty |
 | G4 | Cost-aware comparative ML and frozen baselines | Not started | Purged chronological training, no forward leakage |
@@ -175,30 +175,19 @@ Direct sources:
 
 ---
 
-## 7. Next exact bounded action (when owner asks to resume implementation)
+## 7. Next exact bounded action (updated 2026-10-20)
 
-**G0 task: read-only legacy source and evidence inventory. Do not start another bot or download the entire market first.**
+**G0 GitHub audit is complete** as a static source-and-committed-evidence inventory. See the [full G0 report](V7_G0_LEGACY_AUDIT_2026-10-20.md). We inspected actual V3–V6 code and unit-test source, captured reusable module hashes, and reconciled V6's prior comparative dataset. **We did not access the VPS, rerun prior tests or independently check private ZIP/data/model artifacts.** Such reproduction is a later evidence-dependent prerequisite, not a reason to repeat the GitHub-only G0 step.
 
-A. Enumerate V3–V6 reusable modules and versions from exact source commits; verify document-vs-code claims.  
-B. Audit the existing V6 global `25×8` candidate feature/label tables, ranker and native adapter: completeness, same-timestamp comparators, accepted vs rejected outcomes, expected-net labels and event-time cutoff.  
-C. Read frozen V6 outcome ledgers, exact 1% stop audit, 75-market selector and M2 bias/fill issues. Document which parts of old code satisfy V7 and which need new tests.  
-D. Produce a concrete G0 reuse verdict with exact source refs, known gaps, missing private artifacts (if any), reproduction commands and no-go flags.  
-E. Commit the new G0 report; update **this handover's current state and chronological journal in the same work step**. Do not mark G0 complete merely by reading documentation; verify source and required evidence.
+**NEXT — G1 task 1: read-only whole-market historical-data specification and budget.** This first task can start with GitHub sources and public Binance data/archive documentation; no VPS is needed for planning:
 
-Useful starting paths on V6 prototype branch:
-- `scripts/m2r_v6_global_dataset.py`
-- `scripts/m2r_v6_global_opportunity_ranker.py`
-- `scripts/m2r_v6_global_native_recovery.py`
-- `scripts/m2r_v6_global_final_audit.py`
-- `scripts/m5a_universe_selector.py`
-- `scripts/m2r_v6_exact_one_trail_final_audit.py`
-- `tests/test_m2r_v6_global_opportunity_ranker.py`
-- `tests/test_m5a_universe_selector.py`
-- `tests/test_m2r_v6_exact_one_trail.py`
+A. Design an as-of Binance USD-M **USDT-settled perpetual** contract registry including historical listings, closures, surviving pairs, suspension uncertainty and source provenance. Use the V6 Binance Vision archive-inventory script only as a starting point, not proof of past tradeability.  
+B. Inventory existing 25-pair and 75-current-survivor manifests and identify which market-wide historical data pieces are missing. Reuse existing verified caches when possible; do not download the same archive blindly.  
+C. Specify 3-month broad coverage (metadata, 5m/1h, funding/mark and BTC) and selective high-resolution replay (1m or tick where available), UTC alignment, checksum, rate limits, disk/RAM/cpu budgets and failure modes.  
+D. Specify Month-1 selection as-of boundaries, Month-2 label maturity, truly unseen Month-3/later validation and rules for markets lacking reliable historical liquidity or listing evidence. Already studied Jul–Sep 2026 and inspected Oct segments are not pristine holdouts.  
+E. Produce G1 design and bounded download/verification authorization proposal; update this handover with evidence/commit. **Do not start VPS market downloads, ML training, backtests, paper or live mode without separately authorized scope.**
 
-**Do not confuse GitHub source existence with currently-running VPS processes or independently reproducible ZIP results.** Inspect before asserting.
-
----
+**Highest-priority inherited code:** V4's already implemented LightGBM `lambdarank` at `main:nbot/observation/v4_generation.py` (grouped candidates); V3 immutable decisions and capital-uncapped replay; V5 paired execution/funding; V6 25×8 labeling/ranking and Freqtrade native research adapters. All are source-backed **reuse candidates**, not prevalidated V7 integrations.
 
 ## 8. Mandatory journal update procedure — Definition of Done
 
@@ -278,6 +267,20 @@ Useful starting paths on V6 prototype branch:
 - **Economic evidence:** None generated by this documentation step; prior V3–V6 evidence unchanged.
 - **Permission status:** Read-only research preparation/governance only; no paper/live authorization.
 - **Next bounded action:** G0 V3–V6 code/evidence reuse audit; first verify current GitHub head and exact source state, then create a read-only audit report and update this journal in the same work step.
+
+---
+
+### 2026-10-20 — G0 — Read-only GitHub audit completed, no VPS used
+
+- **Owner request and permission:** Complete G0, audit V3–V6 evidence and reusable code. Owner explicitly asked if VPS access was unnecessary. Scope was **GitHub-only read-only auditing**, with permission to commit V7 documentation.
+- **Actions actually completed:** Retrieved GitHub source trees (248 V6 blobs; 311 main blobs), inspected actual V3–V6 Python source and test suites, reviewed committed historical V6 economic reports, mapped concrete reusable modules to V7 components with Git blob SHA IDs. Wrote standalone full findings to `V7_G0_LEGACY_AUDIT_2026-10-20.md`.
+- **Major findings:** V3 already implements an immutable approved/rejected decision/outcome ledger, capital-uncapped concurrent replay and point-in-time training checks. V4 already implements groupwise LightGBM **Lambdarank**, chronological purging and paper Champion-vs-Challenger gates. V5 provides paired exit/path-quality/cost/funding replay. V6 has 25×8 historical candidate forecasting (914,878 candidate labels reported), but zero native selected trades across tested global windows, original negative-strategy economics and excessive/uncertain gates; hardcoded 25-pair size and 50%-win filter require redesign. Prior assumption that V6 had no rejected candidate learning is **incorrect**.
+- **Archived economic outcomes preserved (NOT freshly rerun):** V6 Stage1 63/63 jobs; 8 families negative; global Stage3 12/12, zero selected; no-time 64/64, zero of 16 continuous stressed portfolios profitable; exact 1% trailing 8/8 worse than prior and 0 positive; 75-symbol M5A proxy inconclusive; M2 lookahead/real-fill uncertainties persist. Historical July–September research dates not blind holdouts.
+- **G0 result:** **COMPLETE/PASS FOR GITHUB SOURCE INVENTORY ONLY**, with specific code reuse/adaptation verdicts and residual blockers. No unit tests, live/backtests, private ZIP SHA regeneration or trading economics newly executed or proven.
+- **G0 artifact and commit:** [V7_G0_LEGACY_AUDIT_2026-10-20.md](V7_G0_LEGACY_AUDIT_2026-10-20.md), initial commit `b5bdf917cf2c431d68d9b6851df154ac4d94bfb3`. Original source code unchanged.
+- **Known limitations:** Private archived VPS model/data/ZIP files have not been checked for current presence or rerun; real historical depth, exchange listing lifecycle, fee/slippage parity, and independent pristine future proof remain G1/G5 blockers. Existing automated test code was read but not run.
+- **Trading permission:** **NONE**; V7 still a research-only roadmap; no paper/live/VPS execution authorized.
+- **Next bounded step:** **G1 historical full-market point-in-time eligibility and 3-month data design**, plus storage and available-source inventory, before downloading new data. Update handover again when G1 step is discussed or completed.
 
 ---
 
