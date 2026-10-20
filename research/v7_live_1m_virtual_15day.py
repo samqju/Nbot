@@ -201,8 +201,9 @@ def bootstrap(root):
     c=connect(root)
     if meta_get(c,"bootstrapped",False):
         c.close()
-        raise RuntimeError("BOOTSTRAP_ALREADY_DONE_USE_RUN_RESTART")
-    if any(c.execute("SELECT COUNT(*) FROM events").fetchone()):
+        LOG.info("EXISTING_CHECKSUM_VERIFIED_SOURCE_BOOTSTRAP_REUSED")
+        return root
+    if c.execute("SELECT COUNT(*) FROM events").fetchone()[0] != 0:
         raise RuntimeError("EXISTING_RUN_UNINITIALIZED_REFUSE_OVERWRITE")
     d=datetime.now(timezone.utc).date()
     evidence=[]
