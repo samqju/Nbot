@@ -424,7 +424,11 @@ def handle_minute(c,root,t,model,manifest):
         if histories[s][-1].t!=t:raise ValueError("CURRENT_MINUTE_FEATURE_TIME_MISMATCH")
     if pending is not None:
         sym=pending["symbol"]
-        if pending["entry_time_ms"]==t and sym not in pos and meta_get(c,"new_entry_count",0)<MAX_ENTRIES:
+        if pending["entry_time_ms"]>t:
+            # Keep unexecuted recommendation pending until the first causal
+            # entry-minute OPEN; do NOT discard it in the interim bars.
+            pass
+        elif pending["entry_time_ms"]==t and sym not in pos and meta_get(c,"new_entry_count",0)<MAX_ENTRIES:
             spot=bars[sym].o
             p=PaperBroker().submit({
                 "id":f"PUBLIC_ONLY_VIRTUAL_{meta_get(c,'new_entry_count',0)+1}",
@@ -438,10 +442,11 @@ def handle_minute(c,root,t,model,manifest):
                   stop=p["stop"],target=p["target"],
                   predicted_aftercost_return=pending["predicted_net"],
                   model_sha256=manifest["model_sha256"])
+            pending=None
         else:
-            event(c,"PENDING_DISCARDED",reason="MISSED_NEXT_MINUTE_OR_SLOT_CAP",
+            event(c,"PENDING_DISCARDED",reason="MISSED_ENTRY_MINUTE_OR_SLOT_CAP",
                   original=pending)
-        pending=None
+            pending=None
     # Process minute using stop-first OHLC for every currently open symbol.
     for sym in list(pos):
         fill,p=PaperBroker().on_bar(pos[sym],bars[sym],t+ONE,STOP_POLICY)
@@ -463,10 +468,10 @@ def handle_minute(c,root,t,model,manifest):
     meta_set(c,"peak_usdt",peak)
     meta_set(c,"max_drawdown",max(meta_get(c,"max_drawdown",0),
                                   (peak-equity)/peak if peak>0 else 0))
-    # RAW only: max(score) > 0, no uncertainty margin. One new trade
-    # pending until next bar opens; never trade on the same closed candle.
+    # RAW only: max(score) > 0, no uncertainty margin. Delayed next-open
+    # entries must persist for the full 90s finality + 3-candle lag.
     candidates=[]
-    if (meta_get(c,"new_entry_count",0)<MAX_ENTRIES
+    if (pending is None and meta_get(c,"new_entry_count",0)<MAX_ENTRIES
             and t+ENTRY_LAG_BARS*ONE<meta_get(c,"last_new_entry_deadline_ms",0)
             and meta_get(c,"status")=="RUNNING"):
         for sym in S:
@@ -495,7 +500,7 @@ def handle_minute(c,root,t,model,manifest):
                          "entry_time_ms":t+ENTRY_LAG_BARS*ONE}
     else:
         event(c,"RAW_DECISION",decision_candle_open_ms=t,chosen=None,
-              reason="CAP_REACHED_OR_FINAL_HOUR_OR_STOPPED")
+              reason="PENDING_OR_CAP_REACHED_OR_FINAL_HOUR_OR_STOPPED")
     meta_set(c,"positions",pos)
     meta_set(c,"pending",pending)
     meta_set(c,"last_processed_open_ms",t)
