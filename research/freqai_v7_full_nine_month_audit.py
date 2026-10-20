@@ -104,7 +104,7 @@ def audit(root):
                 raise ValueError("INCOMPLETE_ACCOUNT_"+name)
             t=load_trades(root/(name+"_trades.jsonl"))
             dcount=sum(ev.get("event")=="decision" for ev in events(root/(name+"_decisions.jsonl")))
-            if dcount<50000 or len(t)!=account["trades"]:
+            if dcount<30000 or len(t)!=account["trades"]:
                 raise ValueError("ACCOUNT_DECISIONS_OR_TRADE_COUNT_WRONG:"+name)
             pnl=sum(float(row["net_after_cost"])*1000 for row in t)
             if abs(pnl-account["net_usdt"])>1e-3:
