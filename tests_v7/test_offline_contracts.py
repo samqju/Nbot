@@ -7,7 +7,7 @@ import unittest
 import math
 from pathlib import Path
 from datetime import datetime,timezone
-from nbot_v7.data import Bar,contract_registry,load_bars,BAR_MS
+from nbot_v7.data import Bar,contract_registry,load_bars,load_funding,BAR_MS
 from nbot_v7.features import market_features,proposals,btc_regime
 from nbot_v7.lab import con,outcome,generate_symbol,path_outcome_context
 from nbot_v7.experiment import nine_month_bounds,month_start,replay
@@ -37,6 +37,16 @@ class OfflineContracts(unittest.TestCase):
         self.assertAlmostEqual(net,-.02-.0012,places=7)
         self.assertLessEqual(mfe,0)
         self.assertLess(mae,0)
+
+    def test_funding_rate_archive_column_parsing(self):
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d)/"BTCUSDT-fundingRate-2026-01.csv"
+            p.write_text("calc_time,funding_interval_hours,last_funding_rate\n"
+                         "1767225600000,8,0.0001\n1767254400000,8,-0.0003\n")
+            funding, hashes=load_funding([p],1767225600000,1767283200000)
+            self.assertEqual(len(funding),2)
+            self.assertAlmostEqual(funding[0][1],0.0001)
+            self.assertIn(str(p),hashes)
 
     def test_source_gated_registry_rejects_unattested_contract(self):
         with tempfile.TemporaryDirectory() as d:

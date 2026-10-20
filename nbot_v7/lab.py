@@ -119,7 +119,7 @@ def path_outcome_context(bars, i, side, exit_ms, btc, btc_times, decision, fundi
     entry=bars[i+1].o
     path=[bar for bar in bars[i+1:i+1+HORIZON_BARS] if bar.t+BAR_MS<=exit_ms]
     if not path:
-        return None,None,None,"UNKNOWN","NO_SOURCE","NO_PATH"
+        return None,None,None,"UNKNOWN",funding_status,funding_net_fraction,"NO_PATH"
     fav=lambda bar:direction*(bar.h/entry-1) if direction==1 else 1-bar.l/entry
     adv=lambda bar:direction*(bar.l/entry-1) if direction==1 else 1-bar.h/entry
     maxbar=max(path,key=fav)

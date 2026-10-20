@@ -26,7 +26,7 @@ V4 `lambdarank` chronological group-training *logic* is adapted (not blindly cop
 
 ## Accepted offline input
 
-Directory containing historical Binance USD-M `SYMBOL-5m-YYYY-MM.zip` or `.csv` files, one file per symbol/month, 12-column Binance-style candles. Only data files whose nine-month calendar range matches `--start-month` are considered. Newer microsecond open times are converted to milliseconds. Any actual gaps cause local candidate rejection, not fabricated price bars.
+Directory containing historical Binance USD-M `SYMBOL-5m-YYYY-MM.zip` or `.csv` files, one file per symbol/month. Optional additional `SYMBOL-fundingRate-YYYY-MM.zip` archives are parsed separately, 12-column Binance-style candles. Only data files whose nine-month calendar range matches `--start-month` are considered. Newer microsecond open times are converted to milliseconds. Any actual gaps cause local candidate rejection, not fabricated price bars.
 
 A **separately verified historical registry CSV** is mandatory with header:
 
@@ -48,7 +48,7 @@ python3 -m nbot_v7 experiment --db /offline/v7.sqlite --out /offline/v7_experime
 
 **The sample 2026-01 period has historical July–September contamination from earlier V6 work and is NOT a blind promotion test.** The nine months above are an example only, not proof of having downloaded them.
 
-This version **does not fetch/download archives**. Doing so will be a separate controlled G1/G2 task after deciding historical listing eligibility, data volume, and available storage.
+The separate **read-only archive inventory/downloader is now implemented** in `nbot_v7/archive.py`. It will not run automatically. To inspect coverage when authorized:\n\n```bash\npython3 -m nbot_v7.archive --start-month 2026-01 --manifest /offline/v7-archive-index.json\n# Add --download --archive /offline/binance_monthly --max-gib 40 only after storage approval\n```\n\nArchive ZIP presence does not prove a contract was actively tradeable at that past time. Independently attested historical eligibility remains mandatory.
 
 ## Diagnostic benchmark limits
 
@@ -57,7 +57,7 @@ Simple momentum, liquidity and deterministic-random comparison policies use the 
 ## Economic limitations — never waive
 
 - The default exit lab uses **2% underlying adverse stop, 3% favorable target, 60m max hold**, 0.05% fee per side, 1bp slippage each way and stop-first if same 5m bar. This is a **frozen comparative engineering proxy**, **not the previously disproven 1% trailing rule** and **NOT a recommended live policy**.
-- Bar first-touch and simulated MFE/MAE are path estimates, not executable tick/depth fills. No verified funding by contract is integrated in this prototype; it is a significant **NO-GO** for any economic acceptance. The 25bp additional stress is a scenario, not actual funding measurement.
+- Bar first-touch and simulated MFE/MAE are path estimates, not executable tick/depth fills. Monthly historical funding-rate settlements are now optionally read and applied as a signed approximation on entry notional when archives cover every available 5m candle month. Missing funding months remain flagged; exact settlement mark-price notional, exchange spread/depth and execution ordering are still unverified, a significant **NO-GO** for economic acceptance. The 25bp additional stress is a scenario, not actual funding measurement.
 - Dynamic universe selection requires contemporaneous watch rows, and model scores must come only from earlier matured labels; zero eligible coins or zero trades is acceptable.
 - Cross-sectional selection must beat the old V6 and simple selectors on truly unseen history **after costs with one-slot constraints** before paper permission. This engineering pipeline alone **does not yet implement all final-native comparisons, independent statistical confidence gates, or verified funding and depth**.
 - Do not use the V7 branch on the VPS with exchange keys; do not start paper/live trading based on this code.
