@@ -16,6 +16,12 @@ def main(argv=None):
     b.add_argument("--start-month",required=True,help="e.g. 2026-01")
     b.add_argument("--allow-archive-observed-universe",action="store_true",
                    help="Explicit exploratory cohort only; cannot establish historical lifecycle eligibility")
+    b.add_argument("--resume",action="store_true",
+                   help="Resume an incomplete, exact-matching checkpointed build")
+    b.add_argument("--max-db-gib",type=float,default=12.0,
+                   help="Abort incomplete build when SQLite + WAL exceed this quota")
+    b.add_argument("--min-free-gib",type=float,default=8.0,
+                   help="Reserve this much free filesystem space at every symbol checkpoint")
     q=sub.add_parser("experiment",help="A train 3m, B frozen exam 3m, C A/B1/B2 exam 3m")
     q.add_argument("--db",type=Path,required=True)
     q.add_argument("--out",type=Path,required=True)
@@ -31,7 +37,9 @@ def main(argv=None):
                 from .experiment import add_months
                 start=add_months(start,1)
         result=build_archive_database(args.archive,args.registry,args.db,a,d,months,
-                                     allow_archive_observed=args.allow_archive_observed_universe)
+                                     allow_archive_observed=args.allow_archive_observed_universe,
+                                     resume=args.resume,max_db_gib=args.max_db_gib,
+                                     min_free_gib=args.min_free_gib)
     else:
         result=experiment(args.db,args.start_month,args.out)
         result={"experiment":result["experiment"],"output":str(args.out),
