@@ -73,13 +73,13 @@ def digest(path):
     return h.hexdigest()
 
 
-def existing_source(db):
+def existing_source(db, *, label_policy=LABEL_POLICY):
     if not Path(db).is_file():
         raise FileNotFoundError("EXISTING_THREE_COIN_LABELS_REQUIRED")
     c=sqlite3.connect(Path(db).resolve().as_uri()+"?mode=ro",uri=True)
     c.row_factory=sqlite3.Row
     meta=dict(c.execute("SELECT k,v FROM meta"))
-    if meta.get("build_complete")!="true" or meta.get("policy")!=LABEL_POLICY:
+    if meta.get("build_complete")!="true" or meta.get("policy")!=label_policy:
         c.close()
         raise ValueError("INCOMPLETE_OR_INCOMPATIBLE_V7_LABELS")
     coins=set(json.loads(meta["coverage"])["symbols"])
@@ -164,7 +164,7 @@ def fit_at(conn, cutoff, output_dir):
     return info
 
 
-def prediction_export(conn,model_path,manifest,start_ms,end_ms,path):
+def prediction_export(conn,model_path,manifest,start_ms,end_ms,path,*,label_policy=LABEL_POLICY):
     if digest(model_path)!=manifest["model_sha256"]:
         raise ValueError("MODEL_ARTIFACT_SHA256_MISMATCH")
     # Joblib load only for artifact created by THIS explicit local experiment.
@@ -188,11 +188,11 @@ def prediction_export(conn,model_path,manifest,start_ms,end_ms,path):
                     "feature_bar_open_ms":ms,"features_ready_ms":ms+BAR_MS,
                     "training_labels_available_before_ms":manifest["cutoff_ms"],
                     "model_sha256":manifest["model_sha256"],
-                    "target":TARGET,"label_policy":LABEL_POLICY,
+                    "target":TARGET,"label_policy":label_policy,
                     "expected_net":float(expected),
                     "uncertainty_net":manifest["uncertainty_net"],
                 }
-                NetForecast.from_mapping(record)
+                NetForecast.from_mapping(record,required_label_policy=label_policy)
                 f.write(json.dumps(record,sort_keys=True,separators=(",",":"),allow_nan=False)+"\n")
                 total+=1
     return {"records":total,"sha256":digest(path)}
