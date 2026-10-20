@@ -10,6 +10,7 @@ from pathlib import Path
 from zipfile import ZipFile
 from datetime import datetime, timezone
 import re
+import math
 
 BAR_MS = 300_000
 FILE = re.compile(r"(?P<symbol>[A-Z0-9]+USDT)-5m-(?P<month>\d{4}-\d{2})\.(?:zip|csv)$")
