@@ -5,7 +5,7 @@
 
 ## Purpose
 
-Research a **point-in-time USDT-perpetual whole-market strategy-aware universe**, independent long/short candidate outcomes, BTC-regime features, 5-minute OHLC-conservative outcomes with MFE/MAE, and three **versioned** LightGBM learning brains:
+Research a **point-in-time USDT-perpetual whole-market strategy-aware universe**, independent long/short candidate outcomes, BTC-regime features, 5-minute OHLC-conservative outcomes with MFE/MAE, and three **versioned** LightGBM learning brains, with matched-date momentum, liquidity and deterministic-random heuristic diagnostic baselines:
 
 - **Brain A:** trained from matured outcomes of months 1–3; frozen examination on months 4–6.
 - **Brain B1:** same architecture, retrained using matured outcomes from months 1–6.
@@ -49,6 +49,10 @@ python3 -m nbot_v7 experiment --db /offline/v7.sqlite --out /offline/v7_experime
 **The sample 2026-01 period has historical July–September contamination from earlier V6 work and is NOT a blind promotion test.** The nine months above are an example only, not proof of having downloaded them.
 
 This version **does not fetch/download archives**. Doing so will be a separate controlled G1/G2 task after deciding historical listing eligibility, data volume, and available storage.
+
+## Diagnostic benchmark limits
+
+Simple momentum, liquidity and deterministic-random comparison policies use the same dates, path-proxy costs, 20-symbol capacity and one-slot account, but do **not** enforce matched entry frequency. Time-block 95% bootstrap intervals compare A/B1/B2 on daily capital PnL; correlated markets and reused historical windows mean they are **diagnostics**, never automatic promotion proof. Baseline and brain trades are exported separately.
 
 ## Economic limitations — never waive
 

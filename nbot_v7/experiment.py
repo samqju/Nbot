@@ -13,6 +13,7 @@ import json
 
 from .brain import train,freeze_artifacts
 from .lab import con,REVIEW_MS,LABEL_POLICY
+from .science import RuleBrain,block_bootstrap_uplift
 
 def month_start(s: str)->int:
     try:
@@ -137,6 +138,12 @@ def experiment(db:Path,start_month:str,output:Path)->dict:
         b1=train(c,"B1_SAME_ARCH_MORE_DATA",d)
         b2=train(c,"B2_CONTEXTUAL_CHALLENGER",d,adaptive=True)
         final=[replay(c,brain,d,e) for brain in (brain_a,b1,b2)]
+        baselines=[replay(c,RuleBrain(mode),d,e) for mode in ("momentum","liquidity","deterministic_random")]
+        pairwise={
+          "B2_minus_A":block_bootstrap_uplift(final[2],final[0]),
+          "B2_minus_B1":block_bootstrap_uplift(final[2],final[1]),
+          "B1_minus_A":block_bootstrap_uplift(final[1],final[0]),
+        }
         artifacts={}
         for brain in (brain_a,b1,b2):
             artifacts[brain.version]=freeze_artifacts(brain,output/brain.version)
@@ -147,6 +154,8 @@ def experiment(db:Path,start_month:str,output:Path)->dict:
             "train_cutoffs":{x.version:x.cutoff_ms for x in (brain_a,b1,b2)},
             "stage_b":{k:v for k,v in first.items() if k!="trades"},
             "stage_c":[{k:v for k,v in x.items() if k!="trades"} for x in final],
+            "stage_c_simple_baselines":[{k:v for k,v in x.items() if k!="trades"} for x in baselines],
+            "stage_c_pairwise_diagnostics":pairwise,
             "model_manifests":artifacts,
             "source_registry_sha256":meta["registry_sha256"],
             "confidence":"ENGINEERING_PROXY_ONLY_NO_NATIVE_FILL_OR_UNTOUCHED_PROOF",
@@ -156,7 +165,7 @@ def experiment(db:Path,start_month:str,output:Path)->dict:
             "caveat":"Replaying inspected months repeatedly is development, not fresh independent evidence.",
         }
         (output/"summary.json").write_text(json.dumps(summary,indent=2,sort_keys=True)+"\n")
-        for key,obj in [("B_A",first),("C_A",final[0]),("C_B1",final[1]),("C_B2",final[2])]:
+        for key,obj in [("B_A",first),("C_A",final[0]),("C_B1",final[1]),("C_B2",final[2])]+[(x["brain"],x) for x in baselines]:
             with (output/(key+"_trades.jsonl")).open("w") as f:
                 for row in obj["trades"]:
                     f.write(json.dumps(row,sort_keys=True)+"\n")
