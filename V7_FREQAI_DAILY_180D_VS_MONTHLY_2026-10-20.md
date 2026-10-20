@@ -60,3 +60,11 @@ Critically, FreqAI's supervised models have **roughly 144,000–159,000 historic
 ## Next gate
 
 **LEARN-3C = HOLD.** Do not promote monthly or daily models, start even paper exchange orders, expand coins, or jump to after-every-trade retraining. Priority is **previously untouched post-September data and native Freqtrade fill/mark/funding fidelity**, selection-conditioned confidence estimation, cost sensitivity, and enough independent trade observations for robust decision quality. Only then decide whether monthly/daily cadence justifies additional complexity.
+
+
+## Final post-research VPS regression checkpoint
+
+- After daily model fitting, independent ledger audit, and GitHub source sync, full **48/48 V7 tests passed** on Linux VPS, log SHA256 `37ee53ad5c4a5c88d65595a05e7e9ad4b85a713f98746c76ccf4e5472ac46e0f`.
+- Full **530/530 audited legacy execution/recovery tests passed** on the same Linux VPS, log SHA256 `d675298df41dc330a16fc69b0d07b08eaf340594039f1eaf648fbda8a4b6bd0b`.
+- Five isolated native-FreqAI research schedule tests passed, log SHA256 `3da0bdf059a237b1a5c34d49029be9cb5a1460ebe9618e126345768d68e7f2b4`. Thus 583 checked test cases passed, with native economic proof **still not established**.
+- GitHub and VPS source were synchronized to the test checkpoint `513f1c757a97eccecdf8e74817ab9877eb77bca8`; research disk has 91 GiB free and no legacy service changes were performed.
