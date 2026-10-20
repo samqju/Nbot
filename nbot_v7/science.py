@@ -58,6 +58,11 @@ def block_bootstrap_uplift(challenger:dict,incumbent:dict,*,blocks_days:int=7,
         raise ValueError("UNMATCHED_EVALUATION_PERIODS")
     if challenger["trading_sleeve_usdt"]!=incumbent["trading_sleeve_usdt"]:
         raise ValueError("UNMATCHED_PORTFOLIO_CAPITAL")
+    if not challenger.get("account_complete",False) or not incumbent.get("account_complete",False):
+        return {"status":"INCOMPLETE_ACCOUNTS_NO_UPLIFT",
+                "challenger_complete":bool(challenger.get("account_complete",False)),
+                "incumbent_complete":bool(incumbent.get("account_complete",False)),
+                "warning":"Selected paths or boundary positions unresolved; no valid paired uplift inference"}
     start=challenger["period_start_ms"]//86_400_000
     end=challenger["period_end_ms"]//86_400_000
     if end-start<blocks_days*3:
