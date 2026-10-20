@@ -46,3 +46,27 @@ This does **not** justify silently rewriting observed after-the-fact prices. Ver
 Service-start first attempt for v2 failed safely with systemd `226/NAMESPACE`, as `ReadWritePaths` requires the isolated run directory to exist **before systemd creates the restricted mount namespace**. Created only the fresh v2 run root, then restarted the v2 unit. **V2 bootstrap PASS**, **V2 FreqAI fit PASS**, **V2 systemd ACTIVE RUNNING** as of 2026-10-20 12:29:35 UTC; separate process PID 20839, initial model SHA256 `0fc7556cec7487bf11c2e2205c187bbc5fd6f4a33686d1db267db0c2510f9870`, 25,848 source-matured simulated examples, 0 virtual trades, zero account keys/orders. End scheduled 2026-10-21 03:29:07 UTC.
 
 The service is designed to remain running on the VPS without a ChatGPT session. It is deliberately NOT enabled to start automatically after a reboot (fail closed, no unexpected new run). Errors are recorded and terminate the service rather than pretending stale input is live. User must return to inspect the actual source logs and result; there is no guarantee any virtual trade occurs.
+
+
+## 2026-10-20 14:03 UTC — All three live virtual positions CLOSED; independent audit PASSED
+
+**Checkpoint, not the scheduled 15h end:** User reports all three positions closed. Read-only VPS check at 14:01–14:03 UTC verified service `nbot-v7-live-1m-virtual-20261020-v2.service` **ACTIVE**, market data and raw decisions still updated, 3/3 virtual entries used, 3/3 virtual closes, 0 positions open and **0 Binance orders/credentials**. No extra virtual entry can occur after cap reached. `status.json` still says `RUNNING` because observation continues until Oct21 03:29 UTC; do NOT conflate 3 closed trades with observation service completion.
+
+| Coin | Side | Virtual entry price | Virtual exit price | Exit reason | Duration | Net after modeled fees/slip, funding EXCLUDED |
+|---|---|---:|---:|---|---:|---:|
+| ETHUSDT | SHORT | 2390.440932 | 2385.078484 | HORIZON | 60m | **+1.2444098711 USDT** |
+| SOLUSDT | SHORT | 104.379561 | 104.560455 | HORIZON | 60m | **−2.7339069571 USDT** |
+| BTCUSDT | SHORT | 81654.433740 | 81614.560640 | HORIZON | 60m | **−0.5114406564 USDT** |
+| **TOTAL** | | | | all 3 timed | | **−2.0009377425 USDT** |
+
+Starting research sleeve was 10000 virtual USDT; hypothetical realized wallet now **9997.9990622575 USDT** (shown as 9997.9991 in status). All three triggered exactly the 60-minute time cutoff, not stops or profit targets. The direction of entry-to-exit price change (including paper slippage) was favorable for ETH SHORT +0.22433%, BTC SHORT +0.04883%, but adverse for SOL SHORT −0.17330%. After per-side proxy fees and 0.01% slippage per side BTC's favorable price change was insufficient to cover costs; it lost −0.51144 USDT. **Directional correctness by terminal price 2/3, economic profitability 1/3**. This is only a three-trade diagnostic, not evidence of a transferable edge or a statistical win rate.
+
+**AI raw selected aftercost forecasts versus reality (basis points of $1000 notional):**
+- ETH predicted **+3.1077bp**, realized **+12.4441bp**.
+- SOL predicted **+0.7119bp**, realized **−27.3391bp**.
+- BTC predicted **+4.5429bp**, realized **−5.1144bp**.
+- Aggregate aftercost net **−2.0009377425**; the simulated broker includes *fee+slippage*, but NOT real Binance order book fills or funding charges. All three trade forecast signs were positive before selection.
+
+**Independent source-level verification:** Added [research/v7_live_1m_three_trade_audit.py](research/v7_live_1m_three_trade_audit.py) and executed on the VPS, status **`EXACT_THREE_PUBLIC_1M_VIRTUAL_TRADES_CLOSED_INDEPENDENT_REPLAY_PASS`**. Auditor reads only archived run SQLite and recomputes each of the three actual trade paths from contiguous recorded public 1m bars with the original `PaperBroker` and unchanged `RiskPolicy`; **exact matches for model identity, entry-price/slippage, stop, target, exit minute and HORIZON reason, fees, exit-price and aftercost PnL**. Events show 1 MODEL_FITTED, 94 RAW_DECISION at audit timestamp, 3 VIRTUAL_OPEN, 3 VIRTUAL_CLOSE, 0 FAIL_CLOSED_SOURCE in corrected v2. Audited receipt stored `/opt/nbot-v7-20261020/runs/live-1m-15days-20261020-v2/three_closures_audit_20261020.json`. Research v1 provisional-candle source-error evidence is preserved separately; v2 is clean.
+
+**Scientific conclusion:** All three live entries being closed is a *valid program execution result*, not a clean test of AI predictive skill. Three examples are far too few; fitting only last 15d, no funding/real fills, 90-second feed finality delay and lookahead-safe third-candle entry, and different 1m generic model vs old 5m 20-family models prevent broad inference. Keep **LEARN-3C HOLD**. Do not promote or authorize exchange trading. After the planned observation expires, check source health and final data integrity separately.
