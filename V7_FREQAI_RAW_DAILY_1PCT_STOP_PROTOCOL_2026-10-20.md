@@ -1,0 +1,25 @@
+# V7 research protocol: daily RAW FreqAI under a permanent 1% stop
+
+**Scope frozen before newly trained 1% model portfolio PnL is available.** Owner asks whether the previous daily-RAW FreqAI strategy would trade better with stop-loss fixed to **1% instead of 2%** across January 1–September 30, 2026.
+
+We preserve the full original 2% stop 273-model baseline, the negative RAW -790.1252 USDT outcome, the positive but unpromoted uncertainty study, original 2025/2026 Binance archives, and the isolated VPS environment. No trading credentials or services.
+
+## Experiment A: SAME saved models, only execution stop changes — COMPLETED
+
+- Exact original daily 273 trained model weights and time-aligned forecast stream `DAILY_273_combined.jsonl` (fit on original 2% stop historical outcomes).
+- Recompute **all 436,609** 3-coin archived 2025–2026 opportunity outcomes at **1% stop** using the audited shared V7 PaperBroker, unchanged take +3%, 60-minute expiry, fees, modeled slippage and signed funding archive proxy. Cross-check first **100 outcomes per symbol** against 2% stop broker results from old dataset before accepting updated version: **300/300 parity checks passed**.
+- Build a NEW separate ~601MB SQLite counterfactual dataset, previous 2% source DB left untouched. 1% path exits sooner and releases the capital slot, which can permit new future entries; full chronological replay is required.
+- Result (one continuous Jan–Sep account, 10,000 USDT initial wallet, 1,000 USDT/stake, 3 coins): 2% stop **447 trades, −790.1252 USDT**; 1% stop **496 trades, −816.8753 USDT**. Stop tightening ALONE causes **−26.7501 USDT** worse net result and 49 more entries under fixed saved model predictions. Extra 25bp per executed roundtrip: 2% **−1907.6252**, 1% **−2056.8753 USDT**. Max drawdown 2% 8.6395%, 1% 8.7199%. All paper-proxy, no exchange execution.
+- Saved research [script](research/v7_stop1_daily_raw_counterfactual.py) commit `ba2ef01661bc13881c55b10f7858f9c6668c42f7`; alternate DB `runs/freqai-nine-month-180d-2026/stop1-cf-2026-v1.sqlite` SHA256 `502e91dc32cc58fdf6b4139faa24c15cc1d1e0c0fd080c1a40312ad9598a2632`. Same-model comparison `runs/freqai-nine-month-180d-2026/stop1-raw-same-model-comparison-v1/summary.json` and separate exact trade/decision event ledgers, not a new trained 1% model.
+
+## Experiment B: Refit DAILY AI on 1% stop outcomes — model training in progress, NO economic conclusion at protocol freeze
+
+- Same research source and verified candidacy, same 20 existing V7 strategy families and BTC/ETH/SOL, same model hyperparameters (actual official FreqAI 2026.9 LightGBMRegressor.fit custom research adapter), same daily 00:00 UTC fresh-fit 180-day lookback with 14 days reserved for past-only error calibration and 166 days fitted.
+- New labels reflect 1% stop **through the full 2025 warmup and all 2026 dates**. Use the *same* 1% exit policy in both training and evaluation. Models must carry exactly `V7_5M_PAPER_BROKER_1STOP_3TAKE_60M_FEE10BP_SLIP2BP_PROXY_CF_V1` in their fitted model manifests and forecast source contracts. A 2% trained model MUST NOT be called 1%-trained.
+- Real upstream FreqAI model is retrained fresh each of 273 days; compare DAILY RAW, MONTHLY RAW and Jan-frozen RAW with original corresponding 2% baselines. Include UNCERTAINTY and STRESS outputs only as predefined context, not selected by post-hoc result optimization. One continuous single-slot wallet per account.
+- Predetermined economics: $10k capital, $1k position, LONG/SHORT, take +3%, stop −1%, holding max 60min, native V7 5m stop-first broker, no leverage multipliers, fee .05% per side, slippage .01% per side, separate additional +25bp per completed roundtrip stress. All source contract coverage, model cutoff, source SHA and trade accounting must pass independent audit; no missing-account inference.
+- Original `research/freqai_v7_full_nine_month_daily.py` now accepts explicitly authorized `--stop1` research target and leaves the original default 2% policy untouched. [Strict bridge](nbot_v7/freqai_research_bridge.py) now requires policy match; 1%-trained forecasts cannot masquerade as default 2% labels; tests [tests_v7/test_freqai_stop_policy.py](tests_v7/test_freqai_stop_policy.py) included in **51/51 passing V7 tests**.
+- New isolated path `runs/freqai-nine-month-180d-2026/ninemonth-daily-stop1-trained-v1`. No reuse of 2% model weights to report a 1%-trained model result. Source original contract hashes intentionally continue to identify unchanged upstream **market features**; new dataset policy, model hashes and label provenance separately identify changed 1%-stop outcomes.
+- **Stop and holding policies are proxy research, not real native order fills**, and earlier 2026 data has been repeatedly inspected. No promotion, no live/paper orders, no broader market. `LEARN-3C HOLD`.
+
+**Critical interpretation:** Experiment A answers “what if we change stop only?”. Experiment B answers “what if the same daily learner is trained and traded under the 1% stop?”. Do not confuse the two results.
