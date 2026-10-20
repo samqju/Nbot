@@ -59,7 +59,8 @@ def audit(root,db2,db1,dbtrail,forecasts):
     res={}
     selected={}
     for key,(label,source) in accounts.items():
-        save=result["stop1"] if key=="trailing1" else result[key]
+        save=(result["stop1"] if key=="trailing1" else
+              result["fixed1"] if key=="stop1" else result["stop2"])
         ts=read_jsonl(root/(label+"_trades.jsonl"))
         if not save["account_complete"] or len(ts)!=save["selected_trades"]:
             raise ValueError("INCOMPLETE_ACCOUNT_OR_TRADE_COUNT")
