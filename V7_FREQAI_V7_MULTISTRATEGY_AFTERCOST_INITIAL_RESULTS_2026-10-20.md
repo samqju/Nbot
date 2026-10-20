@@ -73,3 +73,10 @@ This work builds on the [real installed upstream Freqtrade/FreqAI 2026.9 baselin
 4. Require unseen prospective BTC/ETH/SOL observations once available, sufficient independent trades and positive after-cost (including 25bp stress) performance, plus owner-reviewed gate; if no edge, abstain. **NO VPS live service, no paper orders, no automatic champion swap or expansion beyond 3 coins.**
 
 **Important clarification:** This research uses **FreqAI's actual LightGBMRegressor.fit() code** inside a custom offline multi-strategy data adapter. It is NOT equivalent to deploying or testing FreqAI's entire native retraining scheduler with family-conditioned targets. That would be a further independent test before production integration.
+
+## 7. Final isolated VPS software regression re-run (after results documented)
+
+- Synced VPS checkout to active V7 after source/results handover commits, revision `a815ad76a7e58f948d299263dc9b70a822dcedb7`.
+- Ran the V7 regression suite **48/48 PASS** on the VPS with the V7 research environment. Log `runs/freqai-v7-aftercost-v3-contract-tests.txt`, SHA256 `859369b91cb63f946d5283700c08a9049b0cf4a3703d2ad38e75ff7bd16c75e7`.
+- Re-ran the audited legacy execution and recovery suite **530/530 PASS** on the VPS. Log `runs/freqai-v7-aftercost-v3-legacy-tests.txt`, SHA256 `afff7f052bf77b1278f6a253b630674ee0371f33884fb5de18abee9e1ce4ab74`.
+- These tests verify implementation/regression contracts only. They do not change the economic gate verdict, nor demonstrate native executable Binance fills or positive adaptive learning.
