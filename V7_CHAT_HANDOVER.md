@@ -187,6 +187,8 @@ C. Specify 3-month broad coverage (metadata, 5m/1h, funding/mark and BTC) and se
 D. Specify Month-1 selection as-of boundaries, Month-2 label maturity, truly unseen Month-3/later validation and rules for markets lacking reliable historical liquidity or listing evidence. Already studied Jul–Sep 2026 and inspected Oct segments are not pristine holdouts.  
 E. Produce G1 design and bounded download/verification authorization proposal; update this handover with evidence/commit. **Do not start VPS market downloads, ML training, backtests, paper or live mode without separately authorized scope.**
 
+**Branch-lineage warning:** Current V7 branch derives from the V6 prototype (which has no old `nbot/` package); legacy V3/V4/V5 implementations are in `main` and related historical branches, while `nbot-v5.1` contains a **separate** `nbot_v5_1/` package. **No legacy module is automatically imported into V7.** Each reuse needs an explicitly audited selective port and compatibility tests. The supplemental V5.1 and branch-lineage audit is in [G0 report §12](V7_G0_LEGACY_AUDIT_2026-10-20.md).
+
 **Highest-priority inherited code:** V4's already implemented LightGBM `lambdarank` at `main:nbot/observation/v4_generation.py` (grouped candidates); V3 immutable decisions and capital-uncapped replay; V5 paired execution/funding; V6 25×8 labeling/ranking and Freqtrade native research adapters. All are source-backed **reuse candidates**, not prevalidated V7 integrations.
 
 ## 8. Mandatory journal update procedure — Definition of Done
@@ -281,6 +283,17 @@ E. Produce G1 design and bounded download/verification authorization proposal; u
 - **Known limitations:** Private archived VPS model/data/ZIP files have not been checked for current presence or rerun; real historical depth, exchange listing lifecycle, fee/slippage parity, and independent pristine future proof remain G1/G5 blockers. Existing automated test code was read but not run.
 - **Trading permission:** **NONE**; V7 still a research-only roadmap; no paper/live/VPS execution authorized.
 - **Next bounded step:** **G1 historical full-market point-in-time eligibility and 3-month data design**, plus storage and available-source inventory, before downloading new data. Update handover again when G1 step is discussed or completed.
+
+---
+
+### 2026-10-20 — G0 supplemental audit — V5.1 branch and cross-branch port constraint
+
+- **Activity:** GitHub-only checked `nbot-v5.1` branch contents, source for the V5.1 stratified deep selector, synthetic research book, original-evidence learning boundary, chronological/dependence-aware science, cost/funding HOLD contract and independent two-book challenger LAB. Inspected G10/G11 archived milestones and V5.1 existing legacy-reuse register. Also verified that the V6 prototype branch root does **not** contain the original `nbot/` main package.
+- **Major outcome:** Existing V5.1 sophisticated data-science and proof/hold rules must be candidates for selective reuse, but G10/G11 evidence was **synthetic offline engineering**, with genuine source-qualified original PAPER/challenger promotion still **HOLD**. Do not confuse 100-broad/20-deep/40-virtual synthetic integration with validated V7 deployment economics.
+- **Cross-branch danger:** V7 descends from the isolated V6 prototype. Legacy V3/V4/V5 modules in `main` and V5.1 modules in `nbot-v5.1` are **not automatically in V7's Python import path**. Explicit version-pinned selective porting and regression is required; avoid blanket merges.
+- **Report updated:** [V7_G0_LEGACY_AUDIT_2026-10-20.md](V7_G0_LEGACY_AUDIT_2026-10-20.md) Section 12; supplementary audit commit `283e1ec428c74ca00c1830f339cc88de224c08b4`.
+- **G0 status:** GitHub source-and-reported-evidence inventory **COMPLETE**, extra branch lineage captured. Private historic ZIP re-verification, actual unit test execution and full market retrieval were **not** part of G0; no VPS accessed.
+- **Risk/authority/next:** G1 point-in-time historical full-market design still next; no VPS/data jobs, no paper/live, no model promotion.
 
 ---
 
