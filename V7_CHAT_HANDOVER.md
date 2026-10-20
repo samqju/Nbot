@@ -10,7 +10,7 @@
 **Current stage:** **G0 GitHub source-and-evidence audit COMPLETE** on 2026-10-20; **NEXT G1 point-in-time full-market data inventory/design** (not yet started). G0 did not access VPS or execute tests. Historical runtime/data ZIP reproduction remains a separately tracked prerequisite when required.
 **Owner's latest technical refinement (2026-10-20):** Strategy-aware **all-market** universe selection has priority: calculate strategy signals for every eligible coin, use a causal comparative LightGBM ranker to shortlist up to 20, and preserve labeled MFE/MAE/BTC-at-entry and future-path trade outcomes, including sampled outside-top20 controls. Recorded as a **design refinement proposal** in [V7_STRATEGY_AWARE_UNIVERSE_REFINEMENT_PROPOSAL.md](V7_STRATEGY_AWARE_UNIVERSE_REFINEMENT_PROPOSAL.md); existing frozen roadmap and numerical gates have not been silently changed or approved.
 
-**Owner decision pending:** [V7_NUMERIC_GATE_PROPOSAL.md](V7_NUMERIC_GATE_PROPOSAL.md) proposes concrete G0–G8 thresholds; **NOT YET APPROVED/FROZEN**, and does not authorize G1 runtime or deployment.  
+**Owner decisions pending:** [V7_NUMERIC_GATE_PROPOSAL.md](V7_NUMERIC_GATE_PROPOSAL.md) proposes G0–G8 numerical gates; [V7_ADAPTIVE_TRADING_BRAIN_PROPOSAL.md](V7_ADAPTIVE_TRADING_BRAIN_PROPOSAL.md) proposes an adaptive/replacable brain replacing static strategy authority. **Neither proposal is finally frozen or deployment-authorized.**  
 **Current deployment state:** Roadmap documentation only. NO V7 learning job, paper trading, dry-run, exchange connection or live order has been started or approved. No V5/V6 service was changed when the V7 roadmap branch was created.
 
 ---
@@ -324,6 +324,20 @@ E. Produce G1 design and bounded download/verification authorization proposal; u
 - **Open questions/numbers:** Need establish adequate whole-market learning sample, excluded universe control size, precise MFE/MAE label timing/costs, BTC at-entry regime features, review cadence and sufficient alpha significance. Previous proposed 500 labels/100 times are prototype minima, not robust 150×10 ranker proof. G1 storage/label feasibility precedes large full-market downloads.
 - **Result:** Design discussion captured and committed. No new bot source code, tests, VPS data jobs or real/paper trades run. G0 remains complete, G1 next, numeric thresholds pending approval. 
 - **Next:** Owner reviews the refinement and numerical gates; if adopted, create a versioned frozen roadmap amendment before G1/G2 integration; G1 begins with point-in-time full market registry, schema and storage feasibility.
+
+---
+
+### 2026-10-20 — DESIGN PROPOSAL — Auto-replaceable adaptive Trading Brain, no fixed-strategy decision lock
+
+- **Owner's new insight:** V7 still risks selecting trade/no-trade **based fundamentally on a fixed strategy list**. Owner wants an **automatically replaceable learning Trading Brain**, not permanent adherence to trend, breakout, reversion or another static mindset when market conditions change.
+- **Architecture interpretation:** Existing V6 strategy families remain useful as hypothesis generators and negative research controls, but should **not hold permanent veto/authority over which opportunities the AI may consider**. Include a validated strategy-independent, versioned proposal path and broad-market, off-shortlist shadow research to measure missing/new setups. Ensure neither initial universe selection nor entry choice is secretly limited to 10 old templates.
+- **Fast vs slow adaptation:** A frozen champion can **adapt its decisions/weights at each event** using current as-of BTC/coin/market state and uncertainty. A **new model artifact** is a separate challenger trained on matured labeled outcomes, then compared prospectively against the old champion under matched opportunity costs, drawdown and one-slot portfolio rules. Switching a currently approved mixture/router is NOT the same as deploying an unproven retrained challenger.
+- **Required boundaries:** Keep ex-ante features apart from future MFE/MAE/BTC path outcome labels; preserve strategy diversity and independent off-policy shadow samples, NO TRADE, static executor/risk authority, versioned schema/hashes and rollback. Do not auto-promote a newly fit model to real trading. Current frozen roadmap still requires separately approved paper and live promotions.
+- **File committed:** [V7_ADAPTIVE_TRADING_BRAIN_PROPOSAL.md](V7_ADAPTIVE_TRADING_BRAIN_PROPOSAL.md), commit `4e21205fbd799e54339282bb75a191a31331b7fe`. The file documents rationale, modular design, model version/replaceability contract, regime context, entry-free candidate exploration, causal learned labels, qualification tests and unknowns.
+- **Status/limits:** This is a **proposed architecture refinement**, not evidence of a winning model, an approved numeric replacement threshold or deployment authorization. V4 LambdaRank and V4/V5.1 champion/challenger systems are technical code seeds, not proven profitable automatically adapting minds.
+- **Execution:** GitHub documentation only. No VPS access, code port, new training, new tests, downloading data, paper/live order or old branch modifications.
+- **Project status:** G0 remains GitHub source-audit complete; G1 full-market historical data and causal label planning next. Existing G0–G8 numeric threshold proposal is still pending approval.
+- **Next:** Review this proposed amendment, choose appropriate model/challenger design and predeclare scored performance and anti-churn thresholds before test-period inspection. Then incorporate by a versioned approved roadmap amendment if adopted.
 
 ---
 
