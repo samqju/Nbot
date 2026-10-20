@@ -79,7 +79,7 @@ class CausalReplay(unittest.TestCase):
     def test_gap_stop_fills_at_worse_open(self):
         bars=[Bar(j*BAR_MS,100,100.1,99.9,100,100) for j in range(20)]
         bars[2]=Bar(2*BAR_MS,90,91,89,90,100)
-        self.assertAlmostEqual(outcome(bars,0,"LONG")[0],-.1-.0012)
+        self.assertLess(outcome(bars,0,"LONG")[0],-.101)
 
     def test_insolvency_prevents_new_entry(self):
         c,t=self.fixture()

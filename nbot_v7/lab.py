@@ -11,6 +11,8 @@ import json
 import sqlite3
 from .data import BAR_MS, Bar, contract_registry, discover, load_bars, discover_funding, load_funding
 from .features import HISTORY, market_features, proposals, btc_regime
+from .runtime.broker import PaperBroker
+from .runtime.risk import RiskPolicy
 
 FEE_EACH = .0005
 SLIPPAGE_EACH = .0001
@@ -18,7 +20,7 @@ STOP_FRACTION = .02
 TAKE_FRACTION = .03
 HORIZON_BARS = 12
 REVIEW_MS = 8 * 60 * 60 * 1000
-LABEL_POLICY = "V7_5M_STOP_FIRST_2STOP_3TAKE_60M_FEE10BP_SLIP2BP_PROXY_V2"
+LABEL_POLICY = "V7_5M_PAPER_BROKER_2STOP_3TAKE_60M_FEE10BP_SLIP2BP_PROXY_V3"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS candidate(
@@ -93,8 +95,13 @@ def outcome(bars: list[Bar], i: int, side: str):
 
     MFE/MAE are OHLC path bounds, not verified pre-exit tick chronology.
     """
+    if side not in ("LONG","SHORT"):raise ValueError("INVALID_SIDE")
+    broker=PaperBroker()
+    policy=RiskPolicy()
+    position=broker.submit({"id":"HISTORICAL_SHADOW","symbol":"SHADOW",
+                            "time_ms":bars[i+1].t,"side":side,"quote":bars[i+1].o},policy)
     polarity=1 if side == "LONG" else -1
-    entry=bars[i+1].o
+    entry=position["entry_price"]
     stop=entry*(1-polarity*STOP_FRACTION)
     target=entry*(1+polarity*TAKE_FRACTION)
     mfe=0.0; mae=0.0
@@ -104,6 +111,7 @@ def outcome(bars: list[Bar], i: int, side: str):
     quality="COARSE_5M_OHLC_PATH_PROXY"
     for j in range(i+1,i+1+HORIZON_BARS):
         b=bars[j]
+        fill,position=broker.on_bar(position,b,b.t+BAR_MS,policy)
         favorable=(b.h/entry-1) if polarity==1 else (1-b.l/entry)
         adverse=(b.l/entry-1) if polarity==1 else (1-b.h/entry)
         stop_hit=b.l<=stop if polarity==1 else b.h>=stop
@@ -121,7 +129,10 @@ def outcome(bars: list[Bar], i: int, side: str):
             exit_ms=b.t+BAR_MS  # Conservative label availability, not a fill time.
             reason="STOP" if stop_hit else "TARGET"
             break
-    net=polarity*(exit_price/entry-1)-2*(FEE_EACH+SLIPPAGE_EACH)
+    if fill is None:raise RuntimeError("PAPER_PATH_DID_NOT_MATURE")
+    net=fill["net_usdt"]/policy.notional_usdt
+    exit_ms=fill["available_ms"]
+    reason=fill["reason"].removesuffix("_AMBIGUOUS")
     return (net,mfe,mae,exit_ms,reason,quality)
 
 def path_outcome_context(bars, i, side, exit_ms, btc, btc_times, decision, funding_status="FUNDING_UNVERIFIED_NOT_COUNTED", funding_net_fraction=None):
@@ -225,11 +236,11 @@ def generate_symbol(
 
 def build_archive_database(
     archive_root: Path, registry_path: Path, db_path: Path,
-    start_ms: int, end_ms: int, months: set[str]
+    start_ms: int, end_ms: int, months: set[str], *, allow_archive_observed: bool=False
 ) -> dict:
     if db_path.exists():
         raise FileExistsError("REFUSE_EXISTING_DATABASE_TO_PREVENT_LEAKAGE_OR_MIXED_RUNS")
-    registry=contract_registry(registry_path)
+    registry=contract_registry(registry_path,allow_archive_observed=allow_archive_observed)
     files=discover(archive_root,months)
     funding_files=discover_funding(archive_root,months)
     if "BTCUSDT" not in files or "BTCUSDT" not in registry:
@@ -240,6 +251,8 @@ def build_archive_database(
     counts={}
     coverage={"missing_registry_symbols":sorted(set(files)-set(registry)),
               "registry_symbols_without_archives":sorted(set(registry)-set(files)),
+              "registry_source_grades":dict(sorted(__import__('collections').Counter(x.source_grade for x in registry.values()).items())),
+              "eligibility_mode":"ARCHIVE_OBSERVED_EXPLORATORY" if allow_archive_observed else "CALLER_ATTESTED_REQUIRES_INDEPENDENT_AUDIT",
               "historical_exchange_universe_verified":False}
     c=con(db_path)
     try:

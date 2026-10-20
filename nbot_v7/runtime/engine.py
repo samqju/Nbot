@@ -34,6 +34,8 @@ class TradingEngine:
 
     def decide(self,rows,decision_ms,now_ms,quotes,source_ready=True):
         state=self.memory.read()
+        if getattr(self.brain,"cutoff_ms",-1)>decision_ms:
+            raise ValueError("MODEL_FIT_AFTER_DECISION")
         if decision_ms<=state["last_decision"]:return "DUPLICATE_DECISION"
         if any(r["decision_ms"]!=decision_ms for r in rows):raise ValueError("UNSYNCHRONIZED_CANDIDATES")
         def clock(s):
@@ -88,6 +90,9 @@ class TradingEngine:
         state=self.memory.read()
         p=state["position"]
         if p is None or p["symbol"]!=symbol:return None
+        if p["last_bar_ms"] is not None and bar.t>p["last_bar_ms"]+(close_ms-bar.t):
+            self.kill("MISSING_POSITION_PATH_RECONCILIATION_REQUIRED")
+            return None
         result,updated=self.broker.on_bar(p,bar,close_ms,self.policy,funding_rate)
         if result is None:
             self.memory.transition("PAPER_MARK",lambda s:s.update(position=updated))

@@ -14,6 +14,8 @@ def main(argv=None):
     b.add_argument("--registry",type=Path,required=True)
     b.add_argument("--db",type=Path,required=True)
     b.add_argument("--start-month",required=True,help="e.g. 2026-01")
+    b.add_argument("--allow-archive-observed-universe",action="store_true",
+                   help="Explicit exploratory cohort only; cannot establish historical lifecycle eligibility")
     q=sub.add_parser("experiment",help="A train 3m, B frozen exam 3m, C A/B1/B2 exam 3m")
     q.add_argument("--db",type=Path,required=True)
     q.add_argument("--out",type=Path,required=True)
@@ -28,7 +30,8 @@ def main(argv=None):
                 months.add(datetime.datetime.fromtimestamp(start/1000,datetime.timezone.utc).strftime("%Y-%m"))
                 from .experiment import add_months
                 start=add_months(start,1)
-        result=build_archive_database(args.archive,args.registry,args.db,a,d,months)
+        result=build_archive_database(args.archive,args.registry,args.db,a,d,months,
+                                     allow_archive_observed=args.allow_archive_observed_universe)
     else:
         result=experiment(args.db,args.start_month,args.out)
         result={"experiment":result["experiment"],"output":str(args.out),

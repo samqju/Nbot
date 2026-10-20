@@ -10,6 +10,7 @@ import hashlib
 import json
 import re
 import time
+import shutil
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -122,17 +123,30 @@ def download_inventory(manifest:dict, destination:Path, max_gib:float,*,resume:b
     if planned>budget:
         raise RuntimeError(f"DISK_BUDGET_EXCEEDED: {planned} > {budget}")
     destination.mkdir(parents=True,exist_ok=True)
+    if planned>shutil.disk_usage(destination).free-8*1024**3:
+        raise RuntimeError("INSUFFICIENT_FREE_DISK_WITH_8GIB_RESERVE")
     entries={}
     for r in manifest["objects"]:
         kind=r["timeframe"]
+        if (not _SYMBOL.fullmatch(r["symbol"]) or kind not in ("5m","fundingRate")
+            or not re.fullmatch(r"\d{4}-\d{2}",r["month"]) or r["bytes"]<=0):
+            raise ValueError("INVALID_ARCHIVE_MANIFEST_ENTRY")
         filename=(r["symbol"]+"-"+("5m" if kind=="5m" else "fundingRate")+"-"+r["month"]+".zip")
+        expected_key=(f"data/futures/um/monthly/klines/{r['symbol']}/5m/" if kind=="5m"
+                      else f"data/futures/um/monthly/fundingRate/{r['symbol']}/")+filename
+        if r["key"]!=expected_key:raise ValueError("UNEXPECTED_ARCHIVE_SOURCE_PATH")
+        checksum_url=ROOT+"/"+urllib.parse.quote(r["key"]+".CHECKSUM",safe="/")
+        with urllib.request.urlopen(checksum_url,timeout=45) as response:
+            checksum=response.read(1024).decode("ascii").strip().split()[0].lower()
+        if not re.fullmatch(r"[a-f0-9]{64}",checksum):raise ValueError("INVALID_EXCHANGE_CHECKSUM")
         path=destination/r["symbol"]/filename
         path.parent.mkdir(parents=True,exist_ok=True)
         if path.exists():
             if path.stat().st_size!=r["bytes"]:
                 raise RuntimeError(f"EXISTING_FILE_SIZE_MISMATCH: {path}")
             digest=hashlib.sha256(path.read_bytes()).hexdigest()
-            entries[r["key"]]={"sha256":digest,"bytes":r["bytes"],"cached":True}
+            if digest!=checksum:raise ValueError("CACHED_EXCHANGE_CHECKSUM_MISMATCH")
+            entries[r["key"]]={"sha256":digest,"bytes":r["bytes"],"cached":True,"exchange_checksum_verified":True}
             continue
         tmp=path.with_suffix(".partial")
         if tmp.exists():
@@ -151,8 +165,10 @@ def download_inventory(manifest:dict, destination:Path, max_gib:float,*,resume:b
                         raise RuntimeError("DOWNLOAD_EXCEEDS_LISTED_SIZE")
             if read!=r["bytes"]:
                 raise RuntimeError("DOWNLOAD_INCOMPLETE")
+            if h.hexdigest()!=checksum:raise ValueError("EXCHANGE_CHECKSUM_MISMATCH")
             tmp.replace(path)
-            entries[r["key"]]={"sha256":h.hexdigest(),"bytes":read,"cached":False}
+            entries[r["key"]]={"sha256":h.hexdigest(),"bytes":read,"cached":False,"exchange_checksum_verified":True}
+        
         except Exception:
             # Keep explicit partial evidence for manual review, do not hide errors.
             raise
@@ -161,17 +177,22 @@ def download_inventory(manifest:dict, destination:Path, max_gib:float,*,resume:b
 
 def main(argv=None):
     p=argparse.ArgumentParser(description="Read-only Binance Vision nine-month data inventory")
-    p.add_argument("--start-month",required=True)
+    p.add_argument("--start-month")
+    p.add_argument("--existing-manifest",type=Path,help="Download from an already saved immutable inventory")
     p.add_argument("--manifest",type=Path,required=True)
     p.add_argument("--download",action="store_true",help="Explicitly download public ZIPs")
     p.add_argument("--archive",type=Path)
     p.add_argument("--max-gib",type=float,default=20)
     a=p.parse_args(argv)
-    if a.manifest.exists():
-        raise FileExistsError("REFUSE_OVERWRITE_SOURCE_MANIFEST")
-    data=inventory(a.start_month)
-    a.manifest.parent.mkdir(parents=True,exist_ok=True)
-    a.manifest.write_text(json.dumps(data,indent=2,sort_keys=True)+"\n")
+    if a.existing_manifest:
+        data=json.loads(a.existing_manifest.read_text())
+    else:
+        if not a.start_month:raise ValueError("START_MONTH_REQUIRED")
+        if a.manifest.exists():
+            raise FileExistsError("REFUSE_OVERWRITE_SOURCE_MANIFEST")
+        data=inventory(a.start_month)
+        a.manifest.parent.mkdir(parents=True,exist_ok=True)
+        a.manifest.write_text(json.dumps(data,indent=2,sort_keys=True)+"\n")
     if a.download:
         if a.archive is None:raise ValueError("ARCHIVE_DESTINATION_REQUIRED")
         finished=download_inventory(data,a.archive,a.max_gib)

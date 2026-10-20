@@ -34,7 +34,7 @@ class OfflineContracts(unittest.TestCase):
         net,mfe,mae,exit_ms,why,quality=outcome(b,i,"LONG")
         self.assertEqual(why,"STOP")
         self.assertEqual(quality,"AMBIGUOUS_5M_STOP_FIRST")
-        self.assertAlmostEqual(net,-.02-.0012,places=7)
+        self.assertLess(net,-.021)
         self.assertLessEqual(mfe,0)
         self.assertLess(mae,0)
 

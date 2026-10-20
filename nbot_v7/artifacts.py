@@ -19,10 +19,12 @@ def dataset_hash(conn):
     h=sha256()
     for table in ("meta","candidate","watch_candidate","opportunity","watch","outcome_context"):
         h.update(table.encode())
-        cols=[r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
+        info=list(conn.execute(f"PRAGMA table_info({table})"))
+        cols=[r[1] for r in info]
         if not cols:
             raise ValueError("MISSING_DATASET_TABLE:"+table)
-        for row in conn.execute(f"SELECT * FROM {table} ORDER BY "+",".join(cols)):
+        ordering=[r[1] for r in sorted(info,key=lambda r:r[5]) if r[5]] or cols
+        for row in conn.execute(f"SELECT * FROM {table} ORDER BY "+",".join(ordering)):
             h.update(json.dumps(tuple(row),separators=(",",":"),ensure_ascii=True).encode()+b"\n")
     return h.hexdigest()
 

@@ -15,7 +15,8 @@ class PaperBroker:
                 "stop":price*(1-sign*policy.stop_fraction),
                 "target":price*(1+sign*policy.take_fraction),
                 "deadline_ms":intent["time_ms"]+policy.max_hold_ms,
-                "last_bar_ms":None,"broker_mode":"PAPER"}
+                "last_bar_ms":None,"broker_mode":"PAPER","mfe":0.0,"mae":0.0,
+                "mfe_bar_close_ms":None,"mae_bar_close_ms":None}
 
     def on_bar(self,position,bar,close_ms,policy,funding_rate=None):
         if position["last_bar_ms"] is not None and bar.t<=position["last_bar_ms"]:
@@ -30,6 +31,11 @@ class PaperBroker:
             p["funding_net"]-=sign*p["quantity"]*bar.o*funding_rate
         stop=bar.l<=p["stop"] if sign==1 else bar.h>=p["stop"]
         target=bar.h>=p["target"] if sign==1 else bar.l<=p["target"]
+        favorable=(bar.h/p["entry_price"]-1) if sign==1 else (1-bar.l/p["entry_price"])
+        adverse=(bar.l/p["entry_price"]-1) if sign==1 else (1-bar.h/p["entry_price"])
+        if not (stop and target) and favorable>p["mfe"]:
+            p.update(mfe=favorable,mfe_bar_close_ms=close_ms)
+        if adverse<p["mae"]:p.update(mae=adverse,mae_bar_close_ms=close_ms)
         price=None
         reason=None
         if stop:
@@ -48,6 +54,9 @@ class PaperBroker:
         return {"id":p["id"],"available_ms":close_ms,"net_usdt":net,
                 "entry_price":p["entry_price"],"exit_price":fill,"quantity":p["quantity"],
                 "fees_usdt":p["entry_fee"]+exit_fee,"funding_net_usdt":p["funding_net"],
+                "mfe_pct":p["mfe"],"mae_pct":p["mae"],
+                "mfe_bar_close_ms":p["mfe_bar_close_ms"],"mae_bar_close_ms":p["mae_bar_close_ms"],
+                "path_quality":"BAR_BOUNDS_NOT_TICK_EXECUTION",
                 "reason":reason,"authority":"PAPER_BAR_PROXY","symbol":p["symbol"]},p
 
 

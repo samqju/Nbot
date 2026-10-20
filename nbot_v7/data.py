@@ -30,6 +30,7 @@ class Contract:
     from_ms: int
     to_ms: int
     evidence_sha256: str
+    source_grade: str = "SOURCE_ATTESTED"
 
     def eligible(self, decision_ms: int) -> bool:
         return self.from_ms <= decision_ms < self.to_ms
@@ -40,7 +41,7 @@ def utc_ms(s: str) -> int:
         raise ValueError("REQUIRE_EXPLICIT_UTC")
     return int(d.timestamp() * 1000)
 
-def contract_registry(path: Path) -> dict[str, Contract]:
+def contract_registry(path: Path, *, allow_archive_observed: bool=False) -> dict[str, Contract]:
     """Mandatory independently researched historical registry; no inferred eligibility."""
     with path.open(newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
@@ -56,9 +57,10 @@ def contract_registry(path: Path) -> dict[str, Contract]:
         a, b = int(row["from_ms"]), int(row["to_ms"])
         if a >= b or symbol in out:
             raise ValueError("INVALID_REGISTRY_RANGE_OR_DUPLICATE")
-        if row.get("source_grade", "").strip() != "SOURCE_ATTESTED":
+        grade=row.get("source_grade", "").strip()
+        if grade != "SOURCE_ATTESTED" and not (allow_archive_observed and grade=="ARCHIVE_OBSERVED_UNVERIFIED_LIFECYCLE"):
             raise ValueError("UNATTESTED_HISTORICAL_ELIGIBILITY")
-        out[symbol] = Contract(symbol, a, b, evidence)
+        out[symbol] = Contract(symbol, a, b, evidence,grade)
     return out
 
 def discover(root: Path, months: set[str]) -> dict[str, list[Path]]:
