@@ -9,6 +9,8 @@ from hashlib import sha256
 from pathlib import Path
 import json
 import sqlite3
+import shutil
+import math
 from .data import BAR_MS, Bar, contract_registry, discover, load_bars, discover_funding, load_funding
 from .features import HISTORY, market_features, proposals, btc_regime, legacy_proposals
 from .runtime.broker import PaperBroker
@@ -79,6 +81,11 @@ CREATE TABLE IF NOT EXISTS outcome_context(
  PRIMARY KEY(decision_ms,symbol,side,family)
 );
 CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS build_progress(
+ symbol TEXT PRIMARY KEY NOT NULL,
+ source_sha256 TEXT NOT NULL,
+ report_json TEXT NOT NULL
+);
 """
 
 def con(db: Path) -> sqlite3.Connection:
@@ -238,11 +245,43 @@ def generate_symbol(
 
 
 
+def _database_disk_bytes(path: Path) -> int:
+    """Account for SQLite main, WAL and SHM files before/after a symbol checkpoint."""
+    return sum(p.stat().st_size for p in
+               (path,path.with_name(path.name+"-wal"),path.with_name(path.name+"-shm"))
+               if p.exists())
+
+
+def _build_budget(db_path: Path, max_db_gib: float, min_free_gib: float):
+    """Fail closed on source-label DB size and filesystem headroom.
+
+    A symbol transaction may add some bytes before the next check; the hard
+    reserve must therefore be materially greater than one symbol's footprint.
+    """
+    max_bytes=int(max_db_gib*1024**3)
+    if _database_disk_bytes(db_path)>max_bytes:
+        raise RuntimeError("DATASET_DB_BUDGET_EXCEEDED_INCOMPLETE")
+    if shutil.disk_usage(db_path.parent).free<int(min_free_gib*1024**3):
+        raise RuntimeError("DATASET_FREE_SPACE_RESERVE_BREACHED_INCOMPLETE")
+
+
 def build_archive_database(
     archive_root: Path, registry_path: Path, db_path: Path,
-    start_ms: int, end_ms: int, months: set[str], *, allow_archive_observed: bool=False
+    start_ms: int, end_ms: int, months: set[str], *, allow_archive_observed: bool=False,
+    resume: bool=False, max_db_gib: float=12.0, min_free_gib: float=0.25,
 ) -> dict:
-    if db_path.exists():
+    """Checkpoint each audited symbol atomically, with an explicit final build marker.
+
+    Resuming a partial build requires the same dates, registry, symbol set,
+    label policy and source-file byte hashes; never append changed-source
+    samples to a previously trained dataset.
+    """
+    if not (math.isfinite(max_db_gib) and max_db_gib>0
+            and math.isfinite(min_free_gib) and min_free_gib>=0):
+        raise ValueError("INVALID_DATASET_RESOURCE_BUDGET")
+    if not db_path.exists() and resume:
+        raise FileNotFoundError("NO_PARTIAL_DATASET_TO_RESUME")
+    if db_path.exists() and not resume:
         raise FileExistsError("REFUSE_EXISTING_DATABASE_TO_PREVENT_LEAKAGE_OR_MIXED_RUNS")
     registry=contract_registry(registry_path,allow_archive_observed=allow_archive_observed)
     files=discover(archive_root,months)
@@ -252,23 +291,46 @@ def build_archive_database(
     btc,btc_digest=load_bars(files["BTCUSDT"],start_ms-51*BAR_MS,end_ms+HORIZON_BARS*BAR_MS)
     if len(btc)<HISTORY+HORIZON_BARS:
         raise ValueError("INSUFFICIENT_BTC_BARS")
-    counts={}
+    source_symbols=sorted(set(registry)&set(files))
+    base_meta={
+        "policy":LABEL_POLICY,
+        "registry_sha256":sha256(registry_path.read_bytes()).hexdigest(),
+        "start_ms":str(start_ms),
+        "end_ms":str(end_ms),
+        "source_symbols":json.dumps(source_symbols,separators=(",",":")),
+        "requested_months":json.dumps(sorted(months),separators=(",",":")),
+        "btc_sources":json.dumps(btc_digest,sort_keys=True),
+        "authority":"OFFLINE_RESEARCH_UNVERIFIED_NATIVE_EXECUTION",
+    }
     coverage={"missing_registry_symbols":sorted(set(files)-set(registry)),
               "registry_symbols_without_archives":sorted(set(registry)-set(files)),
               "registry_source_grades":dict(sorted(__import__('collections').Counter(x.source_grade for x in registry.values()).items())),
               "eligibility_mode":"ARCHIVE_OBSERVED_EXPLORATORY" if allow_archive_observed else "CALLER_ATTESTED_REQUIRES_INDEPENDENT_AUDIT",
               "historical_exchange_universe_verified":False}
+    db_path.parent.mkdir(parents=True,exist_ok=True)
     c=con(db_path)
+    counts={}
+    resumed=0
     try:
-        c.execute("INSERT INTO meta VALUES(?,?)",("policy",LABEL_POLICY))
-        c.execute("INSERT INTO meta VALUES(?,?)",("build_complete","false"))
-        c.execute("INSERT INTO meta VALUES(?,?)",("registry_sha256",sha256(registry_path.read_bytes()).hexdigest()))
-        c.execute("INSERT INTO meta VALUES(?,?)",("start_ms",str(start_ms)))
-        c.execute("INSERT INTO meta VALUES(?,?)",("end_ms",str(end_ms)))
-        c.execute("INSERT INTO meta VALUES(?,?)",("authority","OFFLINE_RESEARCH_UNVERIFIED_NATIVE_EXECUTION"))
-        c.execute("INSERT INTO meta VALUES(?,?)",("btc_sources",json.dumps(btc_digest,sort_keys=True)))
-        for symbol in sorted(set(registry)&set(files)):
-            bars, digests=(btc,btc_digest) if symbol=="BTCUSDT" else load_bars(
+        meta=dict(c.execute("SELECT k,v FROM meta"))
+        if resume:
+            if meta.get("build_complete")!="false" or any(meta.get(k)!=v for k,v in base_meta.items()):
+                raise ValueError("PARTIAL_DATASET_SCOPE_OR_SOURCE_MANIFEST_MISMATCH")
+            counts={row["symbol"]:json.loads(row["report_json"]) for row in
+                    c.execute("SELECT symbol,report_json FROM build_progress")}
+            if set(counts)-set(source_symbols):
+                raise ValueError("CHECKPOINT_SYMBOLS_NOT_IN_CURRENT_SCOPE")
+        else:
+            if meta:
+                raise ValueError("DATABASE_ALREADY_INITIALIZED")
+            with c:
+                c.execute("INSERT INTO meta VALUES(?,?)",("build_complete","false"))
+                c.executemany("INSERT INTO meta VALUES(?,?)",base_meta.items())
+        _build_budget(db_path,max_db_gib,min_free_gib)
+        for symbol in source_symbols:
+            # Checkpointed symbols still have all source ZIPs re-hashed:
+            # resumption must not silently accept edited or swapped archives.
+            bars,digests=(btc,btc_digest) if symbol=="BTCUSDT" else load_bars(
                 files[symbol],start_ms-51*BAR_MS,end_ms+HORIZON_BARS*BAR_MS)
             funding_rows,funding_hashes=load_funding(funding_files.get(symbol,[]),start_ms,end_ms)
             kline_months={p.name[-11:-4] for p in files[symbol]}
@@ -279,26 +341,41 @@ def build_archive_database(
                     "btc":{Path(k).name:v for k,v in btc_digest.items()},
                     "contract":asdict(registry[symbol]),"label_policy":LABEL_POLICY}
             src=sha256(json.dumps(bundle,sort_keys=True).encode()).hexdigest()
-            with c:
-                n,w=generate_symbol(c,symbol,bars,btc,registry[symbol],src,start_ms,end_ms,
-                                    funding=funding_rows,funding_coverage=funding_covered)
-            counts[symbol]={"candidate_labels":n,"universe_reviews":w,
-                            "source_sha256":src,"source_bundle":bundle,
-                            "funding_source_complete":funding_covered}
+            if symbol in counts:
+                if counts[symbol]["source_sha256"]!=src:
+                    raise ValueError("RESUME_SYMBOL_SOURCE_HASH_CHANGED:"+symbol)
+                resumed+=1
+                continue
+            _build_budget(db_path,max_db_gib,min_free_gib)
             contract=registry[symbol]
             lo=max(start_ms,contract.from_ms)
             hi=min(end_ms,contract.to_ms)
             expected=max(0,(hi+BAR_MS-1)//BAR_MS-(lo+BAR_MS-1)//BAR_MS)
             actual=sum(lo<=bar.t<hi for bar in bars)
-            counts[symbol].update(expected_eligible_bars=expected,observed_eligible_bars=actual,
-                                  missing_eligible_bars=max(0,expected-actual))
+            # Labels and progress receipt are ONE symbol-level transaction.
+            with c:
+                n,w=generate_symbol(c,symbol,bars,btc,contract,src,start_ms,end_ms,
+                                    funding=funding_rows,funding_coverage=funding_covered)
+                record={"candidate_labels":n,"universe_reviews":w,
+                        "source_sha256":src,"source_bundle":bundle,
+                        "funding_source_complete":funding_covered,
+                        "expected_eligible_bars":expected,"observed_eligible_bars":actual,
+                        "missing_eligible_bars":max(0,expected-actual)}
+                c.execute("INSERT INTO build_progress VALUES(?,?,?)",
+                          (symbol,src,json.dumps(record,sort_keys=True)))
+            counts[symbol]=record
+            c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            _build_budget(db_path,max_db_gib,min_free_gib)
+        coverage["symbols"]=counts
+        # No "complete" marker until every source symbol has a verified
+        # checkpoint and the disk-headroom guard has succeeded.
         with c:
             c.execute("INSERT INTO meta VALUES(?,?)",("symbol_manifest",json.dumps(counts,sort_keys=True)))
-            coverage["symbols"]=counts
             c.execute("INSERT INTO meta VALUES(?,?)",("coverage",json.dumps(coverage,sort_keys=True)))
             c.execute("UPDATE meta SET v='true' WHERE k='build_complete'")
         db_path.with_suffix(".coverage.json").write_text(json.dumps(coverage,sort_keys=True,indent=2)+"\n",encoding="utf-8")
-        return {"symbols_scanned":len(counts),"candidate_labels":sum(x["candidate_labels"] for x in counts.values()),
+        return {"symbols_scanned":len(counts),"symbols_reused_after_checkpoint":resumed,
+                "candidate_labels":sum(x["candidate_labels"] for x in counts.values()),
                 "universe_reviews":sum(x["universe_reviews"] for x in counts.values()),
                 "source_authority":"OFFLINE_5M_PROXY_NOT_NATIVE_FILLS","label_policy":LABEL_POLICY,
                 "funding_covered_symbols":sum(int(x["funding_source_complete"]) for x in counts.values())}
