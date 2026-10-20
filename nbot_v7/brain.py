@@ -36,8 +36,10 @@ def rows_before(conn, kind:str, cutoff_ms:int, *, max_groups:int=4000, max_rows:
         raise ValueError("UNKNOWN_BRAIN_TASK")
     col="review_ms" if kind=="watch" else "decision_ms"
     table=kind
+    # Ambiguous stop-first OHLC labels are diagnostics, not supervised truth.
+    admissible = " AND quality='COARSE_5M_OHLC_PATH_PROXY'" if kind=="opportunity" else ""
     times=[int(t[0]) for t in conn.execute(
-        f"SELECT DISTINCT {col} FROM {table} WHERE {col}<? AND label_available_ms<? ORDER BY {col}",
+        f"SELECT DISTINCT {col} FROM {table} WHERE {col}<? AND label_available_ms<?{admissible} ORDER BY {col}",
         (cutoff_ms,cutoff_ms))]
     if not times:
         return []
@@ -48,7 +50,7 @@ def rows_before(conn, kind:str, cutoff_ms:int, *, max_groups:int=4000, max_rows:
         batch=selected[x:x+450]
         values=",".join("?" for _ in batch)
         rs=conn.execute(
-            f"SELECT * FROM {table} WHERE {col} IN ({values}) AND label_available_ms<? ORDER BY {col},symbol",
+            f"SELECT * FROM {table} WHERE {col} IN ({values}) AND label_available_ms<?{admissible} ORDER BY {col},symbol",
             batch+[cutoff_ms]).fetchall()
         rows.extend(rs)
         if len(rows)>max_rows:
