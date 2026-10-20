@@ -90,13 +90,24 @@ def inventory(start_month:str)->dict:
                 if found and found.group(1) in months:
                     rows.append({"symbol":symbol,"month":found.group(1),
                                  "key":k,"bytes":size,"timeframe":interval})
-    rows.sort(key=lambda x:(x["symbol"],x["month"]))
+    # Enumerate exchange funding settlement archives alongside candles.
+    for symbol in symbols:
+        funding_prefix=f"data/futures/um/monthly/fundingRate/{symbol}/"
+        for k,size in keys(funding_prefix):
+            name=k.rsplit("/",1)[-1]
+            found=re.fullmatch(rf"{re.escape(symbol)}-fundingRate-(\d{{4}}-\d{{2}})\.zip",name)
+            if found and found.group(1) in months:
+                rows.append({"symbol":symbol,"month":found.group(1),
+                             "key":k,"bytes":size,"timeframe":"fundingRate"})
+    rows.sort(key=lambda x:(x["symbol"],x["month"],x["timeframe"]))
     return {
         "schema":"v7-public-archive-inventory-v1",
         "captured_utc":datetime.now(timezone.utc).isoformat(),
         "months":months,
         "symbol_directories_found":len(symbols),
         "available_zip_objects":len(rows),
+        "klines_zip_objects":sum(r["timeframe"]=="5m" for r in rows),
+        "funding_zip_objects":sum(r["timeframe"]=="fundingRate" for r in rows),
         "observed_zip_bytes":sum(r["bytes"] for r in rows),
         "source":ROOT,
         "historical_contract_active_status_verified":False,
@@ -113,7 +124,9 @@ def download_inventory(manifest:dict, destination:Path, max_gib:float,*,resume:b
     destination.mkdir(parents=True,exist_ok=True)
     entries={}
     for r in manifest["objects"]:
-        path=destination/r["symbol"]/(r["symbol"]+"-5m-"+r["month"]+".zip")
+        kind=r["timeframe"]
+        filename=(r["symbol"]+"-"+("5m" if kind=="5m" else "fundingRate")+"-"+r["month"]+".zip")
+        path=destination/r["symbol"]/filename
         path.parent.mkdir(parents=True,exist_ok=True)
         if path.exists():
             if path.stat().st_size!=r["bytes"]:
