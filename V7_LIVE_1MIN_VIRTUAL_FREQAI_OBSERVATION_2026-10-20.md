@@ -1,0 +1,38 @@
+# V7 — 15-hour real-time PUBLIC price observation, FreqAI RAW virtual study
+
+**Authorized October 20, 2026 (IST). Status: STARTED on isolated 8GB Observation VPS, no exchange account, no API credentials, no real or exchange dry-run orders.**
+
+Owner asked: “run it on live data instead of historic data ... virtual trade ... three coins ... No of trades 0 to 3 ... Raw daily training model ... Train ... Last 15 days historic data, using 1 minute candles ... even 15 second candles ... run experiment on VPS and leave it, we will check after 12–15 hours.”
+
+## Protocol frozen before viewing future trades
+
+- **Inputs:** BTCUSDT, ETHUSDT, SOLUSDT USD-M futures **1-minute public OHLCV klines**. Use Binance Vision daily `/data/futures/um/daily/klines/{symbol}/1m/` ZIPs for the 16 complete historical days preceding start. Verify original Binance-published SHA256 .CHECKSUM for every ZIP. Top-up the current incomplete day from public `GET https://fapi.binance.com/fapi/v1/klines`. During the experiment poll 1m public REST every ~12 seconds and act only after 1m candle closes. Reject gaps, source rewrites, time skew, stale data and partial bars; no private endpoint.
+- **Why 1m, not 15 seconds:** Binance native 1m klines are well specified; 15s would require resampling 1s trades and more complex sequencing/gap verification. 1m gives 5× granularity vs existing 5m research while keeping data causal. 15-second was optional, not tested or claimed.
+- **AI:** Installed official FreqAI 2026.9 **LightGBMRegressor.fit() invoked by V7 custom isolated research harness**, fresh initial fit and fresh model after next UTC calendar date begins. It is **NOT full FreqAI native scheduler** and **not the saved old 5m weight file**. One-minute 17-dimensional causal price/volume/BTC-context, symbol and LONG/SHORT features based on each completed 1m candle. Targets are hypothetical 60m net PnL for **both LONG/SHORT on each of the fixed 3 coins**, only from last 15 days of matured historical one-minute price sequences, sampled every 5 minutes to reduce overlapping examples; fitted label future path ends before model cutoff. The new 1m generic directional proposal differs from the earlier 20-strategy-family 5m architecture. This difference MUST be disclosed in comparison.
+- **RAW decision:** Every completed common 1m timestamp, score eligible LONG/SHORT for BTC/ETH/SOL and propose only the highest predicted after-fee/slippage return if **strictly positive**. **No uncertainty filter**, no forced trades, no veto/promotion based on earlier 2026 outcomes.
+- **Hard trade limit:** **0–3 total** new virtual entries across the full 15-hour experiment, not three forced fills, and at most one position per coin. All entries are paper ledger objects only, at NEXT 1m bar **OPEN**, never at retrospective closed-bar prices. Previous decision must be available before entry. 1000 USDT notional per position, $10,000 initial hypothetical wallet. Stop 2%, target 3%, max duration 60m, stop-first if bar touches both. Fee 0.05% and slippage 0.01% **per side** are modeled. **Funding is NOT modeled** in this short diagnostic; quote every PnL as *without funding* rather than complete net after all costs. Execution is coarse OHLC proxy, not exchange bid/ask or mark-triggered stops.
+- **Stop/end:** Run **15 hours** from service start. Disallow new trades in the final 72 minutes, so existing trades should mature normally within 60 minutes. If source/model errors persist, **fail closed** and preserve old records; no backfilled favorable virtual decisions, no fabricated terminal fill. Service has `RuntimeMaxSec=16h` watchdog and is **not enabled at reboot**. Max 3 virtual entries regardless of model predictions, then continue observation without taking more trades.
+- **Capture:** Immutable evidence root `/opt/nbot-v7-20261020/runs/live-1m-15days-20261020-v1/`, SQLite append-only events `virtual_1m.sqlite`, checked source ZIPs, local joblib model and sha256 manifest, and `status.json` updated periodically. Event types `MODEL_FITTED`, `RAW_DECISION` (all ranked candidate scores/rejections), `VIRTUAL_OPEN`, `VIRTUAL_CLOSE`, `FAIL_CLOSED_SOURCE`, `RESEARCH_END`. Status includes virtual trade count, positions, realized PnL, credentials unused flag and public source timestamp.
+- **Failure/caveats:** Historical data for initial 15-day training can still be overfit. Three or fewer live trades in 15h provide almost NO robust estimate of prediction skill. This experiment only tests whether the model can follow actual emerging prices without hindsight, not whether it is profitable. A 2%-stop PnL without historical/public funding and live spread depth is not fully realized futures PnL. No promise any trade will occur. **LEARN-3C HOLD** and no live/paper exchange activation, no broader coin universe, no model promotion.
+
+## Actual running VPS deployment checkpoint
+
+- Source [research/v7_live_1m_virtual_15day.py](research/v7_live_1m_virtual_15day.py), first commit `d3de309058f9235deb8804e4a8cf137ae6e443e8`, safe source restart correction `c3a50d2f814138059e78cda14d58aea36ffa6eb0`.
+- [Separate, not enabled systemd unit](research/nbot-v7-live-1m-virtual-20261020.service), commit `e889ab572bec7793c5ef59a36699c754ee405847`. Unit name `nbot-v7-live-1m-virtual-20261020.service`. It invokes bootstrap in `ExecStartPre`, then the daemon with `--serve --hours 15`. Systemd `NoNewPrivileges`, `ProtectSystem=strict`, restricted `ReadWritePaths` to isolated study output, no Binance private network/API or trading service code.
+- **VPS confirmed ACTIVE RUNNING** as of 2026-10-20 12:19 UTC, PID 20110, public data source bootstrap completed with 16 days ×3 = **48 Binance Vision ZIPs**, FreqAI first head trained. Model hash `b12455a569cd51f2425c7e652e7406bcae9d276697394d97125540051561bbda`; cutoff 1792498680000; **8,616 labeled examples per coin** (25,848 pooled coin+side rows), all matured before cutoff.
+- Run launch timestamp recorded in `status.json`: start `2026-10-20T12:14:25.617099Z` (source bootstrap), actual service study `2026-10-20T12:18:57.316Z`. Experiment ends `2026-10-21T03:18:57.316Z` (**08:48:57 IST Oct 21**). Service watchdog maximum 16h after 12:18:54 UTC. After 12–15h owner can check audit, no need ChatGPT to run background work.
+- Initial check 12:19:38 UTC: status RUNNING, 0 virtual trades, model fit today, 0 orders, no exchange credentials, simulated equity 10000 USDT. **These are initial values only; they are not 15-hour results.**
+- Tests [research/test_v7_live_1m_virtual.py](research/test_v7_live_1m_virtual.py), **7/7 PASS** in FreqAI venv, confirming public 1m, three-coin scope, max-three trades, causal feature warmup, source-conflict rejection, no order methods. Regression full V7/legacy pass to be appended after running.
+
+### Check next morning
+
+VPS commands (via existing authorized PuTTY `8GB-Observation`):
+```bash
+systemctl status --no-pager nbot-v7-live-1m-virtual-20261020.service
+cat /opt/nbot-v7-20261020/runs/live-1m-15days-20261020-v1/status.json
+journalctl -u nbot-v7-live-1m-virtual-20261020.service --since "2026-10-20 12:18 UTC" --no-pager | tail -n 80
+```
+
+Read-only SQLite evidence should be analyzed for all decision-time ranks, signal correctness, actual subsequent candle paths, per-trade MAE/MFE, number of virtual trades, stop/target/hourly exits, source continuity and fee/slippage/funding limitation. Do not claim successful predictive skill from a handful of trades.
+
+**No automated future ChatGPT follow-up has been scheduled**. The service is an explicitly started VPS systemd process that continues independently of this conversation. If systemd is not active or record status is SOURCE_HALTED, report that honestly rather than inventing virtual trades.
