@@ -25,7 +25,7 @@ import pandas as pd
 import joblib
 
 from freqtrade.freqai.prediction_models.LightGBMRegressor import LightGBMRegressor
-from nbot_v7.brain import vector, rows_before
+from nbot_v7.brain import vector
 from nbot_v7.experiment import month_start, replay
 from nbot_v7.lab import LABEL_POLICY
 from nbot_v7.data import BAR_MS
@@ -40,8 +40,7 @@ FEATURES = tuple([f"past_{i}" for i in range(len(vector({
     "side":"LONG","family":"momentum_3"
 },"opportunity")))] + ["coin_btc","coin_eth","coin_sol"])
 CAL_DAYS = 14
-MAX_GROUPS = 35000
-MAX_ROWS = 350000
+MAX_ROWS = 350000  # Three-coin cohort only; no time-stride or group thinning
 STRESS = 0.0025  # Predeclared extra 25bps notional roundtrip, never optimized on test.
 
 
@@ -117,7 +116,16 @@ def actual_freqai_fit(training_features, training_net, artifact_dir):
 
 def fit_at(conn, cutoff, output_dir):
     output_dir.mkdir(parents=True,exist_ok=False)
-    rows=rows_before(conn,"opportunity",cutoff,max_groups=MAX_GROUPS,max_rows=MAX_ROWS)
+    # The old group-size-capped helper yielded ~39k rows for BOTH 3m and
+    # 6m fits, accidentally hiding most new evidence. For this fixed three-
+    # coin sample, read ALL prior-matured opportunity labels; fail closed if
+    # the capacity budget would be exceeded instead of silently resampling.
+    rows=conn.execute(
+        "SELECT * FROM opportunity WHERE decision_ms<? AND label_available_ms<? "
+        "ORDER BY decision_ms,symbol,side,family",(cutoff,cutoff)
+    ).fetchall()
+    if len(rows)>MAX_ROWS:
+        raise RuntimeError("THREE_COIN_TRAINING_CAPACITY_REQUIRES_EXPLICIT_REDESIGN")
     hold_start=cutoff-CAL_DAYS*86400000
     # Calibrator never touches future labels from the training cutoff.
     training=[r for r in rows
@@ -213,6 +221,8 @@ def run(db,output):
     try:
         ma=fit_at(c,a,output/"A")
         mb=fit_at(c,b,output/"B")
+        if mb["training_rows"] < ma["training_rows"]*1.3:
+            raise RuntimeError("SIX_MONTH_BRAIN_NOT_USING_MEANINGFULLY_MORE_TRAINING_EVIDENCE")
         for name,manifest,start,stop in (("A_PERIOD2",ma,a,b),
                                           ("A_PERIOD3",ma,b,end),
                                           ("B_PERIOD3",mb,b,end)):
