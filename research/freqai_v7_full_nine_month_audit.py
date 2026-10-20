@@ -126,6 +126,15 @@ def audit(root):
                 "trades":len(t),"pnl_usdt":account["net_usdt"],
                 "plus25bp_net_usdt":account["stressed_pnl_usdt"],
                 "decision_count":dcount,
+                "selected_mean_predicted_net_bp":(
+                    round(sum(float(x["predicted_net"]) for x in t)/len(t)*10000,4)
+                    if t else None),
+                "selected_mean_realized_net_bp":(
+                    round(sum(float(x["net_after_cost"]) for x in t)/len(t)*10000,4)
+                    if t else None),
+                "wins":sum(float(x["net_after_cost"])>0 for x in t),
+                "by_symbol":{sym:sum(x["symbol"]==sym for x in t)
+                             for sym in ("BTCUSDT","ETHUSDT","SOLUSDT")},
                 "monthly":account["by_exit_month"],
             }
             trades[name]=t
