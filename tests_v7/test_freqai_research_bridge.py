@@ -23,8 +23,13 @@ def forecast(symbol="BTCUSDT", family="momentum_3", side="LONG",
 
 
 def candidate(r):
-    return {k:r[k] for k in
-            ("decision_ms", "symbol", "side", "family", "source_hash")}
+    # The real V7 entry path whitelists these causal fields before scoring.
+    # Test the same strict route rather than calling our adapter directly.
+    return {
+        **{k:r[k] for k in
+           ("decision_ms", "symbol", "side", "family", "source_hash")},
+        "regime":"range", "features":"{}",
+    }
 
 
 class FreqAIThreeCoinResearchContracts(unittest.TestCase):
