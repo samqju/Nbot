@@ -6,6 +6,7 @@ from nbot_v7.lab import SCHEMA, generate_symbol, outcome, HORIZON_BARS
 from nbot_v7.data import Bar, Contract, BAR_MS
 from nbot_v7.experiment import replay, month_start
 from nbot_v7.features import proposals, market_features
+from nbot_v7.science import block_bootstrap_uplift
 
 
 class PositiveBrain:
@@ -80,6 +81,16 @@ class CausalReplay(unittest.TestCase):
         generate_symbol(other,"BTCUSDT",damaged,bars,contract,"f"*64,t,t+120*BAR_MS)
         after={tuple(r) for r in other.execute("SELECT * FROM candidate WHERE decision_ms<=?",(t+100*BAR_MS,))}
         self.assertEqual(before,after)
+
+    def test_incomplete_wallet_cannot_claim_bootstrap_improvement(self):
+        c,t=self.fixture()
+        complete=replay(c,PositiveBrain(),t,t+(HORIZON_BARS+2)*BAR_MS)
+        c.execute("DELETE FROM opportunity WHERE symbol='ZZZUSDT'")
+        incomplete=replay(c,PositiveBrain(),t,t+(HORIZON_BARS+2)*BAR_MS)
+        self.assertFalse(incomplete["account_complete"])
+        verdict=block_bootstrap_uplift(incomplete,complete)
+        self.assertEqual(verdict["status"],"INCOMPLETE_ACCOUNTS_NO_UPLIFT")
+        self.assertNotIn("bootstrap_95pct_interval_pct",verdict)
 
     def test_stale_watch_expires_without_a_future_review(self):
         c,t=self.fixture()
